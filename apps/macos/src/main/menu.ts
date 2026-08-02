@@ -201,12 +201,13 @@ const buildTemplate = (): MenuItemConstructorOptions[] => {
         { role: "copy" },
         { role: "paste" },
         { role: "selectAll" },
-        { type: "separator" },
-        {
-          label: "Find\u2026",
-          ...acceleratorOption("find"),
-          click: () => dispatchMenuCommand({ kind: "find" }),
-        },
+        // There is deliberately no "Find" item here. It was a search door
+        // wearing find-in-page's name and its Cmd+F accelerator, and the
+        // renderer answered it by opening the command palette. Design's rule is
+        // that Cmd+F is never intercepted, so the accelerator is unbound (see
+        // `commands.ts`) and the item goes with it, rather than sitting here
+        // inert or keeping the same wrong promise under a different chord. The
+        // real door is View > Command Palette.
       ],
     },
     {
@@ -218,9 +219,7 @@ const buildTemplate = (): MenuItemConstructorOptions[] => {
         { type: "separator" },
         { role: "reload" },
         { role: "forceReload" },
-        ...(chromeDevToolsEnabled
-          ? [{ role: "toggleDevTools" as const }]
-          : []),
+        ...(chromeDevToolsEnabled ? [{ role: "toggleDevTools" as const }] : []),
         { type: "separator" },
         { role: "resetZoom" },
         { role: "zoomIn" },
@@ -312,15 +311,11 @@ export const installApplicationMenu = (): void => {
   if (installed) return;
   installed = true;
 
-  handle(
-    "vellum:menu:setPlatformSession",
-    z.tuple([z.boolean()]),
-    ([has]) => {
-      if (state.hasPlatformSession === has) return;
-      state.hasPlatformSession = has;
-      applyMenu();
-    },
-  );
+  handle("vellum:menu:setPlatformSession", z.tuple([z.boolean()]), ([has]) => {
+    if (state.hasPlatformSession === has) return;
+    state.hasPlatformSession = has;
+    applyMenu();
+  });
 
   // Rebuild the menu when hotkey settings change so accelerators update
   // immediately without requiring an app restart.

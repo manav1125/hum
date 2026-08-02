@@ -53,6 +53,7 @@ mock.module("electron", () => ({
 
 const { resolveHotkeyCatalog, installHotkeysIpc, __resetForTesting } =
   await import("./hotkeys");
+const { DEFAULT_ACCELERATORS } = await import("./commands");
 
 const invoke = (channel: string, args: unknown[]): unknown => {
   const registration = handleRegistrations.find((r) => r.channel === channel);
@@ -90,20 +91,40 @@ describe("resolveHotkeyCatalog", () => {
   });
 
   test("includes reserved, non-rebindable accelerators for conflict checks", () => {
-    const find = resolveHotkeyCatalog().find((c) => c.key === "find");
-    expect(find?.rebindable).toBe(false);
-    expect(find?.accelerator).toBe("CmdOrCtrl+F");
+    const palette = resolveHotkeyCatalog().find(
+      (c) => c.key === "commandPalette",
+    );
+    expect(palette?.rebindable).toBe(false);
+    expect(palette?.accelerator).toBe("CmdOrCtrl+K");
+  });
+
+  /**
+   * ⌘F is not ours to take. `find` used to default to `CmdOrCtrl+F` and the
+   * renderer answered it by opening the command palette, so find-in-page — a
+   * browser reflex older than this app — silently stopped working. The
+   * accelerator is unbound at the source, which is the only layer that can give
+   * the key back: a menu accelerator is consumed in the main process before the
+   * renderer ever sees the keystroke.
+   */
+  test("find is unbound, so ⌘F reaches the page", () => {
+    expect(DEFAULT_ACCELERATORS.find).toBe("");
+    expect(resolveHotkeyCatalog().some((c) => c.key === "find")).toBe(false);
+    expect(
+      resolveHotkeyCatalog().some((c) => c.accelerator === "CmdOrCtrl+F"),
+    ).toBe(false);
   });
 
   test("drops a reserved command whose accelerator the user disabled", () => {
-    store["hotkeys"] = { find: "" };
+    store["hotkeys"] = { commandPalette: "" };
     const catalog = resolveHotkeyCatalog();
-    expect(catalog.some((c) => c.key === "find")).toBe(false);
+    expect(catalog.some((c) => c.key === "commandPalette")).toBe(false);
   });
 
   test("reflects a custom override in the effective accelerator", () => {
     store["hotkeys"] = { newConversation: "CmdOrCtrl+Alt+T" };
-    const entry = resolveHotkeyCatalog().find((c) => c.key === "newConversation");
+    const entry = resolveHotkeyCatalog().find(
+      (c) => c.key === "newConversation",
+    );
     expect(entry?.override).toBe("CmdOrCtrl+Alt+T");
     expect(entry?.accelerator).toBe("CmdOrCtrl+Alt+T");
   });
@@ -137,7 +158,10 @@ describe("vellum:hotkeys:set", () => {
   });
 
   test("clears an override when passed null", () => {
-    store["hotkeys"] = { newConversation: "CmdOrCtrl+Alt+T", home: "CmdOrCtrl+Shift+H" };
+    store["hotkeys"] = {
+      newConversation: "CmdOrCtrl+Alt+T",
+      home: "CmdOrCtrl+Shift+H",
+    };
     invoke("vellum:hotkeys:set", ["newConversation", null]);
     expect(store["hotkeys"]).toEqual({ home: "CmdOrCtrl+Shift+H" });
   });

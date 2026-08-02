@@ -182,10 +182,24 @@ export function useCommandPalette({
     };
   }, []);
 
+  // A standalone host (the floating Electron palette window) controls `isOpen`
+  // itself and has no chat layout above it, so it is the only owner of ⌘K there.
+  const isStandaloneHost = controlledIsOpen !== undefined;
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Cmd+K / Ctrl+K toggles the palette closed even when input is focused.
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      /**
+       * ⌘K closes the palette — but only in a standalone host.
+       *
+       * In-page, the layout-level opener (`use-chat-layout-shortcuts`) fires ⌘K
+       * from anywhere including a focused input, which is what makes the
+       * shortcut work in chat at all. The palette is portaled to `document.body`
+       * so its keydown still reaches `window` afterwards: handling ⌘K here as
+       * well would close the palette and let the layout re-open it in the same
+       * keystroke, and ⌘K would look inert while doing two things. One key, one
+       * owner.
+       */
+      if (isStandaloneHost && e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         close();
         return;
@@ -215,7 +229,7 @@ export function useCommandPalette({
           break;
       }
     },
-    [onSelect, selectedIndex, close],
+    [onSelect, selectedIndex, close, isStandaloneHost],
   );
 
   return {

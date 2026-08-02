@@ -494,9 +494,14 @@ export function ChatLayout() {
     markAllRead: () => {
       void handleMarkAllReadInGroup(conversations);
     },
-    find: () => {
-      useCommandPaletteStore.getState().toggle();
-    },
+    // `find` is deliberately NOT handled. It used to toggle the command
+    // palette, which meant ⌘F — bound to `find` in the Electron menu — stopped
+    // being find-in-page and became "open search" instead. Design's rule is
+    // absolute: "`/` or ⌘K; ⌘F is never intercepted. Find-in-page is a reflex
+    // older than the app." The accelerator itself is what actually swallowed
+    // the key, and it is unbound in `apps/macos/src/main/commands.ts`; this
+    // handler is removed so the command cannot be re-bound to the palette by
+    // accident either.
     sidebarToggle: () => {
       toggleSidebar();
     },

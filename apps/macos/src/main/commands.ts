@@ -23,7 +23,21 @@ export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
   markCurrentUnread: "CmdOrCtrl+Shift+U",
   openSettings: "CmdOrCtrl+,",
   shareFeedback: "",
-  find: "CmdOrCtrl+F",
+  /**
+   * ⌘F is NOT bound, and this is the line that matters.
+   *
+   * A menu accelerator is registered in the main process and is consumed by
+   * Electron before the key ever reaches the renderer, so removing the
+   * renderer's `find` handler alone would have changed nothing: ⌘F would still
+   * have been swallowed, and would then have done nothing at all — worse than
+   * the bug it was meant to fix. Unbinding it here is what hands the key back.
+   *
+   * Design's rule (v8 W1): "`/` or ⌘K; ⌘F is never intercepted. Find-in-page is
+   * a reflex older than the app." `acceleratorOption` turns an empty string
+   * into no `accelerator` key at all, so the Edit ▸ Find… item stays clickable
+   * and simply carries no chord. The palette's own openers are `/` and ⌘K.
+   */
+  find: "",
   markAllRead: "",
   logout: "",
   rePair: "",
