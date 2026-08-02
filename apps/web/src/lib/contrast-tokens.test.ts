@@ -232,3 +232,75 @@ describe("A1 follow-ups — the two tokens design left to engineering", () => {
     expect(decl(dark, "mv1-danger-text")).toBe(decl(dark, "mv1-danger"));
   });
 });
+
+// ---------------------------------------------------------------------------
+// The third neutral text value — deleted, not merely equalised
+// ---------------------------------------------------------------------------
+
+/** WCAG relative luminance. */
+function luminance(hex: string): number {
+  const parts = hex.replace("#", "").match(/../g) as string[];
+  const [r, g, b] = parts
+    .map((h) => parseInt(h, 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio between two opaque hex colours. */
+function contrast(a: string, b: string): number {
+  const [x, y] = [luminance(a), luminance(b)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/**
+ * Design's ruling, 2026-08-02: **two neutral text values per theme, and
+ * anything needing to recede further does it by size or weight, never
+ * contrast.** The third slot is deleted rather than set equal to the second,
+ * on the theory that an available wrong value gets used eventually — which is
+ * exactly what happened: `#5B5B68` reached the app as a text colour four
+ * design packs running, at 2.9:1 on the dark ground and 2.6:1 on the light one.
+ *
+ * The Capacitor shell is where that value was still live, in a `--faint` slot
+ * one step below `--muted`. The slot is gone; its four text call sites moved up
+ * to `--muted`, and the one decorative dot that used it kept its exact pixels
+ * under `--glyph-dim`, which is named so nobody reaches for it as text.
+ */
+describe("the neutral text ramp stops at two", () => {
+  const shell = read(`${ROOT}capacitor-shell/index.html`);
+  const shellDark = block(shell, ":root {\n        --bg:");
+  const shellLight = block(shell, ":root {\n          --bg:");
+
+  test("the shell defines no third neutral text slot", () => {
+    expect(shell).not.toContain("--faint");
+  });
+
+  test("the banned value is not a text colour anywhere in the shell", () => {
+    // It survives only as `--glyph-dim`, a decorative fill. Invariant 15 bans
+    // it as TEXT; a 6px dot in an error illustration is not text.
+    expect(/color:\s*#5b5b68/i.test(shell)).toBe(false);
+    expect(/--(text|muted):\s*#5b5b68/i.test(shell)).toBe(false);
+  });
+
+  test.each([
+    ["dark", "text", "#f4f4f6", "#0b0b0f"],
+    ["dark", "muted", "#9a9aa8", "#0b0b0f"],
+    ["light", "text", "#17171c", "#f6f6f8"],
+    ["light", "muted", "#6a6a76", "#f6f6f8"],
+  ])(
+    "%s --%s is what survives, and it clears 4.5:1",
+    (theme, name, value, ground) => {
+      const scope = theme === "dark" ? shellDark : shellLight;
+      expect(decl(scope, name)).toBe(value);
+      expect(contrast(value, ground)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
+
+  test("the deleted slot failed in both themes", () => {
+    // The reason it is gone rather than retuned. Each theme's third neutral
+    // was under 3:1 on its own ground — #5B5B68 dark, #9A9AA8 light. Note the
+    // second is a value that is perfectly good ON DARK: a third slot fails not
+    // because its hex is wrong but because there is nowhere left for it to go.
+    expect(contrast("#5b5b68", "#0b0b0f")).toBeLessThan(3);
+    expect(contrast("#9a9aa8", "#f6f6f8")).toBeLessThan(3);
+  });
+});
