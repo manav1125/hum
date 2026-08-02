@@ -6451,9 +6451,12 @@ paths:
       operationId: brandprofiles_extract_post
       summary: Extract a draft brand profile
       description:
-        "Turn an upload (attachment id) or website (url) into a DRAFT brand profile via a flash-LLM pass — palette,
-        fonts, logo, voice. The draft is NOT persisted; POST it back to create once reviewed. Honest limits: binary
-        PDF/PPTX text isn't parsed, and website extraction is static-HTML-only (no headless browser)."
+        "Turn an upload (attachment id) or website (url) into a DRAFT brand profile — palette, fonts, logo, voice —
+        read from the source (computed CSS / document theme) with a flash-LLM pass filling gaps. The draft is NOT
+        persisted; POST it back to create once reviewed. ALWAYS check `extraction.status`: only `extracted` means values
+        were observed. `empty`/`unreachable`/`blocked`/`unreadable`/`disabled` all return a draft with no brand values,
+        and must be shown as a failure — never rendered as a profile. Honest limits: colours living purely in PDF vector
+        art or images aren't decoded, and legacy binary .ppt isn't parsed."
       tags:
         - brand
       responses:
@@ -6545,8 +6548,28 @@ paths:
                         minimum: -9007199254740991
                         maximum: 9007199254740991
                     additionalProperties: false
+                  extraction:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum:
+                          - extracted
+                          - empty
+                          - unreachable
+                          - blocked
+                          - unreadable
+                          - disabled
+                      detail:
+                        type: string
+                        description: A short sentence safe to show the user.
+                    required:
+                      - status
+                      - detail
+                    additionalProperties: false
                 required:
                   - draft
+                  - extraction
                 additionalProperties: false
       requestBody:
         required: true

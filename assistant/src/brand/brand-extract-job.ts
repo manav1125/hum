@@ -13,6 +13,13 @@
  * Both are DRAFTS — the store is untouched here. The Create-Studio review/edit
  * screen persists the accepted draft via brand-profile-store.
  *
+ * EVERY return carries an `extraction: { status, detail }` outcome. Neither
+ * entry point throws, so without it a caller cannot distinguish "this site has
+ * no brand signal" from "we never reached this site" — both arrive as an empty
+ * draft. Surfaces MUST branch on the status: a draft whose status is not
+ * `extracted` has no observed brand values in it, and rendering one as a brand
+ * profile is a fabrication the user will act on ("Save & apply everywhere").
+ *
  * The flash pass uses the same cheap call-site the contact-memory extract job
  * uses (`getConfiguredProvider("conversationTitle")` + `runBtwSidechain` with
  * callSite "conversationTitle") — never a heavy model.
@@ -106,16 +113,59 @@ interface StructuredBrandHints {
 }
 
 /**
+ * Why an extraction produced what it produced.
+ *
+ * This exists because an empty draft is ambiguous on its own: "we read the
+ * site and it genuinely has no brand signal" and "we never reached the site"
+ * both used to arrive at the review screen as the same shapeless object, and
+ * the screen then filled the holes with defaults — so every failure rendered
+ * as a plausible, and identical, brand profile. The status is the only thing
+ * that lets a surface tell those apart, so it is NOT optional.
+ */
+export type BrandExtractionStatus =
+  /** Real brand signal came back — at least one colour/font/logo/voice field. */
+  | "extracted"
+  /** The source was read successfully but carries no usable brand signal. */
+  | "empty"
+  /** The page/asset could not be loaded at all (network, timeout, 4xx/5xx). */
+  | "unreachable"
+  /** The target was refused before any fetch (SSRF guard, unresolvable host). */
+  | "blocked"
+  /** The attachment is missing or its bytes yielded nothing readable. */
+  | "unreadable"
+  /** `CUE_DISABLE_BRAND_EXTRACT` is set — no extraction was attempted. */
+  | "disabled";
+
+export interface BrandExtractionOutcome {
+  status: BrandExtractionStatus;
+  /** A short sentence a surface may show verbatim. Never a stack trace. */
+  detail: string;
+}
+
+/** `true` only for the one status that means "these values came from the source". */
+export function isExtractionSuccessful(
+  outcome: BrandExtractionOutcome,
+): boolean {
+  return outcome.status === "extracted";
+}
+
+/**
  * A draft brand profile the extractor returns — a `BrandProfileInput` (the
- * store's create shape) tagged with the source path that produced it. Never
- * persisted here; the review screen accepts it into the store.
+ * store's create shape) tagged with the source path that produced it, plus the
+ * outcome of the attempt. Never persisted here; the review screen accepts it
+ * into the store (dropping `extraction`, which is about this run, not the kit).
  */
 export interface DraftBrandProfile extends BrandProfileInput {
   source: BrandSource;
+  extraction: BrandExtractionOutcome;
 }
 
-/** An empty draft — the honest "extracted nothing" outcome. */
-function emptyDraft(source: BrandSource, name: string): DraftBrandProfile {
+/** An empty draft — carrying the reason nothing came back. */
+function emptyDraft(
+  source: BrandSource,
+  name: string,
+  extraction: BrandExtractionOutcome,
+): DraftBrandProfile {
   return {
     name,
     palette: {},
@@ -124,7 +174,41 @@ function emptyDraft(source: BrandSource, name: string): DraftBrandProfile {
     voice: {},
     assets: [],
     source,
+    extraction,
   };
+}
+
+/**
+ * Did the pipeline actually pull anything off the source? The brand *name* is
+ * deliberately excluded: every path falls back to labelling the draft with the
+ * host/filename the user typed, so a name proves nothing about extraction.
+ */
+function hasExtractedSignal(draft: BrandProfileInput): boolean {
+  const filled = (o: object | undefined) =>
+    Object.values(o ?? {}).some(
+      (v) =>
+        (typeof v === "string" && v.trim().length > 0) ||
+        (Array.isArray(v) && v.length > 0),
+    );
+  return (
+    filled(draft.palette) ||
+    filled(draft.fonts) ||
+    filled(draft.logo) ||
+    filled(draft.voice)
+  );
+}
+
+/** Classify a completed pass: real signal, or reached-but-nothing-there. */
+function outcomeForDraft(
+  draft: BrandProfileInput,
+  label: string,
+): BrandExtractionOutcome {
+  return hasExtractedSignal(draft)
+    ? { status: "extracted", detail: `Read the brand signal from ${label}.` }
+    : {
+        status: "empty",
+        detail: `Read ${label}, but found no colours, type, logo or voice to pull from.`,
+      };
 }
 
 // ---------------------------------------------------------------------------
@@ -266,9 +350,9 @@ const PALETTE_SLOTS = ["primary", "accent", "bg", "surface", "text"] as const;
  * then spill into `extraN` keys — never dropping a high-signal brand colour.
  */
 function mergeStructuredHints(
-  base: Omit<DraftBrandProfile, "source">,
+  base: BrandProfileInput,
   hints: StructuredBrandHints,
-): Omit<DraftBrandProfile, "source"> {
+): BrandProfileInput {
   const palette: BrandPalette = { ...(base.palette ?? {}) };
 
   // Which hex values does the LLM already have? Avoid duplicating them.
@@ -322,12 +406,12 @@ async function runFlashExtraction(args: {
   source: string;
   /** Structural colours/fonts/logo to overlay on (and prefer over) the LLM. */
   hints?: StructuredBrandHints;
-}): Promise<Omit<DraftBrandProfile, "source">> {
+}): Promise<BrandProfileInput> {
   const provider = await getConfiguredProvider("conversationTitle");
   if (!provider) {
     log.debug({ kind: args.kind }, "no provider for flash brand extraction");
     // No LLM — still surface whatever the parsers found structurally.
-    const fallback: Omit<DraftBrandProfile, "source"> = {
+    const fallback: BrandProfileInput = {
       name: args.label,
       palette: {},
       fonts: {},
@@ -361,7 +445,7 @@ async function runFlashExtraction(args: {
       { err: String(err), kind: args.kind },
       "flash brand extraction failed; returning structural draft",
     );
-    const fallback: Omit<DraftBrandProfile, "source"> = {
+    const fallback: BrandProfileInput = {
       name: args.label,
       palette: {},
       fonts: {},
@@ -373,7 +457,7 @@ async function runFlashExtraction(args: {
   }
 
   const parsed = parseBrandExtractionResponse(result.text);
-  const base: Omit<DraftBrandProfile, "source"> = {
+  const base: BrandProfileInput = {
     name: parsed.name?.trim() || args.label,
     palette: parsed.palette,
     fonts: parsed.fonts,
@@ -594,7 +678,10 @@ export async function extractFromDocument(
 ): Promise<DraftBrandProfile> {
   if (getDisableBrandExtract()) {
     log.debug({ fileRef }, "CUE_DISABLE_BRAND_EXTRACT set; skipping");
-    return emptyDraft("upload", "brand document");
+    return emptyDraft("upload", "brand document", {
+      status: "disabled",
+      detail: "Brand extraction is turned off on this instance.",
+    });
   }
 
   const read = await readDocumentSource(fileRef);
@@ -602,7 +689,11 @@ export async function extractFromDocument(
   const hasHints = !!read?.hints && read.hints.colors.length > 0;
   if (!read || (!hasText && !hasHints)) {
     log.debug({ fileRef }, "attachment missing or unreadable; empty draft");
-    return emptyDraft("upload", read?.label ?? "brand document");
+    return emptyDraft("upload", read?.label ?? "brand document", {
+      status: "unreadable",
+      detail:
+        "Couldn't read that file. Binary PDF/PPTX artwork and legacy .ppt decks aren't parsed — a text-bearing PDF, a .pptx, or your website works better.",
+    });
   }
 
   const extracted = await runFlashExtraction({
@@ -611,7 +702,11 @@ export async function extractFromDocument(
     source: read.text,
     hints: read.hints,
   });
-  return { ...extracted, source: "upload" };
+  return {
+    ...extracted,
+    source: "upload",
+    extraction: outcomeForDraft(extracted, read.label),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -858,12 +953,19 @@ export async function extractFromWebsite(
 ): Promise<DraftBrandProfile> {
   if (getDisableBrandExtract()) {
     log.debug({ url }, "CUE_DISABLE_BRAND_EXTRACT set; skipping");
-    return emptyDraft("website", url);
+    return emptyDraft("website", url, {
+      status: "disabled",
+      detail: "Brand extraction is turned off on this instance.",
+    });
   }
 
   if (!(await isWebsiteTargetAllowed(url))) {
     log.debug({ url }, "website target blocked/unresolvable; empty draft");
-    return emptyDraft("website", url);
+    return emptyDraft("website", url, {
+      status: "blocked",
+      detail:
+        "That address couldn't be resolved, or points somewhere we won't fetch from. Check the domain and try again.",
+    });
   }
 
   // Preferred path: headless browser with computed-CSS hints.
@@ -875,13 +977,21 @@ export async function extractFromWebsite(
       source: scraped.source,
       hints: scraped.hints,
     });
-    return { ...extracted, source: "website" };
+    return {
+      ...extracted,
+      source: "website",
+      extraction: outcomeForDraft(extracted, url),
+    };
   }
 
   // Fallback path: static raw-HTML fetch (no computed CSS).
   const html = await fetchWebsiteStatic(url);
   if (!html.trim()) {
-    return emptyDraft("website", url);
+    return emptyDraft("website", url, {
+      status: "unreachable",
+      detail:
+        "Couldn't load that page — it may be down, blocking automated visits, or behind a login.",
+    });
   }
   const extracted = await runFlashExtraction({
     kind: "website",
@@ -889,5 +999,9 @@ export async function extractFromWebsite(
     source: html,
     hints: { colors: collectHexFromText(html) },
   });
-  return { ...extracted, source: "website" };
+  return {
+    ...extracted,
+    source: "website",
+    extraction: outcomeForDraft(extracted, url),
+  };
 }

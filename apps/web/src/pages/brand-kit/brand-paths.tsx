@@ -7,13 +7,23 @@
  *   · GuidedFlow  — 4 steps: colors → logo → fonts → voice → hand-built draft.
  *
  * Each flow resolves to a `BrandProfileInput` handed to the shared review
- * screen via `onDraft`. Extraction errors surface inline and still let the
- * user continue with a hand-editable draft (honest about backend limits:
- * binary PDF/PPTX text isn't parsed; website scan is static-HTML-only).
+ * screen via `onDraft`.
+ *
+ * A FAILED extraction never resolves on its own. The extract endpoint does not
+ * throw — an unreachable site, a blocked host, or a source with no brand signal
+ * all come back HTTP 200 with an empty draft — so these flows branch on
+ * `extraction.status` and stop on anything but `extracted`, showing what went
+ * wrong. Continuing to the review screen is then a deliberate click, not a
+ * silent hand-off that would look exactly like a successful scan.
  */
 
 import { useMemo, useRef, useState, type CSSProperties } from "react";
-import { Check, Loader2, Upload as UploadIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Loader2,
+  Upload as UploadIcon,
+} from "lucide-react";
 
 import {
   C,
@@ -26,9 +36,12 @@ import {
   Swatch,
 } from "./brand-kit-ui";
 import {
+  extractionSucceeded,
+  readExtraction,
   toBrandInput,
   useExtractBrandProfile,
   useExtractFromUpload,
+  type BrandExtraction,
   type BrandProfileInput,
 } from "./use-brand-kit";
 import type { BrandPath } from "./brand-entry-chooser";
@@ -55,7 +68,11 @@ export function BrandPathFlow({
   }
   if (path === "website") {
     return (
-      <WebsiteFlow assistantId={assistantId} onDraft={onDraft} onBack={onBack} />
+      <WebsiteFlow
+        assistantId={assistantId}
+        onDraft={onDraft}
+        onBack={onBack}
+      />
     );
   }
   return <GuidedFlow onDraft={onDraft} onBack={onBack} />;
@@ -68,10 +85,11 @@ export function BrandPathFlow({
 type CheckState = "pending" | "active" | "done";
 
 function CheckRow({ state, label }: { state: CheckState; label: string }) {
-  const color =
-    state === "done" ? C.green : state === "active" ? C.t2 : C.t3;
+  const color = state === "done" ? C.green : state === "active" ? C.t2 : C.t3;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+    <div
+      style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}
+    >
       <span
         style={{
           width: 15,
@@ -101,6 +119,77 @@ function extractChecklist(loading: boolean, done: boolean): CheckState[] {
 }
 
 // ---------------------------------------------------------------------------
+// Shared: the "we got nothing" outcome.
+// ---------------------------------------------------------------------------
+
+const FAILURE_HEADLINE: Record<BrandExtraction["status"], string> = {
+  // `extracted` never reaches this panel; present so the map is total.
+  extracted: "Extracted",
+  empty: "Nothing to extract",
+  unreachable: "Couldn't reach it",
+  blocked: "Couldn't reach it",
+  unreadable: "Couldn't read it",
+  disabled: "Extraction is off",
+};
+
+/**
+ * The honest dead-end. Renders the reason, and makes continuing an explicit
+ * choice — the draft behind "Build it by hand" is EMPTY, and the copy says so,
+ * because a blank kit the user knowingly fills in is worth more than an
+ * invented one they trust.
+ *
+ * State is carried by the glyph + headline text, never by colour alone.
+ */
+function ExtractionFailure({
+  outcome,
+  onRetry,
+  onBuildByHand,
+}: {
+  outcome: BrandExtraction;
+  onRetry?: () => void;
+  onBuildByHand: () => void;
+}) {
+  return (
+    <div style={failurePanel} role="status">
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <AlertTriangle size={15} strokeWidth={2.2} aria-hidden />
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: C.t1 }}>
+          {FAILURE_HEADLINE[outcome.status]}
+        </span>
+      </div>
+      <p
+        style={{
+          fontSize: 12.5,
+          color: C.t1,
+          margin: "8px 0 0",
+          lineHeight: 1.5,
+        }}
+      >
+        {outcome.detail}
+      </p>
+      <p
+        style={{
+          fontSize: 12.5,
+          color: C.t2,
+          margin: "8px 0 0",
+          lineHeight: 1.5,
+        }}
+      >
+        Nothing was pulled in, so there's no brand kit to review yet.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        {onRetry ? (
+          <GhostButton onClick={onRetry}>Try again</GhostButton>
+        ) : null}
+        <GhostButton onClick={onBuildByHand}>
+          Build it by hand instead
+        </GhostButton>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Upload
 // ---------------------------------------------------------------------------
 
@@ -117,18 +206,27 @@ function UploadFlow({
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<BrandExtraction | null>(null);
 
   const run = (f: File) => {
     setFile(f);
-    setError(null);
+    setFailure(null);
     extract.mutate(f, {
-      onSuccess: (draft) => onDraft(toBrandInput(draft, stripExt(f.name))),
+      onSuccess: ({ draft, extraction }) => {
+        // A 200 is not a success: the endpoint returns an empty draft for
+        // every failure mode. Only `extracted` carries observed values.
+        if (!extractionSucceeded(extraction)) {
+          setFailure(extraction);
+          return;
+        }
+        onDraft(toBrandInput(draft, stripExt(f.name)));
+      },
       onError: () => {
-        setError(
-          "Couldn't read that file automatically — you can still build the kit by hand.",
-        );
-        onDraft(toBrandInput(null, stripExt(f.name)));
+        setFailure({
+          status: "unreadable",
+          detail:
+            "The upload didn't complete. Check the file and your connection, then try again.",
+        });
       },
     });
   };
@@ -192,7 +290,7 @@ function UploadFlow({
         </MicroLabel>
       </div>
 
-      {(extract.isPending || file) && !error ? (
+      {(extract.isPending || file) && !failure ? (
         <div
           style={{
             display: "flex",
@@ -201,14 +299,27 @@ function UploadFlow({
             marginTop: 16,
           }}
         >
-          <CheckRow state={checks[0]} label="Palette — reading dominant colors" />
+          <CheckRow
+            state={checks[0]}
+            label="Palette — reading dominant colors"
+          />
           <CheckRow state={checks[1]} label="Fonts — heading & body" />
           <CheckRow state={checks[2]} label="Logo — locating mark" />
           <CheckRow state={checks[3]} label="Voice — tone & boilerplate" />
         </div>
       ) : null}
 
-      {error ? <InlineNote>{error}</InlineNote> : null}
+      {failure ? (
+        <ExtractionFailure
+          outcome={failure}
+          onRetry={file ? () => run(file) : undefined}
+          onBuildByHand={() =>
+            onDraft(
+              toBrandInput(null, file ? stripExt(file.name) : "Untitled brand"),
+            )
+          }
+        />
+      ) : null}
     </FlowShell>
   );
 }
@@ -232,25 +343,36 @@ function WebsiteFlow({
 }) {
   const extract = useExtractBrandProfile();
   const [url, setUrl] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<BrandExtraction | null>(null);
 
   const scan = () => {
     const trimmed = url.trim();
     if (!trimmed || extract.isPending) return;
-    setError(null);
+    setFailure(null);
     extract.mutate(
       {
         path: { assistant_id: assistantId },
         body: { source: "website", ref: normalizeUrl(trimmed) },
       },
       {
-        onSuccess: (res) =>
-          onDraft(toBrandInput(res.draft, hostLabel(trimmed))),
+        onSuccess: (res) => {
+          // The scan endpoint never throws: a blocked host, a dead page, and a
+          // page with no brand signal all arrive here as 200 + empty draft.
+          // Handing that to the review screen is what made every domain
+          // produce the same kit — so stop, and say what happened.
+          const extraction = readExtraction(res);
+          if (!extractionSucceeded(extraction)) {
+            setFailure(extraction);
+            return;
+          }
+          onDraft(toBrandInput(res.draft, hostLabel(trimmed)));
+        },
         onError: () => {
-          setError(
-            "Couldn't scan that site — you can still build the kit by hand.",
-          );
-          onDraft(toBrandInput(null, hostLabel(trimmed)));
+          setFailure({
+            status: "unreachable",
+            detail:
+              "The scan request didn't complete. Check the address and your connection, then try again.",
+          });
         },
       },
     );
@@ -333,7 +455,15 @@ function WebsiteFlow({
         </div>
       ) : null}
 
-      {error ? <InlineNote>{error}</InlineNote> : null}
+      {failure ? (
+        <ExtractionFailure
+          outcome={failure}
+          onRetry={scan}
+          onBuildByHand={() =>
+            onDraft(toBrandInput(null, hostLabel(url.trim())))
+          }
+        />
+      ) : null}
     </FlowShell>
   );
 }
@@ -554,18 +684,26 @@ function GuidedVoice({
       <Display size={24} style={{ marginBottom: 16 }}>
         Describe your voice
       </Display>
-      <MicroLabel style={{ display: "block", marginBottom: 6 }}>Tone</MicroLabel>
+      <MicroLabel style={{ display: "block", marginBottom: 6 }}>
+        Tone
+      </MicroLabel>
       <input
         value={draft.voice.tone ?? ""}
         onChange={(e) =>
-          setDraft({ ...draft, voice: { ...draft.voice, tone: e.target.value } })
+          setDraft({
+            ...draft,
+            voice: { ...draft.voice, tone: e.target.value },
+          })
         }
         placeholder="confident, plain-spoken, warm"
         style={fieldStyle}
       />
       <div style={{ display: "flex", gap: 12, marginTop: 14 }}>
         <div style={{ flex: 1 }}>
-          <MicroLabel color={C.green} style={{ display: "block", marginBottom: 6 }}>
+          <MicroLabel
+            color={C.green}
+            style={{ display: "block", marginBottom: 6 }}
+          >
             ✓ Do
           </MicroLabel>
           <input
@@ -581,7 +719,10 @@ function GuidedVoice({
           />
         </div>
         <div style={{ flex: 1 }}>
-          <MicroLabel color={C.amber} style={{ display: "block", marginBottom: 6 }}>
+          <MicroLabel
+            color={C.amber}
+            style={{ display: "block", marginBottom: 6 }}
+          >
             ✕ Don't
           </MicroLabel>
           <input
@@ -682,27 +823,18 @@ function ProgressDots({ total, active }: { total: number; active: number }) {
   );
 }
 
-function InlineNote({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        marginTop: 14,
-        fontSize: 12.5,
-        color: C.t2,
-        background: C.sunken,
-        borderRadius: 10,
-        padding: "10px 12px",
-        lineHeight: 1.5,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
+
+const failurePanel: CSSProperties = {
+  marginTop: 16,
+  border: `1px solid color-mix(in srgb, ${C.danger} 35%, transparent)`,
+  background: `color-mix(in srgb, ${C.danger} 8%, transparent)`,
+  borderRadius: 12,
+  padding: "12px 14px",
+  color: C.dangerText,
+};
 
 const dropZone: CSSProperties = {
   display: "flex",

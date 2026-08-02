@@ -248,8 +248,7 @@ export function Tag({
   children: ReactNode;
   tone?: "green" | "blue" | "neutral";
 }) {
-  const color =
-    tone === "green" ? C.green : tone === "blue" ? C.blue : C.t2;
+  const color = tone === "green" ? C.green : tone === "blue" ? C.blue : C.t2;
   return (
     <span
       style={{
@@ -285,7 +284,14 @@ export const PALETTE_SLOTS: Array<{
   { key: "text", label: "Text" },
 ];
 
-/** A single labelled swatch. When `onChange` is set it doubles as a picker. */
+/**
+ * A single labelled swatch. When `onChange` is set it doubles as a picker.
+ *
+ * An EMPTY slot must not look like a chosen colour. With no value the tile is
+ * drawn as a dashed empty well carrying a "–" glyph and its label is suffixed
+ * "· none", so "we found no accent" can never be misread as "the accent is
+ * this grey". State is never carried by colour alone.
+ */
 export function Swatch({
   color,
   label,
@@ -297,20 +303,26 @@ export function Swatch({
   size?: number;
   onChange?: (hex: string) => void;
 }) {
+  const isEmpty = !color;
   const swatch = (
     <span
       style={{
         position: "relative",
         display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
         width: size,
         height: size,
         borderRadius: 12,
-        background: color || C.sunken,
-        border: `1px solid ${C.line2}`,
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
+        background: color || "transparent",
+        border: isEmpty ? `1.5px dashed ${C.line2}` : `1px solid ${C.line2}`,
+        boxShadow: isEmpty ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.04)",
+        color: C.t2,
+        fontSize: 18,
         overflow: "hidden",
       }}
     >
+      {isEmpty ? <span aria-hidden>–</span> : null}
       {onChange ? (
         <input
           type="color"
@@ -335,8 +347,11 @@ export function Swatch({
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", gap: 6 }}>
       {swatch}
-      <MicroLabel style={{ fontSize: 9, letterSpacing: "0.08em" }}>
-        {label}
+      <MicroLabel
+        style={{ fontSize: 9, letterSpacing: "0.08em" }}
+        color={isEmpty ? C.t2 : C.t3}
+      >
+        {isEmpty ? `${label} · none` : label}
       </MicroLabel>
     </span>
   );

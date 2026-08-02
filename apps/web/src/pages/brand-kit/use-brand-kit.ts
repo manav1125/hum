@@ -46,10 +46,8 @@ import type {
 // Types — one saved Brand Kit + the palette/font/logo/voice sub-shapes.
 // ---------------------------------------------------------------------------
 
-export type BrandProfile =
-  BrandprofilesGetResponse["brandProfiles"][number];
-export type BrandDraft =
-  BrandprofilesExtractPostResponse["draft"];
+export type BrandProfile = BrandprofilesGetResponse["brandProfiles"][number];
+export type BrandDraft = BrandprofilesExtractPostResponse["draft"];
 
 export type BrandPalette = BrandProfile["palette"];
 export type BrandFonts = BrandProfile["fonts"];
@@ -135,6 +133,94 @@ export function useActivateBrandProfile(assistantId: string) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Extraction outcome — the signal that says whether a draft means anything.
+// ---------------------------------------------------------------------------
+
+/** Mirrors `BrandExtractionStatus` in assistant/src/brand/brand-extract-job.ts. */
+export type BrandExtractionStatus =
+  "extracted" | "empty" | "unreachable" | "blocked" | "unreadable" | "disabled";
+
+export interface BrandExtraction {
+  status: BrandExtractionStatus;
+  detail: string;
+}
+
+const EXTRACTION_STATUSES = new Set<string>([
+  "extracted",
+  "empty",
+  "unreachable",
+  "blocked",
+  "unreadable",
+  "disabled",
+]);
+
+/** `true` only when the draft's values were actually observed on the source. */
+export function extractionSucceeded(e: BrandExtraction): boolean {
+  return e.status === "extracted";
+}
+
+/** Does this draft carry any observed brand value at all? (name doesn't count) */
+function draftHasSignal(draft: BrandDraft | null | undefined): boolean {
+  const filled = (o: object | undefined) =>
+    Object.values(o ?? {}).some(
+      (v) =>
+        (typeof v === "string" && v.trim().length > 0) ||
+        (Array.isArray(v) && v.length > 0),
+    );
+  return (
+    filled(draft?.palette) ||
+    filled(draft?.fonts) ||
+    filled(draft?.logo) ||
+    filled(draft?.voice)
+  );
+}
+
+/**
+ * Read the extraction outcome off the extract response.
+ *
+ * The daemon returns `extraction` as a sibling of `draft` (declared in
+ * `assistant/openapi.yaml`, so the generated client carries it). This still
+ * reads it structurally because the web app can be talking to a daemon on an
+ * older release, where the field simply won't be there.
+ *
+ * When it's absent the outcome is INFERRED from the draft rather than assumed
+ * successful: a draft with no brand values in it is reported as `empty`, so
+ * the failure paths stay honest against an old daemon too.
+ */
+export function readExtraction(res: unknown): BrandExtraction {
+  const body = (res ?? {}) as {
+    draft?: BrandDraft;
+    extraction?: { status?: unknown; detail?: unknown };
+  };
+  const raw = body.extraction;
+  if (
+    raw &&
+    typeof raw.status === "string" &&
+    EXTRACTION_STATUSES.has(raw.status)
+  ) {
+    return {
+      status: raw.status as BrandExtractionStatus,
+      detail:
+        typeof raw.detail === "string" && raw.detail.trim()
+          ? raw.detail
+          : FALLBACK_DETAIL[raw.status as BrandExtractionStatus],
+    };
+  }
+  return draftHasSignal(body.draft)
+    ? { status: "extracted", detail: FALLBACK_DETAIL.extracted }
+    : { status: "empty", detail: FALLBACK_DETAIL.empty };
+}
+
+const FALLBACK_DETAIL: Record<BrandExtractionStatus, string> = {
+  extracted: "Read the brand signal from your source.",
+  empty: "Nothing brand-like was found — no colours, type, logo or voice.",
+  unreachable: "That source couldn't be loaded.",
+  blocked: "That address couldn't be resolved or fetched.",
+  unreadable: "That file couldn't be read.",
+  disabled: "Brand extraction is turned off on this instance.",
+};
+
 /** Extract a DRAFT profile from a website URL (not persisted). */
 export function useExtractBrandProfile() {
   return useMutation({
@@ -148,7 +234,9 @@ export function useExtractBrandProfile() {
  */
 export function useExtractFromUpload(assistantId: string) {
   return useMutation({
-    mutationFn: async (file: File): Promise<BrandDraft> => {
+    mutationFn: async (
+      file: File,
+    ): Promise<{ draft: BrandDraft; extraction: BrandExtraction }> => {
       const uploaded = await attachmentsPost({
         path: { assistant_id: assistantId },
         body: {
@@ -163,30 +251,35 @@ export function useExtractFromUpload(assistantId: string) {
         body: { source: "upload", ref: uploaded.data.id },
         throwOnError: true,
       });
-      return extracted.data.draft;
+      return {
+        draft: extracted.data.draft,
+        extraction: readExtraction(extracted.data),
+      };
     },
   });
 }
 
 // ---------------------------------------------------------------------------
-// Draft → editable input coercion. The draft/profile sub-objects are optional
-// per field; the review screen wants concrete defaults to render swatches and
-// specimens without holes.
+// Draft → editable input coercion.
 // ---------------------------------------------------------------------------
 
-const DEFAULT_PALETTE: Required<Pick<BrandPalette, never>> & BrandPalette = {
-  primary: "#5B7CFA",
-  accent: "#1F9E8F",
-  bg: "#0E1116",
-  surface: "#F4F1EA",
-  text: "#12161C",
-};
-
+/**
+ * Coerce a draft/profile into the editable review shape.
+ *
+ * A missing colour stays MISSING. This used to spread a hardcoded
+ * `DEFAULT_PALETTE` (a blue/teal/ink five-slot set) underneath the extracted
+ * one, so any extraction that returned nothing — an unreachable site, a
+ * blocked host, no LLM configured — arrived at the review screen wearing a
+ * complete, plausible, and *identical* palette. Two different domains produced
+ * the same brand kit, and "Save & apply everywhere" then wrote that invention
+ * to every Create output. Rendering an absent value is the surfaces' problem
+ * to solve honestly; inventing one here is not a solution.
+ */
 export function toBrandInput(
   source: Partial<BrandProfile> | BrandDraft | null,
   fallbackName = "Untitled brand",
 ): BrandProfileInput {
-  const palette = { ...DEFAULT_PALETTE, ...(source?.palette ?? {}) };
+  const palette: BrandPalette = { ...(source?.palette ?? {}) };
   return {
     name: source?.name?.trim() || fallbackName,
     palette,

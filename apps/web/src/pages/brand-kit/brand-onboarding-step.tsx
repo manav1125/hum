@@ -55,7 +55,14 @@ export function BrandOnboardingStep({
 
   if (isLoading && !studio) {
     return (
-      <div style={{ maxWidth: 920, margin: "0 auto", padding: 40, textAlign: "center" }}>
+      <div
+        style={{
+          maxWidth: 920,
+          margin: "0 auto",
+          padding: 40,
+          textAlign: "center",
+        }}
+      >
         <span style={microLabel}>Loading your brand…</span>
       </div>
     );
@@ -104,7 +111,9 @@ function BrandBoard({
   const isMobile = useIsMobile();
 
   // The board edits a working copy; every field is bound to the real profile.
-  const [draft, setDraft] = useState<BrandProfileInput>(() => toBrandInput(profile));
+  const [draft, setDraft] = useState<BrandProfileInput>(() =>
+    toBrandInput(profile),
+  );
   useEffect(() => setDraft(toBrandInput(profile)), [profile]);
 
   // Save & apply — PATCH the existing kit and make sure it's the active one.
@@ -144,7 +153,13 @@ function BrandBoard({
     );
   };
 
-  // Derived, data-driven brand tokens for the preview + swatches.
+  // Derived brand tokens for the preview + swatches.
+  //
+  // The hero and the tiles must paint *something*, so an unset slot falls back
+  // to a neutral stand-in — but the fallback is never presented as the brand's
+  // own value: `PaletteCard` and `TypeCard` are told which slots are real and
+  // label the rest "none". Silently substituting here is how two different
+  // companies ended up looking at the same board.
   const primary = draft.palette.primary || C.blue;
   const accent = draft.palette.accent || primary;
   const brandBg = draft.palette.bg || "#FBF9F4";
@@ -154,6 +169,14 @@ function BrandBoard({
   const initial = (brandName.trim()[0] ?? "B").toUpperCase();
   const headingFont = draft.fonts.heading || serif;
   const bodyFont = draft.fonts.body || "'DM Sans', system-ui, sans-serif";
+
+  /** Did anything real land in this kit? Drives the honest/celebratory copy. */
+  const hasAnyBrandValue =
+    Object.values(draft.palette).some(
+      (v) => typeof v === "string" && v.trim().length > 0,
+    ) ||
+    !!(draft.fonts.heading || draft.fonts.body) ||
+    !!(draft.logo.light || draft.logo.dark || draft.logo.mark);
 
   return (
     <div style={{ width: "100%", maxWidth: 920, margin: "0 auto" }}>
@@ -176,7 +199,9 @@ function BrandBoard({
             }}
           >
             Everything Cue makes,{" "}
-            <span style={{ fontStyle: "italic", color: C.blue }}>in your brand</span>
+            <span style={{ fontStyle: "italic", color: C.blue }}>
+              in your brand
+            </span>
           </h1>
           <p
             style={{
@@ -188,7 +213,10 @@ function BrandBoard({
             }}
           >
             Decks, docs, emails, posts — all styled the way your company already
-            looks. We pulled this from your brand; tune anything below.
+            looks.{" "}
+            {hasAnyBrandValue
+              ? "We pulled this from your brand; tune anything below."
+              : "Nothing was pulled in yet — the styling below is stand-in, so fill in what's yours."}
           </p>
         </div>
 
@@ -201,7 +229,9 @@ function BrandBoard({
             headingFont={headingFont}
             primary={primary}
             accent={accent}
-            brandBg={brandSurface /* the deck's surface = the "paper" it sits on */}
+            brandBg={
+              brandSurface /* the deck's surface = the "paper" it sits on */
+            }
             brandText={brandText}
           />
         </div>
@@ -221,12 +251,13 @@ function BrandBoard({
               bg={brandBg}
               surface={brandSurface}
               text={brandText}
+              set={draft.palette}
             />
             <TypeCard
               headingFont={headingFont}
               bodyFont={bodyFont}
-              headingName={draft.fonts.heading || "Instrument Serif"}
-              bodyName={draft.fonts.body || "DM Sans"}
+              headingName={draft.fonts.heading}
+              bodyName={draft.fonts.body}
             />
             <LogosCard
               brandName={brandName}
@@ -307,12 +338,24 @@ function PreviewHero({
   const [side, setSide] = useState<"before" | "after">("after");
 
   const before = (
-    <div style={{ ...heroCell, borderRight: isMobile ? "none" : `1px solid ${C.line}` }}>
+    <div
+      style={{
+        ...heroCell,
+        borderRight: isMobile ? "none" : `1px solid ${C.line}`,
+      }}
+    >
       <span style={{ ...heroTag, color: C.t3 }}>GENERIC</span>
       <div style={genericDeck}>
         <div style={genericMark}>◇</div>
         <div>
-          <div style={{ fontSize: 19, fontWeight: 700, color: "#333", letterSpacing: "-0.3px" }}>
+          <div
+            style={{
+              fontSize: 19,
+              fontWeight: 700,
+              color: "#333",
+              letterSpacing: "-0.3px",
+            }}
+          >
             Q3 Growth Review
           </div>
           <div style={{ fontSize: 11, color: "#888", marginTop: 5 }}>
@@ -320,8 +363,22 @@ function PreviewHero({
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <span style={{ width: 40, height: 5, borderRadius: 3, background: "#DADFE6" }} />
-          <span style={{ width: 24, height: 5, borderRadius: 3, background: "#E7ECF3" }} />
+          <span
+            style={{
+              width: 40,
+              height: 5,
+              borderRadius: 3,
+              background: "#DADFE6",
+            }}
+          />
+          <span
+            style={{
+              width: 24,
+              height: 5,
+              borderRadius: 3,
+              background: "#E7ECF3",
+            }}
+          />
         </div>
       </div>
     </div>
@@ -334,7 +391,15 @@ function PreviewHero({
         background: `linear-gradient(180deg, ${C.surface}, color-mix(in srgb, ${primary} 8%, ${C.surface}))`,
       }}
     >
-      <span style={{ ...heroTag, color: C.blueText, display: "flex", alignItems: "center", gap: 5 }}>
+      <span
+        style={{
+          ...heroTag,
+          color: C.blueText,
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+        }}
+      >
         <span
           style={{
             width: 5,
@@ -383,13 +448,34 @@ function PreviewHero({
           >
             Q3 Growth Review
           </div>
-          <div style={{ fontSize: 11, color: brandText, opacity: 0.6, marginTop: 5 }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: brandText,
+              opacity: 0.6,
+              marginTop: 5,
+            }}
+          >
             Prepared for the leadership team
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ width: 40, height: 5, borderRadius: 3, background: primary }} />
-          <span style={{ width: 24, height: 5, borderRadius: 3, background: accent }} />
+          <span
+            style={{
+              width: 40,
+              height: 5,
+              borderRadius: 3,
+              background: primary,
+            }}
+          />
+          <span
+            style={{
+              width: 24,
+              height: 5,
+              borderRadius: 3,
+              background: accent,
+            }}
+          />
         </div>
       </div>
     </div>
@@ -398,7 +484,9 @@ function PreviewHero({
   return (
     <div style={heroFrame}>
       <div style={heroBar}>
-        <span style={{ ...microLabel, fontSize: 10 }}>LIVE PREVIEW · SAME DECK, YOUR BRAND</span>
+        <span style={{ ...microLabel, fontSize: 10 }}>
+          LIVE PREVIEW · SAME DECK, YOUR BRAND
+        </span>
         <div style={toggleWrap}>
           <button
             type="button"
@@ -417,9 +505,15 @@ function PreviewHero({
         </div>
       </div>
       {isMobile ? (
-        side === "before" ? before : after
+        side === "before" ? (
+          before
+        ) : (
+          after
+        )
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}
+        >
           {before}
           {after}
         </div>
@@ -438,19 +532,31 @@ function PaletteCard({
   bg,
   surface,
   text,
+  set,
 }: {
   primary: string;
   accent: string;
   bg: string;
   surface: string;
   text: string;
+  /** The profile's raw palette — the authority on which slots are real. */
+  set: BrandProfileInput["palette"];
 }) {
-  const slots: Array<{ label: string; color: string; bordered?: boolean }> = [
-    { label: "Primary", color: primary },
-    { label: "Accent", color: accent },
-    { label: "Bg", color: bg, bordered: true },
-    { label: "Surface", color: surface, bordered: true },
-    { label: "Text", color: text },
+  const has = (k: "primary" | "accent" | "bg" | "surface" | "text") => {
+    const v = set[k];
+    return typeof v === "string" && v.trim().length > 0;
+  };
+  const slots: Array<{
+    label: string;
+    color: string;
+    real: boolean;
+    bordered?: boolean;
+  }> = [
+    { label: "Primary", color: primary, real: has("primary") },
+    { label: "Accent", color: accent, real: has("accent") },
+    { label: "Bg", color: bg, real: has("bg"), bordered: true },
+    { label: "Surface", color: surface, real: has("surface"), bordered: true },
+    { label: "Text", color: text, real: has("text") },
   ];
   return (
     <div style={card}>
@@ -458,19 +564,35 @@ function PaletteCard({
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         {slots.map((s) => (
           <div key={s.label} style={{ textAlign: "center" }}>
+            {/* An unset slot is a dashed empty well with a "–" glyph, never a
+                filled tile — otherwise a stand-in reads as a brand colour. */}
             <div
               style={{
                 width: 44,
                 height: 44,
                 borderRadius: 11,
-                background: s.color,
-                border: s.bordered ? `1px solid ${C.line}` : "none",
-                boxShadow: s.bordered
-                  ? "none"
-                  : `0 6px 14px -8px color-mix(in srgb, ${s.color} 70%, transparent)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: C.t2,
+                fontSize: 16,
+                background: s.real ? s.color : "transparent",
+                border: s.real
+                  ? s.bordered
+                    ? `1px solid ${C.line}`
+                    : "none"
+                  : `1.5px dashed ${C.line2}`,
+                boxShadow:
+                  s.real && !s.bordered
+                    ? `0 6px 14px -8px color-mix(in srgb, ${s.color} 70%, transparent)`
+                    : "none",
               }}
-            />
-            <div style={{ ...swatchLabel }}>{s.label}</div>
+            >
+              {s.real ? null : <span aria-hidden>–</span>}
+            </div>
+            <div style={{ ...swatchLabel, color: s.real ? C.t3 : C.t2 }}>
+              {s.real ? s.label : `${s.label} · none`}
+            </div>
           </div>
         ))}
       </div>
@@ -482,6 +604,11 @@ function PaletteCard({
 // Type
 // ---------------------------------------------------------------------------
 
+/**
+ * The type specimens. `headingName`/`bodyName` are the profile's OWN values and
+ * may be absent — an unset face is reported as "none", not backfilled with the
+ * name of the stand-in typeface the specimen happens to be rendered in.
+ */
 function TypeCard({
   headingFont,
   bodyFont,
@@ -490,25 +617,34 @@ function TypeCard({
 }: {
   headingFont: string;
   bodyFont: string;
-  headingName: string;
-  bodyName: string;
+  headingName?: string;
+  bodyName?: string;
 }) {
+  const nameStyle = (v?: string): CSSProperties =>
+    v ? fontName : { ...fontName, color: C.t2 };
   return (
     <div style={card}>
       <div style={{ ...microLabel, marginBottom: 12 }}>TYPE</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={typeRow}>
-          <span style={{ fontFamily: headingFont, fontSize: 22, fontWeight: 600, color: C.t1 }}>
+          <span
+            style={{
+              fontFamily: headingFont,
+              fontSize: 22,
+              fontWeight: 600,
+              color: C.t1,
+            }}
+          >
             Heading
           </span>
-          <span style={fontName}>{headingName}</span>
+          <span style={nameStyle(headingName)}>{headingName || "– none"}</span>
         </div>
         <div style={{ height: 1, background: C.line }} />
         <div style={typeRow}>
           <span style={{ fontFamily: bodyFont, fontSize: 15, color: C.t1 }}>
             Body copy sets the tone.
           </span>
-          <span style={fontName}>{bodyName}</span>
+          <span style={nameStyle(bodyName)}>{bodyName || "– none"}</span>
         </div>
       </div>
     </div>
@@ -539,13 +675,22 @@ function LogosCard({
 }) {
   return (
     <div style={{ ...card, gridColumn: "1 / -1" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 12,
+        }}
+      >
         <div style={microLabel}>LOGOS</div>
         <button type="button" onClick={onReplace} style={replaceBtn}>
           Replace
         </button>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}
+      >
         <LogoTile caption="ON LIGHT" panelBg="#ffffff">
           <LogoLockup
             src={logo.light}
@@ -610,7 +755,13 @@ function LogoTile({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 12,
+        overflow: "hidden",
+      }}
+    >
       <div
         style={{
           height: 74,
@@ -666,7 +817,14 @@ function LogoLockup({
     );
   }
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, maxWidth: "100%" }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        maxWidth: "100%",
+      }}
+    >
       <span
         style={{
           width: 24,
@@ -714,15 +872,25 @@ function VoiceCard({ voice }: { voice: BrandProfileInput["voice"] }) {
     .filter(Boolean);
   const doList = voice.doList ?? [];
   const dontList = voice.dontList ?? [];
-  const hasVoice = toneChips.length > 0 || doList.length > 0 || dontList.length > 0;
+  const hasVoice =
+    toneChips.length > 0 || doList.length > 0 || dontList.length > 0;
   if (!hasVoice) return null;
   return (
     <div style={{ ...card, gridColumn: "1 / -1" }}>
       <div style={{ ...microLabel, marginBottom: 12 }}>VOICE</div>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+        }}
+      >
         {toneChips.length ? (
           <div style={{ flex: 1, minWidth: 180 }}>
-            <div style={{ fontSize: 12.5, color: C.t2, marginBottom: 7 }}>Tone</div>
+            <div style={{ fontSize: 12.5, color: C.t2, marginBottom: 7 }}>
+              Tone
+            </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {toneChips.map((t) => (
                 <span key={t} style={toneChip}>

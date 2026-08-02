@@ -59,6 +59,24 @@ const voiceSchema = z.object({
 
 const sourceSchema = z.enum(["upload", "website", "guided"]);
 
+/**
+ * The outcome of an extraction attempt, returned alongside (never inside) the
+ * draft. The draft alone cannot express failure — an unreachable site and a
+ * site with no brand signal both yield empty fields — so clients branch on
+ * `status` and must not present a non-`extracted` draft as a brand profile.
+ */
+const extractionSchema = z.object({
+  status: z.enum([
+    "extracted",
+    "empty",
+    "unreachable",
+    "blocked",
+    "unreadable",
+    "disabled",
+  ]),
+  detail: z.string().describe("A short sentence safe to show the user."),
+});
+
 const brandProfileSchema = z.object({
   id: z.string(),
   assistantId: z.string(),
@@ -172,7 +190,7 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "Extract a draft brand profile",
     description:
-      "Turn an upload (attachment id) or website (url) into a DRAFT brand profile via a flash-LLM pass — palette, fonts, logo, voice. The draft is NOT persisted; POST it back to create once reviewed. Honest limits: binary PDF/PPTX text isn't parsed, and website extraction is static-HTML-only (no headless browser).",
+      "Turn an upload (attachment id) or website (url) into a DRAFT brand profile — palette, fonts, logo, voice — read from the source (computed CSS / document theme) with a flash-LLM pass filling gaps. The draft is NOT persisted; POST it back to create once reviewed. ALWAYS check `extraction.status`: only `extracted` means values were observed. `empty`/`unreachable`/`blocked`/`unreadable`/`disabled` all return a draft with no brand values, and must be shown as a failure — never rendered as a profile. Honest limits: colours living purely in PDF vector art or images aren't decoded, and legacy binary .ppt isn't parsed.",
     tags: ["brand"],
     requestBody: z.object({
       source: z.enum(["upload", "website"]),
@@ -181,16 +199,23 @@ export const ROUTES: RouteDefinition[] = [
         .min(1)
         .describe("Attachment id (upload) or page URL (website)"),
     }),
-    responseBody: z.object({ draft: brandProfileSchema.partial() }),
+    responseBody: z.object({
+      draft: brandProfileSchema.partial(),
+      extraction: extractionSchema,
+    }),
     handler: async ({ body }) => {
       const b = (body ?? {}) as { source?: string; ref?: string };
       const ref = typeof b.ref === "string" ? b.ref.trim() : "";
       if (!ref) throw new BadRequestError("ref is required");
       if (b.source === "upload") {
-        return { draft: await extractFromDocument(ref) };
+        // `extraction` describes this run, not the kit — split it off the
+        // draft so what the client POSTs back to create stays the store shape.
+        const { extraction, ...draft } = await extractFromDocument(ref);
+        return { draft, extraction };
       }
       if (b.source === "website") {
-        return { draft: await extractFromWebsite(ref) };
+        const { extraction, ...draft } = await extractFromWebsite(ref);
+        return { draft, extraction };
       }
       throw new BadRequestError('source must be "upload" or "website"');
     },

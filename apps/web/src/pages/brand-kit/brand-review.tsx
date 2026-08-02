@@ -68,9 +68,7 @@ export function BrandReview({
   const [saved, setSaved] = useState(false);
 
   const saving = create.isPending || update.isPending || activate.isPending;
-  const sourceLabel = draft.source
-    ? `From ${draft.source}`
-    : "Brand profile";
+  const sourceLabel = draft.source ? `From ${draft.source}` : "Brand profile";
 
   const save = () => {
     if (saving) return;
@@ -137,9 +135,7 @@ export function BrandReview({
         }}
       >
         <div>
-          <MicroLabel color={C.blue}>
-            Brand profile · {sourceLabel}
-          </MicroLabel>
+          <MicroLabel color={C.blue}>Brand profile · {sourceLabel}</MicroLabel>
           <input
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -160,7 +156,9 @@ export function BrandReview({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {onAddAnother ? (
-            <GhostButton onClick={onAddAnother}>+ Add another brand</GhostButton>
+            <GhostButton onClick={onAddAnother}>
+              + Add another brand
+            </GhostButton>
           ) : null}
           <PrimaryButton onClick={save} disabled={saving}>
             {saving ? "Saving…" : saved ? "Saved ✓" : "Save & apply everywhere"}
@@ -267,15 +265,19 @@ function TypeCard({
       />
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
         <div style={{ minWidth: 130 }}>
+          {/* An undetected font used to render as the literal word "Tiempos"
+              (and "Söhne" below) in the specimen slot — a real typeface name,
+              indistinguishable from a detected one, identical for every brand.
+              An absent value now reads as absent. */}
           <div
             style={{
               fontFamily: draft.fonts.heading || serif,
-              fontSize: 30,
-              color: C.t1,
-              lineHeight: 1,
+              fontSize: draft.fonts.heading ? 30 : 20,
+              color: draft.fonts.heading ? C.t1 : C.t2,
+              lineHeight: 1.2,
             }}
           >
-            {draft.fonts.heading || "Tiempos"}
+            {draft.fonts.heading || "— not detected"}
           </div>
           <MicroLabel style={{ display: "block", marginTop: 6 }}>
             Heading · serif
@@ -298,13 +300,13 @@ function TypeCard({
           <div
             style={{
               fontFamily: draft.fonts.body || "inherit",
-              fontSize: 24,
-              fontWeight: 600,
-              color: C.t1,
-              lineHeight: 1,
+              fontSize: draft.fonts.body ? 24 : 20,
+              fontWeight: draft.fonts.body ? 600 : 400,
+              color: draft.fonts.body ? C.t1 : C.t2,
+              lineHeight: 1.2,
             }}
           >
-            {draft.fonts.body || "Söhne"}
+            {draft.fonts.body || "— not detected"}
           </div>
           <MicroLabel style={{ display: "block", marginTop: 6 }}>
             Body · sans
@@ -434,7 +436,14 @@ function LogoCard({
       </div>
 
       {editing ? (
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div
+          style={{
+            marginTop: 14,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
           {(["light", "dark", "mark"] as const).map((slot) => (
             <div
               key={slot}
@@ -573,7 +582,10 @@ function VoiceCard({
   const doList = draft.voice.doList ?? [];
   const dontList = draft.voice.dontList ?? [];
   const splitList = (v: string) =>
-    v.split(",").map((s) => s.trim()).filter(Boolean);
+    v
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   return (
     <Panel>
       <SectionHead
@@ -678,23 +690,44 @@ function VoiceCard({
 // ---------------------------------------------------------------------------
 
 function PreviewCard({ draft }: { draft: BrandProfileInput }) {
-  const caption = useMemo(
+  // The slide has to paint *something*, so it falls back to neutral stand-in
+  // colours. Say which it is: claiming "now in your colors" over a kit with no
+  // colours in it is the same fabrication the extractor used to commit.
+  const hasBrandValues = useMemo(
     () =>
-      `The Startup template, now in ${draft.name}'s colors, fonts, logo and tone — not the demo.`,
-    [draft.name],
+      Object.values(draft.palette).some(
+        (v) => typeof v === "string" && v.trim(),
+      ) || !!(draft.fonts.heading || draft.fonts.body),
+    [draft.palette, draft.fonts],
   );
+  const caption = hasBrandValues
+    ? `The Startup template, now in ${draft.name}'s colors, fonts, logo and tone — not the demo.`
+    : "Stand-in colors and type — this kit has none set yet, so the preview isn't your brand.";
   return (
     <Panel>
       <SectionHead
         label="Live preview"
-        badge={<Tag tone="green">Same deck · in your brand</Tag>}
+        badge={
+          hasBrandValues ? (
+            <Tag tone="green">Same deck · in your brand</Tag>
+          ) : (
+            <Tag tone="neutral">Same deck · stand-in styling</Tag>
+          )
+        }
       />
       <BrandPreviewSlide
         palette={draft.palette}
         fonts={draft.fonts}
         name={draft.name}
       />
-      <p style={{ fontSize: 11.5, color: C.t3, margin: "12px 0 0", lineHeight: 1.5 }}>
+      <p
+        style={{
+          fontSize: 11.5,
+          color: C.t2,
+          margin: "12px 0 0",
+          lineHeight: 1.5,
+        }}
+      >
         {caption}
       </p>
     </Panel>

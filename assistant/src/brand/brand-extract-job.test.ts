@@ -454,3 +454,180 @@ describe("extractFromWebsite", () => {
     }));
   });
 });
+
+// ---------------------------------------------------------------------------
+// The extraction outcome — the signal that stops a failure being dressed up as
+// a brand profile. Every return has to carry one, and only a run that actually
+// observed values may report `extracted`.
+// ---------------------------------------------------------------------------
+
+/** A headless scrape result standing in for a real site. */
+function scrapeFor(opts: {
+  name: string;
+  headingColor: string;
+  accentColor: string;
+  headingFont: string;
+  bodyFont: string;
+  logo: string;
+}) {
+  return {
+    title: opts.name,
+    siteName: opts.name,
+    metaDesc: `${opts.name} builds things.`,
+    bodyBg: "rgb(255, 255, 255)",
+    bodyColor: "rgb(20, 20, 20)",
+    bodyFont: `${opts.bodyFont}, sans-serif`,
+    heading: {
+      color: opts.headingColor,
+      background: "rgba(0,0,0,0)",
+      fontFamily: `${opts.headingFont}, serif`,
+    },
+    accents: [
+      {
+        color: opts.accentColor,
+        background: "rgba(0,0,0,0)",
+        fontFamily: opts.headingFont,
+      },
+    ],
+    favicon: null,
+    ogImage: opts.logo,
+    html: `<html><body>${opts.name}</body></html>`,
+  };
+}
+
+describe("extraction outcome", () => {
+  test("two different domains produce two different brand drafts", async () => {
+    mockBrowserAvailable = true;
+    mockSidechainText = "{}";
+
+    mockScrapeResult = scrapeFor({
+      name: "Example One",
+      headingColor: "rgb(11, 22, 33)",
+      accentColor: "rgb(200, 30, 40)",
+      headingFont: "Georgia",
+      bodyFont: "Verdana",
+      logo: "https://example.com/one.png",
+    });
+    const first = await extractFromWebsite("https://example.com");
+
+    mockScrapeResult = scrapeFor({
+      name: "Example Two",
+      headingColor: "rgb(240, 180, 20)",
+      accentColor: "rgb(15, 120, 90)",
+      headingFont: "Palatino",
+      bodyFont: "Tahoma",
+      logo: "https://example.net/two.png",
+    });
+    const second = await extractFromWebsite("https://example.net");
+
+    // Both succeeded...
+    expect(first.extraction.status).toBe("extracted");
+    expect(second.extraction.status).toBe("extracted");
+    // ...and they are genuinely different kits, not one shared template.
+    expect(first.palette).not.toEqual(second.palette);
+    expect(first.fonts).not.toEqual(second.fonts);
+    expect(first.logo?.mark).not.toBe(second.logo?.mark);
+    expect(Object.values(first.palette ?? {})).toContain("#0b1621");
+    expect(Object.values(second.palette ?? {})).toContain("#f0b414");
+    expect(first.fonts?.heading).toBe("Georgia");
+    expect(second.fonts?.heading).toBe("Palatino");
+  });
+
+  test("a reachable page with real signal reports `extracted`", async () => {
+    mockBrowserAvailable = false;
+    mockWebFetchContent =
+      "<html><body style='color:#abcdef'>brand</body></html>";
+    mockSidechainText = JSON.stringify({ fonts: { heading: "Georgia" } });
+    const draft = await extractFromWebsite("https://example.com");
+    expect(draft.extraction.status).toBe("extracted");
+  });
+
+  test("a page we cannot load reports `unreachable`, never a profile", async () => {
+    mockBrowserAvailable = false;
+    mockWebFetchIsError = true;
+    const draft = await extractFromWebsite("https://example.com");
+    expect(draft.extraction.status).toBe("unreachable");
+    expect(draft.extraction.detail.length).toBeGreaterThan(0);
+    // MUTATION GUARD: the whole defect was a failure arriving as a full kit.
+    // If any of these ever come back populated, the surface will render an
+    // invented brand and the user will "Save & apply everywhere" on it.
+    expect(draft.palette).toEqual({});
+    expect(draft.fonts).toEqual({});
+    expect(draft.logo).toEqual({});
+    expect(draft.voice).toEqual({});
+    expect(sidechainCalls).toBe(0);
+  });
+
+  test("a blocked/unresolvable target reports `blocked`, never a profile", async () => {
+    mock.module("../tools/network/url-safety.js", () => ({
+      parseUrl: (u: unknown) => {
+        try {
+          return new URL(String(u));
+        } catch {
+          return null;
+        }
+      },
+      isPrivateOrLocalHost: () => true,
+      resolveHostAddresses: async () => [],
+      resolveRequestAddress: async () => ({
+        addresses: [],
+        blockedAddress: "127.0.0.1",
+      }),
+    }));
+    const draft = await extractFromWebsite("https://example.com");
+    expect(draft.extraction.status).toBe("blocked");
+    expect(draft.palette).toEqual({});
+    expect(draft.fonts).toEqual({});
+    expect(sidechainCalls).toBe(0);
+
+    mock.module("../tools/network/url-safety.js", () => ({
+      parseUrl: (u: unknown) => {
+        try {
+          return new URL(String(u));
+        } catch {
+          return null;
+        }
+      },
+      isPrivateOrLocalHost: () => false,
+      resolveHostAddresses: async () => ["93.184.216.34"],
+      resolveRequestAddress: async () => ({ addresses: ["93.184.216.34"] }),
+    }));
+  });
+
+  test("a page we read but that carries no brand signal reports `empty`", async () => {
+    mockBrowserAvailable = false;
+    // Raw HTML with no hex colours, and an LLM that honestly finds nothing.
+    mockWebFetchContent = "<html><body>words only</body></html>";
+    mockSidechainText = "{}";
+    const draft = await extractFromWebsite("https://example.com");
+    expect(sidechainCalls).toBe(1);
+    expect(draft.extraction.status).toBe("empty");
+    expect(draft.palette).toEqual({});
+    // The label is still the URL — a name is NOT evidence of extraction, which
+    // is exactly why `hasExtractedSignal` ignores it.
+    expect(draft.name).toBe("https://example.com");
+  });
+
+  test("the kill-switch reports `disabled`, not a silent empty success", async () => {
+    process.env.CUE_DISABLE_BRAND_EXTRACT = "1";
+    const draft = await extractFromWebsite("https://example.com");
+    expect(draft.extraction.status).toBe("disabled");
+    expect(sidechainCalls).toBe(0);
+  });
+
+  test("an unreadable upload reports `unreadable`", async () => {
+    mockAttachmentText = null;
+    const draft = await extractFromDocument("missing");
+    expect(draft.extraction.status).toBe("unreadable");
+    expect(draft.palette).toEqual({});
+  });
+
+  test("a readable upload with theme colours reports `extracted`", async () => {
+    mockAttachmentText = "Example brand deck. Primary #ff0000.";
+    mockAttachmentMime = "text/markdown";
+    mockSidechainText = "{}";
+    const draft = await extractFromDocument("attach-1");
+    expect(draft.extraction.status).toBe("extracted");
+    expect(Object.values(draft.palette ?? {})).toContain("#ff0000");
+  });
+});
