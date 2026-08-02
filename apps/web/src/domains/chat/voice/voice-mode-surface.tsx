@@ -1729,7 +1729,7 @@ function Mv3VoiceMobile({
                   width: 220,
                 }}
               >
-                <span style={{ ...microLabel, color: "#5B5B68" }}>Voice</span>
+                <span style={{ ...microLabel, color: "#9A9AA8" }}>Voice</span>
                 <Dropdown
                   value={provider}
                   onChange={onProviderChange}

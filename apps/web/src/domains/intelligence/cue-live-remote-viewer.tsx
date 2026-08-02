@@ -48,7 +48,11 @@ const V3 = {
   hairline: "rgba(255,255,255,.10)",
   t1: "#F4F4F6",
   t2: "#9A9AA8",
-  t3: "#5B5B68",
+  // Muted text on a dark ground is #9A9AA8 and nothing dimmer. #5B5B68 sits at
+  // ~2.5:1 here, which is unreadable, and it has now regressed into three
+  // separate design packs — so t3 is deliberately the same value as t2 rather
+  // than a dimmer one that would invite the mistake back.
+  t3: "#9A9AA8",
   green: "#6FD69A",
   blue: "#3D6EE8",
   blueSoft: "#7FA3F2",
