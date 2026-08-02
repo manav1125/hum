@@ -149,6 +149,20 @@ export function DeliveredBlock({
 // ---------------------------------------------------------------------------
 
 export interface CensusSegment {
+  /**
+   * Show this segment even at zero.
+   *
+   * Set it when the segment is what ANSWERS a lane that has gone silent. Under
+   * the lanes-vs-events rule, in-motion no longer takes a Tier-3 line because
+   * "9 doing" in the census already answers "is anything running?" — but if the
+   * census then drops the segment at zero, the question goes unanswered on the
+   * entire screen and a busy account and an idle one look identical.
+   *
+   * A zero is normally a claim we will not make (see the file header). This is
+   * the exception, and it is narrow: only a segment that has taken over another
+   * lane's job has to keep speaking when the answer is none.
+   */
+  keep?: boolean;
   label: string;
   value: number;
 }
@@ -162,7 +176,7 @@ export interface CensusSegment {
  * zero.
  */
 export function CensusBar({ segments }: { segments: CensusSegment[] }) {
-  const shown = segments.filter((s) => s.value > 0);
+  const shown = segments.filter((s) => s.value > 0 || s.keep);
   if (shown.length === 0) return null;
   return (
     <div

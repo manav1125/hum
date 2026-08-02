@@ -1521,7 +1521,10 @@ function HqDeck({
       <CensusBar
         segments={[
           { label: "need you", value: needsYou.length },
-          { label: "Cue is doing", value: running.length },
+          // `keep` because in-motion no longer takes a Tier-3 line — this
+          // segment is what answers "is anything running?". Without it, an idle
+          // account and a busy one look identical on the whole screen.
+          { label: "Cue is doing", value: running.length, keep: true },
           { label: "waiting", value: cameIn.length },
           { label: "done today", value: done.length },
         ]}
