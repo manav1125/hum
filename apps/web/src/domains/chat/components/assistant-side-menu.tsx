@@ -24,7 +24,6 @@ import { useLocation, useNavigate } from "react-router";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 
 import { CollapsibleNavSection } from "@/components/collapsible-nav-section";
-import { CueChannelPresence } from "@/components/cue-channel-presence";
 import {
   CollapsedGroupIcon,
   getGroupIndicatorState,
@@ -981,7 +980,12 @@ export function AssistantSideMenu({
                     trailingIcon={Lock}
                     title={destination.unavailableReason}
                     tooltip={destination.unavailableReason}
-                    className="cursor-default opacity-60 hover:bg-transparent"
+                    // Full width, not half. In a two-column grid the label
+                    // plus the lock truncated to "Wat…", which is not a word
+                    // and reads as a rendering bug rather than a state. It
+                    // also earns the row: the one destination that is not
+                    // available should not look like the five that are.
+                    className="col-span-2 cursor-default opacity-60 hover:bg-transparent"
                   />
                 );
               }
@@ -1018,7 +1022,11 @@ export function AssistantSideMenu({
         {/* Channel presence — live readiness dots (one memory across
             channels). Not a destination; it belongs with the CUE group
             because it answers the same question Watching will. */}
-        <CueChannelPresence />
+        {/* Channels are INPUTS, not destinations (v15) — they belong in
+            Watching, which states what arrived and what Cue did with it.
+            Until that surface exists they stay reachable from the Intelligence
+            tab strip; a rail heading whose rows had already been pushed below
+            the fold was worse than either. */}
         {pinnedApps.map((app) => (
           <SideMenu.Item
             key={app.appId}
