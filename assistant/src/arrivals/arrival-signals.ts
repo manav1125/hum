@@ -23,6 +23,15 @@ export interface ArrivalPayload {
   autoSubmitted?: string;
   inReplyTo?: string;
   references?: string;
+  /**
+   * The provider's conversation id (Gmail's `threadId`). Present on mail
+   * providers that expose one; absent everywhere else, which is a real state
+   * and not "no thread" — an arrival with no thread id is simply not eligible
+   * for thread grouping.
+   */
+  threadId?: string;
+  /** Outlook's name for the same thing. Read as a fallback for `threadId`. */
+  conversationId?: string;
   /** The owner is on the To: line (not merely Cc, not merely on a list). */
   toMe?: boolean;
   /** The owner is on the Cc: line only. */
@@ -61,6 +70,17 @@ export interface ArrivalSignals {
   isReply: boolean;
   /** See {@link ArrivalPayload.userParticipatedInThread}. */
   userParticipatedInThread: boolean | undefined;
+  /**
+   * The provider's conversation id, when it gave one. This is what makes two
+   * replies in one conversation groupable into a single work item instead of
+   * two unrelated ones; without it the only join available is fuzzy topic
+   * matching, which is where false merges hide.
+   *
+   * Optional rather than `string | null` so that every existing constructor of
+   * this shape (tests included) keeps compiling — a provider that cannot
+   * supply one simply omits it.
+   */
+  threadId?: string | null;
   /**
    * True when the payload carried enough email-shaped fields to reason about
    * at all. A watcher whose events are not messages (a calendar poller, a
@@ -160,6 +180,10 @@ export function buildArrivalSignals(args: {
       typeof payload.userParticipatedInThread === "boolean"
         ? payload.userParticipatedInThread
         : undefined,
+    // Gmail calls it `threadId`, Microsoft Graph calls it `conversationId`.
+    // Same fact, so it is normalised here rather than making every consumer
+    // learn both dialects.
+    threadId: str(payload.threadId) ?? str(payload.conversationId),
     isMessageShaped: from != null,
   };
 }

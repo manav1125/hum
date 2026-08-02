@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ArrivalComprehensionConfigSchema } from "./arrival-comprehension.js";
+
 /**
  * Watcher configuration.
  *
@@ -64,6 +66,9 @@ export const WatchersConfigSchema = z
     ),
     relevanceGate: RelevanceGateConfigSchema.default(
       RelevanceGateConfigSchema.parse({}),
+    ),
+    comprehension: ArrivalComprehensionConfigSchema.default(
+      ArrivalComprehensionConfigSchema.parse({}),
     ),
   })
   .describe("Watcher (standing poller) configuration");

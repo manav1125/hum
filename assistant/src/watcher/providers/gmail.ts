@@ -119,7 +119,13 @@ function messageToItem(msg: GmailMessage, ctx: MailboxContext): WatcherItem {
     summary: `Email from ${from}: ${subject}`,
     payload: {
       id: msg.id,
-      threadId: msg.threadId,
+      // The CONVERSATION id, not the message id — and it is load-bearing, not
+      // decoration. `externalId` above is per-message, so without this two
+      // replies in one conversation become two unrelated work items and the
+      // owner reads the same thread twice. Grouping keys off this
+      // (`arrivals/arrival-grouping.ts`); an empty value means "no thread",
+      // which simply makes the arrival ineligible for thread grouping.
+      threadId: msg.threadId ?? "",
       from,
       subject,
       date,

@@ -13,6 +13,21 @@
  *      in the owner's words, browsable and reversible, but NOT in the lane and
  *      NOT something they must look at.
  *
+ * A surfaced hit then takes one of two further paths. If it belongs to a
+ * conversation, or an automated sender, the owner already has an open item
+ * for, it is **grouped**: folded into that item as an update, with a member
+ * row recording what was combined so the merge is visible and can be split
+ * back out. Otherwise it becomes its own item — and that item is then
+ * **comprehended**: read for what it actually asks the owner to DO, so the
+ * lane says "Renew Brinc Innovation Africa's annual return" rather than
+ * "Email from CIPA <info@cipa.co.bw>: 2026 Annual Return Due…".
+ *
+ * Both of those steps fail toward the previous behaviour, never past it: a
+ * grouping failure gives the message its own row, and a comprehension failure
+ * leaves the subject line in place. Neither may wedge intake, so the
+ * comprehension call is one batched flash-tier request bounded by a deadline
+ * race, run AFTER every arrival has already been recorded and surfaced.
+ *
  * The founding invariant still holds and is now stronger: nothing a watcher
  * saw is silently dropped. Every hit gets an `arrivals` row whichever path it
  * takes, so "arrived / filed / kept" is a census rather than an estimate, and
@@ -25,9 +40,18 @@
  */
 
 import {
+  type ArrivalExtractor,
+  comprehendArrivals,
+  type ComprehensionCandidate,
+} from "../arrivals/arrival-comprehension.js";
+import {
   decideArrivals,
   type DecideArrivalsOptions,
 } from "../arrivals/arrival-gate.js";
+import {
+  attachArrivalToGroup,
+  recordGroupAnchor,
+} from "../arrivals/arrival-grouping.js";
 import { buildArrivalSignals } from "../arrivals/arrival-signals.js";
 import { recordArrival } from "../arrivals/arrival-store.js";
 import { createWorkItemForArrival } from "../arrivals/arrival-surface.js";
@@ -35,6 +59,7 @@ import {
   evaluatePlaybooksForEvent,
   type PlaybookEvent,
 } from "../playbooks/playbook-runtime.js";
+import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import { getLogger } from "../util/logger.js";
 import { triageAndMaybeAutoRunWorkItem } from "../work-items/work-item-triage.js";
 import type { Watcher, WatcherEvent } from "./watcher-store.js";
@@ -45,7 +70,24 @@ const log = getLogger("watcher-intake");
  * What happened to one event. `filed` is new: the hit was recorded but did not
  * become work. The engine stamps these onto `watcher_events.disposition`.
  */
-export type IntakeDisposition = "playbook" | "came_in" | "filed" | "error";
+export type IntakeDisposition =
+  | "playbook"
+  | "came_in"
+  | "grouped"
+  | "filed"
+  | "error";
+
+/**
+ * Everything intake accepts for tests. Production passes nothing.
+ *
+ * The gate's options ride along unchanged; `extractor` is the comprehension
+ * side's one injectable seam (a network call, not logic).
+ */
+export interface IntakeOptions extends DecideArrivalsOptions {
+  extractor?: ArrivalExtractor;
+  /** Injectable clock for the deadline-plausibility bounds. */
+  now?: number;
+}
 
 export interface IntakeResult {
   /** Events that a playbook handled. */
@@ -92,7 +134,7 @@ function toPlaybookEvent(watcher: Watcher, event: WatcherEvent): PlaybookEvent {
 export async function fileWatcherEventsToCameIn(
   watcher: Watcher,
   events: WatcherEvent[],
-  opts: DecideArrivalsOptions = {},
+  opts: IntakeOptions = {},
 ): Promise<Map<string, IntakeDisposition>> {
   const dispositions = new Map<string, IntakeDisposition>();
   const channel = watcherChannel(watcher);
@@ -161,6 +203,12 @@ export async function fileWatcherEventsToCameIn(
     decisions = new Map();
   }
 
+  // Items minted this poll, collected for the single batched comprehension
+  // call below. Grouped messages are deliberately absent: they are updates to
+  // an item that was already read, not new things to name.
+  const comprehensionCandidates: ComprehensionCandidate[] = [];
+  let grouped = 0;
+
   for (const { event, pbEvent } of ungated) {
     try {
       const decision = decisions.get(event.externalId) ?? {
@@ -202,10 +250,47 @@ export async function fileWatcherEventsToCameIn(
         continue;
       }
 
+      // Is this the same thing as something the owner already has open — the
+      // next reply in a conversation, or the fifteenth alert from one robot?
+      // Folding it in beats adding a row they have to read twice. Returns null
+      // for anything that opens a new group, or when grouping is off, so the
+      // path below is unchanged from the pre-grouping behaviour.
+      const attachment = signal
+        ? attachArrivalToGroup(arrival, signal, {
+            ...(opts.now !== undefined ? { now: opts.now } : {}),
+          })
+        : null;
+      if (attachment) {
+        grouped++;
+        log.info(
+          {
+            watcherId: watcher.id,
+            workItemId: attachment.workItem.id,
+            groupKind: attachment.groupKind,
+            count: attachment.count,
+          },
+          "arrival folded into an existing item",
+        );
+        dispositions.set(event.id, "grouped");
+        continue;
+      }
+
       const workItem = createWorkItemForArrival(arrival, {
         notes: `From ${watcher.name} · ${event.eventType}`,
       });
+      // Open a group so the NEXT message in this conversation (or from this
+      // robot) has something to find. Best-effort: no anchor simply means the
+      // item never grows a group.
+      if (signal) recordGroupAnchor(arrival, signal, workItem.id);
       await triageAndMaybeAutoRunWorkItem(workItem.id, { skipAutoRun: true });
+      comprehensionCandidates.push({
+        workItemId: workItem.id,
+        arrivalId: arrival.id,
+        title: workItem.title,
+        snippet: arrival.snippet,
+        senderName: arrival.senderName,
+        senderAddress: arrival.senderAddress,
+      });
       dispositions.set(event.id, "came_in");
     } catch (err) {
       log.warn(
@@ -214,6 +299,27 @@ export async function fileWatcherEventsToCameIn(
       );
       dispositions.set(event.id, "error");
     }
+  }
+
+  // ── Pass 3: comprehension ────────────────────────────────────────────
+  // One batched flash call for everything that became a new item this poll,
+  // AFTER every arrival is already recorded and in the lane. A failure here
+  // costs a good title, never an arrival — and it cannot wedge intake, because
+  // `comprehendArrivals` never rejects and is bounded by its own deadline.
+  let comprehended = 0;
+  if (comprehensionCandidates.length > 0) {
+    const result = await comprehendArrivals(comprehensionCandidates, {
+      ...(opts.extractor ? { extractor: opts.extractor } : {}),
+      ...(opts.now !== undefined ? { now: opts.now } : {}),
+    });
+    comprehended = result.comprehended;
+  }
+
+  if (grouped > 0 || comprehended > 0) {
+    // Titles changed and rows merged: clients hold stale copies until they
+    // refetch, and a merge the owner cannot see happen is the one thing worse
+    // than not merging.
+    broadcastMessage({ type: "tasks_changed" });
   }
 
   return dispositions;

@@ -29,7 +29,14 @@ mock.module("../../memory/lifecycle-events-store.js", () => ({
   },
 }));
 
+// `mock.module` is process-global AND replaces the module wholesale, so a
+// factory listing only the seam it overrides deletes every other export for
+// every later test file in the run — they fail at import with "Export named X
+// not found", nowhere near the file that caused it. Spread the real module and
+// override only `listWatchers`.
+const realWatcherStore = await import("../watcher-store.js");
 mock.module("../watcher-store.js", () => ({
+  ...realWatcherStore,
   listWatchers: () => fakeEnabledWatchers,
 }));
 

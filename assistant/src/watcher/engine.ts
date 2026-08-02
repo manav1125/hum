@@ -258,6 +258,16 @@ export async function runWatchersOnce(
             "ignore",
             "Filed away by the relevance gate",
           );
+        } else if (disposition === "grouped") {
+          // Not a new thing to look at: it was folded into an item the owner
+          // already has, as an update. Still 'notify' — something changed on
+          // their lane — but the reason says which, so a lane that stops
+          // growing is distinguishable from a watcher that stopped working.
+          updateEventDisposition(
+            event.id,
+            "notify",
+            "Added to an existing item",
+          );
         } else {
           updateEventDisposition(
             event.id,

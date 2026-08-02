@@ -40,7 +40,14 @@ let seq = 0;
 
 // ── Module mocks ──────────────────────────────────────────────────────
 
+// `mock.module` is process-global AND replaces the module wholesale, so a
+// factory listing only the seams it overrides deletes every other export for
+// every later test file in the run — they fail at import with "Export named X
+// not found", nowhere near the file that caused it. Spread the real module so
+// this narrows exactly the two functions it names.
+const realWatcherStore = await import("../watcher-store.js");
 mock.module("../watcher-store.js", () => ({
+  ...realWatcherStore,
   listWatchers: () => {
     if (listThrows) throw new Error("db unavailable");
     return existingWatchers;
@@ -72,7 +79,9 @@ mock.module("../watcher-store.js", () => ({
   },
 }));
 
+const realProviderRegistry = await import("../provider-registry.js");
 mock.module("../provider-registry.js", () => ({
+  ...realProviderRegistry,
   getWatcherProvider: (id: string) =>
     registeredProviders.has(id) ? { id } : undefined,
 }));

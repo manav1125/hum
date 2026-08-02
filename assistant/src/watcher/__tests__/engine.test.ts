@@ -54,7 +54,14 @@ const dispositionCalls: Array<{
   reason: string;
 }> = [];
 
+// `mock.module` is process-global AND replaces the module wholesale, so a
+// factory listing only the seams it overrides deletes every other export for
+// every later test file in the run — they fail at import with "Export named X
+// not found", nowhere near the file that caused it. Spread the real modules so
+// each factory narrows exactly the functions it names.
+const realWatcherStore = await import("../watcher-store.js");
 mock.module("../watcher-store.js", () => ({
+  ...realWatcherStore,
   claimDueWatchers: () => fakeWatchers,
   completeWatcherPoll: () => {},
   failWatcherPoll: () => {},
@@ -75,7 +82,9 @@ mock.module("../watcher-store.js", () => ({
   },
 }));
 
+const realProviderRegistry = await import("../provider-registry.js");
 mock.module("../provider-registry.js", () => ({
+  ...realProviderRegistry,
   getWatcherProvider: () => ({
     fetchNew: async () => ({ items: [], watermark: "wm" }),
     getInitialWatermark: async () => "wm",
@@ -111,7 +120,9 @@ const llmProcessedCalls: Array<{
   conversationId: string;
 }> = [];
 
+const realTelemetry = await import("../telemetry.js");
 mock.module("../telemetry.js", () => ({
+  ...realTelemetry,
   recordWatcherInventoryIfDue: (now: number) => {
     inventoryCalls.push(now);
   },
