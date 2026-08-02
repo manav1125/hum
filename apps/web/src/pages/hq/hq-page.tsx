@@ -1879,6 +1879,7 @@ function CameInReassignStrip({
     taskId: string;
   } | null>(null);
   const targets = useMemo(() => reassignTargets(projects), [projects]);
+  const [allUnreadable, setAllUnreadable] = useState(false);
 
   const recent = useMemo(
     () => [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 4),
@@ -2161,7 +2162,10 @@ function CameInReassignStrip({
         {/* The `⌗` rows. Capped like every other lane on this deck — the
             header count is what stays honest at volume; a lane of rows Cue
             cannot describe is the least useful thing that could grow. */}
-        {unreadable.items.slice(0, UNREADABLE_ROW_CAP).map((entry) => (
+        {(allUnreadable
+          ? unreadable.items
+          : unreadable.items.slice(0, UNREADABLE_ROW_CAP)
+        ).map((entry) => (
           <UnreadableCameInRow
             key={entry.workItemId}
             entry={entry}
@@ -2170,6 +2174,32 @@ function CameInReassignStrip({
             onNewMission={onNewMission}
           />
         ))}
+        {/* A count with no door is a fake affordance, and "See what arrived ›"
+            is not that door — it goes to the task list, which is precisely
+            where these items are not. The cap holds by default and opens only
+            when asked; the set behind it is bounded by the scan window. */}
+        {unreadable.count > UNREADABLE_ROW_CAP ? (
+          <button
+            type="button"
+            onClick={() => setAllUnreadable((v) => !v)}
+            aria-expanded={allUnreadable}
+            style={{
+              alignSelf: "flex-start",
+              marginLeft: 28,
+              fontSize: 11.5,
+              fontWeight: 500,
+              color: C.blueS,
+              background: "transparent",
+              border: "none",
+              padding: "2px 0",
+              cursor: "pointer",
+            }}
+          >
+            {allUnreadable
+              ? "Show fewer"
+              : `Show the other ${unreadable.count - UNREADABLE_ROW_CAP} ›`}
+          </button>
+        ) : null}
       </div>
       {/* §4·B — the correction teaches. */}
       {taught ? (

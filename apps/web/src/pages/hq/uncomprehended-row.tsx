@@ -110,14 +110,20 @@ export function UnreadableRow({
           fontSize: 12.5,
         }}
       >
+        {/* Labelled rather than `aria-hidden`: `⌗` is the state, and a reader
+            who cannot see it needs the state named before the subject, not
+            after. The ground is `surface` because the strip it sits in is
+            `sunken` — a badge the same colour as its background is a border
+            pretending to be a badge. */}
         <span
-          aria-hidden
+          role="img"
+          aria-label="Couldn't read this"
           style={{
             width: 18,
             height: 18,
             borderRadius: 5,
             border: `1px solid ${C.line2}`,
-            background: C.sunken,
+            background: C.surface,
             color: C.t1,
             display: "inline-flex",
             alignItems: "center",
@@ -130,12 +136,12 @@ export function UnreadableRow({
         >
           {UNREADABLE_GLYPH}
         </span>
-        {/* Their words, marked as borrowed. The screen-reader name says so too
-            — the quote marks are decoration to a screen reader, and without
-            this the row would read as if Cue had written the title. */}
+        {/* Their words, marked as borrowed. No `aria-label` here: an override
+            on a generic span is unreliable and would REPLACE the subject with a
+            paraphrase — the one thing this row exists not to do. The glyph
+            above names the state; this reads out verbatim. */}
         <span
           data-slot="unreadable-subject"
-          aria-label={`Couldn't read this arrival. It says: ${item.subject}`}
           style={{
             flex: 1,
             minWidth: 0,

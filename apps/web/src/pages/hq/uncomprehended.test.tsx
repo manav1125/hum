@@ -201,6 +201,21 @@ describe("the ⌗ row", () => {
     ).not.toContain("?");
   });
 
+  test("the glyph is announced, and the subject is not paraphrased over", () => {
+    // No colour-only state means nothing if the state is also invisible to a
+    // reader: `⌗` carries a name, and the subject carries no `aria-label` that
+    // would replace their words with a summary of them.
+    render(
+      createElement(UnreadableRow, { item: ROW_ITEM as never, verbs: {} }),
+    );
+    expect(screen.getByLabelText("Couldn't read this").textContent).toBe("⌗");
+    expect(
+      document
+        .querySelector('[data-slot="unreadable-subject"]')
+        ?.getAttribute("aria-label"),
+    ).toBeNull();
+  });
+
   test("shows the subject in italic quotation marks — their words, not a summary", () => {
     render(
       createElement(UnreadableRow, { item: ROW_ITEM as never, verbs: {} }),
