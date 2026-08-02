@@ -63,6 +63,15 @@ export interface CalendarEvent {
   attendees?: EventAttendee[];
   organizer?: EventOrganizer;
   transparency?: "opaque" | "transparent";
+  /**
+   * Google's classification of the entry: `default`, `outOfOffice`,
+   * `focusTime`, `workingLocation`, `birthday`, `fromGmail`. Left as a plain
+   * string because Google adds values to it without warning, and a reader that
+   * narrows on an unknown value must be able to fall through rather than throw.
+   * Absent on every event that predates the field, which is why callers treat
+   * `undefined` as `default`.
+   */
+  eventType?: string;
   htmlLink?: string;
   created?: string;
   updated?: string;

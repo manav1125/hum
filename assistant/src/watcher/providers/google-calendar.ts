@@ -6,6 +6,7 @@
  * Falls back to listing recent upcoming events if the syncToken has expired (410 Gone).
  */
 
+import { detectCalendarDecisions } from "../../calendar/calendar-decisions.js";
 import type { CalendarEvent } from "../../calendar/google-calendar-client.js";
 import {
   CalendarApiError,
@@ -18,9 +19,11 @@ import { wrapUntrustedContent } from "../../security/untrusted-content.js";
 import { getLogger } from "../../util/logger.js";
 import type {
   FetchResult,
+  WatcherDecision,
   WatcherItem,
   WatcherProvider,
 } from "../provider-types.js";
+import type { WatcherEvent } from "../watcher-store.js";
 
 const log = getLogger("watcher:google-calendar");
 
@@ -221,6 +224,70 @@ async function fullSyncToken(
   );
 }
 
+/**
+ * How far ahead the decision detector looks.
+ *
+ * Generous on purpose. A conflict is only ever noticed while one of the two
+ * events is arriving, and an event that arrives once never arrives again — so
+ * anything beyond this horizon is not "checked later", it is missed. Ninety
+ * days covers the bookings people actually collide on (travel, dinners,
+ * quarterly reviews) at a bounded cost, and the miss beyond it is a real
+ * limitation rather than a rounding error: a flight booked eight months out
+ * will not be matched against the dinner it lands on.
+ */
+const DECISION_HORIZON_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Page size and hard page cap for the horizon read. */
+const DECISION_PAGE_SIZE = 250;
+const DECISION_MAX_PAGES = 4;
+
+/**
+ * Every concrete instance on the primary calendar between now and the horizon.
+ *
+ * `singleEvents: true` is required — a conflict is between OCCURRENCES, and an
+ * unexpanded series master carries the date of its first occurrence, which for
+ * a weekly meeting running since 2020 is six years ago. The `timeMin`/`timeMax`
+ * pair suppresses `nextSyncToken`, which is exactly right here and exactly
+ * wrong in `fullSyncToken` above; see the header of the calendar client.
+ */
+async function fetchHorizon(
+  connection: OAuthConnection,
+  now: number,
+): Promise<CalendarEvent[]> {
+  const timeMin = new Date(now).toISOString();
+  const timeMax = new Date(now + DECISION_HORIZON_MS).toISOString();
+  const events: CalendarEvent[] = [];
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < DECISION_MAX_PAGES; page++) {
+    const result = await listEvents(connection, "primary", {
+      timeMin,
+      timeMax,
+      maxResults: DECISION_PAGE_SIZE,
+      singleEvents: true,
+      orderBy: "startTime",
+      ...(pageToken ? { pageToken } : {}),
+    });
+    if (result?.items) events.push(...result.items);
+    pageToken = result?.nextPageToken;
+    if (!pageToken) break;
+  }
+
+  return events;
+}
+
+/** The Google event id inside a recorded watcher payload, when it is readable. */
+function payloadEventId(event: WatcherEvent): string | null {
+  try {
+    const parsed: unknown = JSON.parse(event.payloadJson);
+    if (!parsed || typeof parsed !== "object") return null;
+    const id = (parsed as { id?: unknown }).id;
+    return typeof id === "string" && id.length > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export const googleCalendarProvider: WatcherProvider = {
   id: "google-calendar",
   displayName: "Google Calendar",
@@ -237,6 +304,42 @@ export const googleCalendarProvider: WatcherProvider = {
   async getInitialWatermark(credentialService: string): Promise<string> {
     const connection = await resolveOAuthConnection(credentialService);
     return fullSyncToken(connection);
+  },
+
+  // The exception to the pin above: a calendar arrival becomes work when — and
+  // only when — it creates a decision. The rules live in
+  // `calendar/calendar-decisions.ts`; this method's whole job is to hand them
+  // the two things they need and cannot compute: which events changed, and
+  // what else is on the calendar. The other half of a conflict did not change,
+  // so it is not in the sync feed and has to be read.
+  async decisionsFrom(
+    credentialService: string,
+    events: readonly WatcherEvent[],
+  ): Promise<WatcherDecision[]> {
+    const changedIds = events
+      .map(payloadEventId)
+      .filter((id): id is string => id !== null);
+    if (changedIds.length === 0) return [];
+
+    const now = Date.now();
+    const connection = await resolveOAuthConnection(credentialService);
+    const horizon = await fetchHorizon(connection, now);
+    const decisions = detectCalendarDecisions({ changedIds, horizon, now });
+
+    if (decisions.length > 0) {
+      log.info(
+        { count: decisions.length, changed: changedIds.length },
+        "Calendar: changes created decisions",
+      );
+    }
+    return decisions.map((d) => ({
+      externalId: d.externalId,
+      title: d.title,
+      snippet: d.snippet,
+      reason: d.reason,
+      ruleId: d.ruleId,
+      kind: d.kind,
+    }));
   },
 
   async fetchNew(

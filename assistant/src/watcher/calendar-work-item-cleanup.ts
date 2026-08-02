@@ -36,6 +36,7 @@
  * would exempt every row and make the tool useless.
  */
 
+import { DECISION_ID_PREFIX } from "../calendar/calendar-decisions.js";
 import { getDb } from "../memory/db-connection.js";
 import { workItemComprehension } from "../memory/schema.js";
 import { getLogger } from "../util/logger.js";
@@ -299,11 +300,20 @@ export function cleanupCalendarWorkItems(opts: CleanupOptions = {}): {
 
   // `includeUnComprehended` because this is a WRITER: it must reason about
   // every row that exists, not the subset a reader would be shown.
+  //
+  // Decisions are exempt outright. This tool retires items minted from EVENTS,
+  // on the reasoning that a meeting is not a task. A conflict between two
+  // meetings, or an invite nobody has answered, is a task — it is the one thing
+  // a calendar arrival is allowed to mint (see `calendar/calendar-decisions.ts`)
+  // — and sweeping it would undo the exception on the next run. They are
+  // identified by their `sourceId`, which is a decision key rather than a
+  // Google event id and is namespaced precisely so this test can exist.
   const candidates = listWorkItems({ includeUnComprehended: true }).filter(
     (item) =>
       item.sourceType !== null &&
       channels.includes(item.sourceType) &&
-      item.status !== "archived",
+      item.status !== "archived" &&
+      !(item.sourceId ?? "").startsWith(DECISION_ID_PREFIX),
   );
 
   const manifestItems: CleanupManifest["items"] = [];

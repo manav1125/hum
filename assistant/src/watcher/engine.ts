@@ -17,7 +17,10 @@ import {
   recordWatcherInventoryIfDue,
   recordWatcherLlmProcessed,
 } from "./telemetry.js";
-import { fileWatcherEventsToCameIn } from "./watcher-intake.js";
+import {
+  fileWatcherDecisions,
+  fileWatcherEventsToCameIn,
+} from "./watcher-intake.js";
 import {
   claimDueWatchers,
   completeWatcherPoll,
@@ -267,7 +270,30 @@ export async function runWatchersOnce(
     // The event is already in `watcher_events`, which is the whole job: this
     // watcher exists to keep a change stream, not to hand the owner work. No
     // work item, no arrival, no LLM call, no notification.
+    //
+    // The single exception is a DECISION. An event is not a task; a collision
+    // between two events is, and so is an invite nobody has answered. A
+    // provider that can name such a decision deterministically gets to mint it
+    // — and one that cannot, or that fails trying, mints nothing. The default
+    // here is silence, and every failure path returns to it: this is the one
+    // place in intake that fails CLOSED, because a wrong item minted from a
+    // recording source is the exact failure the pin above exists to prevent.
     if (intakeMode === "record_only") {
+      const provider = getWatcherProvider(watcher.providerId);
+      if (provider?.decisionsFrom) {
+        try {
+          const decisions = await provider.decisionsFrom(
+            watcher.credentialService,
+            pendingEvents,
+          );
+          fileWatcherDecisions(watcher, decisions);
+        } catch (err) {
+          log.warn(
+            { err, watcherId: watcher.id, name: watcher.name },
+            "Decision detection failed (nothing minted)",
+          );
+        }
+      }
       for (const event of pendingEvents) {
         updateEventDisposition(
           event.id,

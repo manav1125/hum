@@ -62,6 +62,7 @@ import {
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import { getLogger } from "../util/logger.js";
 import { triageAndMaybeAutoRunWorkItem } from "../work-items/work-item-triage.js";
+import type { WatcherDecision } from "./provider-types.js";
 import type { Watcher, WatcherEvent } from "./watcher-store.js";
 
 const log = getLogger("watcher-intake");
@@ -101,6 +102,90 @@ export interface IntakeResult {
 /** The channel key a watcher's events carry (e.g. 'watcher:gmail'). */
 export function watcherChannel(watcher: Watcher): string {
   return `watcher:${watcher.providerId}`;
+}
+
+/**
+ * Mint the work items for decisions a `record_only` source derived.
+ *
+ * The narrow exception to "a recording source hands the owner nothing", and it
+ * deliberately shares almost none of the machinery above. There is no relevance
+ * gate (the rule that produced the decision IS the judgement, and it is
+ * deterministic), no grouping (a decision is not a message in a thread) and no
+ * comprehension pass (the title is already the decision — sending it to a model
+ * to be reworded could only make it worse, and would spend a call to do it).
+ *
+ * Idempotency rests on `recordArrival` being idempotent on (channel,
+ * externalId) plus the decision's key being derived from the events rather than
+ * generated: the same conflict re-derived on every poll for the next three
+ * months finds its own arrival row and stops. The second guard —
+ * `arrival.workItemId` — covers the poll that recorded an arrival and then
+ * failed before minting, which must retry rather than be lost.
+ *
+ * Returns how many work items were newly minted.
+ */
+export function fileWatcherDecisions(
+  watcher: Watcher,
+  decisions: readonly WatcherDecision[],
+): number {
+  if (decisions.length === 0) return 0;
+  const channel = watcherChannel(watcher);
+  let minted = 0;
+
+  for (const decision of decisions) {
+    try {
+      const arrival = recordArrival({
+        channel,
+        externalId: decision.externalId,
+        watcherId: watcher.id,
+        title: decision.title,
+        snippet: decision.snippet,
+        sourceContext: JSON.stringify({
+          origin: channel,
+          watcherId: watcher.id,
+          watcherName: watcher.name,
+          eventType: decision.kind,
+          sourceId: decision.externalId,
+          snippet: decision.snippet.slice(0, 500),
+        }),
+        disposition: "surfaced",
+        reason: decision.reason,
+        decidedBy: "rule",
+        ruleId: decision.ruleId,
+      });
+
+      // Already in front of the owner from an earlier poll.
+      if (arrival.workItemId) continue;
+
+      const workItem = createWorkItemForArrival(arrival, {
+        notes: `From ${watcher.name} · ${decision.kind}`,
+      });
+      minted++;
+
+      // Best-effort, and separately guarded: triage picks the lens a decision
+      // belongs in (a dinner clash is life, a review clash is work), and a
+      // model outage must cost the lens, never the item — which by this point
+      // already exists and is bound to its arrival.
+      void triageAndMaybeAutoRunWorkItem(workItem.id, {
+        skipAutoRun: true,
+      }).catch((err: unknown) => {
+        log.warn(
+          { err: String(err), workItemId: workItem.id },
+          "triage failed for a calendar decision (item still surfaced)",
+        );
+      });
+    } catch (err) {
+      log.warn(
+        { err: String(err), watcherId: watcher.id, key: decision.externalId },
+        "failed to mint a decision (others unaffected)",
+      );
+    }
+  }
+
+  if (minted > 0) {
+    log.info({ watcherId: watcher.id, minted }, "decisions surfaced");
+    broadcastMessage({ type: "tasks_changed" });
+  }
+  return minted;
 }
 
 function toPlaybookEvent(watcher: Watcher, event: WatcherEvent): PlaybookEvent {

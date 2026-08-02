@@ -1,3 +1,5 @@
+import type { WatcherEvent } from "./watcher-store.js";
+
 /** A single event detected by a watcher provider. */
 export interface WatcherItem {
   /** Provider-specific dedup key (e.g. Gmail message ID). */
@@ -34,6 +36,35 @@ export interface FetchResult {
  *                    owner.
  */
 export type WatcherIntakeMode = "came_in" | "agent" | "record_only";
+
+/**
+ * A decision that recorded events created for the owner.
+ *
+ * This is the ONE way a `record_only` source is allowed to put something in
+ * front of somebody, and it is deliberately not the same shape as a
+ * {@link WatcherItem}: an item describes a thing that happened, a decision
+ * describes something the owner now has to settle. A provider that cannot say
+ * which decision an event creates returns none, and the source stays silent.
+ */
+export interface WatcherDecision {
+  /**
+   * Stable dedup key for the decision itself — NOT the id of any one event
+   * that contributed to it. Arrivals are idempotent on (channel, externalId),
+   * so a decision re-derived on every poll must produce the same key each time
+   * or it mints a duplicate row per poll.
+   */
+  externalId: string;
+  /** The decision, phrased as the work: "Resolve the …". */
+  title: string;
+  /** One line of evidence behind it. */
+  snippet: string;
+  /** Why this was worth surfacing, in the owner's words. */
+  reason: string;
+  /** Which deterministic rule fired, for the arrivals audit. */
+  ruleId: string;
+  /** Coarse kind, recorded on the item's notes so provenance survives. */
+  kind: string;
+}
 
 /**
  * A watcher provider adapts an external API into the watcher system.
@@ -84,6 +115,26 @@ export interface WatcherProvider {
    * Get the initial watermark (start from "now" so we don't replay history).
    */
   getInitialWatermark(credentialService: string): Promise<string>;
+
+  /**
+   * A narrow allowlist on top of `record_only`: given the events just recorded,
+   * which of them created a DECISION the owner has to make?
+   *
+   * Only consulted for a `record_only` source, and the default remains "mint
+   * nothing" — a provider that does not implement this stays silent forever,
+   * and one that does may still return an empty array, which is the expected
+   * answer on almost every poll. Throwing is treated as "no decisions": this
+   * path is the exception to intake's usual fail-open bias, because a wrong
+   * mint here is the failure mode the pin exists to prevent.
+   *
+   * `events` are the rows already written to `watcher_events`, so a provider
+   * that needs more than the recorded payload (the other half of a conflict
+   * never changed, so it is not in the sync feed) must go and fetch it.
+   */
+  decisionsFrom?(
+    credentialService: string,
+    events: readonly WatcherEvent[],
+  ): Promise<WatcherDecision[]>;
 
   /**
    * Release any in-process state held for a watcher instance.
