@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "playbook_create",
-      "description": "Create an action playbook \u2014 a trigger\u2192action rule that tells the assistant how to handle incoming messages matching a pattern",
+      "description": "Create an action playbook — a trigger→action rule that claims a matching arrival from a watcher before the relevance gate judges it. The rule appears on the Automations surface and is the same list shown there.",
       "category": "playbook",
       "risk": "low",
       "input_schema": {
@@ -11,28 +11,28 @@
         "properties": {
           "trigger": {
             "type": "string",
-            "description": "Pattern or description that triggers this playbook (e.g. \"meeting request\", \"from:ceo@*\", \"newsletter\")"
+            "description": "Case-insensitive substring matched against an arrival's title and summary (e.g. \"invoice\", \"review requested\"). Use \"*\" to claim everything on the channel."
           },
           "action": {
             "type": "string",
-            "description": "What to do when the trigger matches \u2014 natural language action description (e.g. \"check calendar, propose 3 times\")"
+            "description": "What to do when the trigger matches — natural language action description (e.g. \"check calendar, propose 3 times\")"
+          },
+          "name": {
+            "type": "string",
+            "description": "Short display name for the rule (e.g. \"Investor reply → draft\"). Defaults to the trigger text."
           },
           "channel": {
             "type": "string",
-            "description": "Channel this rule applies to (e.g. \"email\", \"slack\"), or \"*\" for all channels. Defaults to \"*\"."
-          },
-          "category": {
-            "type": "string",
-            "description": "Free-form category for grouping (e.g. \"scheduling\", \"triage\"). Defaults to \"general\"."
+            "description": "Watcher source this rule applies to: \"gmail\", \"outlook\", \"google-calendar\", \"outlook-calendar\", \"github\", \"linear\" — or \"*\" for all sources. Defaults to \"*\"."
           },
           "autonomy_level": {
             "type": "string",
             "enum": ["auto", "draft", "notify"],
-            "description": "How much autonomy: \"auto\" = execute automatically, \"draft\" = draft for review, \"notify\" = notify only. Defaults to \"draft\"."
+            "description": "How much autonomy: \"auto\" = execute automatically, \"draft\" = draft for review, \"notify\" = surface only. Defaults to \"draft\". The global trust dial caps this — the tool reports the effective level."
           },
           "priority": {
             "type": "number",
-            "description": "Relative priority \u2014 higher numbers take precedence. Defaults to 0."
+            "description": "Relative priority — higher numbers take precedence. Exactly one playbook fires per arrival. Defaults to 0."
           }
         },
         "required": ["trigger", "action"]
@@ -42,7 +42,7 @@
     },
     {
       "name": "playbook_list",
-      "description": "List action playbooks, optionally filtered by channel or category",
+      "description": "List action playbooks, optionally filtered by channel. Shows the effective autonomy after the global trust cap and when each rule last fired.",
       "category": "playbook",
       "risk": "low",
       "input_schema": {
@@ -50,11 +50,7 @@
         "properties": {
           "channel": {
             "type": "string",
-            "description": "Filter by channel (e.g. \"email\", \"slack\"). Omit to show all."
-          },
-          "category": {
-            "type": "string",
-            "description": "Filter by category (e.g. \"scheduling\", \"triage\"). Omit to show all."
+            "description": "Filter by watcher source (e.g. \"gmail\", \"github\"). Omit to show all."
           }
         }
       },
@@ -75,19 +71,19 @@
           },
           "trigger": {
             "type": "string",
-            "description": "Updated trigger pattern"
+            "description": "Updated trigger substring"
           },
           "action": {
             "type": "string",
             "description": "Updated action description"
           },
+          "name": {
+            "type": "string",
+            "description": "Updated display name"
+          },
           "channel": {
             "type": "string",
-            "description": "Updated channel (\"*\" for all)"
-          },
-          "category": {
-            "type": "string",
-            "description": "Updated category"
+            "description": "Updated watcher source (\"gmail\", \"github\", …) or \"*\" for all"
           },
           "autonomy_level": {
             "type": "string",
@@ -97,6 +93,10 @@
           "priority": {
             "type": "number",
             "description": "Updated priority"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable or disable the rule without deleting it"
           }
         },
         "required": ["playbook_id"]

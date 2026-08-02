@@ -119,6 +119,10 @@ const createScheduleMock = mock(
 );
 let nowSpy: ReturnType<typeof spyOn> | null = null;
 
+const fetchSchedulesMock = mock(
+  async (_assistantId: string): Promise<Schedule[]> => [],
+);
+
 mock.module("@/domains/settings/api/schedules", () => ({
   ...schedulesApi,
   createSchedule: createScheduleMock,
@@ -126,7 +130,49 @@ mock.module("@/domains/settings/api/schedules", () => ({
   fetchHeartbeatRuns: fetchHeartbeatRunsMock,
   fetchRetrospectiveRuns: fetchRetrospectiveRunsMock,
   fetchScheduleRuns: fetchScheduleRunsMock,
+  fetchSchedules: fetchSchedulesMock,
   fetchScheduleUsageSummary: fetchScheduleUsageSummaryMock,
+}));
+
+// ── Seams for the page-level render at the bottom of this file ───────────
+const assistantApi = await import("@/assistant/api");
+mock.module("@/assistant/api", () => ({
+  ...assistantApi,
+  getAssistantHealthz: async () => ({ ok: false as const }),
+}));
+
+mock.module("@/assistant/use-active-assistant-id", () => ({
+  useActiveAssistantId: () => "assistant-1",
+}));
+
+const effectiveTimezone = await import("@/utils/use-effective-timezone");
+mock.module("@/utils/use-effective-timezone", () => ({
+  ...effectiveTimezone,
+  useEffectiveTimezone: () => "UTC",
+}));
+
+const systemTasksModule =
+  await import("@/domains/settings/hooks/use-system-tasks");
+mock.module("@/domains/settings/hooks/use-system-tasks", () => ({
+  ...systemTasksModule,
+  useSystemTasks: () => ({
+    heartbeatConfig: undefined,
+    consolidationConfig: undefined,
+    retrospectiveConfig: undefined,
+    heartbeatUsage: { status: "loading" as const },
+    consolidationUsage: { status: "loading" as const },
+    retrospectiveUsage: { status: "loading" as const },
+    isLoading: false,
+    hasError: false,
+    isHeartbeatRunning: false,
+    isConsolidationRunning: false,
+    refetchAll: () => {},
+    refetchHeartbeat: () => {},
+    refetchConsolidation: () => {},
+    refetchRetrospective: () => {},
+    handleRunNow: async () => {},
+    handleToggle: async () => {},
+  }),
 }));
 
 const {
@@ -152,6 +198,8 @@ const { SystemTaskRow, SystemTasksSection } =
   await import("@/domains/settings/components/system-tasks-section");
 const { SystemTaskDetailView } =
   await import("@/domains/settings/components/system-task-detail-view");
+const { SchedulesPage } =
+  await import("@/domains/settings/pages/schedules-page");
 
 afterEach(() => {
   cleanup();
@@ -1264,5 +1312,56 @@ describe("system task toggles", () => {
 
     expect(screen.queryByLabelText("Toggle Consolidation")).toBeNull();
     expect(document.body.textContent).toContain("On · Managed by Memory");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Schedules vs Automations
+//
+// Both are leaves under "What it does alone" and the owner read them as one
+// thing. They are two engines with two lifecycles: a schedule fires on a clock
+// and each fire is a run with cost and history; an automation fires only when
+// something arrives. The page says which one it is and points at the other —
+// these tests hold that wording in place.
+// ---------------------------------------------------------------------------
+
+describe("SchedulesPage", () => {
+  test("names itself as the clock-driven half and links to Automations", async () => {
+    fetchSchedulesMock.mockClear();
+    renderWithQueryClient(createElement(SchedulesPage));
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Work that fires on a clock"),
+    );
+    expect(document.body.textContent).toContain("when something arrives");
+
+    fireEvent.click(screen.getByRole("button", { name: "Automations" }));
+    expect(navigateCalls).toEqual([routes.automations]);
+  });
+
+  test("still lists the schedules the daemon returns", async () => {
+    fetchSchedulesMock.mockClear();
+    fetchSchedulesMock.mockImplementationOnce(async () => [
+      schedule({
+        id: "sched-1",
+        name: "Daily brief",
+        description: "",
+        cadenceDescription: "Every day at 6pm",
+        expression: "0 18 * * *",
+        enabled: true,
+        nextRunAt: 1_761_792_000_000,
+        lastRunAt: 1_761_705_600_000,
+        lastStatus: "ok",
+      }),
+    ]);
+
+    renderWithQueryClient(createElement(SchedulesPage));
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Daily brief"),
+    );
+    // The distinguishing line is additive — it must not replace the New
+    // schedule affordance that appears once schedules exist.
+    expect(screen.getByRole("button", { name: /New schedule/i })).toBeTruthy();
   });
 });

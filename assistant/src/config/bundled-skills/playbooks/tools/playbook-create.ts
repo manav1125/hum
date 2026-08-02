@@ -1,23 +1,29 @@
-import { sql } from "drizzle-orm";
-
-import { getDb } from "../../../../memory/db-connection.js";
-import { createNode, updateNode } from "../../../../memory/graph/store.js";
-import type { NewNode } from "../../../../memory/graph/types.js";
+import { effectiveAutonomy } from "../../../../playbooks/autonomy-cap.js";
 import {
-  enqueueMemoryJob,
-  isMemoryEnabled,
-} from "../../../../memory/jobs-store.js";
-import { memoryGraphNodes } from "../../../../memory/schema.js";
-import type {
-  Playbook,
-  PlaybookAutonomyLevel,
-} from "../../../../playbooks/types.js";
+  describePlaybookChannel,
+  normalizePlaybookChannel,
+} from "../../../../playbooks/playbook-channel.js";
+import {
+  createPlaybook,
+  listPlaybooks,
+} from "../../../../playbooks/playbook-store.js";
+import type { PlaybookAutonomyLevel } from "../../../../playbooks/types.js";
 import type {
   ToolContext,
   ToolExecutionResult,
 } from "../../../../tools/types.js";
 
 const VALID_AUTONOMY_LEVELS = new Set<string>(["auto", "draft", "notify"]);
+
+/** Fall back to the trigger when the caller didn't name the rule. */
+function deriveName(input: Record<string, unknown>, trigger: string): string {
+  const given = typeof input.name === "string" ? input.name.trim() : "";
+  if (given !== "") return given.slice(0, 120);
+  return trigger
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
 
 export async function executePlaybookCreate(
   input: Record<string, unknown>,
@@ -39,107 +45,65 @@ export async function executePlaybookCreate(
     };
   }
 
-  const channel = typeof input.channel === "string" ? input.channel : "*";
-  const category =
-    typeof input.category === "string" ? input.category : "general";
+  const channel = normalizePlaybookChannel(input.channel);
   const autonomyLevel: PlaybookAutonomyLevel =
     typeof input.autonomy_level === "string" &&
     VALID_AUTONOMY_LEVELS.has(input.autonomy_level)
       ? (input.autonomy_level as PlaybookAutonomyLevel)
       : "draft";
   const priority = typeof input.priority === "number" ? input.priority : 0;
-
-  const playbook: Playbook = {
-    trigger,
-    channel,
-    category,
-    action,
-    autonomyLevel,
-    priority,
-  };
-  const statement = JSON.stringify(playbook);
-  const sanitizedTrigger = trigger.replace(/[\r\n]+/g, " ");
-  const subject = `Playbook: ${sanitizedTrigger}`.slice(0, 80);
-  const content = `${subject}\n${statement}`;
-  const scopeId = "default";
+  const name = deriveName(input, trigger);
 
   try {
-    const db = getDb();
-
-    // Check for duplicate by matching content in playbook-prefixed graph nodes
-    const existing = db
-      .select({ id: memoryGraphNodes.id })
-      .from(memoryGraphNodes)
-      .where(
-        sql`${memoryGraphNodes.sourceConversations} LIKE '%playbook:%'
-            AND ${memoryGraphNodes.content} = ${content}
-            AND ${memoryGraphNodes.scopeId} = ${scopeId}
-            AND ${memoryGraphNodes.fidelity} != 'gone'`,
-      )
-      .get();
-
-    if (existing) {
+    const duplicate = listPlaybooks().find(
+      (p) =>
+        p.triggerText === trigger &&
+        p.channel === channel &&
+        p.action === action,
+    );
+    if (duplicate) {
       return {
-        content: `A playbook with this exact configuration already exists (ID: ${existing.id}).`,
+        content: `A playbook with this exact configuration already exists (ID: ${duplicate.id}).`,
         isError: false,
       };
     }
 
-    const now = Date.now();
-    const newNode: NewNode = {
-      content,
-      type: "semantic",
-      created: now,
-      lastAccessed: now,
-      lastConsolidated: now,
-      eventDate: null,
-      emotionalCharge: {
-        valence: 0,
-        intensity: 0.1,
-        decayCurve: "linear",
-        decayRate: 0.05,
-        originalIntensity: 0.1,
-      },
-      fidelity: "vivid",
-      confidence: 0.95,
-      significance: 0.8,
-      stability: 14,
-      reinforcementCount: 0,
-      lastReinforced: now,
-      sourceConversations: [],
-      sourceType: "direct",
-      narrativeRole: null,
-      partOfStory: null,
-      imageRefs: null,
-      scopeId,
-    };
-
-    const node = createNode(newNode);
-    updateNode(node.id, {
-      sourceConversations: [`playbook:${node.id}`],
+    const created = createPlaybook({
+      name,
+      triggerText: trigger,
+      action,
+      channel,
+      autonomyLevel,
+      priority,
     });
 
-    if (isMemoryEnabled()) {
-      enqueueMemoryJob("embed_graph_node", { nodeId: node.id });
-    }
-
+    // Report the autonomy that will actually apply, not just the one asked
+    // for — the global trust dial clamps it, and saying "execute
+    // automatically" when the dial holds it at draft is exactly the kind of
+    // confident-but-false report this tool used to give.
+    const capped = effectiveAutonomy(created.autonomyLevel);
     const autonomyLabel =
-      autonomyLevel === "auto"
+      capped.effective === "auto"
         ? "execute automatically"
-        : autonomyLevel === "draft"
+        : capped.effective === "draft"
           ? "draft for review"
           : "notify only";
 
     return {
       content: [
         "Playbook created successfully.",
-        `  ID: ${node.id}`,
-        `  Trigger: ${trigger}`,
-        `  Channel: ${channel}`,
-        `  Category: ${category}`,
-        `  Action: ${action}`,
+        `  ID: ${created.id}`,
+        `  Name: ${created.name}`,
+        `  Trigger: ${created.triggerText}`,
+        `  Channel: ${describePlaybookChannel(created.channel)}`,
+        `  Action: ${created.action}`,
         `  Autonomy: ${autonomyLabel}`,
-        `  Priority: ${priority}`,
+        ...(capped.capped
+          ? [
+              `  Note: you asked for "${capped.requested}", but the global trust dial (${capped.dial}) holds it at "${capped.effective}".`,
+            ]
+          : []),
+        `  Priority: ${created.priority}`,
       ].join("\n"),
       isError: false,
     };

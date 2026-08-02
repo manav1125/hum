@@ -426,7 +426,9 @@ function NewPlaybookForm({
                 padding: "8px 0",
                 borderRadius: 8,
                 border: `1px solid ${active ? VIOLET : LINE}`,
-                background: active ? "var(--mv1-violet-wash, rgba(83,74,183,.1))" : C.surface,
+                background: active
+                  ? "var(--mv1-violet-wash, rgba(83,74,183,.1))"
+                  : C.surface,
                 color: locked ? C.t3 : active ? VIOLET : INK,
                 cursor: locked ? "not-allowed" : "pointer",
               }}
@@ -475,8 +477,7 @@ function NewPlaybookForm({
               padding: "7px 0",
               borderRadius: 8,
               border: `1px solid ${priority === p.value ? BLUE : LINE}`,
-              background:
-                priority === p.value ? C.blueW : C.surface,
+              background: priority === p.value ? C.blueW : C.surface,
               color: priority === p.value ? BLUE : INK,
               cursor: "pointer",
             }}
@@ -657,6 +658,7 @@ function Column({
 }
 
 export function WebAutomationsBoard() {
+  const navigate = useNavigate();
   const watchersQ = useWatchers();
   const playbooksQ = usePlaybooks();
   const [newWatcher, setNewWatcher] = useState(false);
@@ -690,8 +692,34 @@ export function WebAutomationsBoard() {
             letterSpacing: ".08em",
           }}
         >
-          WATCHERS LISTEN · PLAYBOOKS ACT
+          WHAT CUE DOES WHEN SOMETHING ARRIVES
         </div>
+        <button
+          type="button"
+          onClick={() => navigate(routes.settings.schedules)}
+          style={{
+            display: "block",
+            textAlign: "left",
+            width: "100%",
+            maxWidth: 640,
+            fontFamily: sans,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: MUTED,
+            background: "none",
+            border: "none",
+            padding: "10px 0 0",
+            cursor: "pointer",
+          }}
+        >
+          Nothing here runs on a clock. Watchers poll a source and hand what
+          they find to intake; playbooks are optional rules that claim a hit
+          before Cue judges it. For work that fires on a schedule, see{" "}
+          <span style={{ color: BLUE, textDecoration: "underline" }}>
+            Schedules
+          </span>
+          .
+        </button>
 
         <div
           style={{
@@ -762,8 +790,15 @@ export function WebAutomationsBoard() {
               <PlaybookCard key={p.id} playbook={p} />
             ))}
             {playbooks.length === 0 && !playbooksQ.isLoading && !newPlaybook ? (
-              <div style={{ fontSize: 13, color: MUTED }}>
-                No playbooks yet — turn a watcher hit into an action.
+              // Zero playbooks is the normal, working state — nothing seeds
+              // defaults and nothing needs to. Saying only "no playbooks yet"
+              // reads as "nothing is happening", which is false: every hit is
+              // still judged and surfaced. Say what the empty column means.
+              <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.55 }}>
+                None — and watchers still work. Every hit goes through
+                Cue&rsquo;s relevance check into Came In. A playbook is an
+                override for things you&rsquo;ve already decided matter: it
+                claims the hit first and attaches an action.
               </div>
             ) : null}
           </Column>

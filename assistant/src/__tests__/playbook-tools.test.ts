@@ -1,3 +1,16 @@
+/**
+ * The agent-facing playbook tools (`playbook_create` / `_list` / `_update` /
+ * `_delete`).
+ *
+ * These used to write to `memory_graph_nodes` under a `playbook:<id>` source
+ * marker — a store whose only reader was `compilePlaybooks()`, which had no
+ * production callers. So asking Cue in chat for a playbook returned "Playbook
+ * created successfully" and produced a row nothing evaluated and no surface
+ * displayed. The tools now speak to the same `playbooks` table the runtime
+ * fires from and the Automations board renders, and the last describe block
+ * here is the regression guard for exactly that: a tool-created rule must be
+ * visible to `listMatchablePlaybooks`.
+ */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("../util/logger.js", () => ({
@@ -7,15 +20,9 @@ mock.module("../util/logger.js", () => ({
     }),
 }));
 
-mock.module("../config/loader.js", () => ({
-  getConfig: () => ({
-    ui: {},
-    memory: {},
-  }),
-}));
-
-// Stub memory job queue to avoid side effects
+const actualJobsStore = await import("../memory/jobs-store.js");
 mock.module("../memory/jobs-store.js", () => ({
+  ...actualJobsStore,
   enqueueMemoryJob: () => {},
 }));
 
@@ -27,6 +34,11 @@ import { executePlaybookList } from "../config/bundled-skills/playbooks/tools/pl
 import { executePlaybookUpdate } from "../config/bundled-skills/playbooks/tools/playbook-update.js";
 import { getDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
+import { updateCompanyProfile } from "../missions/mission-store.js";
+import {
+  getPlaybook,
+  listMatchablePlaybooks,
+} from "../playbooks/playbook-store.js";
 import type { ToolContext } from "../tools/types.js";
 
 initializeDb();
@@ -42,9 +54,10 @@ const ctx: ToolContext = {
 };
 
 function clearPlaybooks(): void {
-  getRawDb().run(
-    "DELETE FROM memory_graph_nodes WHERE source_conversations LIKE '%playbook:%'",
-  );
+  getRawDb().run("DELETE FROM playbooks");
+  // The dial caps the reported autonomy; pin it wide open so these tests
+  // assert on what the tool stored rather than on the workspace posture.
+  updateCompanyProfile({ workspaceMode: "autonomous" });
 }
 
 function extractPlaybookId(content: string): string {
@@ -72,9 +85,17 @@ describe("playbook_create tool", () => {
     expect(result.content).toContain("meeting request");
     expect(result.content).toContain("check calendar, propose 3 times");
     expect(result.content).toContain("Autonomy: draft for review"); // default
-    expect(result.content).toContain("Channel: *"); // default
-    expect(result.content).toContain("Category: general"); // default
+    expect(result.content).toContain("Channel: all channels"); // default
     expect(result.content).toContain("Priority: 0"); // default
+  });
+
+  test("names the rule after the trigger when no name is given", async () => {
+    const result = await executePlaybookCreate(
+      { trigger: "invoice", action: "file it" },
+      ctx,
+    );
+    const stored = getPlaybook(extractPlaybookId(result.content));
+    expect(stored?.name).toBe("invoice");
   });
 
   test("creates a playbook with all optional fields", async () => {
@@ -82,8 +103,8 @@ describe("playbook_create tool", () => {
       {
         trigger: "from:ceo@*",
         action: "prioritize and draft response",
-        channel: "email",
-        category: "triage",
+        name: "CEO mail",
+        channel: "gmail",
         autonomy_level: "auto",
         priority: 10,
       },
@@ -92,10 +113,21 @@ describe("playbook_create tool", () => {
 
     expect(result.isError).toBe(false);
     expect(result.content).toContain("from:ceo@*");
-    expect(result.content).toContain("Channel: email");
-    expect(result.content).toContain("Category: triage");
+    expect(result.content).toContain("Name: CEO mail");
+    expect(result.content).toContain("Channel: gmail");
     expect(result.content).toContain("Autonomy: execute automatically");
     expect(result.content).toContain("Priority: 10");
+  });
+
+  test("stores a friendly channel in the form the matcher compares against", async () => {
+    // "email" reads fine and can never fire — watcher events arrive on
+    // `watcher:gmail`. The tool normalises rather than storing it verbatim.
+    const result = await executePlaybookCreate(
+      { trigger: "receipt", action: "file it", channel: "email" },
+      ctx,
+    );
+    const stored = getPlaybook(extractPlaybookId(result.content));
+    expect(stored?.channel).toBe("watcher:gmail");
   });
 
   test("creates with notify autonomy level", async () => {
@@ -110,6 +142,33 @@ describe("playbook_create tool", () => {
 
     expect(result.isError).toBe(false);
     expect(result.content).toContain("Autonomy: notify only");
+  });
+
+  test("reports the capped autonomy, not the requested one", async () => {
+    updateCompanyProfile({ workspaceMode: "observe" });
+
+    const result = await executePlaybookCreate(
+      { trigger: "anything", action: "act on it", autonomy_level: "auto" },
+      ctx,
+    );
+
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain("Autonomy: notify only");
+    expect(result.content).toContain("global trust dial (observe)");
+    // The stored value keeps what was asked for; only the report is clamped.
+    expect(getPlaybook(extractPlaybookId(result.content))?.autonomyLevel).toBe(
+      "auto",
+    );
+  });
+
+  test("defaults an invalid autonomy_level to draft", async () => {
+    const result = await executePlaybookCreate(
+      { trigger: "test", action: "test", autonomy_level: "invalid_level" },
+      ctx,
+    );
+
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain("Autonomy: draft for review");
   });
 
   test("rejects duplicate playbook", async () => {
@@ -163,11 +222,13 @@ describe("playbook_create tool", () => {
 describe("playbook_list tool", () => {
   beforeEach(clearPlaybooks);
 
-  test("returns empty message when no playbooks exist", async () => {
+  test("empty state says what happens without a playbook", async () => {
     const result = await executePlaybookList({}, ctx);
 
     expect(result.isError).toBe(false);
     expect(result.content).toContain("No playbooks found");
+    // "nothing here" must not read as "nothing happens" — hits still land.
+    expect(result.content).toContain("Came In");
   });
 
   test("lists all playbooks", async () => {
@@ -199,49 +260,24 @@ describe("playbook_list tool", () => {
       {
         trigger: "email trigger",
         action: "handle email",
-        channel: "email",
+        channel: "gmail",
       },
       ctx,
     );
     await executePlaybookCreate(
       {
-        trigger: "slack trigger",
-        action: "handle slack",
-        channel: "slack",
+        trigger: "github trigger",
+        action: "handle github",
+        channel: "github",
       },
       ctx,
     );
 
-    const result = await executePlaybookList({ channel: "email" }, ctx);
+    const result = await executePlaybookList({ channel: "gmail" }, ctx);
 
     expect(result.isError).toBe(false);
     expect(result.content).toContain("email trigger");
-    expect(result.content).not.toContain("slack trigger");
-  });
-
-  test("filters by category", async () => {
-    await executePlaybookCreate(
-      {
-        trigger: "scheduling trigger",
-        action: "schedule it",
-        category: "scheduling",
-      },
-      ctx,
-    );
-    await executePlaybookCreate(
-      {
-        trigger: "triage trigger",
-        action: "triage it",
-        category: "triage",
-      },
-      ctx,
-    );
-
-    const result = await executePlaybookList({ category: "scheduling" }, ctx);
-
-    expect(result.isError).toBe(false);
-    expect(result.content).toContain("scheduling trigger");
-    expect(result.content).not.toContain("triage trigger");
+    expect(result.content).not.toContain("github trigger");
   });
 
   test("includes wildcard channel playbooks in channel filter", async () => {
@@ -254,10 +290,40 @@ describe("playbook_list tool", () => {
       ctx,
     );
 
-    const result = await executePlaybookList({ channel: "email" }, ctx);
+    const result = await executePlaybookList({ channel: "gmail" }, ctx);
 
     expect(result.isError).toBe(false);
     expect(result.content).toContain("wildcard trigger");
+  });
+
+  test("names the filter when nothing matches it", async () => {
+    await executePlaybookCreate(
+      { trigger: "only gmail", action: "handle", channel: "gmail" },
+      ctx,
+    );
+
+    const result = await executePlaybookList({ channel: "github" }, ctx);
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain("No playbooks found matching");
+    expect(result.content).toContain("github");
+  });
+
+  test("sorts by priority descending", async () => {
+    await executePlaybookCreate(
+      { trigger: "low", action: "act", priority: 1 },
+      ctx,
+    );
+    await executePlaybookCreate(
+      { trigger: "high", action: "act", priority: 10 },
+      ctx,
+    );
+
+    const result = await executePlaybookList({}, ctx);
+    const lines = result.content
+      .split("\n")
+      .filter((l: string) => l.startsWith("- **"));
+    expect(lines[0]).toContain("high");
+    expect(lines[1]).toContain("low");
   });
 });
 
@@ -303,8 +369,7 @@ describe("playbook_update tool", () => {
       {
         playbook_id: id,
         action: "new action",
-        channel: "slack",
-        category: "notifications",
+        channel: "github",
         autonomy_level: "auto",
         priority: 5,
       },
@@ -313,10 +378,75 @@ describe("playbook_update tool", () => {
 
     expect(result.isError).toBe(false);
     expect(result.content).toContain("new action");
-    expect(result.content).toContain("Channel: slack");
-    expect(result.content).toContain("Category: notifications");
+    expect(result.content).toContain("Channel: github");
     expect(result.content).toContain("Autonomy: execute automatically");
     expect(result.content).toContain("Priority: 5");
+  });
+
+  test("can disable a rule without deleting it", async () => {
+    const createResult = await executePlaybookCreate(
+      { trigger: "pause me", action: "act" },
+      ctx,
+    );
+    const id = extractPlaybookId(createResult.content);
+
+    await executePlaybookUpdate({ playbook_id: id, enabled: false }, ctx);
+
+    expect(getPlaybook(id)?.enabled).toBe(false);
+    // Disabled rules stay listed but drop out of the matcher.
+    expect(listMatchablePlaybooks({ channel: "watcher:gmail" })).toHaveLength(
+      0,
+    );
+    expect((await executePlaybookList({}, ctx)).content).toContain("disabled");
+  });
+
+  test("keeps the current autonomy when given an invalid level", async () => {
+    const createResult = await executePlaybookCreate(
+      { trigger: "test", action: "test", autonomy_level: "auto" },
+      ctx,
+    );
+    const id = extractPlaybookId(createResult.content);
+
+    const result = await executePlaybookUpdate(
+      { playbook_id: id, autonomy_level: "bogus" },
+      ctx,
+    );
+
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain("Autonomy: execute automatically");
+  });
+
+  test("with no changes still succeeds", async () => {
+    const createResult = await executePlaybookCreate(
+      { trigger: "unchanged", action: "same" },
+      ctx,
+    );
+    const id = extractPlaybookId(createResult.content);
+
+    const result = await executePlaybookUpdate({ playbook_id: id }, ctx);
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain("Playbook updated successfully");
+    expect(result.content).toContain("unchanged");
+  });
+
+  test("detects collision with another playbook", async () => {
+    await executePlaybookCreate(
+      { trigger: "trigger A", action: "action A" },
+      ctx,
+    );
+    const r2 = await executePlaybookCreate(
+      { trigger: "trigger B", action: "action B" },
+      ctx,
+    );
+    const idB = extractPlaybookId(r2.content);
+
+    const result = await executePlaybookUpdate(
+      { playbook_id: idB, trigger: "trigger A", action: "action A" },
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("already exists");
   });
 
   test("rejects missing playbook_id", async () => {
@@ -386,5 +516,63 @@ describe("playbook_delete tool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("not found");
+  });
+});
+
+// ── the regression this rewrite exists for ──────────────────────────
+
+describe("a chat-created playbook reaches the runtime", () => {
+  beforeEach(clearPlaybooks);
+
+  test("playbook_create lands where listMatchablePlaybooks can see it", async () => {
+    await executePlaybookCreate(
+      {
+        trigger: "review requested",
+        action: "summarise the diff",
+        channel: "github",
+        priority: 3,
+      },
+      ctx,
+    );
+
+    // `watcher:github` is what `watcherChannel()` stamps on a GitHub event.
+    const matchable = listMatchablePlaybooks({ channel: "watcher:github" });
+    expect(matchable).toHaveLength(1);
+    expect(matchable[0].triggerText).toBe("review requested");
+    expect(matchable[0].action).toBe("summarise the diff");
+
+    // …and is scoped to that source, not fired on every channel.
+    expect(listMatchablePlaybooks({ channel: "watcher:gmail" })).toHaveLength(
+      0,
+    );
+  });
+
+  test("a wildcard playbook matches every watcher channel", async () => {
+    await executePlaybookCreate(
+      { trigger: "*", action: "surface it", channel: "*" },
+      ctx,
+    );
+
+    expect(listMatchablePlaybooks({ channel: "watcher:gmail" })).toHaveLength(
+      1,
+    );
+    expect(
+      listMatchablePlaybooks({ channel: "watcher:google-calendar" }),
+    ).toHaveLength(1);
+  });
+
+  test("playbook_delete removes it from the runtime's view too", async () => {
+    const created = await executePlaybookCreate(
+      { trigger: "temporary", action: "act", channel: "gmail" },
+      ctx,
+    );
+    await executePlaybookDelete(
+      { playbook_id: extractPlaybookId(created.content) },
+      ctx,
+    );
+
+    expect(listMatchablePlaybooks({ channel: "watcher:gmail" })).toHaveLength(
+      0,
+    );
   });
 });

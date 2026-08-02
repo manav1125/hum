@@ -21,7 +21,14 @@ const firedIds: string[] = [];
 const createWorkItemCalls: Array<Record<string, unknown>> = [];
 const triageCalls: Array<{ id: string; skipAutoRun?: boolean }> = [];
 
+// Every mock below spreads the real module and overrides only the seam it
+// drives. A hand-written export list here is process-global and deletes the
+// exports it doesn't name — this file spent time red because its
+// work-item-store factory listed only `createWorkItem` and a later import of
+// `getWorkItem` in the intake chain therefore failed to resolve at load.
+const actualMissionStore = await import("../../missions/mission-store.js");
 mock.module("../../missions/mission-store.js", () => ({
+  ...actualMissionStore,
   getCompanyProfile: () => ({
     identity: null,
     direction: null,
@@ -29,16 +36,16 @@ mock.module("../../missions/mission-store.js", () => ({
     workspaceMode: dial,
     updatedAt: null,
   }),
-  // The relevance gate's safety floor reads active missions by name. This
-  // file mocks the whole module, so a new import from it must be stubbed here
-  // or the intake import fails at load time.
+  // The relevance gate's safety floor reads active missions by name.
   listMissions: () => [],
 }));
 
 // The arrivals ledger is a leaf store like the others: every hit is recorded
 // here so the intake hand-off can be asserted without a database.
 const recordedArrivals: Array<Record<string, unknown>> = [];
+const actualArrivalStore = await import("../../arrivals/arrival-store.js");
 mock.module("../../arrivals/arrival-store.js", () => ({
+  ...actualArrivalStore,
   recordArrival: (input: Record<string, unknown>) => {
     recordedArrivals.push(input);
     return {
@@ -51,23 +58,31 @@ mock.module("../../arrivals/arrival-store.js", () => ({
   attachWorkItemToArrival: () => {},
 }));
 
+const actualPlaybookStore = await import("../playbook-store.js");
 mock.module("../playbook-store.js", () => ({
+  ...actualPlaybookStore,
   listMatchablePlaybooks: () => matchable,
   markPlaybookFired: (id: string) => firedIds.push(id),
 }));
 
+const actualTaskStore = await import("../../tasks/task-store.js");
 mock.module("../../tasks/task-store.js", () => ({
+  ...actualTaskStore,
   createTask: (opts: { title: string }) => ({ id: `task-${opts.title}` }),
 }));
 
+const actualWorkItemStore = await import("../../work-items/work-item-store.js");
 mock.module("../../work-items/work-item-store.js", () => ({
+  ...actualWorkItemStore,
   createWorkItem: (opts: Record<string, unknown>) => {
     createWorkItemCalls.push(opts);
     return { id: `wi-${createWorkItemCalls.length}` };
   },
 }));
 
+const actualTriage = await import("../../work-items/work-item-triage.js");
 mock.module("../../work-items/work-item-triage.js", () => ({
+  ...actualTriage,
   triageAndMaybeAutoRunWorkItem: (
     id: string,
     opts: { skipAutoRun?: boolean } = {},

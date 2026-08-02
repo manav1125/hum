@@ -1,5 +1,7 @@
-import { getNode, updateNode } from "../../../../memory/graph/store.js";
-import { parsePlaybookStatement } from "../../../../playbooks/types.js";
+import {
+  deletePlaybook,
+  getPlaybook,
+} from "../../../../playbooks/playbook-store.js";
 import type {
   ToolContext,
   ToolExecutionResult,
@@ -17,34 +19,24 @@ export async function executePlaybookDelete(
     };
   }
 
-  const scopeId = "default";
-
   try {
-    const existing = getNode(playbookId);
-    if (
-      !existing ||
-      existing.scopeId !== scopeId ||
-      !existing.sourceConversations.some((s) => s.startsWith("playbook:")) ||
-      existing.fidelity === "gone"
-    ) {
+    const existing = getPlaybook(playbookId);
+    if (!existing) {
       return {
         content: `Error: Playbook with ID "${playbookId}" not found`,
         isError: true,
       };
     }
 
-    // Extract trigger label from content
-    const newlineIdx = existing.content.indexOf("\n");
-    const statement =
-      newlineIdx !== -1 ? existing.content.slice(newlineIdx + 1) : "";
-    const playbook = parsePlaybookStatement(statement);
-    const triggerLabel = playbook?.trigger ?? existing.content.split("\n")[0];
-
-    // Soft-delete by setting fidelity to "gone"
-    updateNode(existing.id, { fidelity: "gone" });
+    if (!deletePlaybook(existing.id)) {
+      return {
+        content: `Error: Playbook with ID "${playbookId}" could not be deleted`,
+        isError: true,
+      };
+    }
 
     return {
-      content: `Playbook deleted (ID: ${existing.id}, trigger: "${triggerLabel}").`,
+      content: `Playbook deleted (ID: ${existing.id}, trigger: "${existing.triggerText}").`,
       isError: false,
     };
   } catch (err) {

@@ -397,14 +397,33 @@ export function SchedulesPage() {
 
   return (
     <div className="space-y-4">
-      {scheduleList.length > 0 ? (
-        <div className="flex items-center justify-end">
+      {/*
+        Schedules and Automations sit side by side under "What it does alone"
+        and read as the same thing. They are not: a schedule fires on a clock
+        the owner set and each fire is a run with its own cost and history; an
+        automation fires only when something arrives from a source and has no
+        cadence of its own. Say which one this is, and point at the other.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-body-small-default text-[var(--content-tertiary)]">
+          Work that fires on a clock. For work that fires when something arrives
+          — mail, calendar changes, GitHub — see{" "}
+          <button
+            type="button"
+            onClick={() => navigate(routes.automations)}
+            className="cursor-pointer underline hover:no-underline"
+          >
+            Automations
+          </button>
+          .
+        </p>
+        {scheduleList.length > 0 ? (
           <Button variant="primary" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" />
             New schedule
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {isUsageSummaryError ? (
         <Notice tone="warning" className="py-2 text-body-small-default">

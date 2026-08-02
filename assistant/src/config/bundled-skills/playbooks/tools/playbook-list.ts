@@ -1,8 +1,10 @@
-import { and, eq, sql } from "drizzle-orm";
-
-import { getDb } from "../../../../memory/db-connection.js";
-import { memoryGraphNodes } from "../../../../memory/schema.js";
-import { parsePlaybookStatement } from "../../../../playbooks/types.js";
+import { effectiveAutonomy } from "../../../../playbooks/autonomy-cap.js";
+import {
+  ANY_CHANNEL,
+  describePlaybookChannel,
+  normalizePlaybookChannel,
+} from "../../../../playbooks/playbook-channel.js";
+import { listPlaybooks } from "../../../../playbooks/playbook-store.js";
 import type {
   ToolContext,
   ToolExecutionResult,
@@ -12,95 +14,51 @@ export async function executePlaybookList(
   input: Record<string, unknown>,
   _context: ToolContext,
 ): Promise<ToolExecutionResult> {
-  const scopeId = "default";
   const channelFilter =
-    typeof input.channel === "string" ? input.channel : null;
-  const categoryFilter =
-    typeof input.category === "string" ? input.category : null;
+    typeof input.channel === "string" && input.channel.trim() !== ""
+      ? normalizePlaybookChannel(input.channel)
+      : null;
 
   try {
-    const db = getDb();
+    const all = listPlaybooks();
 
-    const rows = db
-      .select({
-        id: memoryGraphNodes.id,
-        content: memoryGraphNodes.content,
-        significance: memoryGraphNodes.significance,
-        lastAccessed: memoryGraphNodes.lastAccessed,
-      })
-      .from(memoryGraphNodes)
-      .where(
-        and(
-          eq(memoryGraphNodes.scopeId, scopeId),
-          sql`${memoryGraphNodes.sourceConversations} LIKE '%playbook:%'`,
-          sql`${memoryGraphNodes.fidelity} != 'gone'`,
-        ),
-      )
-      .orderBy(sql`${memoryGraphNodes.significance} DESC`)
-      .all();
-
-    if (rows.length === 0) {
-      return { content: "No playbooks found.", isError: false };
-    }
-
-    const entries: Array<{
-      id: string;
-      playbook: NonNullable<ReturnType<typeof parsePlaybookStatement>>;
-    }> = [];
-    for (const row of rows) {
-      // Content format: "Playbook: <trigger>\n<json statement>"
-      const newlineIdx = row.content.indexOf("\n");
-      if (newlineIdx === -1) continue;
-      const statement = row.content.slice(newlineIdx + 1);
-      const playbook = parsePlaybookStatement(statement);
-      if (!playbook) continue;
-
-      // Apply filters
-      if (
-        channelFilter &&
-        playbook.channel !== channelFilter &&
-        playbook.channel !== "*"
-      )
-        continue;
-      if (categoryFilter && playbook.category !== categoryFilter) continue;
-
-      entries.push({
-        id: row.id,
-        playbook,
-      });
-    }
-
-    if (entries.length === 0) {
-      const filters = [
-        channelFilter ? `channel="${channelFilter}"` : null,
-        categoryFilter ? `category="${categoryFilter}"` : null,
-      ]
-        .filter(Boolean)
-        .join(", ");
+    if (all.length === 0) {
       return {
-        content: `No playbooks found matching ${filters}.`,
+        content:
+          "No playbooks found. Without one, watcher hits still reach the owner — they go through the relevance gate into Came In. A playbook is an override that claims a hit before the gate judges it.",
         isError: false,
       };
     }
 
-    // Sort by priority descending
-    entries.sort((a, b) => b.playbook.priority - a.playbook.priority);
+    const entries = all.filter(
+      (p) =>
+        channelFilter === null ||
+        p.channel === channelFilter ||
+        p.channel === ANY_CHANNEL,
+    );
 
+    if (entries.length === 0) {
+      return {
+        content: `No playbooks found matching channel="${describePlaybookChannel(channelFilter ?? ANY_CHANNEL)}".`,
+        isError: false,
+      };
+    }
+
+    // `listPlaybooks` already orders by priority desc, then creation.
     const lines: string[] = [`Found ${entries.length} playbook(s):\n`];
-    for (const { id, playbook } of entries) {
-      const channelLabel =
-        playbook.channel === "*" ? "all channels" : playbook.channel;
-      const autonomyLabel =
-        playbook.autonomyLevel === "auto"
-          ? "auto"
-          : playbook.autonomyLevel === "draft"
-            ? "draft"
-            : "notify";
+    for (const p of entries) {
+      const capped = effectiveAutonomy(p.autonomyLevel);
+      const autonomy = capped.capped
+        ? `${capped.effective} (asked for ${capped.requested}, capped by ${capped.dial} trust)`
+        : capped.effective;
+      const lastFired = p.lastFiredAt
+        ? new Date(p.lastFiredAt).toISOString()
+        : "never";
       lines.push(
-        `- **${playbook.trigger}** (${channelLabel}) → ${playbook.action}`,
+        `- **${p.name}** — when "${p.triggerText}" on ${describePlaybookChannel(p.channel)} → ${p.action}`,
       );
       lines.push(
-        `  _ID: ${id} | category: ${playbook.category} | autonomy: ${autonomyLabel} | priority: ${playbook.priority}_`,
+        `  _ID: ${p.id} | autonomy: ${autonomy} | priority: ${p.priority} | ${p.enabled ? "enabled" : "disabled"} | last fired: ${lastFired}_`,
       );
     }
 
