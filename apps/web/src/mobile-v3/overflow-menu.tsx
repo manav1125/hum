@@ -1,27 +1,32 @@
 /**
- * Mv3OverflowMenu — the minimal ⋯ affordance kept in the top-right safe area
- * after the legacy mobile chrome (hamburger / home / search pill) is removed
- * (task #96, step 6).
+ * The phone's top chrome — two affordances, one on each side.
  *
- * Reachability audit (what the old hamburger drawer / header uniquely reached
- * on mobile):
- *   · Chats index + drawer conversation list → "Chats" (opens the chat
- *     surface, which still carries the drawer until the Chat cluster ships
- *     its v3 nav)
- *   · Search (⌘K command palette, the old header's search pill) → "Search"
- *   · Settings (old drawer footer PreferencesMenu) → "Settings"
- *   · Logs → "Logs"
- * Home is NOT listed: /assistant/home is a legacy redirect to /assistant/hq,
- * which the Today tab already owns. Everything else the drawer showed
- * (projects, memory, connections) is reachable via the 5 tabs / You rows.
+ * When the tab bar went from five slots to three (`HQ · ◉ · Work`), the two
+ * slots that were cut held things touched weekly or less. They did not
+ * disappear; they moved to the corners, which is where a phone puts what you
+ * reach for occasionally:
  *
- * Renders ONLY on the v3 primary surfaces root-layout hides the chrome on;
- * the You cluster's Settings/Notifications rows supersede parts of this menu
- * once they land (coordinator may then prune items).
+ *   ☰ top-left    — past conversations, search, batch capture.
+ *   ◍ top-right   — the deeper surfaces (Agents · Rhythms · People · What Cue
+ *                   does · Trust & guardrails) and the account cluster
+ *                   (Brand · Connections · Appearance · Settings · Logs).
+ *
+ * The right-hand menu reads its first five rows from `DEEPER_NAV`, the same
+ * list the desktop sidebar renders under its "deeper" divider — so the two
+ * platforms cannot drift about what counts as a deeper surface.
+ *
+ * Placement note: the right-hand button sits inboard of the true corner
+ * because the HQ/Today header still paints its own decorative initial chip
+ * there. That chip is meant to BECOME this affordance; until the HQ surface
+ * retires it, two circles in the same 34px square would be the collision.
+ *
+ * Renders ONLY on the primary surfaces where root-layout hides the legacy
+ * chrome — detail screens carry their own ‹ back and ⋯ in the v3 grammar.
  */
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { DEEPER_NAV } from "@/components/nav/nav-model";
 import { readStoredThemePreference } from "@/domains/settings/utils/theme-preferences";
 import { Mv3AddTasksSheet } from "@/pages/projects/mv3-add-tasks-sheet";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
@@ -30,25 +35,36 @@ import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
+// The Create sheet — lazy so the create catalogs don't ride in every route's
+// bundle; only fetched the first time Create is chosen.
+const CreateSheet = lazy(() =>
+  import("@/domains/create/create-sheet").then((m) => ({
+    default: m.CreateSheet,
+  })),
+);
+
 const SAFE_TOP = "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))";
 
-export function Mv3OverflowMenu() {
-  const navigate = useNavigate();
+interface MenuEntry {
+  label: string;
+  meta?: string;
+  run: () => void;
+}
+
+/** One corner button + its popover menu. */
+function CornerMenu({
+  side,
+  glyph,
+  ariaLabel,
+  items,
+}: {
+  side: "left" | "right";
+  glyph: string;
+  ariaLabel: string;
+  items: MenuEntry[];
+}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const toggleCommandPalette = useCommandPaletteStore.use.toggle();
-  // Batch task capture ("Add tasks"). This menu renders outside the
-  // ActiveAssistantGate, so read the raw store and only offer the item once
-  // an assistant is actually active.
-  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
-  const [addTasksOpen, setAddTasksOpen] = useState(false);
-  // Value preview for the Appearance link row (round-4 frame 63: "Appearance
-  // · Dark ›"). Read fresh on each open — the leaf writes localStorage, and
-  // the menu re-renders when it toggles open.
-  const velvet = useClientFeatureFlagStore.use.velvet();
-  const themePreference = readStoredThemePreference({ velvetEnabled: velvet });
-  const themeLabel =
-    themePreference.charAt(0).toUpperCase() + themePreference.slice(1);
 
   // Dismiss on outside tap.
   useEffect(() => {
@@ -62,67 +78,24 @@ export function Mv3OverflowMenu() {
     return () => window.removeEventListener("pointerdown", onDown);
   }, [open]);
 
-  const items: Array<{ label: string; meta?: string; run: () => void }> = [
-    ...(assistantId
-      ? [
-          {
-            label: "Add tasks",
-            run: () => setAddTasksOpen(true),
-          },
-        ]
-      : []),
-    {
-      // The mobile Chats index (spec frame 21) at /assistant/conversations —
-      // routing there directly (not /assistant, which redirects into the most
-      // recent conversation) is what makes chat history reachable (UAT P1-2).
-      label: "Chats",
-      run: () => navigate(routes.conversations),
-    },
-    {
-      // All-work was only reachable under Projects (UAT P2) — surface the
-      // flat queue here too.
-      label: "All work",
-      run: () => navigate(routes.allWork),
-    },
-    {
-      label: "Search",
-      run: () => toggleCommandPalette(),
-    },
-    {
-      // Frame 63 (a): value-preview link row → the Appearance radio leaf.
-      // Two taps to change a theme, zero to mis-fire.
-      label: "Appearance",
-      meta: themeLabel,
-      run: () => navigate(routes.settings.general),
-    },
-    {
-      label: "Settings",
-      run: () => navigate(routes.settings.root),
-    },
-    {
-      label: "Logs",
-      run: () => navigate(routes.logs.root),
-    },
-  ];
-
   return (
     <div
       ref={rootRef}
       data-mv3
-      data-slot="mv3-overflow"
+      data-slot={`mv3-corner-${side}`}
       style={{
         position: "fixed",
         top: `calc(${SAFE_TOP} + 8px)`,
-        // Clear of the v3 screens' own top-right ornament (Today's avatar
-        // chip sits at right ~22px), per the "status bar only" canvas rule.
-        right: 62,
+        // See the placement note in the module docblock for the right-hand
+        // inset.
+        ...(side === "left" ? { left: 18 } : { right: 62 }),
         zIndex: 45,
         fontFamily: "var(--mv3-font)",
       }}
     >
       <button
         type="button"
-        aria-label="More"
+        aria-label={ariaLabel}
         aria-expanded={open}
         className="cue-pressable"
         onClick={() => {
@@ -138,7 +111,7 @@ export function Mv3OverflowMenu() {
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
           color: "var(--mv3-muted)",
-          fontSize: 16,
+          fontSize: 15,
           lineHeight: 1,
           cursor: "pointer",
           display: "flex",
@@ -148,17 +121,17 @@ export function Mv3OverflowMenu() {
           padding: 0,
         }}
       >
-        ⋯
+        {glyph}
       </button>
       {open ? (
         <div
           role="menu"
-          aria-label="More options"
+          aria-label={ariaLabel}
           style={{
             position: "absolute",
             top: 40,
-            right: 0,
-            minWidth: 168,
+            ...(side === "left" ? { left: 0 } : { right: 0 }),
+            minWidth: 186,
             background: "var(--mv3-sheet)",
             border: "1px solid var(--mv3-sheet-border)",
             borderRadius: 16,
@@ -222,9 +195,83 @@ export function Mv3OverflowMenu() {
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export function Mv3OverflowMenu() {
+  const navigate = useNavigate();
+  const toggleCommandPalette = useCommandPaletteStore.use.toggle();
+  // These render outside the ActiveAssistantGate, so read the raw store and
+  // only offer assistant-scoped rows once one is actually active.
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const [addTasksOpen, setAddTasksOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createMounted, setCreateMounted] = useState(false);
+  // Value preview for the Appearance link row ("Appearance · Dark ›"). Read
+  // fresh on each render — the leaf writes localStorage, and the menu
+  // re-renders when it toggles open.
+  const velvet = useClientFeatureFlagStore.use.velvet();
+  const themePreference = readStoredThemePreference({ velvetEnabled: velvet });
+  const themeLabel =
+    themePreference.charAt(0).toUpperCase() + themePreference.slice(1);
+
+  // ☰ — what you have already said, and what you want to capture.
+  const historyItems: MenuEntry[] = [
+    {
+      // The mobile Chats index at /assistant/conversations — routing there
+      // directly (not /assistant, which redirects into the most recent
+      // conversation) is what makes chat history reachable.
+      label: "Past conversations",
+      run: () => navigate(routes.conversations),
+    },
+    { label: "Search", run: () => toggleCommandPalette() },
+    ...(assistantId
+      ? [{ label: "Add tasks", run: () => setAddTasksOpen(true) }]
+      : []),
+  ];
+
+  // ◍ — the deeper surfaces, then the account cluster.
+  const accountItems: MenuEntry[] = [
+    ...DEEPER_NAV.map((d) => ({
+      label: d.label,
+      run: () => navigate(d.to),
+    })),
+    {
+      label: "Create",
+      run: () => {
+        setCreateMounted(true);
+        setCreateOpen(true);
+      },
+    },
+    { label: "Brand kit", run: () => navigate(routes.brandKit) },
+    { label: "Connections", run: () => navigate(routes.connectors) },
+    {
+      label: "Appearance",
+      meta: themeLabel,
+      run: () => navigate(routes.settings.general),
+    },
+    { label: "Settings", run: () => navigate(routes.settings.root) },
+    { label: "Data & logs", run: () => navigate(routes.logs.root) },
+  ];
+
+  return (
+    <>
+      <CornerMenu
+        side="left"
+        glyph="☰"
+        ariaLabel="Conversations and search"
+        items={historyItems}
+      />
+      <CornerMenu
+        side="right"
+        glyph="◍"
+        ariaLabel="You — settings and deeper surfaces"
+        items={accountItems}
+      />
 
       {/* Batch task capture — the SheetShell portals itself, so mounting it
-          here keeps the whole flow inside the one global affordance. */}
+          here keeps the whole flow inside the global affordances. */}
       {assistantId ? (
         <Mv3AddTasksSheet
           assistantId={assistantId}
@@ -232,6 +279,12 @@ export function Mv3OverflowMenu() {
           onClose={() => setAddTasksOpen(false)}
         />
       ) : null}
-    </div>
+
+      {createMounted ? (
+        <Suspense fallback={null}>
+          <CreateSheet open={createOpen} onClose={() => setCreateOpen(false)} />
+        </Suspense>
+      ) : null}
+    </>
   );
 }

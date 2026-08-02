@@ -28,6 +28,21 @@ describe("routes", () => {
     );
   });
 
+  test("Work's two views are queries on ONE path, not two paths", () => {
+    // If these ever diverge into separate paths, the ledger has quietly
+    // become its own destination again — the exact thing v11 merged away.
+    expect(routes.workView("things")).toBe("/assistant/projects?view=things");
+    expect(routes.workView("everything")).toBe(
+      "/assistant/projects?view=everything",
+    );
+    expect(routes.workView("things").split("?")[0]).toBe(routes.projects);
+    expect(routes.workView("everything").split("?")[0]).toBe(routes.projects);
+  });
+
+  test("the legacy ledger URL is still exported for old links to resolve", () => {
+    expect(routes.allWork).toBe("/assistant/work");
+  });
+
   test("encodes schedule ids in usage URLs", () => {
     expect(routes.logs.usageForSchedule("schedule with spaces")).toBe(
       "/assistant/logs/usage?range=7d&groupBy=schedule&scheduleId=schedule+with+spaces",

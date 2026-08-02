@@ -127,13 +127,16 @@ function preAppTabBarHidden(pathname: string): boolean {
   );
 }
 
-/** Where the minimal ⋯ affordance renders — the primary v3 tab landings whose
- *  header (and its Chats/Search/Settings reachability) was removed. */
+/** Where the ☰ / ◍ corner chrome renders — the primary v3 tab landings whose
+ *  header (and its conversations / search / settings reachability) was
+ *  removed. One entry per primary destination: HQ, Work (`projects`), and the
+ *  bare chats index that ◉ lands beside. `/home` is the legacy landing that
+ *  redirects to HQ; it stays listed so the chrome is present during the hop. */
 const MV3_OVERFLOW_SURFACES = [
   routes.hq,
   routes.home,
   routes.projects,
-  routes.channels,
+  routes.conversations,
 ];
 
 function overflowVisible(pathname: string): boolean {
@@ -366,11 +369,11 @@ export function RootLayout() {
         <Outlet />
       </div>
 
-      {/* Mobile primary nav: the mv3 floating glass tab bar
-          (Today / Projects / + / Voice / You — docs/design/mobile-v3).
-          Desktop uses the sidebar rail instead. Suppressed on standalone
-          pre-app screens (welcome / select-assistant / review-terms) where a
-          signed-in nav bar is a lie. */}
+      {/* Mobile primary nav: the mv3 floating glass tab bar — three slots,
+          `HQ · ◉ · Work`, sharing its destinations with the desktop sidebar
+          via components/nav/nav-model. Desktop uses the sidebar rail instead.
+          Suppressed on standalone pre-app screens (welcome / select-assistant
+          / review-terms) where a signed-in nav bar is a lie. */}
       {isMobile && !preAppTabBarHidden(pathname) && <TabBarV3 />}
 
       {/* Mobile v3: retire the legacy top chrome so screens own their full
@@ -380,9 +383,9 @@ export function RootLayout() {
         <style>{`[data-slot="chat-layout-header"] { display: none; }`}</style>
       ) : null}
 
-      {/* The minimal ⋯ affordance replacing the removed chrome's unique
-          destinations (Chats / Search / Settings / Logs) on the primary v3
-          landings. */}
+      {/* The ☰ / ◍ corner chrome carrying what the three-tab bar no longer
+          has room for: past conversations + search on the left, the deeper
+          surfaces + account cluster on the right. */}
       {isMobile && legacyChromeHidden(pathname) && overflowVisible(pathname) ? (
         <Mv3OverflowMenu />
       ) : null}

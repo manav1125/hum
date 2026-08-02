@@ -1,12 +1,19 @@
 import {
+  Bot,
   Clock,
+  Compass,
   Hash,
   FolderKanban,
   LayoutGrid,
+  LayoutList,
+  ListTree,
+  MessageCircle,
   Mic,
   Pin,
+  Repeat,
   Rocket,
   Search,
+  ShieldCheck,
   Sparkles,
   SquarePen,
   Target,
@@ -48,6 +55,14 @@ import { usePinnedAppsStore } from "@/stores/pinned-apps-store";
 import type { Conversation } from "@/types/conversation-types";
 import { canMarkRead, canMarkUnread } from "@/utils/conversation-predicates";
 import { useNeedsYouBadge } from "@/hooks/use-needs-you-badge";
+import {
+  DEEPER_NAV,
+  PRIMARY_NAV,
+  WORK_VIEWS,
+  readWorkView,
+  type PrimaryNavKey,
+} from "@/components/nav/nav-model";
+import { useNavCounts } from "@/components/nav/use-nav-counts";
 import {
   ApertureAvatar,
   Button,
@@ -129,18 +144,23 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
 /**
  * Assistant sidebar content.
  *
- * Structure (top → bottom) — the design's clean rail
- * (see design/surfaces/Memory.dc.html + CueLive.dc.html):
+ * Structure (top → bottom):
  *
- *   Header · primary rail
- *     • HQ          → the one landing surface (rings deck; the old Home's
- *                       modules — next move, queued & scheduled, watching,
- *                       done today — folded in here)
- *     • Projects / Create / Voice
- *     • Intelligence → Identity hub (holds its own tab bar: Connectors,
- *                       Channels, Agents, Cue Live, Skills, Memory, Workspace)
- *     • Library
- *     • People      → relationship dossiers (/people)
+ *   Header · primary rail — the three destinations that exist on every
+ *   platform, read from `components/nav/nav-model` so this rail and the
+ *   phone's tab bar cannot describe different information models:
+ *     • Talk to Cue → the conversation surface
+ *     • HQ          → the deck that empties; cuts ACROSS all things and shows
+ *                       only what is true today. Carries the app's one badge.
+ *     • Work        → the list of things; cuts INTO one thing and never
+ *                       empties. Two views, nested while Work is open:
+ *                         · Things     — the containers
+ *                         · Everything — the flat ledger (formerly "All work",
+ *                                        which stopped being its own
+ *                                        destination in v11)
+ *     • ── deeper ── Agents · Rhythms · People · What Cue does ·
+ *                       Trust & guardrails, then Create / Voice /
+ *                       Intelligence / Library
  *     • channel-presence dots + pinned apps (rail affordances)
  *     • ───────────────
  *   Body · "Chat" section — the conversation-thread list
@@ -158,6 +178,30 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
  * (Contacts › "People · dossiers" + /assistant/people), Guardrails — the
  * evolved Trust console (/assistant/guardrails; /assistant/trust redirects).
  */
+/**
+ * Rail iconography. Lives here rather than in `nav-model` so the model stays
+ * a pure, framework-free description of WHERE things are — the phone draws
+ * the same destinations with its own stroke glyphs.
+ */
+const PRIMARY_ICON: Record<PrimaryNavKey, typeof Target> = {
+  talk: MessageCircle,
+  hq: Target,
+  work: LayoutList,
+};
+
+const WORK_VIEW_ICON = {
+  things: FolderKanban,
+  everything: ListTree,
+} as const;
+
+const DEEPER_ICON: Record<string, typeof Target> = {
+  agents: Bot,
+  rhythms: Repeat,
+  people: Users,
+  explore: Compass,
+  guardrails: ShieldCheck,
+};
+
 export function AssistantSideMenu({
   assistantId,
   collapsed,
@@ -204,6 +248,11 @@ export function AssistantSideMenu({
   const navigate = useNavigate();
   const location = useLocation();
   const { count: needsYouCount } = useNeedsYouBadge(assistantId);
+  // Work's "5 things" and Everything's "31 tasks" come from the same fetches
+  // the Work surface itself reads, so the rail can never claim a count the
+  // page then contradicts.
+  const navCounts = useNavCounts(assistantId);
+  const activeWorkView = readWorkView(location.search);
   const cueNav = useCallback(
     (to: string) => {
       navigate(to);
@@ -516,10 +565,11 @@ export function AssistantSideMenu({
             <div className="flex items-center gap-2">{headerActions}</div>
           </div>
         ) : null}
-        {/* Primary action at the very top of the rail: start a new
-            conversation (Claude-style "new task"). Drives users into chat
-            before the surface list; the compact pencil in the "Chat" section
-            header stays as the in-context affordance. */}
+        {/* Start a new conversation. Sits above the rail rather than in it:
+            "Talk to Cue" below is the DESTINATION (the conversation surface),
+            this is the action that opens a blank one. Keeping them adjacent
+            but distinct is what stops the rail growing a second nav path to
+            the same place. */}
         {onStartNewConversation ? (
           <>
             <SideMenu.Item
@@ -536,52 +586,111 @@ export function AssistantSideMenu({
           </>
         ) : null}
         {/*
-          The clean rail: HQ · Projects · Create · Voice · Intelligence ·
-          Library · People. "Chat" is the conversation-thread list below
-          (labeled in the body). People opens the relationship dossier
-          (/people).
+          The rail, reconciled with the phone (v11 finding C1).
 
-          HQ IS the one landing surface ("Home grew up. There's one landing
-          surface now." — Cue-HQ-Build §1). The old Home row retired into it:
-          every old-Home module has a home on the HQ deck (Your Next Move ·
-          Queued & scheduled · Watching · Done today). /home and the four
-          legacy surfaces (Mission Control · Activity · Agents · Next-moves)
-          all redirect to /hq, so the rail carries one entry — never a
-          duplicate landing row.
+          v10's navigation model was drawn phone-only, so this rail still said
+          "Projects" while the phone had already moved to "Work" — the two
+          platforms describing different information models, which is worse
+          than either being wrong alone. The top three rows now come from
+          `PRIMARY_NAV`, the same declaration the tab bar renders, so the sets
+          cannot drift again:
 
-          The Dashboard folded into HQ; Workspace, Connections (channel setup),
-          Memory, Connectors live as Intelligence tabs; Meeting stays routable;
-          Guardrails (the evolved Trust console) = linked from agent surfaces.
-          (See docblock.)
+            ◉  Talk to Cue
+            ◈  HQ                    <needs-you>
+            ▤  Work                  <things>
+                 Things
+                 Everything          <live tasks>
+               ── deeper ──
+            Agents · Rhythms · People · What Cue does · Trust & guardrails
+
+          The order differs from the phone on purpose: a vertical rail reads
+          top-down by frequency, while the phone centres the mark because the
+          centre slot is where the thumb rests. The SET is identical.
+
+          Work's two views are nested rather than listed as siblings — the
+          ledger stopped being its own destination in v11, and promoting it
+          back to the rail is exactly the duplicate-nav mistake this codebase
+          already had to clean up once.
+
+          Create / Voice / Intelligence / Library stay below the divider:
+          Voice is a mode rather than a place, and Intelligence / Library are
+          host-provided panels with no route of their own, so dropping their
+          rows would strand them entirely.
         */}
-        {/* The badge is the only global "something is waiting on you" signal:
-            approvals parked mid-run + finished runs nobody has reviewed. Cue
-            works while you're away, so this has to be visible from anywhere —
-            not only from inside HQ. Hidden at zero so it never nags. */}
-        <SideMenu.Item
-          icon={Target}
-          label="HQ"
-          showCollapsedTooltip
-          badge={needsYouCount > 0 ? String(needsYouCount) : undefined}
-          active={
-            location.pathname.includes("/hq") ||
-            location.pathname.endsWith("/home") ||
-            location.pathname.endsWith("/mission-control") ||
-            location.pathname.endsWith("/activity") ||
-            location.pathname.endsWith("/agents")
-          }
-          onSelect={() => cueNav("/assistant/hq")}
-        />
-        <SideMenu.Item
-          icon={FolderKanban}
-          label="Projects"
-          showCollapsedTooltip
-          active={
-            location.pathname.includes("/projects") ||
-            location.pathname.endsWith("/work")
-          }
-          onSelect={() => cueNav("/assistant/projects")}
-        />
+        {PRIMARY_NAV.map((destination) => {
+          const active = destination.match(location.pathname);
+          const isWork = destination.key === "work";
+          return (
+            <div key={destination.key}>
+              <SideMenu.Item
+                icon={PRIMARY_ICON[destination.key]}
+                label={destination.label}
+                showCollapsedTooltip
+                // HQ carries the only badge in the app: approvals parked
+                // mid-run plus finished runs nobody has reviewed. Cue works
+                // while you are away, so it has to be visible from anywhere —
+                // not only from inside HQ. Hidden at zero so it never nags.
+                // Work's trailing number is a count of things, not a demand.
+                badge={
+                  destination.key === "hq" && needsYouCount > 0
+                    ? String(needsYouCount)
+                    : isWork && navCounts.things > 0
+                      ? String(navCounts.things)
+                      : undefined
+                }
+                active={active}
+                onSelect={() => cueNav(destination.to)}
+              />
+              {/* Work's two views. Shown only while Work is open — nesting
+                  them permanently would put three rail rows on one
+                  destination. Hidden in the collapsed rail, where an indented
+                  row has nothing to indent from. */}
+              {isWork && active && !collapsed
+                ? WORK_VIEWS.map((view) => (
+                    <SideMenu.Item
+                      key={view.key}
+                      icon={WORK_VIEW_ICON[view.key]}
+                      label={view.label}
+                      indent
+                      badge={
+                        view.key === "everything" && navCounts.everything > 0
+                          ? String(navCounts.everything)
+                          : undefined
+                      }
+                      active={activeWorkView === view.key}
+                      onSelect={() => cueNav(view.to)}
+                    />
+                  ))
+                : null}
+            </div>
+          );
+        })}
+
+        <SideMenu.Separator />
+
+        {/* ── deeper ── the surfaces the phone reaches from its ◍ menu. Same
+            list, same order, one source (`DEEPER_NAV`). */}
+        {DEEPER_NAV.map((destination) => (
+          <SideMenu.Item
+            key={destination.key}
+            icon={DEEPER_ICON[destination.key] ?? Rocket}
+            label={destination.label}
+            showCollapsedTooltip
+            active={
+              destination.key === "people"
+                ? isContactsActive || destination.match(location.pathname)
+                : destination.match(location.pathname)
+            }
+            onSelect={
+              destination.key === "people" && onOpenContacts
+                ? () => {
+                    onOpenContacts();
+                    onClose?.();
+                  }
+                : () => cueNav(destination.to)
+            }
+          />
+        ))}
         <SideMenu.Item
           icon={Wand2}
           label="Create"
@@ -626,20 +735,6 @@ export function AssistantSideMenu({
             }
           />
         ) : null}
-        <SideMenu.Item
-          icon={Users}
-          label="People"
-          showCollapsedTooltip
-          active={isContactsActive}
-          onSelect={
-            onOpenContacts
-              ? () => {
-                  onOpenContacts();
-                  onClose?.();
-                }
-              : () => cueNav("/assistant/people")
-          }
-        />
         {/* Channel presence — live readiness dots (one memory across channels). */}
         <CueChannelPresence />
         {pinnedApps.map((app) => (

@@ -102,8 +102,30 @@ export const routes = {
   // Agents · the org — the company view of the agent roster ("Your company,
   // staffed by agents."). Reached from the HQ rail's "Agents ›" link.
   hqAgents: r("/assistant/hq/agents"),
+  /**
+   * Work — the tab. Called `projects` here because that is the path and the
+   * table; the user-facing word is **Work** (v11 vocabulary: `project` →
+   * *thing*, and the tab that holds them is Work).
+   */
   projects: r("/assistant/projects"),
   project: (id: string) => dyn(r("/assistant/projects"), id),
+  /**
+   * Work's two views. `Things` (containers) and `Everything` (the flat
+   * ledger) are two views of ONE destination — the ledger stopped being its
+   * own place in v11, because having both the tab and the ledger answer to
+   * the word "work" was the second collision that word caused in a week.
+   *
+   * This deliberately returns a query on `routes.projects` rather than a
+   * second path: a view is not a destination, and this codebase has already
+   * had to clean up duplicate nav once.
+   */
+  workView: (view: "things" | "everything") =>
+    `${r("/assistant/projects")}?view=${view}`,
+  /**
+   * Legacy standalone ledger URL. Now redirects into Work → Everything.
+   * Kept as a constant (not deleted) so every bookmark, tour target and
+   * cross-surface link that already points here still resolves.
+   */
   allWork: r("/assistant/work"),
   // Mobile v3 surfaces (docs/design/mobile-v3/). Registered centrally here so
   // the parallel cluster builds never edit this file or routes.tsx.

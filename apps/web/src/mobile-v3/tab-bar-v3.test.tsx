@@ -1,0 +1,178 @@
+/**
+ * The phone's three tabs.
+ *
+ * What's actually at risk here is the shape of the bar, not its pixels: the
+ * centre slot spent two design iterations as a `+` that pointed at nothing,
+ * and the fix was to make it a real destination with a real active state that
+ * also reports whether agents are working. So: three tabs, the mark in the
+ * middle, one badge, and a pulse that is driven by running work rather than
+ * by optimism.
+ */
+
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { createElement } from "react";
+import { MemoryRouter } from "react-router";
+
+const ASSISTANT_ID = "asst-1";
+const okResponse = { response: new Response(), error: undefined };
+
+let workItems: { id: string; status: string; projectId: string | null }[] = [];
+
+const sdkActual = await import("@/generated/daemon/sdk.gen");
+mock.module("@/generated/daemon/sdk.gen", () => ({
+  ...sdkActual,
+  projectsGet: mock(async () => ({ data: { projects: [] }, ...okResponse })),
+  workitemsGet: mock(async () => ({
+    data: { items: workItems },
+    ...okResponse,
+  })),
+  pendinginteractionsGet: mock(async () => ({
+    data: { interactions: [] },
+    ...okResponse,
+  })),
+}));
+
+mock.module("@/stores/resolved-assistants-store", () => ({
+  useResolvedAssistantsStore: {
+    use: { activeAssistantId: () => ASSISTANT_ID },
+  },
+}));
+
+const { TabBarV3 } = await import("./tab-bar-v3");
+
+function renderBar(pathname = "/assistant/hq") {
+  return render(
+    createElement(
+      QueryClientProvider,
+      {
+        client: new QueryClient({
+          defaultOptions: { queries: { retry: false } },
+        }),
+      },
+      createElement(
+        MemoryRouter,
+        { initialEntries: [pathname] },
+        createElement(TabBarV3),
+      ),
+    ),
+  );
+}
+
+afterEach(() => {
+  workItems = [];
+  cleanup();
+});
+
+describe("the bar's shape", () => {
+  test("three tabs, no more", () => {
+    renderBar();
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    expect(nav.querySelectorAll("button")).toHaveLength(3);
+  });
+
+  test("HQ, the mark, then Work — in that order", () => {
+    renderBar();
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    const labels = [...nav.querySelectorAll("button")].map((b) =>
+      b.getAttribute("aria-label"),
+    );
+    expect(labels[0]).toBe("HQ");
+    expect(labels[1]).toContain("Talk to Cue");
+    expect(labels[2]).toBe("Work");
+  });
+
+  test("the mark advertises its long-press, so voice is discoverable", () => {
+    // Voice stopped being a tab because it is a mode, not a place. It cannot
+    // therefore become invisible.
+    renderBar();
+    expect(screen.getByLabelText("Talk to Cue (hold for voice)")).toBeDefined();
+  });
+});
+
+describe("active state", () => {
+  test.each([
+    ["/assistant/hq", "HQ"],
+    ["/assistant/projects", "Work"],
+    ["/assistant/projects/proj-1", "Work"],
+    ["/assistant", "Talk to Cue (hold for voice)"],
+  ])("%s marks %s current", (pathname, label) => {
+    renderBar(pathname);
+    expect(screen.getByLabelText(label).getAttribute("aria-current")).toBe(
+      "page",
+    );
+  });
+
+  test("exactly one tab is ever current", () => {
+    renderBar("/assistant/projects");
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    const current = [...nav.querySelectorAll("button")].filter(
+      (b) => b.getAttribute("aria-current") === "page",
+    );
+    expect(current).toHaveLength(1);
+  });
+
+  test("the centre slot is a real destination, not a no-op", () => {
+    // v9's floating mark pointed at nothing. This asserts it points somewhere.
+    renderBar("/assistant");
+    expect(
+      screen
+        .getByLabelText("Talk to Cue (hold for voice)")
+        .getAttribute("aria-current"),
+    ).toBe("page");
+  });
+});
+
+describe("the pulse", () => {
+  test("stays off when nothing is running", async () => {
+    workItems = [{ id: "wi-1", status: "queued", projectId: null }];
+    renderBar();
+    await waitFor(() => {
+      expect(screen.getByLabelText("HQ")).toBeDefined();
+    });
+    expect(screen.queryByText("Agents are working")).toBeNull();
+  });
+
+  test("turns on — with words, not only motion — while work runs", async () => {
+    workItems = [{ id: "wi-1", status: "running", projectId: null }];
+    renderBar();
+    // A pulse is a colour-and-motion signal; it carries an accessible name so
+    // the state survives reduced motion and a screen reader.
+    await waitFor(() => {
+      expect(screen.getByText("Agents are working")).toBeDefined();
+    });
+  });
+});
+
+describe("the badge", () => {
+  test("HQ carries the app's only badge", async () => {
+    workItems = [
+      { id: "wi-1", status: "awaiting_review", projectId: null },
+      { id: "wi-2", status: "awaiting_review", projectId: null },
+    ];
+    renderBar();
+    await waitFor(() => {
+      expect(screen.getByText("2")).toBeDefined();
+    });
+    // And it hangs off HQ, not off Work or the mark.
+    expect(screen.getByLabelText("HQ").textContent).toContain("2");
+    expect(screen.getByLabelText("Work").textContent).not.toContain("2");
+  });
+});
+
+describe("surfaces that own their own dock", () => {
+  test.each([
+    "/assistant/voice",
+    "/assistant/brief",
+    "/assistant/conversations/abc",
+  ])("%s hides the bar", (pathname) => {
+    renderBar(pathname);
+    expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
+  });
+
+  test("the bare chats index keeps it", () => {
+    renderBar("/assistant/conversations");
+    expect(screen.getByRole("navigation", { name: "Primary" })).toBeDefined();
+  });
+});

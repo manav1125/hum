@@ -961,13 +961,21 @@ export const routeTree = [
                         },
                       },
                       {
+                        // "All work" stopped being its own destination in v11
+                        // — it is now Work's second view. The URL is NOT
+                        // deleted: it is the ledger's bookmark, HQ's census
+                        // link and the ⋯ menu's target, so it redirects into
+                        // Work → Everything rather than 404ing anyone.
+                        //
+                        // `work/:workItemId/live` is a sibling path and is
+                        // unaffected by this exact-path redirect.
                         path: "work",
-                        lazy: {
-                          Component: () =>
-                            import("@/pages/projects/all-work-page").then(
-                              (m) => m.AllWorkPage,
-                            ),
-                        },
+                        element: (
+                          <Navigate
+                            to={routes.workView("everything")}
+                            replace
+                          />
+                        ),
                       },
                       {
                         // Full-bleed Core surface (reached from the impact rail), not an
@@ -1028,9 +1036,9 @@ export const routeTree = [
                         path: "guardrails",
                         lazy: {
                           Component: () =>
-                            import(
-                              "@/domains/guardrails/guardrails-page"
-                            ).then((m) => m.GuardrailsPage),
+                            import("@/domains/guardrails/guardrails-page").then(
+                              (m) => m.GuardrailsPage,
+                            ),
                         },
                       },
                       {

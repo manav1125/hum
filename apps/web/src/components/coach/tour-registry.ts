@@ -28,7 +28,6 @@ export type CoachSurface =
   | "voice"
   | "cue-live"
   | "projects"
-  | "work"
   | "guardrails"
   | "connectors"
   | "hq";
@@ -100,8 +99,12 @@ export const COACH_SURFACES: CoachSurfaceDef[] = [
   { id: "memory", routes: [routes.memory] },
   { id: "cue-live", routes: [routes.cueLive] },
   { id: "voice", routes: [routes.voice] },
-  { id: "projects", routes: [routes.projects] },
-  { id: "work", routes: [routes.allWork] },
+  // Work is ONE surface with two views (`?view=things|everything`), so it is
+  // one coach surface too. `surfaceForPath` matches on pathname alone, and a
+  // second entry for the same path would make "first match wins" decide which
+  // tips you get. The ledger's tip lives here and simply waits for its anchor
+  // to exist — which happens on the Everything view.
+  { id: "projects", routes: [routes.projects, routes.allWork] },
   { id: "guardrails", routes: [routes.guardrails, routes.trust] },
   { id: "connectors", routes: [routes.connectors] },
 ];
@@ -205,8 +208,8 @@ export const COACH_STEPS: CoachStep[] = [
     id: "projects-new",
     surface: "projects",
     anchor: "projects-new",
-    title: "Group work into projects",
-    body: "Start a project to keep related tasks, files, and agents in one place.",
+    title: "Group work into things",
+    body: "A thing is whatever you're trying to get done. Start one to keep its tasks, files and agents in one place.",
     side: "bottom",
     align: "end",
     order: 1,
@@ -215,10 +218,10 @@ export const COACH_STEPS: CoachStep[] = [
   // ── All work · the queue ────────────────────────────────────────────────
   {
     id: "work-view",
-    surface: "work",
+    surface: "projects",
     anchor: "work-view",
     title: "Everything in flight",
-    body: "This queue shows every task Cue is running — regroup it to suit how you scan.",
+    body: "Everything shows every live task, whichever thing it belongs to — regroup it to suit how you scan.",
     side: "bottom",
     align: "start",
     order: 1,

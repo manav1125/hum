@@ -1,7 +1,17 @@
 /**
- * All work — one flat, groupable list of every live work item. Grouping is a
- * client-side toggle (status / project / due) over a single fetch; rows keep
- * the Activity design language.
+ * Work → Everything — one flat, groupable list of every live task.
+ *
+ * This used to be "All work", its own destination in the nav. It is now
+ * Work's second view: the tab and the ledger were both called work, and
+ * merging them was the fix rather than renaming one of them again. Nothing
+ * about the list changed in the move — the filters, search, bulk select and
+ * the "Not in anything yet" bucket all came with it.
+ *
+ * Grouping by **thing** produces exactly the headers that Work → Things
+ * lists, which is what makes the two views provably the same data rather than
+ * two summaries that happen to agree.
+ *
+ * `/assistant/work` still resolves; it redirects here.
  */
 
 import { Loader2 } from "lucide-react";
@@ -38,9 +48,17 @@ import {
 import { Mv3AllWork } from "./mv3-all-work";
 import { NewProjectModal } from "./new-project-modal";
 import { usePatchWorkItem, useProjects } from "./use-projects";
+import { WorkViewTabs } from "./work-views";
 import { describeWorkState } from "@/pages/hq/work-vocabulary";
 
-type Grouping = "status" | "project" | "due";
+type Grouping = "status" | "thing" | "due";
+
+/**
+ * The bucket for tasks that belong to no thing yet. Named as a state of the
+ * task ("not in anything yet") rather than an absence on the record ("no
+ * project") — one is something to do, the other is a null.
+ */
+const UNFILED_LABEL = "Not in anything yet";
 
 const STATUS_ORDER = ["awaiting_review", "running", "queued", "done", "failed"];
 // Grouping headers read from the shared vocabulary so All work and HQ speak
@@ -154,9 +172,9 @@ function AllWorkPageDesktop() {
       const key =
         grouping === "status"
           ? (STATUS_LABEL[item.status] ?? item.status)
-          : grouping === "project"
+          : grouping === "thing"
             ? (item.projectId && projectTitle.get(item.projectId)) ||
-              "No project"
+              UNFILED_LABEL
             : dueBucket(item, now);
       const bucket = map.get(key) ?? [];
       bucket.push(item);
@@ -168,9 +186,9 @@ function AllWorkPageDesktop() {
         : grouping === "due"
           ? DUE_ORDER
           : [...map.keys()].sort((a, b) =>
-              a === "No project"
+              a === UNFILED_LABEL
                 ? 1
-                : b === "No project"
+                : b === UNFILED_LABEL
                   ? -1
                   : a.localeCompare(b),
             );
@@ -186,6 +204,12 @@ function AllWorkPageDesktop() {
       <div
         style={{ maxWidth: 880, margin: "0 auto", padding: "34px 22px 60px" }}
       >
+        {/* The way back to Things. Without it Everything would be a one-way
+            door, which is how the old "All work" ended up feeling like a
+            separate place in the first place. */}
+        <div style={{ marginBottom: 16 }}>
+          <WorkViewTabs current="everything" />
+        </div>
         <div
           style={{
             display: "flex",
@@ -195,10 +219,10 @@ function AllWorkPageDesktop() {
           }}
         >
           <GroupHeader
-            kicker="All work"
+            kicker="Work"
             title="Everything, one list."
             accent={C.violet}
-            hint="Every live item Cue is tracking, however it arrived."
+            hint="Every live task Cue is tracking, however it arrived."
           />
           <div
             style={{
@@ -242,7 +266,7 @@ function AllWorkPageDesktop() {
               data-coach="work-view"
               style={{ display: "inline-flex", gap: 4 }}
             >
-              {(["status", "project", "due"] as const).map((g) => (
+              {(["status", "thing", "due"] as const).map((g) => (
                 <button
                   key={g}
                   type="button"

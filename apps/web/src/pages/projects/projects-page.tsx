@@ -1,5 +1,24 @@
 /**
- * Projects home — the cowork surface's front door, in HQ's language.
+ * Work — the tab, and its default view.
+ *
+ * "Work" is one destination with two views: **Things** (the containers, here)
+ * and **Everything** (the flat ledger, in `all-work-page.tsx`). The ledger
+ * used to be its own destination called "All work", which meant two surfaces
+ * answered to the same word; v11 merged them rather than renaming again.
+ * `ProjectsPage` is the switchboard — it reads `?view=` and renders one or the
+ * other, so both views share a URL, a tab and a back button.
+ *
+ * Vocabulary: what the table calls a `project` the UI calls a **thing**, and
+ * what it called a `mission` the UI calls a **goal** — a label on a group of
+ * things, never a level you click through. The stored values are unchanged;
+ * this is a copy change, not a migration.
+ *
+ * Depth is two levels, never three: `Work → Renew Acme → Confirm the
+ * 24-month position`. If things are grouped under a goal, that grouping is a
+ * header inside this list — you tap the thing beneath it, never the header —
+ * so it adds no depth.
+ *
+ * Below: the cowork surface's front door, in HQ's language.
  *
  * Restyled to the locked Cue-HQ-Build Round 5 · B1 frames: a serif hero under
  * an "INITIATIVES & AREAS · N ACTIVE" microlabel, HQ card DNA on the project
@@ -12,15 +31,19 @@
 
 import { Pin, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { readWorkView } from "@/components/nav/nav-model";
 import { C, mono, relativeTime, serif } from "@/domains/activity/theme";
 import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { HqStyle, MicroLabel } from "@/pages/hq/hq-kit";
+import { useHqWorkItems } from "@/pages/hq/use-missions";
 import { routes } from "@/utils/routes";
 
+import { AllWorkPage } from "./all-work-page";
 import { GoalTag, MissionTag } from "./item-card";
+import { DoorwayLine, WorkViewTabs, describeWorkers } from "./work-views";
 import { Mv3Projects } from "./mv3-projects";
 import { NewProjectModal } from "./new-project-modal";
 import {
@@ -124,17 +147,23 @@ export function ProjectCard({
   missionGoal,
   onOpenMission,
   now,
+  workers = [],
 }: {
   project: ProjectView;
   onOpen: () => void;
   onTogglePin?: () => void;
   pinBusy?: boolean;
   missionTitle?: string | null;
-  /** The linked mission's outcome — renders the green ◎ goal tag when present. */
+  /** The linked goal's outcome — renders the green ◎ goal tag when present. */
   missionGoal?: string | null;
   onOpenMission?: () => void;
   /** Stable reference time (no Date.now() in render); defaults to createdAt. */
   now?: number;
+  /**
+   * Who is on this thing right now (distinct assignees on its live items).
+   * Part of what makes the row a doorway rather than a dashboard tile.
+   */
+  workers?: string[];
 }) {
   const compact = useIsMobile();
   const refNow = now ?? project.updatedAt;
@@ -269,7 +298,7 @@ export function ProjectCard({
         {onTogglePin ? (
           <button
             type="button"
-            aria-label={project.pinned ? "Unpin project" : "Pin project"}
+            aria-label={project.pinned ? "Unpin thing" : "Pin thing"}
             aria-pressed={project.pinned}
             disabled={pinBusy}
             onClick={(e) => {
@@ -296,6 +325,17 @@ export function ProjectCard({
       </div>
 
       {!compact ? tagRow : null}
+
+      {/* The doorway line — counts and who is on it. Renders on both widths:
+          it is the single thing that stops a Work row reading as a portfolio
+          tile, so it is not the part that gets dropped on a narrow screen. */}
+      <DoorwayLine
+        needsYou={counts?.awaiting_review ?? 0}
+        running={counts?.running ?? 0}
+        total={counts?.total ?? 0}
+        workers={workers}
+        compact={compact}
+      />
 
       {!compact && chips.length > 0 ? (
         <div
@@ -375,11 +415,21 @@ export function ProjectCard({
 }
 
 /**
- * Mobile v3 gate: narrow viewports render the frame-6 native Projects list
- * (Mv3Projects); desktop keeps this serif deck byte-identical below.
+ * Work's switchboard.
+ *
+ * `?view=everything` renders the flat ledger; anything else (including a
+ * malformed value) renders Things. A bad query param must land on a real
+ * screen, never a blank one.
+ *
+ * The mobile/desktop split happens INSIDE each view, not here, so the two
+ * platforms are choosing a rendering of the same view rather than choosing
+ * different views.
  */
 export function ProjectsPage() {
+  const [searchParams] = useSearchParams();
+  const view = readWorkView(searchParams);
   const isMobile = useMobileLayout();
+  if (view === "everything") return <AllWorkPage />;
   return isMobile ? <Mv3Projects /> : <ProjectsPageDesktop />;
 }
 
@@ -388,6 +438,9 @@ function ProjectsPageDesktop() {
   const navigate = useNavigate();
   const isNarrow = useIsMobile();
   const { projects, isLoading, isError } = useProjects(assistantId);
+  // Unfiltered work items — the SAME query key the sidebar's counts and the
+  // ledger read, so this costs nothing extra and cannot disagree with them.
+  const allWorkItems = useHqWorkItems(assistantId);
   const missionTitles = useMissionTitles(assistantId);
   const missionGoals = useMissionGoals(assistantId);
   const patch = usePatchProject(assistantId);
@@ -403,6 +456,22 @@ function ProjectsPageDesktop() {
   );
 
   const pinned = useMemo(() => active.filter((p) => p.pinned), [active]);
+
+  // projectId → who is on its live items. Terminal items are excluded: "Cue"
+  // is not on a thing because it finished something there last week.
+  const workersByProject = useMemo(() => {
+    const map = new Map<string, (string | null)[]>();
+    for (const item of allWorkItems.items) {
+      if (!item.projectId) continue;
+      if (item.status === "done" || item.status === "failed") continue;
+      const arr = map.get(item.projectId) ?? [];
+      arr.push(item.assignee ?? null);
+      map.set(item.projectId, arr);
+    }
+    return new Map(
+      [...map].map(([id, assignees]) => [id, describeWorkers(assignees)]),
+    );
+  }, [allWorkItems.items]);
 
   // Group non-pinned actives by category bucket. Pinned projects float to the
   // top band only, to keep the "pinned" affordance meaningful.
@@ -464,6 +533,7 @@ function ProjectsPageDesktop() {
           }
           onOpen={() => navigate(routes.project(p.id))}
           onTogglePin={() => togglePin(p)}
+          workers={workersByProject.get(p.id) ?? []}
         />
       ))}
       {/* S5 grid closer: a ghost "Add a project" cell keeps each band a real
@@ -495,9 +565,7 @@ function ProjectsPageDesktop() {
           }}
         >
           <div>
-            <MicroLabel>
-              Initiatives &amp; areas · {active.length} active
-            </MicroLabel>
+            <MicroLabel>Things · {active.length} active</MicroLabel>
             <div
               style={{
                 fontFamily: serif,
@@ -507,14 +575,14 @@ function ProjectsPageDesktop() {
                 marginTop: 6,
               }}
             >
-              Projects
+              Work
             </div>
           </div>
           <button
             type="button"
             data-coach="projects-new"
             onClick={() => setShowNew(true)}
-            aria-label="New project"
+            aria-label="New thing"
             style={
               isNarrow
                 ? {
@@ -546,17 +614,23 @@ function ProjectsPageDesktop() {
             }
           >
             <Plus size={14} />
-            {isNarrow ? null : "New project"}
+            {isNarrow ? null : "New thing"}
           </button>
+        </div>
+
+        {/* Things / Everything. Two views, one destination — the ledger is
+            reachable from here and nowhere else in the nav. */}
+        <div style={{ marginTop: 14 }}>
+          <WorkViewTabs current="things" />
         </div>
 
         {isLoading ? (
           <div style={{ fontSize: 13, color: C.t2, marginTop: 20 }}>
-            Loading projects…
+            Loading your work…
           </div>
         ) : isError ? (
           <div style={{ fontSize: 13, color: C.t2, marginTop: 20 }}>
-            Couldn’t load projects just now — try again in a moment.
+            I couldn’t load your work just now — try again in a moment.
           </div>
         ) : active.length === 0 ? (
           <EmptyState onCreate={() => setShowNew(true)} />
@@ -626,18 +700,27 @@ function BandHeader({
   );
 }
 
-/** Per-band copy for the ghost "Add a project" grid closer (S5). */
+/**
+ * Per-band copy for the ghost "Add a thing" grid closer (S5).
+ *
+ * The domain bands are **Professional / Personal**, never "Work / Life" —
+ * "the Work tab, filtered to Work" was nonsense, and Personal is the word the
+ * owner actually uses.
+ */
 const ADD_LABEL: Record<CategoryKey, { title: string; sub: string }> = {
   personal: {
-    title: "Add a personal project",
+    title: "Add a personal thing",
     sub: "Trips, home, health, money…",
   },
   professional: {
-    title: "Add a work project",
-    sub: "Missions file their work here automatically",
+    title: "Add a professional thing",
+    sub: "Cue files its work here automatically",
   },
-  other: { title: "Add a project", sub: "Anything else you're working on" },
-  uncategorized: { title: "Add a project", sub: "Anything else you're working on" },
+  other: { title: "Add a thing", sub: "Anything else you're working on" },
+  uncategorized: {
+    title: "Add a thing",
+    sub: "Anything else you're working on",
+  },
 };
 
 /**
@@ -739,7 +822,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
           color: C.ink,
         }}
       >
-        No projects yet.
+        Nothing here yet.
       </div>
       <div
         style={{
@@ -749,7 +832,13 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
           lineHeight: 1.55,
         }}
       >
-        Missions create them as they work — or start one yourself.
+        {/* Teach the word in a sentence, not a tooltip — and stay honest
+            about what Cue is already doing without it. */}
+        A thing is whatever you&rsquo;re trying to get done — a deal, a launch,
+        a raise. Name one yourself, or tell Cue what you&rsquo;re working on.
+        <br />
+        Until then Cue still answers, drafts and files — it just won&rsquo;t
+        have anywhere to put the results.
       </div>
       <button
         type="button"
@@ -769,7 +858,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
           marginTop: 18,
         }}
       >
-        <Plus size={13} /> New project
+        <Plus size={13} /> Name a thing
       </button>
     </div>
   );

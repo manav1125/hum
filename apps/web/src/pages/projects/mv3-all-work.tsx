@@ -44,8 +44,12 @@ import { routes } from "@/utils/routes";
 import { Mv3AddTasksSheet } from "./mv3-add-tasks-sheet";
 import { Mv3TaskSheet } from "./mv3-task-sheet";
 import { useProjects } from "./use-projects";
+import { Mv3WorkViewTabs } from "./work-views";
 
-type Grouping = "status" | "project" | "due";
+type Grouping = "status" | "thing" | "due";
+
+/** Tasks that belong to no thing yet — a state, not a null. */
+const UNFILED_LABEL = "Not in anything yet";
 
 /* Desktop's grouping vocabulary, verbatim (all-work-page.tsx). */
 const STATUS_ORDER = ["awaiting_review", "running", "queued", "done", "failed"];
@@ -266,9 +270,9 @@ export function Mv3AllWork() {
       const key =
         grouping === "status"
           ? (STATUS_LABEL[item.status] ?? item.status)
-          : grouping === "project"
+          : grouping === "thing"
             ? (item.projectId && projectTitle.get(item.projectId)) ||
-              "No project"
+              UNFILED_LABEL
             : dueBucket(item, now);
       const bucket = map.get(key) ?? [];
       bucket.push(item);
@@ -280,9 +284,9 @@ export function Mv3AllWork() {
         : grouping === "due"
           ? DUE_ORDER
           : [...map.keys()].sort((a, b) =>
-              a === "No project"
+              a === UNFILED_LABEL
                 ? 1
-                : b === "No project"
+                : b === UNFILED_LABEL
                   ? -1
                   : a.localeCompare(b),
             );
@@ -331,7 +335,7 @@ export function Mv3AllWork() {
     >
       <AuroraBackdrop />
       <LargeTitleHeader
-        title="All work"
+        title="Everything"
         scrollRef={scrollRef}
         trailing={
           <button
@@ -366,6 +370,11 @@ export function Mv3AllWork() {
         }
       />
 
+      {/* Things / Everything — the same switcher desktop renders, from the
+          same declaration, so the phone can never end up in a view the other
+          platform has no way back out of. */}
+      <Mv3WorkViewTabs current="everything" />
+
       {/* Group-by segment pills — the desktop toggle, in v3 grammar. */}
       <div
         role="radiogroup"
@@ -382,7 +391,7 @@ export function Mv3AllWork() {
         {(
           [
             { key: "status", label: "Status" },
-            { key: "project", label: "Project" },
+            { key: "thing", label: "Thing" },
             { key: "due", label: "Due" },
           ] as const
         ).map((g) => {
@@ -460,7 +469,7 @@ export function Mv3AllWork() {
                     key={item.id}
                     item={item}
                     projectName={
-                      grouping !== "project" && item.projectId
+                      grouping !== "thing" && item.projectId
                         ? (projectTitle.get(item.projectId) ?? null)
                         : null
                     }

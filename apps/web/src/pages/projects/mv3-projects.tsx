@@ -36,6 +36,7 @@ import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 import { Mv3NewProjectSheet } from "./mv3-new-project-sheet";
+import { Mv3WorkViewTabs, describeWorkers } from "./work-views";
 import {
   useArchivedProjects,
   useProjects,
@@ -140,13 +141,16 @@ function ProjectCardV3({
   liveItem,
   delay,
   done,
+  workers = [],
 }: {
   project: ProjectView;
-  /** The project's first running work item — drives the live agent line. */
+  /** The thing's first running work item — drives the live agent line. */
   liveItem: HqWorkItem | null;
   delay: number;
   /** Rendering inside the Done (archived) segment. */
   done?: boolean;
+  /** Distinct assignees on this thing's live items. */
+  workers?: string[];
 }) {
   const navigate = useNavigate();
   const posture = done ? "quiet" : postureOf(project);
@@ -154,33 +158,37 @@ function ProjectCardV3({
   const running = c?.running ?? 0;
   const review = c?.awaiting_review ?? 0;
   const total = c?.total ?? 0;
-  const pct =
-    total > 0 ? Math.round(((c?.done ?? 0) / total) * 100) : null;
   const next = project.stats?.nextTask ?? null;
 
   // Microlabel: ‖ NEEDS YOU · … / ON TRACK · JUL 31 / QUIET (frame 6).
   let micro: string;
   if (done) micro = "✓ Done";
-  else if (posture === "needs_you")
-    micro = `‖ Needs you · ${review} review`;
+  else if (posture === "needs_you") micro = `‖ Needs you · ${review} review`;
   else if (posture === "on_track")
-    micro = next?.dueAt != null ? `On track · ${shortDate(next.dueAt)}` : "On track";
-  else micro = next?.dueAt != null ? `Quiet · next ${shortDate(next.dueAt)}` : "Quiet";
+    micro =
+      next?.dueAt != null ? `On track · ${shortDate(next.dueAt)}` : "On track";
+  else
+    micro =
+      next?.dueAt != null ? `Quiet · next ${shortDate(next.dueAt)}` : "Quiet";
   const microColor = done ? "var(--mv3-green)" : POSTURE_COLOR[posture];
 
-  // Sub line: live tallies, or the honest quiet line.
+  // The doorway line: "1 needs you · 2 running · 9 total", then who is on it.
+  //
+  // A ring and a status word alone reads as a dashboard tile — something you
+  // look at. Counts plus the people working make it a door with a room behind
+  // it. This replaced a percentage: "68% of keep-the-pipeline-warm" is exactly
+  // the fake number the rules forbid, and the count is the honest version.
   const subParts: string[] = [];
-  if (running > 0) subParts.push(`${running} running`);
   if (review > 0) subParts.push(`${review} needs you`);
-  if (pct != null && total > 0) subParts.push(`${pct}%`);
+  if (running > 0) subParts.push(`${running} running`);
+  if (total > 0) subParts.push(`${total} total`);
+  if (workers.length > 0) subParts.push(workers.slice(0, 2).join(", "));
   const sub =
     subParts.length > 0
       ? subParts.join(" · ")
       : next
         ? `Next: ${next.title}`
-        : (c?.done ?? 0) > 0
-          ? "Quiet · nothing due"
-          : "Nothing filed yet";
+        : "Nothing in it yet";
 
   const open = () => {
     haptic.light();
@@ -195,7 +203,7 @@ function ProjectCardV3({
       style={{ position: "relative", overflow: "hidden", ...rise(delay) }}
       role="button"
       tabIndex={0}
-      aria-label={`Project: ${project.title}`}
+      aria-label={`Thing: ${project.title}`}
       onClick={open}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -297,7 +305,6 @@ function ProjectCardV3({
 
 export function Mv3Projects() {
   const assistantId = useActiveAssistantId();
-  const navigate = useNavigate();
   useActivitySync(assistantId, true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [segment, setSegment] = useState<Segment>("active");
@@ -311,7 +318,9 @@ export function Mv3Projects() {
   // the active list for "archived" matched nothing — the post-archive
   // "Nothing archived yet" bug).
   const archivedQuery = useArchivedProjects(assistantId);
-  const runningItems = useHqWorkItems(assistantId, "running");
+  // Unfiltered — the same query key the sidebar counts and the ledger read,
+  // so the live line, the doorway counts and the rail can never disagree.
+  const allItems = useHqWorkItems(assistantId);
 
   const active = useMemo(
     () => projects.filter((p) => p.status === "active"),
@@ -322,15 +331,34 @@ export function Mv3Projects() {
   // projectId → first running item (newest activity first) for the live line.
   const liveByProject = useMemo(() => {
     const map = new Map<string, HqWorkItem>();
-    const sorted = [...runningItems.items].sort(
-      (a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt),
-    );
+    const sorted = [...allItems.items]
+      .filter((i) => i.status === "running")
+      .sort(
+        (a, b) =>
+          (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt),
+      );
     for (const item of sorted) {
       if (item.projectId && !map.has(item.projectId))
         map.set(item.projectId, item);
     }
     return map;
-  }, [runningItems.items]);
+  }, [allItems.items]);
+
+  // projectId → who is on its live items. Terminal items are excluded: Cue is
+  // not "on" a thing because it finished something there last week.
+  const workersByProject = useMemo(() => {
+    const map = new Map<string, (string | null)[]>();
+    for (const item of allItems.items) {
+      if (!item.projectId) continue;
+      if (item.status === "done" || item.status === "failed") continue;
+      const arr = map.get(item.projectId) ?? [];
+      arr.push(item.assignee ?? null);
+      map.set(item.projectId, arr);
+    }
+    return new Map(
+      [...map].map(([id, assignees]) => [id, describeWorkers(assignees)]),
+    );
+  }, [allItems.items]);
 
   const shown = segment === "active" ? active : archived;
   // Needs-you projects float first, then live ones — the eye lands on the
@@ -367,12 +395,15 @@ export function Mv3Projects() {
       }}
     >
       <AuroraBackdrop />
-      <LargeTitleHeader title="Projects" scrollRef={scrollRef} />
+      <LargeTitleHeader title="Work" scrollRef={scrollRef} />
+
+      {/* Things / Everything — the same two views desktop renders. */}
+      <Mv3WorkViewTabs current="things" />
 
       {/* Segment pills (frame 6). */}
       <div
         role="radiogroup"
-        aria-label="Project filter"
+        aria-label="Thing filter"
         style={{
           display: "flex",
           gap: 7,
@@ -399,9 +430,7 @@ export function Mv3Projects() {
                 fontSize: 12.5,
                 fontWeight: selected ? 600 : 400,
                 color: selected ? "var(--mv3-bg)" : "var(--mv3-muted)",
-                background: selected
-                  ? "var(--mv3-text)"
-                  : "var(--mv3-btn2-bg)",
+                background: selected ? "var(--mv3-text)" : "var(--mv3-btn2-bg)",
                 border: selected
                   ? "1px solid transparent"
                   : "1px solid var(--mv3-btn2-border)",
@@ -433,11 +462,11 @@ export function Mv3Projects() {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {isLoading ? (
             <div style={{ ...cardBody, padding: "8px 6px" }}>
-              Loading projects…
+              Loading your work…
             </div>
           ) : isError ? (
             <div style={{ ...cardBody, padding: "8px 6px" }}>
-              Couldn’t load projects just now — try again in a moment.
+              I couldn’t load your work just now — try again in a moment.
             </div>
           ) : (
             <>
@@ -448,6 +477,7 @@ export function Mv3Projects() {
                   liveItem={liveByProject.get(p.id) ?? null}
                   delay={0.1 + 0.12 * Math.min(i, 4)}
                   done={segment === "done"}
+                  workers={workersByProject.get(p.id) ?? []}
                 />
               ))}
               {ordered.length === 0 ? (
@@ -460,7 +490,7 @@ export function Mv3Projects() {
                 >
                   {segment === "done"
                     ? "Nothing archived yet."
-                    : "Missions create them as they work — or start one yourself."}
+                    : "A thing is whatever you’re trying to get done — a deal, a launch, a raise. Name one, or tell Cue what you’re working on."}
                 </div>
               ) : null}
 
@@ -468,7 +498,7 @@ export function Mv3Projects() {
               {segment === "active" ? (
                 <button
                   type="button"
-                  aria-label="New project — tell Cue what you're working on"
+                  aria-label="New thing — tell Cue what you're working on"
                   className="cue-pressable"
                   onClick={() => {
                     haptic.light();
@@ -479,7 +509,8 @@ export function Mv3Projects() {
                     alignItems: "center",
                     justifyContent: "center",
                     gap: 9,
-                    border: "1.5px dashed color-mix(in srgb, var(--mv3-text) 16%, transparent)",
+                    border:
+                      "1.5px dashed color-mix(in srgb, var(--mv3-text) 16%, transparent)",
                     borderRadius: 20,
                     padding: 14,
                     minHeight: 48,
@@ -512,67 +543,6 @@ export function Mv3Projects() {
                   </span>
                 </button>
               ) : null}
-
-              {/* All work — the flat, groupable list (/assistant/work),
-                  parity audit §3 P0: previously unreachable on mobile. */}
-              <button
-                type="button"
-                aria-label="All work — everything Cue is tracking"
-                className="cue-pressable"
-                onClick={() => {
-                  haptic.light();
-                  navigate(routes.allWork);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  background: "var(--mv3-card)",
-                  border: "1px solid var(--mv3-card-border)",
-                  borderRadius: 16,
-                  padding: "12px 15px",
-                  minHeight: 48,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  textAlign: "left",
-                  ...rise(0.62),
-                }}
-              >
-                <span
-                  aria-hidden
-                  style={{ fontSize: 13, color: "var(--mv3-micro)" }}
-                >
-                  ⌗
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span
-                    style={{
-                      display: "block",
-                      fontSize: 13.5,
-                      fontWeight: 600,
-                      color: "var(--mv3-text)",
-                    }}
-                  >
-                    All work
-                  </span>
-                  <span
-                    style={{
-                      display: "block",
-                      fontSize: 11,
-                      color: "var(--mv3-faint)",
-                      marginTop: 1,
-                    }}
-                  >
-                    Everything Cue is tracking, one list
-                  </span>
-                </span>
-                <span
-                  aria-hidden
-                  style={{ fontSize: 15, color: "var(--mv3-faint)" }}
-                >
-                  ›
-                </span>
-              </button>
             </>
           )}
         </div>

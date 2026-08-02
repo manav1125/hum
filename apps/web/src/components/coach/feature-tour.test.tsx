@@ -20,7 +20,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import { routes } from "@/utils/routes";
@@ -119,7 +125,7 @@ describe("FeatureTour · when a tip is allowed to show", () => {
     plantAnchor("projects-new");
     const first = renderTour(routes.projects);
     await settle();
-    expect(screen.getByText("Group work into projects")).toBeDefined();
+    expect(screen.getByText("Group work into things")).toBeDefined();
 
     // THEN "Skip tour" is offered here too — not only on multi-step surfaces
     const skip = screen.getByRole("button", { name: "Skip tour" });
