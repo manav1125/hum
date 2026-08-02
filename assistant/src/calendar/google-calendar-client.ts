@@ -66,6 +66,24 @@ export interface CalendarEvent {
   htmlLink?: string;
   created?: string;
   updated?: string;
+  /**
+   * RRULE/EXDATE lines, present only on a recurring series MASTER (and only
+   * when the request did not expand instances, i.e. `singleEvents: false`).
+   *
+   * Load-bearing for the watcher: a master's `start` is the FIRST occurrence of
+   * the series, which for a weekly meeting running since 2020 is a date six
+   * years in the past even though the meeting is on next week's calendar. Any
+   * "is this event over?" test must therefore exempt anything carrying this
+   * field — the master's own dates say nothing about whether the series is live.
+   */
+  recurrence?: string[];
+  /**
+   * Set on a single instance that was modified out of its series (Google calls
+   * these exceptions; their ids look like `<masterId>_20200622T010000Z`). The
+   * value is the master's id. Unlike a master, an exception IS a real
+   * occurrence, so its own start/end are the truth about when it happened.
+   */
+  recurringEventId?: string;
 }
 
 /** Events list response. */

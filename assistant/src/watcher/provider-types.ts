@@ -20,6 +20,22 @@ export interface FetchResult {
 }
 
 /**
+ * What the engine does with the events a watcher detects.
+ *
+ *  · `came_in`     — put each event through the relevance gate: a playbook
+ *                    claims it, it becomes a work item in the Came-in lane, or
+ *                    it is filed away with a reason. This is what mints work.
+ *  · `agent`       — the legacy path: one background LLM conversation per tick
+ *                    per watcher, driven by the watcher's `action_prompt`.
+ *  · `record_only` — record the event in `watcher_events` and stop. No work
+ *                    item, no arrival, no LLM call, no notification. The
+ *                    change stream is kept (it is the substrate a narrower
+ *                    rule can later read) but nothing is put in front of the
+ *                    owner.
+ */
+export type WatcherIntakeMode = "came_in" | "agent" | "record_only";
+
+/**
  * A watcher provider adapts an external API into the watcher system.
  * Each provider knows how to poll for new events and track its position.
  */
@@ -30,6 +46,22 @@ export interface WatcherProvider {
   displayName: string;
   /** Credential service required (e.g. 'google'). */
   requiredCredentialService: string;
+
+  /**
+   * Intake mode this provider PINS, overriding whatever the watcher row says.
+   *
+   * Almost no provider should set this: intake is normally the owner's choice
+   * per watcher. It exists for sources where "what this event is" is settled
+   * by the source itself rather than by configuration — a calendar event is
+   * something you attend, not something in a queue, whichever watcher row
+   * happens to point at the calendar.
+   *
+   * Pinning here rather than only in `auto-provision` is deliberate: the mode
+   * is a property of the source, so a row that already exists with the wrong
+   * mode (or one a user edits later) is corrected by deploying code, with no
+   * data migration and no window in which the old behaviour can fire again.
+   */
+  pinnedIntakeMode?: WatcherIntakeMode;
 
   /**
    * Fetch new events since the given watermark.

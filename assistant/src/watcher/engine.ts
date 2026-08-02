@@ -12,6 +12,7 @@ import { checkForSequenceReplies } from "../sequence/reply-matcher.js";
 import { getLogger } from "../util/logger.js";
 import { MAX_CONSECUTIVE_ERRORS, WATCHER_JOB_TIMEOUT_MS } from "./constants.js";
 import { getWatcherProvider } from "./provider-registry.js";
+import type { WatcherProvider } from "./provider-types.js";
 import {
   recordWatcherInventoryIfDue,
   recordWatcherLlmProcessed,
@@ -46,6 +47,27 @@ export interface WatcherEngineHandle {
  * Initialize the watcher engine. Call once at daemon startup.
  * Resets any watchers stuck in 'polling' state from a prior crash.
  */
+/**
+ * What this watcher's events should become on this tick.
+ *
+ * A provider may PIN the mode, and when it does the pin wins over the stored
+ * column. That inversion is deliberate: for a source where the mode follows
+ * from what the events ARE (a calendar event is not a task), the answer must
+ * not depend on a row that was written before we knew that, or on a setting
+ * somebody can change. It also means the fix reaches watchers that already
+ * exist the moment the code deploys, with no data migration.
+ *
+ * Unpinned watchers read their column verbatim, including values this build
+ * does not recognise — anything that is not `came_in` or `record_only` falls
+ * through to the legacy agent path exactly as before.
+ */
+function resolveIntakeMode(
+  intakeMode: string,
+  provider: WatcherProvider | undefined,
+): string {
+  return provider?.pinnedIntakeMode ?? intakeMode;
+}
+
 export function initWatcherEngine(): void {
   const reset = resetStuckWatchers();
   if (reset > 0) {
@@ -236,12 +258,33 @@ export async function runWatchersOnce(
     const pendingEvents = getPendingEvents(watcher.id);
     if (pendingEvents.length === 0) continue;
 
+    const intakeMode = resolveIntakeMode(
+      watcher.intakeMode,
+      getWatcherProvider(watcher.providerId),
+    );
+
+    // ── Record-only intake ────────────────────────────────────────
+    // The event is already in `watcher_events`, which is the whole job: this
+    // watcher exists to keep a change stream, not to hand the owner work. No
+    // work item, no arrival, no LLM call, no notification.
+    if (intakeMode === "record_only") {
+      for (const event of pendingEvents) {
+        updateEventDisposition(
+          event.id,
+          "silent",
+          "Recorded — this watcher does not create work",
+        );
+      }
+      processed++;
+      continue;
+    }
+
     // ── Came-in intake (WS-F) ─────────────────────────────────────
     // 'came_in' watchers put each new event through the relevance gate: a
     // playbook claims it, it surfaces as a parked work item, or it is filed
     // away (recorded and reversible, but out of the lane). 'agent' watchers
     // keep the legacy background-LLM path below.
-    if (watcher.intakeMode === "came_in") {
+    if (intakeMode === "came_in") {
       const dispositions = await fileWatcherEventsToCameIn(
         watcher,
         pendingEvents,

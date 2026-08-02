@@ -46,7 +46,7 @@ const WatcherCreateParams = z.object({
   poll_interval_ms: z.number().int().min(15000).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
   credential_service: z.string().optional(),
-  intake_mode: z.enum(["came_in", "agent"]).optional(),
+  intake_mode: z.enum(["came_in", "agent", "record_only"]).optional(),
 });
 
 const WatcherListParams = z.object({
@@ -61,7 +61,7 @@ const WatcherUpdateParams = z.object({
   poll_interval_ms: z.number().int().min(15000).optional(),
   enabled: z.boolean().optional(),
   config: z.record(z.string(), z.unknown()).optional(),
-  intake_mode: z.enum(["came_in", "agent"]).optional(),
+  intake_mode: z.enum(["came_in", "agent", "record_only"]).optional(),
 });
 
 const WatcherDeleteParams = z.object({

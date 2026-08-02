@@ -26,7 +26,10 @@ export interface Watcher {
   configJson: string | null;
   credentialService: string;
   /** 'came_in' — file events into the Came-in lane + run playbooks;
-   *  'agent' — legacy background-LLM processing of action_prompt. */
+   *  'agent' — legacy background-LLM processing of action_prompt;
+   *  'record_only' — keep the change stream in `watcher_events` and mint
+   *  nothing (see `WatcherIntakeMode` in provider-types.ts). A provider may
+   *  pin the effective mode, in which case the pin wins over this column. */
   intakeMode: string;
   createdAt: number;
   updatedAt: number;

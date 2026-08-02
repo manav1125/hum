@@ -63,6 +63,7 @@ import { join } from "node:path";
 import { getConfig } from "../config/loader.js";
 import { getLogger } from "../util/logger.js";
 import { getWatcherProvider } from "./provider-registry.js";
+import type { WatcherIntakeMode } from "./provider-types.js";
 import { createWatcher, listWatchers } from "./watcher-store.js";
 
 const log = getLogger("watcher-auto-provision");
@@ -82,6 +83,13 @@ export interface ConnectorWatcherDefault {
   name: string;
   /** Poll cadence — see the per-entry justification below. */
   pollIntervalMs: number;
+  /**
+   * What the watcher's events become. Stated per entry rather than defaulted,
+   * because "does this connector put things in the owner's queue?" is the one
+   * decision auto-provisioning makes on their behalf and it should not be
+   * inherited silently.
+   */
+  intakeMode: WatcherIntakeMode;
 }
 
 const MINUTE = 60_000;
@@ -105,6 +113,16 @@ const MINUTE = 60_000;
  *    Gmail for a source that changes a few times a day.
  *  · slack (5 min) — parity with Gmail: messages are conversational. Inert
  *    today; see the provider-registration guard below.
+ *
+ * Intake rationale. Mail and messages are addressed TO the owner and can carry
+ * a request, so they belong in the lane the gate protects. A calendar event is
+ * not addressed to anyone and is not a request — it is something you attend,
+ * and the day rail already shows it by reading the Calendar API directly. A
+ * work item per event would be a second, worse copy of that surface, so the
+ * calendar watcher records its change stream and mints nothing. (The calendar
+ * providers also pin this mode themselves, so a hand-made calendar watcher
+ * behaves the same way; the entry here states the intent at the point where
+ * the watcher is created.)
  */
 export const CONNECTOR_WATCHER_DEFAULTS: Readonly<
   Record<string, ConnectorWatcherDefault>
@@ -114,18 +132,21 @@ export const CONNECTOR_WATCHER_DEFAULTS: Readonly<
     credentialService: "google",
     name: "Gmail — new mail",
     pollIntervalMs: 5 * MINUTE,
+    intakeMode: "came_in",
   },
   googlecalendar: {
     providerId: "google-calendar",
     credentialService: "google",
     name: "Google Calendar — schedule changes",
     pollIntervalMs: 15 * MINUTE,
+    intakeMode: "record_only",
   },
   slack: {
     providerId: "slack",
     credentialService: "slack",
     name: "Slack — new messages",
     pollIntervalMs: 5 * MINUTE,
+    intakeMode: "came_in",
   },
 };
 
@@ -293,15 +314,16 @@ export function autoProvisionWatchersForToolkits(
         name: spec.name,
         providerId: spec.providerId,
         credentialService: spec.credentialService,
-        // 'came_in' watchers carry their intent in the hit + playbooks; the
-        // prompt only satisfies the NOT NULL column (see migration 313).
+        // Neither 'came_in' nor 'record_only' watchers use a prompt — they
+        // carry their intent in the hit + playbooks; the prompt only satisfies
+        // the NOT NULL column (see migration 313).
         actionPrompt: `Monitor ${spec.name}`,
         pollIntervalMs: Math.max(spec.pollIntervalMs, cfg.minPollIntervalMs),
         configJson: JSON.stringify({
           autoProvisioned: true,
           connectorSlug: slug,
         }),
-        intakeMode: "came_in",
+        intakeMode: spec.intakeMode,
       });
       writeLedgerEntry(slug, {
         watcherId: watcher.id,

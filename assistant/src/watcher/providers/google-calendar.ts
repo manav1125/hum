@@ -70,6 +70,57 @@ interface SyncResponse {
 }
 
 /**
+ * How long after an event has ended a change to it is still worth recording.
+ *
+ * A day, so "the 9am you just came out of moved" still registers, and the
+ * watcher is not sensitive to clock skew or to a poll that ran late.
+ */
+const PAST_EVENT_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** End of an event in epoch ms, or null when it cannot be read. */
+function eventEndMs(event: CalendarEvent): number | null {
+  const raw =
+    event.end?.dateTime ??
+    event.end?.date ??
+    event.start?.dateTime ??
+    event.start?.date;
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * True when this event is finished and a change to it cannot matter.
+ *
+ * ── Why this bound exists ──────────────────────────────────────────────────
+ * Google's sync feed is keyed on the event RESOURCE, not on when the event
+ * happens. One present-day edit to a long-running recurring series rewrites
+ * `updated` on the series master AND on every stored exception in it, back to
+ * the first instance anybody ever moved. On this install a single write at
+ * 02:10:31.928Z touched 70 resources belonging to one weekly sync that has run
+ * since 2020, and the incremental sync — correctly — reported all 70 as
+ * changed. Each one carries its own start date, so the feed reads as six years
+ * of history replaying even though nothing historical happened.
+ *
+ * There is no request-side fix: sync tokens cannot be filtered (`timeMin`
+ * suppresses the token entirely), so the bound has to be applied to what comes
+ * back. Bounding on the event's OWN time rather than on the change time is what
+ * makes it correct in general — a change to a meeting that finished in 2020 is
+ * not a schedule change the owner can act on, whatever caused it.
+ *
+ * A series master is exempt: its dates describe the first occurrence, not the
+ * series, so judging it by them would drop precisely the useful signal ("the
+ * weekly sync moved"). An event whose time cannot be read is kept — this
+ * filter must never be the reason a real change goes unseen.
+ */
+function isOverAndDone(event: CalendarEvent, now: number): boolean {
+  if (event.recurrence && event.recurrence.length > 0) return false;
+  const end = eventEndMs(event);
+  if (end === null) return false;
+  return end < now - PAST_EVENT_GRACE_MS;
+}
+
+/**
  * Perform an incremental sync using the stored syncToken.
  * Follows pagination (nextPageToken) until the final page returns nextSyncToken.
  * Returns all accumulated events and the final nextSyncToken.
@@ -175,6 +226,14 @@ export const googleCalendarProvider: WatcherProvider = {
   displayName: "Google Calendar",
   requiredCredentialService: CREDENTIAL_SERVICE,
 
+  // A meeting is something you attend, not something in your queue. The day
+  // rail (`calendar/day-rail.ts`, GET /v1/calendar/day) is how the calendar
+  // reaches the owner, and it reads the Calendar API directly — so a work item
+  // per event is a second, worse copy of a surface that already exists. The
+  // change stream is still recorded in `watcher_events`; it just does not
+  // become work.
+  pinnedIntakeMode: "record_only",
+
   async getInitialWatermark(credentialService: string): Promise<string> {
     const connection = await resolveOAuthConnection(credentialService);
     return fullSyncToken(connection);
@@ -204,9 +263,15 @@ export const googleCalendarProvider: WatcherProvider = {
       }
 
       // Convert events to watcher items, distinguishing new vs updated
+      const now = Date.now();
       const items: WatcherItem[] = [];
+      let finished = 0;
       for (const event of syncResp.items) {
         if (event.status === "cancelled") continue;
+        if (isOverAndDone(event, now)) {
+          finished++;
+          continue;
+        }
 
         const eventType =
           event.created === event.updated
@@ -216,7 +281,7 @@ export const googleCalendarProvider: WatcherProvider = {
       }
 
       log.info(
-        { count: items.length, watermark: newWatermark },
+        { count: items.length, finished, watermark: newWatermark },
         "Calendar: fetched event changes",
       );
       return { items, watermark: newWatermark };

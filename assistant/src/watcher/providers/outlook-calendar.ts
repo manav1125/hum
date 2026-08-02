@@ -306,6 +306,12 @@ export const outlookCalendarProvider: WatcherProvider = {
   displayName: "Outlook Calendar",
   requiredCredentialService: CREDENTIAL_SERVICE,
 
+  // Same reasoning as the Google provider: a meeting is something you attend,
+  // not something in your queue, so the change stream is recorded and nothing
+  // is minted from it. Pinned here as well because the argument is about what
+  // a calendar event IS, not about which vendor serves it.
+  pinnedIntakeMode: "record_only",
+
   async getInitialWatermark(credentialService: string): Promise<string> {
     const connection = await resolveOAuthConnection(credentialService);
     const { deltaLink } = await initialDeltaQuery(connection);
