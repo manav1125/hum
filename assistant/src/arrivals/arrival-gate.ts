@@ -47,11 +47,33 @@ import type { ArrivalDecidedBy, ArrivalDisposition } from "./arrival-store.js";
 
 const log = getLogger("arrival-gate");
 
-/** At most this many ambiguous items go to the judge in one call. */
-export const MAX_JUDGE_BATCH = 25;
+/**
+ * At most this many ambiguous items go to the judge in one call.
+ *
+ * Was 25. The configured flash model is a reasoning model, and a batch of real
+ * arrivals is genuinely ambiguous — that is what makes it a batch for the
+ * judge rather than for a rule — so it deliberates. A measured 20-item batch
+ * of comparable material against this model cost 3,147 completion tokens and
+ * 61 seconds. Eight items answers inside the budget with margin.
+ */
+export const MAX_JUDGE_BATCH = 8;
 
-/** The judge must not dawdle; a slow judge degrades to "surface it". */
-const JUDGE_TIMEOUT_MS = 20_000;
+/**
+ * Wall-clock budget for the judge call.
+ *
+ * This was 20 seconds, with the note "a slow judge degrades to surface it" —
+ * written as though degrading were cheap. It is not: fail-open means the pile
+ * arrives in front of the owner, which is the one thing this gate exists to
+ * prevent. On production the judge returned a usable verdict FIVE times ever,
+ * while 156 arrivals were surfaced by the fallback. The relevance gate has
+ * been running on rules alone since it shipped, and the model layer — the part
+ * that does the actual judging — has never once been given long enough to
+ * answer.
+ *
+ * Sized off the same measurement as the auto-filer's budget, and kept below
+ * {@link JUDGE_DEADLINE_MS} so the send budget is what fires first.
+ */
+const JUDGE_TIMEOUT_MS = 90_000;
 
 /**
  * Hard deadline on the whole judging step (provider resolution + the call).
@@ -59,7 +81,7 @@ const JUDGE_TIMEOUT_MS = 20_000;
  * for minutes on a key-less daemon while platform auth times out, and intake
  * must always terminate.
  */
-const JUDGE_DEADLINE_MS = 60_000;
+const JUDGE_DEADLINE_MS = 120_000;
 
 /** Cap on how much of an item is quoted into the judge prompt. */
 const JUDGE_SNIPPET_CHARS = 200;
@@ -470,7 +492,19 @@ async function judgeSafely(
         return null;
       }),
       new Promise<null>((resolve) => {
-        const t = setTimeout(() => resolve(null), JUDGE_DEADLINE_MS);
+        const t = setTimeout(() => {
+          // Say so. This branch resolved `null` in silence, and `null` means
+          // "surface everything" — so the loudest possible product outcome had
+          // the quietest possible cause. There is no thrown error on this
+          // path, so the `catch` above never ran and the logs held nothing at
+          // all: not one line in four days of a judge that was answering five
+          // times out of a hundred and sixty.
+          log.warn(
+            { items: items.length, deadlineMs: JUDGE_DEADLINE_MS },
+            "arrival judge hit its deadline (surfacing all)",
+          );
+          resolve(null);
+        }, JUDGE_DEADLINE_MS);
         if (typeof t === "object") t.unref?.();
       }),
     ]);

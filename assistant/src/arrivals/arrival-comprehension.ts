@@ -52,18 +52,32 @@ import {
 
 const log = getLogger("arrival-comprehension");
 
-/** At most this many arrivals are comprehended per batch (one LLM call). */
-export const MAX_COMPREHEND_BATCH = 20;
+/**
+ * At most this many arrivals are comprehended per batch (one LLM call).
+ *
+ * Cut from 20 for the same reason as the judge's batch: the configured flash
+ * model reasons, and a large batch of real material does not answer inside any
+ * budget worth calling a budget.
+ */
+export const MAX_COMPREHEND_BATCH = 8;
 
-/** The batched flash call must not dawdle. */
-const COMPREHEND_TIMEOUT_MS = 20_000;
+/**
+ * Wall-clock budget for the batched comprehension call.
+ *
+ * Was 20 seconds, against measured 8-61 second answers from this model. A
+ * comprehension that does not return marks the arrival `low_confidence`, which
+ * is the `⌗` "I couldn't read this" state — so a budget too short to answer in
+ * does not degrade to "no verdict", it degrades to Cue telling the owner it
+ * could not understand mail it never actually looked at.
+ */
+const COMPREHEND_TIMEOUT_MS = 90_000;
 
 /**
  * Hard deadline on the whole step (provider resolution + the call).
  * `runBtwSidechain` bounds only the send; provider resolution alone can stall
  * for minutes on a key-less daemon. Intake must always terminate.
  */
-const COMPREHEND_DEADLINE_MS = 45_000;
+const COMPREHEND_DEADLINE_MS = 120_000;
 
 /** Cap on how much of a message is quoted into the prompt. */
 const SNIPPET_CHARS = 400;
@@ -528,7 +542,17 @@ async function raceDeadline(
       return null;
     }),
     new Promise<null>((resolve) => {
-      const t = setTimeout(() => resolve(null), COMPREHEND_DEADLINE_MS);
+      const t = setTimeout(() => {
+        // The deadline path throws nothing, so the `catch` above never runs
+        // and this used to resolve in total silence — the same hole that let
+        // the arrival judge answer 5 times out of 161 without a single log
+        // line. A step that gives up must say it gave up.
+        log.warn(
+          { deadlineMs: COMPREHEND_DEADLINE_MS },
+          "comprehension hit its deadline (items keep their titles)",
+        );
+        resolve(null);
+      }, COMPREHEND_DEADLINE_MS);
       if (typeof t === "object") t.unref?.();
     }),
   ]);
