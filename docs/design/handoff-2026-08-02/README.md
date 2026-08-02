@@ -1,6 +1,9 @@
 # Cue — Complete Design Handoff
-**Date:** 2026-08-01 · **From:** design · **For:** Claude Code
-**Start here.** Then read `01-work-surfaces/WORK-SURFACES.md`, which is the deep spec.
+**Date:** 2026-08-02 · **From:** design · **For:** Claude Code
+
+> ## → **Start with `BRIEF-FOR-CODE.md`**
+> It covers everything designed since your six questions (packs v9–v12): the answers, the navigation rework, the vocabulary changes, the two naming collisions we fixed, and the four gaps that matter most — with build order, schema delta, invariants and precedence.
+> Then `INDEX.html` for the coverage matrix, and `01-work-surfaces/WORK-SURFACES.md` for the full spec.
 
 ---
 
@@ -15,7 +18,13 @@ cue-design-handoff/
 │   ├── WORK-SURFACES.md               ← THE DEEP SPEC (24 sections)
 │   ├── ADDENDUM/                      ← 4 decisions back to engineering (Aug 1) — read with the spec
 │   ├── canonical/cue-canonical.html   ← THE BUILD TARGET for HQ + mobile Today
-│   └── packs/v2 … v6/                 ← rationale, one folder per round
+│   └── packs/v2 … v12/                ← rationale, one folder per round
+│         v7  volume + first screen — three tiers, composer landing
+│         v8  mobile + web
+│         v9  the six answers + tab bar
+│         v10 HQ vs Work, detail screen, domain classifier
+│         v11 consistency pass — vocabulary, desktop sidebar, day one
+│         v12 the partner — conversation surface, voice, welcome back
 ├── 02-hq-filing/                      ← batch add · auto-file provenance · dismiss
 ├── 03-discovery-live-plugins/         ← capability discovery · Cue Live clarity · plugin model
 ├── 04-parity-plus/                    ← macOS overlay · web control panel · mobile parity
