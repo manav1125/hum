@@ -2473,6 +2473,424 @@ paths:
                 required:
                   - message
                 additionalProperties: false
+  /v1/arrival-groups/{memberId}/ungroup:
+    post:
+      operationId: arrivalgroups_by_memberId_ungroup_post
+      summary: Split a combined message back out
+      description:
+        "Say two things Cue combined are not the same thing. The message becomes its own work item, minted exactly
+        as if it had never been grouped. Nothing is deleted: the group row keeps its history and records when you split
+        it and what it became. The original message that created the item cannot be split out — it IS the item — and
+        returns 409."
+      tags:
+        - work-items
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  member:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      workItemId:
+                        type: string
+                      groupKey:
+                        type: string
+                      groupKind:
+                        type: string
+                        enum:
+                          - thread
+                          - sender
+                        description:
+                          "'thread' = the provider says these are one conversation. 'sender' = repeat notifications from one
+                          automated sender. Nothing is ever grouped on topic similarity."
+                      channel:
+                        type: string
+                      arrivalId:
+                        type: string
+                      externalId:
+                        type: string
+                      title:
+                        type: string
+                        description: What arrived, verbatim
+                      snippet:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      senderAddress:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      isAnchor:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 1 = the message that created the work item
+                      receivedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      detachedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Epoch ms you split this back out. Null = still grouped.
+                      detachedBy:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      detachedWorkItemId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - workItemId
+                      - groupKey
+                      - groupKind
+                      - channel
+                      - arrivalId
+                      - externalId
+                      - title
+                      - snippet
+                      - senderAddress
+                      - isAnchor
+                      - receivedAt
+                      - detachedAt
+                      - detachedBy
+                      - detachedWorkItemId
+                      - createdAt
+                    additionalProperties: false
+                  workItem:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      taskId:
+                        type: string
+                      title:
+                        type: string
+                      notes:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                      priorityTier:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      projectId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      dueAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Due deadline, epoch ms
+                      labels:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: JSON array string of labels
+                      assignee:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: '"cue" | "you" | contact name; null reads as "cue"'
+                      context:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Per-task context the user adds; read by the agent before a run
+                      sourceContext:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: JSON snapshot of where the task came from (triage-stamped)
+                      lastActivityAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Epoch ms of last activity; drives stale-item ranking
+                      lastRunId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastRunConversationId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastRunStatus:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastProgressNote:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Live activity line ("Searching the web…") stamped by the runner while status is "running"; null otherwise
+                      sourceType:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sourceId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      originConversationId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          The conversation this item was created FROM — distinct from lastRunConversationId (where the run happened)
+                          and from sourceType/sourceId (which channel it arrived on). Lets the originating thread show
+                          what it spawned.
+                      approvalStatus:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      autoRunEligibility:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          null = eligible for policy-gated auto-run; "parked" = user parked this task, so it only starts on an
+                          explicit run
+                      ranProvenance:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - auto
+                              - you_approved
+                              - manual
+                          - type: "null"
+                        description:
+                          'Read-time run-provenance trust signal for Done cards: "auto" = Cue ran it autonomously with no owner-gated
+                          approval; "you_approved" = the owner approved a guardian gate during the run or pre-approved
+                          its tool permissions; "manual" = the owner completed it themselves (Cue never ran it, or the
+                          item carries the completedElsewhere marker); null = not applicable (not yet run / not a manual
+                          completion).'
+                      completedElsewhere:
+                        type: boolean
+                        description:
+                          True when the owner marked this task done as "completed elsewhere" — the work happened outside Cue, so no
+                          run output is claimed. Terminal exactly like done; never say "Cue finished this" for it.
+                      autoFiledBy:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          '"cue" = the background auto-filer assigned projectId (show the auto-filed chip); "user_unfiled" = the user
+                          deliberately unfiled the item (the auto-filer will not re-file it); null = user-filed or never
+                          filed.'
+                      autoFileConfidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description:
+                          The auto-filer's 0-1 confidence. With autoFiledBy = "cue" it is the provenance of a filing; on an UNFILED
+                          item (projectId and autoFiledBy both null) it is the below-confidence stamp — the sweep scored
+                          the item but was not sure (clients render the amber "?" triage card).
+                      assessmentVerdict:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - execute
+                              - clarify
+                              - not_ai_task
+                              - blocked
+                          - type: "null"
+                        description:
+                          '"execute" = Cue understands it and has what it needs (see assessmentPlan); "clarify" = under-specified,
+                          surface assessmentQuestion and let the answer land as task context; "not_ai_task" = a human
+                          action — do NOT offer a Run affordance as the primary action; "blocked" = assessmentMissing
+                          names the one thing Cue lacks (offer the fix, e.g. link the connector or attach the file).
+                          null = not assessed.'
+                      assessmentUnderstanding:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          One plain sentence naming what Cue understood the task to be — show this so the user can catch a misread
+                          before the work happens.
+                      assessmentPlan:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          1-2 lines, plain words, of what Cue will actually do. Set with verdict "execute"; shown as/just before the
+                          run starts.
+                      assessmentQuestion:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Exactly ONE question. Set with verdict "clarify"; the item is parked until answered (answering it as task
+                          context re-opens assessment).
+                      assessmentMissing:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The one specific missing thing — a connector, a file, an access. Set with verdict "blocked".
+                      assessmentConfidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description: The assessor's 0-1 confidence in its verdict.
+                      assessmentAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Epoch ms the stored verdict was produced.
+                      domain:
+                        type: string
+                        enum:
+                          - work
+                          - life
+                        description:
+                          'Which lens the item lives in. "work" groups by mission (why); "life" groups by horizon (when) — same rows,
+                          same engine, different organising axis. Also the privacy boundary: hiding personal work for a
+                          screen-share is this one predicate. Every item defaults to "work".'
+                      horizon:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - this_week
+                              - soon
+                              - someday
+                          - type: "null"
+                        description: When a life item wants attention. Always null on work items, which group by mission instead.
+                      waitingOn:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          contacts.id of the person this item is blocked on. Distinct from assignee, which says who OWNS the item —
+                          an item you own can still be waiting on somebody else's reply. null = not waiting on anybody.
+                      lastChasedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          Epoch ms of the last nudge sent about this item. null = never chased, which reads differently from "chased
+                          a while ago".
+                      waitingState:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - on_time
+                              - already_chased
+                              - going_cold
+                          - type: "null"
+                        description:
+                          'Read-time derivation over waitingOn + lastChasedAt, computed here so every surface draws the same line:
+                          "on_time" = waiting, nothing has gone quiet — forget it, Cue will chase; "already_chased" = a
+                          nudge went out recently, so the next move is to escalate rather than nudge again; "going_cold"
+                          = the silence has outlasted the chase window (5 days). null = the item is not waiting on a
+                          person, or it is already finished.'
+                      arrivalId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          The arrivals.id this item was surfaced from — set only for watcher hits that went through the relevance
+                          gate, i.e. things Cue looked at and decided you need to see. Fetch GET arrivals/:id for the
+                          reason. null on everything captured any other way (quick-add, chat, voice, mission cycles) and
+                          on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which mean
+                          'assigned to a project' — a different axis entirely.
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - taskId
+                      - title
+                      - notes
+                      - status
+                      - priorityTier
+                      - sortIndex
+                      - projectId
+                      - dueAt
+                      - labels
+                      - assignee
+                      - context
+                      - sourceContext
+                      - lastActivityAt
+                      - lastRunId
+                      - lastRunConversationId
+                      - lastRunStatus
+                      - lastProgressNote
+                      - sourceType
+                      - sourceId
+                      - originConversationId
+                      - approvalStatus
+                      - autoRunEligibility
+                      - ranProvenance
+                      - completedElsewhere
+                      - autoFiledBy
+                      - autoFileConfidence
+                      - assessmentVerdict
+                      - assessmentUnderstanding
+                      - assessmentPlan
+                      - assessmentQuestion
+                      - assessmentMissing
+                      - assessmentConfidence
+                      - assessmentAt
+                      - domain
+                      - horizon
+                      - waitingOn
+                      - lastChasedAt
+                      - waitingState
+                      - arrivalId
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - member
+                  - workItem
+                additionalProperties: false
+        "404":
+          description: No such group member
+        "409":
+          description: Already split out, the anchor message, or its arrival is missing
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/arrivals:
     get:
       operationId: arrivals_get
@@ -2811,7 +3229,10 @@ paths:
         "Reverse a filing: the arrival becomes a normal parked work item in the Came-in lane, exactly as if Cue had
         surfaced it. The original decision is preserved on the row (reason, ruleId, decidedBy) and the reversal is
         stamped alongside it — that record is the correction signal, so it is never overwritten. Already-surfaced
-        arrivals return 409 rather than minting a duplicate work item."
+        arrivals return 409 rather than minting a duplicate work item. When the arrival already points at a work item
+        that still exists — a retro-filed row, where an existing item was archived rather than never minted — that
+        original row is restored instead of a copy being made, so the reversal returns the owner's item with its own
+        history intact."
       tags:
         - arrivals
       responses:
@@ -3271,6 +3692,119 @@ paths:
           required: true
           schema:
             type: string
+  /v1/arrivals/comprehension/health:
+    get:
+      operationId: arrivals_comprehension_health_get
+      summary: Is comprehension actually doing anything?
+      description:
+        "The comprehended / low-confidence / failed census over a trailing window, plus the number of consecutive
+        batches that had work to do and produced nothing. That streak exists because a silent no-op reads exactly like
+        an idle system: the auto-file sweep filed nothing for twelve hours and the only symptom was 103 unfiled items.
+        `unproductiveWarnAt` is the streak length at which the daemon starts saying so in its logs."
+      tags:
+        - arrivals
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  census:
+                    type: object
+                    properties:
+                      since:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      total:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      withDeadline:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: Items with a deadline actually found in the message
+                      byStatus:
+                        type: object
+                        properties:
+                          comprehended:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          low_confidence:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          failed:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          skipped:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                        required:
+                          - comprehended
+                          - low_confidence
+                          - failed
+                          - skipped
+                        additionalProperties: false
+                    required:
+                      - since
+                      - total
+                      - withDeadline
+                      - byStatus
+                    additionalProperties: false
+                  lastBatchAt:
+                    anyOf:
+                      - type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      - type: "null"
+                  lastBatchCandidates:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  lastBatchComprehended:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  consecutiveUnproductiveBatches:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  unproductiveWarnAt:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  totalBatches:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  totalComprehended:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                required:
+                  - census
+                  - lastBatchAt
+                  - lastBatchCandidates
+                  - lastBatchComprehended
+                  - consecutiveUnproductiveBatches
+                  - unproductiveWarnAt
+                  - totalBatches
+                  - totalComprehended
+                additionalProperties: false
+      parameters:
+        - name: windowHours
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Trailing window for the census (default 24)
   /v1/arrivals/corrections:
     get:
       operationId: arrivals_corrections_get
@@ -42980,6 +43514,126 @@ paths:
                     recording a review approval; ranProvenance reads 'manual'.
                   type: boolean
               additionalProperties: false
+  /v1/work-items/{id}/comprehension:
+    get:
+      operationId: workitems_by_id_comprehension_get
+      summary: What Cue understood this item to be
+      description:
+        "The structured reading behind a work item that arrived from a watcher: the action title, and any deadline,
+        amount or asker that was genuinely present in the message. Every extracted fact had to be quoted from the
+        message and that quote found in it, so a null field means the message did not say — not that Cue forgot to look.
+        404 when the item was never read (it did not arrive through a watcher, or it predates this)."
+      tags:
+        - work-items
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comprehension:
+                    type: object
+                    properties:
+                      workItemId:
+                        type: string
+                      arrivalId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                        enum:
+                          - comprehended
+                          - low_confidence
+                          - failed
+                          - skipped
+                        description:
+                          "'comprehended' = the title now says what you must do. 'low_confidence' = Cue answered but not well enough
+                          to trust, so your original title stands. 'failed' = no usable answer at all. 'skipped' =
+                          comprehension was off, or the item changed while Cue was reading it. Anything but
+                          'comprehended' means the title you see is the original subject line."
+                      originalTitle:
+                        type: string
+                        description: What the item was called before anything touched it
+                      actionTitle:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      dueAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          A deadline READ FROM the message, epoch ms. Null means the message did not state one — never a default,
+                          never inferred from urgency.
+                      dueQuote:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The literal words the deadline was read from, so you can check
+                      amountText:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The amount as written
+                      askedBy:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Who is asking, as written
+                      decisionNeeded:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: One line naming the decision the message wants from you
+                      confidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                      note:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Plain-words reason, set whenever the status is not 'comprehended'
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - workItemId
+                      - arrivalId
+                      - status
+                      - originalTitle
+                      - actionTitle
+                      - dueAt
+                      - dueQuote
+                      - amountText
+                      - askedBy
+                      - decisionNeeded
+                      - confidence
+                      - note
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - comprehension
+                additionalProperties: false
+        "404":
+          description: No comprehension record for that work item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/work-items/{id}/events:
     get:
       operationId: workitems_by_id_events_get
@@ -43054,6 +43708,149 @@ paths:
                   - events
                   - cycleTimeMs
                 additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/work-items/{id}/group:
+    get:
+      operationId: workitems_by_id_group_get
+      summary: What was combined into this item
+      description:
+        The messages folded into one work item — later replies in the same conversation, or repeat notifications
+        from the same automated sender. `count` is what a card should show and is derived from the live rows, not from a
+        stored total. An item that never grouped returns count 1 (or 0, when it did not arrive through a watcher) and an
+        empty list.
+      tags:
+        - work-items
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group:
+                    type: object
+                    properties:
+                      workItemId:
+                        type: string
+                      count:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: Messages currently folded in, the original included. 1 = nothing was combined.
+                      groupKind:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - thread
+                              - sender
+                          - type: "null"
+                      groupKey:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      members:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            workItemId:
+                              type: string
+                            groupKey:
+                              type: string
+                            groupKind:
+                              type: string
+                              enum:
+                                - thread
+                                - sender
+                              description:
+                                "'thread' = the provider says these are one conversation. 'sender' = repeat notifications from one
+                                automated sender. Nothing is ever grouped on topic similarity."
+                            channel:
+                              type: string
+                            arrivalId:
+                              type: string
+                            externalId:
+                              type: string
+                            title:
+                              type: string
+                              description: What arrived, verbatim
+                            snippet:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            senderAddress:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            isAnchor:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                              description: 1 = the message that created the work item
+                            receivedAt:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            detachedAt:
+                              anyOf:
+                                - type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                - type: "null"
+                              description: Epoch ms you split this back out. Null = still grouped.
+                            detachedBy:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            detachedWorkItemId:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            createdAt:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                          required:
+                            - id
+                            - workItemId
+                            - groupKey
+                            - groupKind
+                            - channel
+                            - arrivalId
+                            - externalId
+                            - title
+                            - snippet
+                            - senderAddress
+                            - isAnchor
+                            - receivedAt
+                            - detachedAt
+                            - detachedBy
+                            - detachedWorkItemId
+                            - createdAt
+                          additionalProperties: false
+                        description:
+                          Every message ever folded in, oldest first — split-out ones included, because a group whose history is
+                          tidied up cannot be audited.
+                    required:
+                      - workItemId
+                      - count
+                      - groupKind
+                      - groupKey
+                      - members
+                    additionalProperties: false
+                required:
+                  - group
+                additionalProperties: false
+        "404":
+          description: No such work item
       parameters:
         - name: id
           in: path
@@ -43274,6 +44071,84 @@ paths:
           required: true
           schema:
             type: string
+  /v1/work-items/auto-file/health:
+    get:
+      operationId: workitems_autofile_health_get
+      summary: Auto-filer health
+      description:
+        "What the background auto-filer has actually been doing in this daemon process: when it last ticked, what
+        the last sweep concluded, how many items are waiting, and whether it is degraded. This exists because a sweep
+        that scans candidates and files none of them is indistinguishable from a sweep with nothing to do — from the
+        outside, both are silence, and the only symptom is a pile of unfiled items the user is staring at. `degraded`
+        plus `degradedReason` is what a 'this is broken' empty state should read instead of inferring health from the
+        pile. In-memory and per-process by design: it describes behaviour since this daemon started, and a restart
+        genuinely does reset what we know."
+      tags:
+        - work-items
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running:
+                    type: boolean
+                    description: Whether the interval is running
+                  ticks:
+                    type: number
+                    description: Interval ticks, including skipped ones
+                  sweeps:
+                    type: number
+                    description: Sweeps that actually ran
+                  lastTickAt:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                    description: Epoch ms of the last tick. Much older than the sweep interval means the timer itself stopped firing.
+                  lastSweepAt:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                    description: Epoch ms the last sweep finished
+                  lastOutcome:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                    description:
+                      "Why the last sweep ended: disabled, no_candidates, no_projects, scorer_miss, no_match, progress, or error.
+                      Every early return names itself, so 'did nothing' and 'had nothing to do' are different answers."
+                  candidatesWaiting:
+                    type: number
+                    description: Unfiled, unscored items waiting as of the last sweep
+                  unproductiveStreak:
+                    type: number
+                    description: Consecutive sweeps that scanned candidates and moved none
+                  stuckReleases:
+                    type: number
+                    description: Times a wedged sweep had to have its latch broken
+                  degraded:
+                    type: boolean
+                    description: True when the filer is running but not doing its job
+                  degradedReason:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                    description: Plain-language reason in the user's terms, or null
+                required:
+                  - running
+                  - ticks
+                  - sweeps
+                  - lastTickAt
+                  - lastSweepAt
+                  - lastOutcome
+                  - candidatesWaiting
+                  - unproductiveStreak
+                  - stuckReleases
+                  - degraded
+                  - degradedReason
+                additionalProperties: false
   /v1/work-items/classify-preview:
     post:
       operationId: workitems_classifypreview_post

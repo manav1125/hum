@@ -41,6 +41,7 @@ import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import {
   actsSummaryGetOptions,
   arrivalsSummaryGetOptions,
+  workitemsAutofileHealthGetOptions,
   usageTotalsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
@@ -741,6 +742,7 @@ function PulseLayout({
   heartbeatRuns,
   watchingCount,
   failingWatchers,
+  autoFileDegraded,
   arrivals,
   onNewMission,
   onSuggest,
@@ -765,6 +767,12 @@ function PulseLayout({
   watchingCount: number;
   /** Provisioned watchers that are erroring — named, never hidden. */
   failingWatchers: { id: string; name: string; lastError: string }[];
+  /**
+   * The daemon's own sentence for why filing has stalled, or null when it is
+   * healthy. A string rather than a boolean on purpose: the deck must never
+   * author its own explanation for a backend condition it cannot see.
+   */
+  autoFileDegraded: string | null;
   /** What arrived on its own, and what Cue did with it. */
   arrivals: ArrivalsSummary;
   /** Autonomy tier + spend, shown beside the greeting (§23 step 7). */
@@ -970,6 +978,35 @@ function PulseLayout({
         actual error is the difference between "something went wrong" — which is
         not a state — and a fact they can act on.
       */}
+      {/*
+        Filing silently stopping is its own broken state, and it is the one the
+        owner actually hit: the auto-filer held a stuck latch and filed nothing
+        for twelve hours while looking, from the outside, exactly like a filer
+        with nothing to do. The only symptom was a lane of unfiled items. The
+        daemon now knows the difference and says so in words; this renders that
+        sentence rather than leaving the owner to infer it from a long list.
+      */}
+      {autoFileDegraded ? (
+        <EmptyState
+          kind="broken"
+          title="Cue has stopped filing"
+          body={autoFileDegraded}
+          action={
+            <Link
+              to={routes.allWork}
+              style={{
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: C.amberText,
+                textDecoration: "none",
+              }}
+            >
+              See the unfiled work ›
+            </Link>
+          }
+        />
+      ) : null}
+
       {failingWatchers.length > 0 ? (
         <EmptyState
           kind="broken"
@@ -2026,6 +2063,14 @@ export function HqPage() {
    * Cue looked and decided you need to see it. Both are counted by the gate
    * that made the decision.
    */
+  // Filing health. Polled on the slow lane — a stalled filer is measured in
+  // sweeps, not seconds, and this must never add load to the deck.
+  const autoFileHealth = useQuery({
+    ...workitemsAutofileHealthGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
+
   const arrivalsQuery = useQuery({
     ...arrivalsSummaryGetOptions({ path: { assistant_id: assistantId } }),
     refetchInterval: 60_000,
@@ -2244,6 +2289,12 @@ export function HqPage() {
               (waitingOn.items.length === 0
                 ? { reason: "Cue isn't tracking who owes you anything yet." }
                 : undefined)
+            }
+            autoFileDegraded={
+              autoFileHealth.data?.degraded
+                ? (autoFileHealth.data.degradedReason ??
+                  "Cue has stopped filing work into projects.")
+                : null
             }
             watchingCount={liveWatchers.length}
             failingWatchers={failingWatchers.map((w) => ({
