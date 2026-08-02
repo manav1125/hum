@@ -54,11 +54,22 @@ function listedTitles(opts?: Parameters<typeof listWorkItems>[0]): string[] {
 }
 
 describe("un-comprehended arrivals are not tasks", () => {
-  test("a failed reading is absent from the task list", () => {
+  test("FAILED keeps the item visible — an outage must not empty the list", () => {
+    // `failed` covers timeouts, parse failures and an unreachable model. During
+    // a model outage EVERY arrival fails, so hiding on `failed` would silently
+    // empty the user's task list exactly when Cue is least able to explain
+    // itself. Same fail-open rule as the relevance gate.
+    //
+    // This was a real regression: excluding `failed` broke 9 integration tests
+    // that drive the real intake path with no model available — which is
+    // precisely the production outage shape.
     itemWith("Reply to Rachel about the NDA", "comprehended");
-    itemWith("Email from unknown: ��", "failed");
+    itemWith("Email from CIPA: annual return", "failed");
 
-    expect(listedTitles()).toEqual(["Reply to Rachel about the NDA"]);
+    expect(listedTitles().sort()).toEqual([
+      "Email from CIPA: annual return",
+      "Reply to Rachel about the NDA",
+    ]);
   });
 
   test("a low-confidence reading is absent too — Cue did not understand it", () => {
@@ -83,7 +94,7 @@ describe("un-comprehended arrivals are not tasks", () => {
   });
 
   test("excluded is not deleted — the row is still there when asked for", () => {
-    itemWith("Email from unknown: ��", "failed");
+    itemWith("Email from Trip.com: 上海", "low_confidence");
 
     expect(listWorkItems()).toHaveLength(0);
     expect(listWorkItems({ includeUnComprehended: true })).toHaveLength(1);
@@ -94,7 +105,7 @@ describe("un-comprehended arrivals are not tasks", () => {
     // bug already shipped once here: status + projectId together returned the
     // whole project. A fourth predicate is a fourth chance to make it again.
     const keep = itemWith("Queued and readable", "comprehended");
-    itemWith("Queued but unreadable", "failed");
+    itemWith("Queued but unreadable", "low_confidence");
     getDb().run(sql`UPDATE work_items SET status = 'done' WHERE id != ${keep}`);
 
     const queued = listWorkItems({ status: "queued" });

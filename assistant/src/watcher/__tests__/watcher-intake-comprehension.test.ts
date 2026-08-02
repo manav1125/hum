@@ -362,7 +362,13 @@ describe("an arrival becomes a task, not a relabelled email", () => {
       ]),
     });
 
-    const item = listWorkItems()[0];
+    // A low-confidence reading is Cue admitting it read the message and could
+    // not tell what it needs, so the item is no longer a task — it lives in
+    // arrivals as the `⌗` state. It is relocated, not lost, so it is still
+    // there when explicitly asked for, still carrying its original subject.
+    expect(listWorkItems()).toHaveLength(0);
+
+    const item = listWorkItems({ includeUnComprehended: true })[0]!;
     expect(item.title).toContain("Email from Ops");
     expect(getComprehension(item.id)!.status).toBe("low_confidence");
   });

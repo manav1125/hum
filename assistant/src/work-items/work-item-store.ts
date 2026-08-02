@@ -335,15 +335,29 @@ export function getWorkItem(id: string): WorkItem | undefined {
 }
 
 /**
- * Comprehension outcomes that mean "Cue does not know what this is".
+ * Comprehension outcomes that mean "Cue read this and could not tell what it
+ * needs" — the `⌗` state. Only ONE status qualifies, and the exclusions are the
+ * important part.
  *
- * `skipped` is deliberately NOT here. Skipped means comprehension was switched
- * off or the arrival was not a message — no admission of confusion, so those
- * items are ordinary tasks. Treating skipped as un-comprehended would empty the
- * entire task list the moment the feature was disabled, which is the sort of
- * silent catastrophe this codebase keeps producing.
+ * `low_confidence` is a READING: the model answered and could not name an
+ * action. That is a genuine admission about the message, so the item has not
+ * earned a task row.
+ *
+ * `failed` is NOT a reading — it covers timeouts, parse failures and the model
+ * being unreachable. Hiding on `failed` means a model outage silently empties
+ * the user's task list, because during an outage EVERY arrival fails. That is
+ * the same fail-open rule the relevance gate is built on: an outage must never
+ * swallow somebody's mail. It cost 9 integration tests to notice, which is
+ * cheaper than noticing in production.
+ *
+ * `skipped` is not here either: it means comprehension was switched off or the
+ * arrival was not a message. Excluding it would empty every list the instant
+ * the feature was disabled.
+ *
+ * The through-line: only a judgement Cue actually made about the CONTENT may
+ * hide something. Anything that went wrong on our side keeps it visible.
  */
-const UNCOMPREHENDED_STATUSES = ["failed", "low_confidence"] as const;
+const UNCOMPREHENDED_STATUSES = ["low_confidence"] as const;
 
 export function listWorkItems(opts?: {
   status?: WorkItemStatus;
