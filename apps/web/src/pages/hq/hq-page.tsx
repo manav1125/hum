@@ -76,6 +76,11 @@ import {
 } from "@/pages/projects/filing-desktop";
 
 import { CaptureBar } from "./capture-bar";
+import {
+  PausedApprovals,
+  readPausedApprovals,
+  type PausedApproval,
+} from "./paused-approvals";
 import { HqFirstRun, useHqFirstRun } from "./hq-firstrun";
 import { useAgentFor } from "./hq-agent-identity";
 import { DriftNudge, driftFromEvents } from "./drift-nudge";
@@ -754,7 +759,7 @@ function NeedsYouLane({
   move,
   items,
   glanceCount,
-  extraApprovals,
+  extraApprovalItems,
   missionsByProjectId,
 }: {
   assistantId: string;
@@ -762,7 +767,8 @@ function NeedsYouLane({
   items: HqWorkItem[];
   glanceCount: number;
   /** Pending interactions beyond the one the next-move card already carries. */
-  extraApprovals: number;
+  /** Paused runs beyond the one the next-move card carries. */
+  extraApprovalItems: PausedApproval[];
   missionsByProjectId: Map<string, Mission>;
 }) {
   return (
@@ -841,38 +847,13 @@ function NeedsYouLane({
         what made the headline read 6 while the sidebar read 5. So extra
         approvals get their own line and their own door.
       */}
-      {extraApprovals > 0 ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            gap: 9,
-            marginTop: 11,
-            fontSize: 12.5,
-            color: "var(--hq-muted)",
-          }}
-        >
-          <span aria-hidden style={{ color: C.amberText }}>
-            ‖
-          </span>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            {extraApprovals} more{" "}
-            {extraApprovals === 1 ? "approval is" : "approvals are"} paused for
-            your decision.
-          </span>
-          <Link
-            to={routes.reviewQueue}
-            style={{
-              fontFamily: mono,
-              fontSize: 11,
-              color: "var(--hq-muted)",
-              textDecoration: "none",
-            }}
-          >
-            Decide ›
-          </Link>
-        </div>
-      ) : null}
+      {/* Decidable in place. The door used to point at the review queue, which
+          completes work items and has no confirm call — so a link labelled
+          "Decide" led somewhere that could not decide. */}
+      <PausedApprovals
+        assistantId={assistantId}
+        approvals={extraApprovalItems}
+      />
     </section>
   );
 }
@@ -1120,7 +1101,7 @@ function HqDeck({
   move,
   needsYou,
   needsYouError,
-  extraApprovals,
+  extraApprovalItems,
   cameIn,
   running,
   done,
@@ -1155,7 +1136,7 @@ function HqDeck({
   move: NextMove;
   needsYou: HqWorkItem[];
   needsYouError: boolean;
-  extraApprovals: number;
+  extraApprovalItems: PausedApproval[];
   cameIn: HqWorkItem[];
   running: HqWorkItem[];
   done: HqWorkItem[];
@@ -1272,7 +1253,7 @@ function HqDeck({
         move={p.move}
         items={p.items}
         glanceCount={p.glanceCount}
-        extraApprovals={extraApprovals}
+        extraApprovalItems={extraApprovalItems}
         missionsByProjectId={missionsByProjectId}
       />
     )),
@@ -1895,7 +1876,41 @@ function CameInReassignStrip({
                 {/* Held by the pre-run assessment: it is waiting on you, and
                     the strip has to say so before you click into it. */}
                 <AssessmentSignal item={item} />
-                {unfiled ? null : autoFiled ? (
+                {unfiled ? (
+                  /* v7 §B: low filing confidence shows a `?` where a filed item
+                     shows its thing chip. It is a REQUEST, not provenance — the
+                     one thing allowed on the row besides the verb phrase, the
+                     chip and the timing fact. The picker lives behind it; six
+                     target chips per row is what made a lane of these
+                     unreadable. */
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(isOpen ? null : item.id)}
+                    aria-haspopup="menu"
+                    aria-expanded={isOpen}
+                    aria-label={`Cue isn't sure where "${item.title}" belongs — file it`}
+                    title="Cue isn't sure where this belongs. Tell it."
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 18,
+                      height: 18,
+                      flexShrink: 0,
+                      fontFamily: mono,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: C.amberText,
+                      background: `color-mix(in srgb, ${C.amber} 12%, transparent)`,
+                      border: `1px solid color-mix(in srgb, ${C.amber} 34%, transparent)`,
+                      borderRadius: 999,
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    ?
+                  </button>
+                ) : autoFiled ? (
                   <AutoFiledPill
                     projectTitle={tagLabel ?? "project"}
                     onMove={() => setOpenId(isOpen ? null : item.id)}
@@ -1947,8 +1962,8 @@ function CameInReassignStrip({
                   {holdReason(item)}
                 </div>
               ) : null}
-              {/* Low-confidence unfiled item — asks, doesn't guess. */}
-              {unfiled ? (
+              {/* Behind the `?`, not beside it. */}
+              {unfiled && isOpen ? (
                 <div style={{ marginTop: 8 }}>
                   <LowConfidenceFilePrompt
                     sourceLabel={item.sourceType?.toUpperCase() ?? null}
@@ -1959,7 +1974,10 @@ function CameInReassignStrip({
                   />
                 </div>
               ) : null}
-              {isOpen ? (
+              {/* Unfiled items open the ask above, not this menu — the `?` is
+                  now their only opener, and without this guard both would
+                  render at once. */}
+              {isOpen && !unfiled ? (
                 autoFiled ? (
                   // Frame D2's anchored popover — current pick marked, ＋ New
                   // project, the 🧠 teaching close.
@@ -2227,7 +2245,6 @@ export function HqPage() {
     refetchInterval: 60_000,
     staleTime: 10_000,
   });
-  const pendingApprovals = interactionsQuery.data?.interactions?.length ?? 0;
 
   const stateQuery = useHomeStateQuery(assistantId);
   const { profile } = useCompanyProfile(assistantId);
@@ -2392,10 +2409,12 @@ export function HqPage() {
   const glanceCount = reviewItems.length + (moveIsExtraToNeedsYou ? 1 : 0);
 
   // The next-move card carries at most one approval; the rest need a door.
-  const extraApprovals = Math.max(
-    0,
-    pendingApprovals - (move.hasMove && move.kind === "approval" ? 1 : 0),
-  );
+  const extraApprovalItems = useMemo(() => {
+    const all = readPausedApprovals(interactionsQuery.data?.interactions);
+    // The next-move card already carries the top one; the rest need to be
+    // decidable here rather than counted here and decidable nowhere.
+    return move.hasMove && move.kind === "approval" ? all.slice(1) : all;
+  }, [interactionsQuery.data, move.hasMove, move.kind]);
 
   // MOBILE → the v3 native Today screen (docs/design/mobile-v3, frame 1).
   // Same stores, new skin: next-move → NEXT MOVE card, approvals → NEEDS
@@ -2525,7 +2544,7 @@ export function HqPage() {
             move={move}
             needsYou={reviewItems}
             needsYouError={review.isError}
-            extraApprovals={extraApprovals}
+            extraApprovalItems={extraApprovalItems}
             moveIsExtraToNeedsYou={moveIsExtraToNeedsYou}
             arrivals={arrivals}
             arrivalsError={arrivalsQuery.isError}
