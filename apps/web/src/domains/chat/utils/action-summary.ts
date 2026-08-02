@@ -33,8 +33,15 @@ const ACTION_KEYS = [
   "app_action",
 ] as const;
 
-/** Pull the connector action slug + its argument object out of a proxy input. */
-function resolveAction(
+/**
+ * Pull the connector action slug + its argument object out of a proxy input.
+ *
+ * Exported because provenance derivation (`partner/answer-sources.ts`) has the
+ * same problem in the opposite direction: it must know that a
+ * `COMPOSIO_EXECUTE_TOOL` call was really `GMAIL_FETCH_EMAILS` before it can
+ * say the answer came from the user's mail. One resolver, two readers.
+ */
+export function resolveAction(
   toolName: string,
   input: Dict,
 ): { slug: string; args: Dict } {

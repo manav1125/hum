@@ -3,8 +3,35 @@ import { ChevronDown } from "lucide-react";
 
 import type { ChatHeaderSupplements } from "@/components/layout/chat-layout-slots-store";
 import { ConversationActionsMenu } from "@/domains/chat/components/conversation-actions-menu";
+import { useConversationThing } from "@/domains/chat/partner/use-conversation-thing";
 import { isChannelConversation } from "@/domains/chat/utils/conversation-channel";
 import type { Conversation } from "@/types/conversation-types";
+
+/**
+ * `▤ Renew Acme` — the thing this conversation belongs to, so the thread is
+ * findable later from the thing itself. Renders nothing when the thread isn't
+ * filed under exactly one thing; see `useConversationThing` for why that is
+ * derived rather than stored.
+ */
+function ThingChip({
+  assistantId,
+  conversationId,
+}: {
+  assistantId: string | null;
+  conversationId: string | null;
+}) {
+  const thing = useConversationThing(assistantId, conversationId);
+  if (!thing) return null;
+  return (
+    <span
+      data-testid="conversation-thing-chip"
+      className="flex shrink-0 items-center gap-1 rounded bg-[var(--surface-active)] px-1.5 text-[11.5px] leading-5 text-[var(--content-secondary)]"
+    >
+      <span aria-hidden>{thing.emoji ?? "▤"}</span>
+      <span className="max-w-[120px] truncate">{thing.title}</span>
+    </span>
+  );
+}
 
 interface ChatConversationHeaderProps {
   assistantId: string | null;
@@ -112,6 +139,10 @@ export function ChatConversationHeader({
           className="min-w-0"
         >
           <span className="flex min-w-0 items-center gap-1.5">
+            <ThingChip
+              assistantId={assistantId}
+              conversationId={activeConversation.conversationId ?? null}
+            />
             {headerSupplements?.slackHeaderLabel ? (
               <img
                 src="/images/integrations/slack.svg"

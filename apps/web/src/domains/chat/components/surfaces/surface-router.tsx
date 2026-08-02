@@ -4,6 +4,8 @@ import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
 import { INHERENTLY_INTERACTIVE_SURFACE_TYPES } from "@/domains/chat/types/types";
 import type { Surface } from "@/domains/chat/types/types";
 
+import { AdjacentOfferRow } from "@/domains/chat/partner/adjacent-offer-row";
+import { ArtefactCard } from "@/domains/chat/partner/artefact-card";
 import { BrowserViewSurface } from "@/domains/chat/components/surfaces/browser-view-surface";
 import { CallSummarySurface } from "@/domains/chat/components/surfaces/call-summary-surface";
 import { CardSurface } from "@/domains/chat/components/surfaces/card-surface";
@@ -138,6 +140,18 @@ export function SurfaceRouter({
 
     case "work_result":
       return <WorkResultSurface surface={surface} onAction={onAction} />;
+
+    // The deliverable itself, with its verb on it. Its Send/Publish/Pay button
+    // posts a surface action; the act still runs through the daemon's hard
+    // checkpoint (`assistant/src/tools/outbound-send.ts`) — see
+    // `partner/artefact-card.tsx`.
+    case "artefact":
+      return <ArtefactCard surface={surface} onAction={onAction} />;
+
+    // The one adjacent thing Cue noticed. Capped to one per turn upstream in
+    // `TranscriptMessageBody`; never blocks the turn.
+    case "adjacent_offer":
+      return <AdjacentOfferRow surface={surface} onAction={onAction} />;
 
     case "document_preview":
       return (

@@ -26,6 +26,12 @@ export interface SpawnedWorkItem {
   lastRunConversationId: string | null;
   /** Live one-liner the runner stamps while running; null otherwise. */
   lastProgressNote: string | null;
+  /**
+   * The thing this item is filed under, when it is filed. This is the only
+   * durable link the data model has today between a conversation and a thing —
+   * `useConversationThing` reads it to title the thread's header.
+   */
+  projectId: string | null;
   createdAt: number | null;
 }
 
@@ -50,6 +56,7 @@ function narrow(raw: unknown): SpawnedWorkItem | null {
     status,
     lastRunConversationId: str(rec.lastRunConversationId),
     lastProgressNote: str(rec.lastProgressNote),
+    projectId: str(rec.projectId),
     createdAt: num(rec.createdAt),
   };
 }

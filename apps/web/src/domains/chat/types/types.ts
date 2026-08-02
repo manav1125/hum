@@ -189,6 +189,17 @@ export const INHERENTLY_INTERACTIVE_SURFACE_TYPES = [
 ];
 
 /**
+ * Surface types that carry actions but must never pause the turn.
+ *
+ * The adjacent offer ("while I was in there — chase Rachel too?") is a remark
+ * on the way out, not a question. If it parked the turn in
+ * `awaiting_user_input` the conversation would block on something the user
+ * never asked about, which is precisely the behaviour the offer is supposed to
+ * avoid. It has buttons; it is still not a gate.
+ */
+export const NEVER_BLOCKING_SURFACE_TYPES = ["adjacent_offer"];
+
+/**
  * Whether a surface requires user interaction to "complete".
  *
  * A surface is interactive when it either carries explicit action buttons
@@ -199,6 +210,7 @@ export const INHERENTLY_INTERACTIVE_SURFACE_TYPES = [
  */
 export function isSurfaceInteractive(surface: Surface): boolean {
   if (surface.completed) return false;
+  if (NEVER_BLOCKING_SURFACE_TYPES.includes(surface.surfaceType)) return false;
   const hasActions =
     Array.isArray(surface.actions) && surface.actions.length > 0;
   return (

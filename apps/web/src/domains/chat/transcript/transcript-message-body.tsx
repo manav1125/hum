@@ -27,6 +27,9 @@ import {
   isSuppressedUiTool,
 } from "@/domains/chat/transcript/message-content";
 import { parseInlineSurfaces } from "@/domains/chat/utils/parse-inline-surfaces";
+import { AnswerSources } from "@/domains/chat/partner/answer-sources-line";
+import { deriveAnswerSources } from "@/domains/chat/partner/answer-sources";
+import { suppressedOfferSurfaceIds } from "@/domains/chat/partner/adjacent-offer";
 import { getSlackLinkUrl } from "@/domains/chat/types/types";
 import { wireSurfaceToDisplay } from "@/domains/chat/utils/map-runtime-message";
 import { InterruptedTurnNotice } from "@/domains/chat/transcript/interrupted-turn-notice";
@@ -209,22 +212,41 @@ export function TranscriptMessageBody({
     );
   };
 
+  // Provenance for this turn, derived from the tool calls that actually ran
+  // and finished. Empty when the answer came from the model's own knowledge —
+  // in which case `AnswerSources` renders nothing at all rather than implying
+  // a source we don't have.
+  const answerSources = isUser ? [] : deriveAnswerSources(message.toolCalls);
+
+  // "At most one adjacent thing, drawn only from what it just touched."
+  // Decided over the whole turn up front; the extras render nothing.
+  const suppressedOffers = suppressedOfferSurfaceIds(
+    groups.flatMap((group) =>
+      group.type === "surface" ? [wireSurfaceToDisplay(group.surface)] : [],
+    ),
+    answerSources,
+  );
+
   const renderSurfaceNode = (
     surface: ConversationMessageSurface,
     key: string,
-  ): ReactNode => (
-    <div key={key} className="w-full">
-      <SurfaceRouter
-        surface={wireSurfaceToDisplay(surface)}
-        onAction={onSurfaceAction}
-        onOpenApp={onOpenApp}
-        onOpenDocument={onOpenDocument}
-        onOpenSpreadsheet={onOpenSpreadsheet}
-        assistantId={assistantId}
-        toolCalls={message.toolCalls}
-      />
-    </div>
-  );
+  ): ReactNode => {
+    const display = wireSurfaceToDisplay(surface);
+    if (suppressedOffers.has(display.surfaceId)) return null;
+    return (
+      <div key={key} className="w-full">
+        <SurfaceRouter
+          surface={display}
+          onAction={onSurfaceAction}
+          onOpenApp={onOpenApp}
+          onOpenDocument={onOpenDocument}
+          onOpenSpreadsheet={onOpenSpreadsheet}
+          assistantId={assistantId}
+          toolCalls={message.toolCalls}
+        />
+      </div>
+    );
+  };
 
   // Render one `activity` group (a contiguous thinking + tool run) into its
   // combined `MultiActivityGroup`, a lone inline link, or a bare thinking
@@ -462,6 +484,9 @@ export function TranscriptMessageBody({
     >
       <div className={columnClass}>
         {groups.map((group, gi) => renderGroupNode(group, gi))}
+        {/* The answer leads; this is the receipt under it. Held back while the
+            turn is still streaming so the line doesn't grow a source at a time. */}
+        {!isStreaming && <AnswerSources sources={answerSources} />}
         {hasAttachments && (
           <MessageAttachments
             attachments={message.attachments ?? []}
