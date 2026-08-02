@@ -137,7 +137,7 @@ export async function handleConfirmationSubmit(
   if (!ctx) {
     useChatSessionStore
       .getState()
-      .setError({ message: "No active session. Please try again." });
+      .setError({ message: "I've lost the session. Try again?" });
     useInteractionStore.getState().submitConfirmationEnd();
     return;
   }
@@ -201,7 +201,7 @@ export async function handleConfirmationSubmit(
   } catch (err) {
     captureError(err, { context: "submit_confirmation" });
     useChatSessionStore.getState().setError({
-      message: "Failed to submit confirmation. Please try again.",
+      message: "I couldn't record your decision. Try again?",
     });
     useInteractionStore.getState().submitConfirmationEnd();
   }
@@ -224,7 +224,7 @@ export async function handleAllowAndCreateRule(
   if (!ctx) {
     useChatSessionStore
       .getState()
-      .setError({ message: "No active session. Please try again." });
+      .setError({ message: "I've lost the session. Try again?" });
     return;
   }
 
@@ -295,7 +295,7 @@ export async function handleAllowAndCreateRule(
     openCreateEditor({ ...editorContext, requestId: "" });
     useChatSessionStore.getState().setError({
       message:
-        "Failed to submit confirmation, but you can still create a rule.",
+        "I couldn't record your decision — you can still make it a rule.",
     });
     useInteractionStore.getState().submitConfirmationEnd();
   }

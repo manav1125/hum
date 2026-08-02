@@ -139,7 +139,7 @@ export const TextPreview: FC<TextPreviewProps> = ({
         setHtml(highlighted);
       } catch {
         if (!cancelled) {
-          setError("Failed to load preview.");
+          setError("I couldn't build a preview for this one.");
         }
       } finally {
         if (!cancelled) {

@@ -275,7 +275,9 @@ export function FileUploadSurface({
         files: encodedFiles,
       } as Record<string, unknown>);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload files");
+      setError(
+        err instanceof Error ? err.message : "I couldn't upload those files.",
+      );
       setIsSubmitting(false);
     }
   }, [selectedFiles, onAction, surface.surfaceId]);

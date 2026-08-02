@@ -177,7 +177,7 @@ export function ChatLauncher({
           }
         },
         onError: () => {
-          toast.error("Couldn't start that. Try again.");
+          toast.error("I couldn't start that. Try again?");
         },
       },
     );

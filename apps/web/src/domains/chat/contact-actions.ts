@@ -33,7 +33,7 @@ export async function handleContactPromptSubmit(
   if (!ctx) {
     useChatSessionStore
       .getState()
-      .setError({ message: "No active session. Please try again." });
+      .setError({ message: "I've lost the session. Try again?" });
     useInteractionStore.getState().submitContactRequestEnd();
     return;
   }
@@ -64,7 +64,7 @@ export async function handleContactPromptSubmit(
     captureError(err, { context: "submit_contact_prompt" });
     useChatSessionStore
       .getState()
-      .setError({ message: "Failed to save contact. Please try again." });
+      .setError({ message: "I couldn't save the contact. Try again?" });
     useInteractionStore.getState().submitContactRequestEnd();
   }
 }

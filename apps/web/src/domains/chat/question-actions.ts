@@ -32,7 +32,7 @@ export async function handleQuestionResponse(
   if (!ctx) {
     useChatSessionStore
       .getState()
-      .setError({ message: "No active session. Please try again." });
+      .setError({ message: "I've lost the session. Try again?" });
     useInteractionStore.getState().submitQuestionEnd();
     return;
   }
@@ -60,7 +60,7 @@ export async function handleQuestionResponse(
     captureError(err, { context: "submit_question_response" });
     useChatSessionStore
       .getState()
-      .setError({ message: "Failed to submit response. Please try again." });
+      .setError({ message: "I couldn't send your answer. Try again?" });
     useInteractionStore.getState().submitQuestionEnd();
   }
 }

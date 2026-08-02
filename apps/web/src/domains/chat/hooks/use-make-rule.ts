@@ -119,7 +119,7 @@ export function useMakeRule(assistantId?: string): UseMakeRuleResult {
     } catch {
       // Roll back the optimistic append.
       if (previous) queryClient.setQueryData(listKey, previous);
-      toast.error("Couldn't save the rule — try again.");
+      toast.error("I couldn't save the rule. Try again?");
       return null;
     }
   };

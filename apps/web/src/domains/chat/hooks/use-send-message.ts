@@ -268,7 +268,7 @@ export function useSendMessage({
       if (!activeConversationId || !assistantId) {
         return {
           status: "failed",
-          error: { message: "No active conversation. Please try again." },
+          error: { message: "No conversation open yet. Try again?" },
         };
       }
       const requestAssistantId = assistantId;
@@ -336,7 +336,7 @@ export function useSendMessage({
         const detail = resolvePostError(
           postResult.error.code,
           postResult.error.detail,
-          "Something went wrong. Please try again.",
+          "I hit an error. Try again?",
         );
         endTurn({ conversationId: requestConversationId, reason: "error" });
         return {
@@ -537,7 +537,7 @@ export function useSendMessage({
         .catch((err) => {
           if (!isCurrentSendScope(effectiveConversationId)) return;
           captureError(err, { context: "send_message_stream" });
-          setError({ message: "Connection lost. Please try again." });
+          setError({ message: "I lost the connection. Try again?" });
         })
         .finally(() => {
           if (!isCurrentSendScope(effectiveConversationId)) return;
@@ -571,7 +571,7 @@ export function useSendMessage({
   const sendMessage = useCallback(
     async (content: string, attachments: DisplayAttachment[] = []) => {
       if (!activeConversationId || !assistantId) {
-        setError({ message: "No active conversation. Please try again." });
+        setError({ message: "No conversation open yet. Try again?" });
         return;
       }
       // Block any send while a server-mint POST is in flight for the
@@ -580,8 +580,7 @@ export function useSendMessage({
       // the queue path. See `pendingDraftMintRef` declaration.
       if (pendingDraftMintRef.current === activeConversationId) {
         setError({
-          message:
-            "Setting up your conversation. Please try again in a moment.",
+          message: "Setting your conversation up — one moment.",
         });
         return;
       }
@@ -658,7 +657,7 @@ export function useSendMessage({
             const detail = resolvePostError(
               postResult.error.code,
               postResult.error.detail,
-              "Failed to queue message. Please try again.",
+              "I couldn't queue that message. Try again?",
             );
             setError({
               message: detail,
@@ -709,7 +708,7 @@ export function useSendMessage({
         } catch (err) {
           captureError(err, { context: "send_message_queue" });
           revertQueuedMessage(userMessage.id);
-          setError({ message: "Failed to queue message. Please try again." });
+          setError({ message: "I couldn't queue that message. Try again?" });
         }
         return;
       }
@@ -842,7 +841,7 @@ export function useSendMessage({
         void refreshConversations();
       } catch (err) {
         captureError(err, { context: "send_chat_message" });
-        setError({ message: "Something went wrong. Please try again." });
+        setError({ message: "I hit an error. Try again?" });
         // Multi-key processing-key cleanup: when a send is retargeted
         // (e.g. draft → new conversation), both the original active key
         // and the resolved key may have processing markers. `endTurn`

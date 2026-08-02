@@ -209,7 +209,7 @@ export function useConversationLoader({
       conversationListError instanceof ApiError &&
       conversationListError.status === 401
     ) {
-      toast.error("Failed to authenticate user.");
+      toast.error("I couldn't sign you in. Try again?");
     }
   }, [conversationListError]);
 

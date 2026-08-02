@@ -304,7 +304,7 @@ const useComposerStoreBase = create<ComposerStore>()((set, get) => ({
     const list = Array.from(files);
     if (list.length === 0) return;
     if (!assistantId) {
-      set({ attachmentLastError: "No active assistant. Please try again." });
+      set({ attachmentLastError: "No assistant selected yet." });
       return;
     }
 

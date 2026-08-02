@@ -55,10 +55,10 @@ export function MaintenanceModeBanner({
       if (response?.ok) {
         onExited();
       } else {
-        setExitError("Failed to exit Recovery Mode. Please try again.");
+        setExitError("I couldn't leave Recovery Mode. Try again?");
       }
     } catch {
-      setExitError("Failed to exit Recovery Mode. Please try again.");
+      setExitError("I couldn't leave Recovery Mode. Try again?");
     } finally {
       setIsExiting(false);
     }

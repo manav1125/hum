@@ -75,7 +75,7 @@ export function createReachabilityBurstLimiter(
       burstCount += 1;
 
       if (burstCount > STREAM_RETRY_BURST_LIMIT) {
-        deps.onExhausted({ message: "Connection lost. Please try again." });
+        deps.onExhausted({ message: "I lost the connection. Try again?" });
         deps.onReset();
         return;
       }

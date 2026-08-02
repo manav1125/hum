@@ -32,7 +32,7 @@ export async function handleSecretSubmit(
   if (!ctx) {
     useChatSessionStore
       .getState()
-      .setError({ message: "No active session. Please try again." });
+      .setError({ message: "I've lost the session. Try again?" });
     useInteractionStore.getState().submitSecretEnd();
     return;
   }
@@ -66,7 +66,7 @@ export async function handleSecretSubmit(
     captureError(err, { context: "submit_secret" });
     useChatSessionStore
       .getState()
-      .setError({ message: "Failed to submit secret. Please try again." });
+      .setError({ message: "I couldn't save that. Try again?" });
     useInteractionStore.getState().submitSecretEnd();
   }
 }

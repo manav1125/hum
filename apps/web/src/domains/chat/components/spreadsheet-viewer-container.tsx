@@ -434,7 +434,7 @@ export function SpreadsheetViewerContainer({
           setError(
             err instanceof Error
               ? err.message
-              : "Could not open this spreadsheet.",
+              : "I couldn't open this spreadsheet.",
           );
         }
       }
@@ -526,7 +526,7 @@ export function SpreadsheetViewerContainer({
         // Revoke after the click has had a chance to start the download.
         setTimeout(() => URL.revokeObjectURL(url), 10_000);
       } catch {
-        setError("Could not build the updated file.");
+        setError("I couldn't build the updated file.");
       } finally {
         setExporting(false);
       }

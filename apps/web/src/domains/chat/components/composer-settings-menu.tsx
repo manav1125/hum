@@ -315,7 +315,7 @@ export function useComposerSettings({ assistantId, conversationId }: Props) {
           // capture — avoids clobbering a later successful selection when two
           // requests race (select A → select B → A fails → should stay at B).
           setOptimisticActiveProfile(lastConfirmedProfileRef.current);
-          toast.error("Failed to switch profile. Please try again.");
+          toast.error("I couldn't switch profile. Try again?");
         }
         return false;
       }

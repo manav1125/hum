@@ -73,7 +73,7 @@ export function PdfPreview({ url, className }: PdfPreviewProps) {
         setNumPages(Math.min(doc.numPages, MAX_PAGES));
       } catch {
         if (!cancelled) {
-          setError("Failed to load PDF.");
+          setError("I couldn't open this PDF.");
         }
       } finally {
         if (!cancelled) {

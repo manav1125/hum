@@ -50,7 +50,7 @@ export async function handleSurfaceAction(
   if (!ctx) {
     useChatSessionStore
       .getState()
-      .setError({ message: "No active session. Please try again." });
+      .setError({ message: "I've lost the session. Try again?" });
     return;
   }
 
@@ -66,14 +66,14 @@ export async function handleSurfaceAction(
     captureError(err, { context: "submit_surface_action" });
     useChatSessionStore
       .getState()
-      .setError({ message: "Failed to submit. Please try again." });
+      .setError({ message: "I couldn't submit that. Try again?" });
     return;
   }
 
   if (!result.ok) {
     useChatSessionStore
       .getState()
-      .setError({ message: "Failed to submit. Please try again." });
+      .setError({ message: "I couldn't submit that. Try again?" });
     return;
   }
 

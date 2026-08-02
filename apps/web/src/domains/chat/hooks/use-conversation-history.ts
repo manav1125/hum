@@ -414,7 +414,7 @@ export function useConversationHistory({
     if (!isOlderPageError) {
       setIsLoadingHistory(false);
       setError({
-        message: "Failed to load conversation history. Please try again.",
+        message: "I couldn't load this conversation's history. Try again?",
       });
     }
   }, [

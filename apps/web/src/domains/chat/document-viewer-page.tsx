@@ -68,7 +68,7 @@ export function DocumentViewerPage() {
         setDoc(result);
       } catch {
         if (!cancelled) {
-          setError("Failed to load document.");
+          setError("I couldn't open this document.");
         }
       } finally {
         if (!cancelled) {

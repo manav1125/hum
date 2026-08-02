@@ -174,7 +174,7 @@ async function executeSaveRule(
       useRuleEditorStore.getState().dismissRuleEditor();
       useChatSessionStore
         .getState()
-        .setError({ message: "Failed to save trust rule. Please try again." });
+        .setError({ message: "I couldn't save the rule. Try again?" });
       return;
     } finally {
       useRuleEditorStore.getState().setIsSavingRule(false);
@@ -222,7 +222,7 @@ async function executeSaveRule(
     });
     useChatSessionStore
       .getState()
-      .setError({ message: "Failed to save trust rule. Please try again." });
+      .setError({ message: "I couldn't save the rule. Try again?" });
   } finally {
     useRuleEditorStore.getState().setIsSavingRule(false);
     useRuleEditorStore.getState().dismissRuleEditor();

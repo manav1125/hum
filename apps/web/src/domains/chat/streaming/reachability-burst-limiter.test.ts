@@ -100,7 +100,7 @@ describe("reachability burst-limiter", () => {
 
     expect(onExhausted).toHaveBeenCalledTimes(1);
     expect(onExhausted).toHaveBeenCalledWith({
-      message: "Connection lost. Please try again.",
+      message: "I lost the connection. Try again?",
     });
     expect(onReset).toHaveBeenCalledTimes(1);
     expect(publishSpy).not.toHaveBeenCalled();

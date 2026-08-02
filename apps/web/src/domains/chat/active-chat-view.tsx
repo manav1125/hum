@@ -296,7 +296,7 @@ export function ActiveChatView() {
   useEffect(() => {
     if (reachability.state.phase !== "failed") return;
     useChatSessionStore.getState().setError({
-      message: "Connection lost. Please try again.",
+      message: "I lost the connection. Try again?",
     });
   }, [reachability.state.phase]);
 
