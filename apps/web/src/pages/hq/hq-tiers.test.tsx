@@ -1,20 +1,24 @@
 /**
- * Tests for the three tiers — the render policy that replaced "every module
- * renders, always".
+ * Tests for the deck's render policy — lanes, absorbed lanes, and events.
  *
  * These do not assert styling. Each one encodes a rule the deck would otherwise
- * break silently, and two of them exist because the rule they guard is the
- * whole reason the old policy was written in the first place:
+ * break silently, and the two that matter most exist because they are the two
+ * directions §13.1 can be got wrong in:
  *
  *   · Tier 1 renders a card at ZERO      — "nothing needs you" deserves space
- *   · Tier 2 empty renders a LINE        — never nothing; it demotes
- *   · Tier 3 is always present           — the four lines are unconditional
- *   · no lane renders a count it did not query
- *   · every lane appears exactly once, as a card or a line
+ *   · a LANE with nothing in it is a LINE — never nothing; it does not vanish
+ *   · an EVENT that didn't happen is NOTHING — not a line reporting a non-event
+ *   · the rail is FOUR lines, on both surfaces
+ *   · no slot renders a count it did not query
+ *   · every id is accounted for, as a card, a line, or a warranted absence
  *
- * The mutation this suite is calibrated against: make `tier2` return no slot
- * for an empty lane (the obvious "just hide it" change) and
- * "an empty Tier 2 demotes to a line rather than vanishing" fails.
+ * The two mutations this suite is calibrated against:
+ *
+ *   1. make an absent event render a line — "an event that didn't happen
+ *      renders nothing at all" fails, and so does the four-line count;
+ *   2. make an empty lane vanish (`tier3` returning an absence, or `absorbed`
+ *      skipping its unavailable line) — "an empty lane is still a line" fails,
+ *      and `laneSlotsFor` throws rather than quietly dropping it.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -23,21 +27,24 @@ import { cleanup, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import {
+  absorbed,
   counted,
   deliverySentence,
+  event,
   known,
   LaneCards,
   LANE_IDS,
   LANE_TIER,
   laneSlotsFor,
+  SLOT_KIND,
   TIER1_IDS,
   TIER2_IDS,
   TIER3_IDS,
   tier1,
-  tier2,
   tier3,
   TierRail,
   unavailable,
+  type AbsentSlot,
   type LaneId,
   type LaneSlot,
 } from "@/pages/hq/hq-tiers";
@@ -49,9 +56,12 @@ function wrap(ui: React.ReactNode) {
 }
 
 /**
- * A whole deck of lanes, every one empty-but-queried — the calmest possible
- * account, and the state where "silently absent" and "calm" are easiest to
- * confuse. `overrides` swaps individual lanes for the case under test.
+ * A whole deck, every slot empty-but-queried — the calmest possible account,
+ * and the state where "silently absent" and "calm" are easiest to confuse.
+ * The card builders are shaped like the desktop deck's: they return a card
+ * when there is something and `null` when there is not, so this is what HQ
+ * renders on a quiet morning. `overrides` swaps individual slots for the case
+ * under test.
  */
 function emptyDeck(
   overrides: Partial<Record<LaneId, LaneSlot>> = {},
@@ -66,35 +76,22 @@ function emptyDeck(
     missions: tier1("missions", known<string[]>([]), (items) => (
       <div>missions: {items.length}</div>
     )),
-    in_motion: tier2(
-      "in_motion",
-      known<string[]>([]),
-      (items) => (items.length === 0 ? null : <div>in motion</div>),
-      () => ({ sentence: "Nothing is running and nothing is queued." }),
+    in_motion: absorbed("in_motion", known<string[]>([]), (items) =>
+      items.length === 0 ? null : <div>in motion</div>,
     ),
-    day: tier2(
-      "day",
-      known<string[]>([]),
-      (items) => (items.length === 0 ? null : <div>day</div>),
-      () => ({ sentence: "Nothing is booked today." }),
+    day: absorbed("day", known<string[]>([]), (items) =>
+      items.length === 0 ? null : <div>day</div>,
     ),
-    life: tier2(
-      "life",
-      known<string[]>([]),
-      (items) => (items.length === 0 ? null : <div>life</div>),
-      () => ({ sentence: "Nothing personal is on your list." }),
+    life: absorbed("life", known<string[]>([]), (items) =>
+      items.length === 0 ? null : <div>life</div>,
     ),
-    batch: tier2(
+    batch: event(
       "batch",
       unavailable<string[]>("Cue isn't batching anything yet."),
       () => null,
-      () => ({ sentence: "Cue isn't batching anything." }),
     ),
-    correction: tier2(
-      "correction",
-      known<string[]>([]),
-      (items) => (items.length === 0 ? null : <div>correction</div>),
-      () => ({ sentence: "Everything that arrived found a home." }),
+    correction: event("correction", known<string[]>([]), (items) =>
+      items.length === 0 ? null : <div>correction</div>,
     ),
     arrivals: tier3("arrivals", known<string[]>([]), () => ({
       sentence: "Nothing has arrived — because nothing is watching.",
@@ -150,13 +147,14 @@ describe("Tier 1 — always a card", () => {
   });
 });
 
-describe("Tier 2 — a card only when non-empty, a line otherwise", () => {
-  test("an empty Tier 2 demotes to a line rather than vanishing", () => {
-    // THE mutation test. Change `tier2` to omit an empty lane and this fails:
-    // the lane is gone from the DOM entirely, which is the one thing the tiers
-    // exist to prevent.
+describe("a LANE is never silently absent", () => {
+  test("an empty lane is still a line — it does not vanish", () => {
+    // THE mutation test in the "made a lane disappear" direction. Change
+    // `tier3` to return an absence for an empty payload and this fails: the
+    // lane is gone from the DOM entirely, which is the one thing the roster
+    // exists to prevent.
     const { container } = renderDeck(emptyDeck());
-    for (const id of TIER2_IDS) {
+    for (const id of TIER3_IDS) {
       const node = container.querySelector(`[data-lane='${id}']`);
       expect(node).not.toBeNull();
       expect(node!.getAttribute("data-slot")).toBe("hq-tier-line");
@@ -165,14 +163,115 @@ describe("Tier 2 — a card only when non-empty, a line otherwise", () => {
     }
   });
 
-  test("a non-empty Tier 2 is promoted to a card and leaves the rail", () => {
+  test("every lane in the roster renders exactly once", () => {
+    const { container } = renderDeck(emptyDeck());
+    for (const id of LANE_IDS) {
+      if (SLOT_KIND[id] === "event") continue;
+      const nodes = container.querySelectorAll(`[data-lane='${id}']`);
+      // in-motion, the day and Life are absorbed: on a quiet deck their answer
+      // is on screen in another form, so they render nowhere here.
+      if (nodes.length === 0) {
+        expect(["in_motion", "day", "life"]).toContain(id);
+        continue;
+      }
+      expect(nodes).toHaveLength(1);
+    }
+  });
+
+  test("laneSlotsFor throws if a standing lane somehow renders as absent", () => {
+    // Unreachable through the builders — `tier3` returns a line and the
+    // absence warrant cannot be minted for a Tier-3 id. This is the runtime
+    // backstop for a cast that got around both: the deck refuses to render
+    // rather than rendering one lane fewer than it was given.
+    const forged = {
+      id: "waiting",
+      render: "absent",
+      warrant: { because: "shhh" },
+    } as unknown as AbsentSlot;
+    expect(() => laneSlotsFor(emptyDeck({ waiting: forged }))).toThrow(
+      /rendered as absent/,
+    );
+  });
+
+  test("cards plus lines plus warranted absences account for the whole roster", () => {
+    const { cards, lines, absent } = laneSlotsFor(emptyDeck());
+    expect(cards.length + lines.length + absent.length).toBe(LANE_IDS.length);
+    // Tier 1 can never contribute a line — its builder returns a card slot.
+    for (const slot of lines) expect(LANE_TIER[slot.id]).not.toBe(1);
+    // And nothing that answers a standing question on its own is absent.
+    for (const slot of absent) expect(TIER3_IDS).not.toContain(slot.id);
+  });
+});
+
+describe("an EVENT may be absent, and absence is all it renders", () => {
+  test("an event that didn't happen renders nothing at all", () => {
+    // THE mutation test in the other direction. Make `event` fall back to a
+    // line and this fails — the deck grows a grey sentence reporting that
+    // something which never happened has not happened.
+    const { container } = renderDeck(emptyDeck());
+    expect(container.querySelector("[data-lane='batch']")).toBeNull();
+    expect(container.querySelector("[data-lane='correction']")).toBeNull();
+    expect(container.textContent).not.toContain("batching");
+  });
+
+  test("an event that happened takes a card", () => {
     const lanes = emptyDeck({
-      life: tier2(
-        "life",
-        known(["renew the passport"]),
-        (items) =>
-          items.length === 0 ? null : <div>life: {items.length}</div>,
-        () => ({ sentence: "Nothing personal is on your list." }),
+      correction: event("correction", known(["invoice"]), (items) => (
+        <div>correction: {items.length}</div>
+      )),
+    });
+    const { container } = renderDeck(lanes);
+    const node = container.querySelector("[data-lane='correction']");
+    expect(node).not.toBeNull();
+    expect(node!.getAttribute("data-slot")).not.toBe("hq-tier-line");
+    expect(node!.textContent).toContain("correction: 1");
+  });
+
+  test("its absence is a value, not a missing key — so it can be explained", () => {
+    const { absent } = laneSlotsFor(emptyDeck());
+    const batch = absent.find((slot) => slot.id === "batch");
+    expect(batch).toBeDefined();
+    expect(batch!.warrant.because).toContain("batching");
+  });
+
+  test("a lane cannot be declared an event", () => {
+    // The loophole §13.1 opens, closed in the type system: `event` takes an
+    // `EventId`, and widening that union is a conspicuous edit rather than an
+    // accident. If this ever stops erroring, the rule has become a convention.
+    // @ts-expect-error — 'waiting' is a lane; it has no absent state to declare
+    event("waiting", known<string[]>([]), () => null);
+    // Same for an absorbed lane: absorption is a claim about another surface,
+    // so only the three ids that made that claim can make it.
+    // @ts-expect-error — 'arrivals' is answered by nothing but itself
+    absorbed("arrivals", known<string[]>([]), () => null);
+    // And the slot cannot be forged either: there is no literal of the warrant.
+    const forged: AbsentSlot = {
+      id: "batch",
+      render: "absent",
+      // @ts-expect-error — AbsenceWarrant is opaque; only `event`/`absorbed` mint one
+      warrant: { because: "because I said so" },
+    };
+    expect(forged.id).toBe("batch");
+    expect(SLOT_KIND.waiting).toBe("lane");
+    expect(SLOT_KIND.batch).toBe("event");
+  });
+});
+
+describe("an ABSORBED lane defers only to an answer we have", () => {
+  test("empty and queried: nothing, because another surface says it", () => {
+    const { container } = renderDeck(emptyDeck());
+    for (const id of ["in_motion", "day", "life"] as const) {
+      expect(container.querySelector(`[data-lane='${id}']`)).toBeNull();
+    }
+    const { absent } = laneSlotsFor(emptyDeck());
+    const inMotion = absent.find((slot) => slot.id === "in_motion");
+    expect(inMotion!.warrant.because).toContain("census");
+  });
+
+  test("non-empty: a card, exactly as before", () => {
+    const lanes = emptyDeck({
+      life: absorbed("life", known(["renew the passport"]), (items) =>
+        items.length === 0 ? null : <div>life: {items.length}</div>,
       ),
     });
     const { container } = renderDeck(lanes);
@@ -182,21 +281,51 @@ describe("Tier 2 — a card only when non-empty, a line otherwise", () => {
     expect(nodes[0]!.textContent).toContain("life: 1");
   });
 
-  test("a lane that could not be asked demotes to its reason, not to zero", () => {
-    const { container } = renderDeck(emptyDeck());
-    const node = container.querySelector("[data-lane='batch']");
-    expect(node!.textContent).toContain("isn't batching anything yet");
+  test("unqueryable: a LINE, because absorption cannot stand over a gap", () => {
+    // The census bar cannot be answering "is anything running?" out of a query
+    // that failed. Staying quiet here would be the silent absence, so this is
+    // the one case where an absorbed lane still takes a line.
+    const lanes = emptyDeck({
+      day: absorbed(
+        "day",
+        unavailable<string[]>("Cue couldn't read your calendar just now."),
+        () => null,
+      ),
+    });
+    const { container } = renderDeck(lanes);
+    const node = container.querySelector("[data-lane='day']");
+    expect(node).not.toBeNull();
+    expect(node!.getAttribute("data-slot")).toBe("hq-tier-line");
+    expect(node!.textContent).toContain("couldn't read your calendar");
   });
 });
 
-describe("Tier 3 — one grey line, always present", () => {
-  test("all four render even when every one of them is empty", () => {
+describe("the rail is four lines", () => {
+  test("exactly Arrivals, Waiting, Rhythms and Pulse on a quiet desktop deck", () => {
+    // Nine before §13.1: the four, plus in-motion, the day, Life, the batch
+    // offer and the filing correction, each reporting an emptiness nobody had
+    // asked about.
     const { container } = renderDeck(emptyDeck());
-    for (const id of TIER3_IDS) {
-      const node = container.querySelector(`[data-lane='${id}']`);
-      expect(node).not.toBeNull();
-      expect(node!.getAttribute("data-slot")).toBe("hq-tier-line");
-    }
+    const lines = container.querySelectorAll("[data-slot='hq-tier-line']");
+    expect(lines).toHaveLength(4);
+    expect([...lines].map((el) => el.getAttribute("data-lane"))).toEqual([
+      ...TIER3_IDS,
+    ]);
+  });
+
+  test("still four when the deck is busy — a card leaves, it does not add", () => {
+    const lanes = emptyDeck({
+      in_motion: absorbed("in_motion", known(["draft the reply"]), (items) => (
+        <div>in motion: {items.length}</div>
+      )),
+      correction: event("correction", known(["invoice"]), (items) => (
+        <div>correction: {items.length}</div>
+      )),
+    });
+    const { container } = renderDeck(lanes);
+    expect(
+      container.querySelectorAll("[data-slot='hq-tier-line']"),
+    ).toHaveLength(4);
   });
 
   test("each line carries a glyph, so state is never colour alone", () => {
@@ -217,22 +346,6 @@ describe("Tier 3 — one grey line, always present", () => {
   });
 });
 
-describe("no lane is ever silently absent", () => {
-  test("every lane in the roster renders exactly once", () => {
-    const { container } = renderDeck(emptyDeck());
-    for (const id of LANE_IDS) {
-      expect(container.querySelectorAll(`[data-lane='${id}']`)).toHaveLength(1);
-    }
-  });
-
-  test("cards plus lines account for the whole roster", () => {
-    const { cards, lines } = laneSlotsFor(emptyDeck());
-    expect(cards.length + lines.length).toBe(LANE_IDS.length);
-    // Tier 1 can never contribute a line — its builder cannot return null.
-    for (const slot of lines) expect(LANE_TIER[slot.id]).not.toBe(1);
-  });
-});
-
 describe("never a number it did not query", () => {
   test("counted() refuses a lane that could not be asked", () => {
     expect(counted(unavailable<string[]>("no"), (p) => p.length)).toBeNull();
@@ -242,6 +355,19 @@ describe("never a number it did not query", () => {
     const zero = counted(known<string[]>([]), (p) => p.length);
     expect(zero).not.toBeNull();
     expect(zero!.value).toBe(0);
+  });
+
+  test("an event cannot invent a count for what happened either", () => {
+    // The event's card is a function of the queried payload, same as a lane's:
+    // an unavailable state never reaches the builder, so there is no payload to
+    // read a number out of.
+    let reached = false;
+    const slot = event("batch", unavailable<number[]>("not built yet"), () => {
+      reached = true;
+      return <div>never</div>;
+    });
+    expect(reached).toBe(false);
+    expect(slot.render).toBe("absent");
   });
 
   test("the delivery sentence drops a lane it could not read rather than calling it zero", () => {

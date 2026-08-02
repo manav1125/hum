@@ -57,13 +57,8 @@ import {
   counted,
   deliverySentence,
   known,
-  LANE_META,
   laneSlotsFor,
-  TIER3_IDS,
-  TIER2_IDS,
-  TIER1_IDS,
   unavailable,
-  type LaneId,
 } from "@/pages/hq/hq-tiers";
 import {
   ringStatusFor,
@@ -72,7 +67,7 @@ import {
   type Mission,
 } from "@/pages/hq/use-missions";
 
-import { buildMv3Lanes } from "./mv3-lanes";
+import { buildMv3Lanes, Mv3TierRail } from "./mv3-lanes";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
@@ -534,87 +529,20 @@ function NeedsYouV3({
 }
 
 /* -------------------------------------------------------------------------- */
-/* The tiers at 390px (v8 M2)                                                 */
+/* The tiers at 390px (v8 M2, brief §13.1)                                    */
 /* -------------------------------------------------------------------------- */
 
-/**
- * **At 390px there is no Tier 2: a lane is a card or a line, never between.**
+/*
+ * **At 390px a lane is a card or a line, never between**, and the rail is four
+ * lines — see `./mv3-lanes`, which owns the roster and the rail so both are
+ * testable without mounting a scroll driver, an aurora and four live queries.
  *
- * Desktop can afford a middle tier because horizontal space is cheap. The phone
- * forces the question "does this lane deserve a card *today*?" — which is the
- * question that fixed the desktop deck, so this is not a shrink-to-fit. Cards
- * for needs-you, delivered and missions; everything else is one grey line with
- * the same honest statement desktop shows, including "0 need you", which is a
- * real number rather than a hidden absence.
- *
- * The lane roster, the builders and the two invariants are the SAME module the
- * desktop deck uses (`@/pages/hq/hq-tiers`). That is deliberate: if mobile kept
- * its own list, a lane could be present on one surface and silently absent on
- * the other, and nothing would catch it.
+ * Cards for needs-you, delivered and missions; Arrivals, Waiting, Rhythms and
+ * Pulse as lines carrying the same honest statements desktop shows, including
+ * "0 need you", which is a real number rather than a hidden absence. In-motion,
+ * the day and Life are absorbed by surfaces that already answer them; the batch
+ * offer and the filing correction are events, absent when they didn't happen.
  */
-function Mv3TierLine({
-  id,
-  line,
-}: {
-  id: LaneId;
-  line: {
-    sentence: string;
-    href?: string;
-    linkLabel?: string;
-    tone?: "muted" | "attention";
-  };
-}) {
-  const navigate = useNavigate();
-  const meta = LANE_META[id];
-  const href = line.href ?? meta.href;
-  return (
-    <div
-      data-lane={id}
-      data-slot="mv3-tier-line"
-      role="button"
-      tabIndex={0}
-      onClick={() => {
-        haptic.light();
-        navigate(href);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") navigate(href);
-      }}
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        gap: 10,
-        padding: "9px 6px",
-        // --mv3-muted is #9A9AA8 dark / #5A6672 light. Never #5B5B68.
-        color: "var(--mv3-muted)",
-        fontSize: 12.5,
-        lineHeight: 1.45,
-        cursor: "pointer",
-      }}
-    >
-      <span
-        aria-hidden
-        style={{
-          fontFamily: mv3Mono,
-          fontSize: 12,
-          width: 13,
-          flexShrink: 0,
-          color:
-            line.tone === "attention" ? "var(--mv3-amber)" : "var(--mv3-muted)",
-        }}
-      >
-        {meta.glyph}
-      </span>
-      <span style={{ flex: 1, minWidth: 0 }}>{line.sentence}</span>
-      <span
-        aria-hidden
-        style={{ fontSize: 12, flexShrink: 0, color: "var(--mv3-faint)" }}
-      >
-        ›
-      </span>
-    </div>
-  );
-}
 
 /** Tier 1 · Delivered — Cue's receipts, and a card even when there are none. */
 function DeliveredV3({ items, delay }: { items: HqWorkItem[]; delay: number }) {
@@ -782,14 +710,22 @@ function MissionsV3({
  * holding should not be the thing you have to hunt for at the bottom of a
  * card stack. Segments with nothing in them are omitted rather than shown as
  * zero: a zero here reads as "none", which is a claim.
+ *
+ * **Except a segment that is answering for an absorbed lane.** In-motion no
+ * longer takes a line in the rail because this bar states "N doing"
+ * (`ANSWERED_BY` in `@/pages/hq/hq-tiers`) — so that segment cannot also
+ * disappear at zero, or the standing question "is anything running?" would go
+ * unanswered on the whole screen, which is the silent absence the lane rules
+ * exist to prevent. `keep` is how a segment declares it is carrying that
+ * weight.
  */
 function Mv3Census({
   segments,
 }: {
-  segments: { label: string; value: number }[];
+  segments: { label: string; value: number; keep?: boolean }[];
 }) {
   const navigate = useNavigate();
-  const shown = segments.filter((s) => s.value > 0);
+  const shown = segments.filter((s) => s.keep || s.value > 0);
   if (shown.length === 0) return null;
   return (
     <div
@@ -1259,18 +1195,10 @@ export function Mv3Today({
     },
   });
   // Cards and lines come out of the SAME roster, so nothing can fall between
-  // them: `laneSlotsFor` throws if a lane is neither. The rail then reads
-  // Tier 3 first and demoted Tier 2 after, which is v7 §A's order and the same
-  // order the desktop rail uses.
-  const { cards: tierCards, lines: tierLines } = laneSlotsFor(lanes);
-  const railOrder: readonly LaneId[] = [
-    ...TIER3_IDS,
-    ...TIER2_IDS,
-    ...TIER1_IDS,
-  ];
-  const railLines = [...tierLines].sort(
-    (a, b) => railOrder.indexOf(a.id) - railOrder.indexOf(b.id),
-  );
+  // them: `laneSlotsFor` throws if a slot is neither a card, a line nor a
+  // warranted absence — and if a standing lane is the absence. `Mv3TierRail`
+  // reads the same roster for the line half.
+  const { cards: tierCards } = laneSlotsFor(lanes);
 
   if (orbitEmpty && !interactionsQuery.isLoading) {
     // Keep the undo pill alive if dismissing the last card emptied the orbit.
@@ -1553,29 +1481,20 @@ export function Mv3Today({
                 {slot.node}
               </div>
             ))}
-            {/* Tier 3 — one grey line each, always present. Same honest
-                statements as desktop, including "0 need you". */}
-            <div
-              data-slot="mv3-tier-rail"
-              style={{
-                borderTop: "1px solid var(--mv3-line)",
-                paddingTop: 6,
-                ...rise(0.55),
-              }}
-            >
-              {railLines.map((slot) => (
-                <Mv3TierLine key={slot.id} id={slot.id} line={slot.line} />
-              ))}
-            </div>
+            {/* The rail — four lines, always present, carrying the same
+                honest statements desktop shows, including "0 need you". */}
+            <Mv3TierRail lanes={lanes} style={rise(0.55)} />
           </div>
         </div>
       </div>
       {/* The census docks above the home indicator, so the one number that
-          says how much Cue is holding never needs scrolling to. */}
+          says how much Cue is holding never needs scrolling to. "Cue is doing"
+          is `keep`: it now carries the in-motion lane's answer, which is why
+          that lane no longer takes a line in the rail. */}
       <Mv3Census
         segments={[
           { label: "need you", value: glanceCount },
-          { label: "Cue is doing", value: running.length },
+          { label: "Cue is doing", value: running.length, keep: true },
           { label: "waiting", value: cameIn.length },
           { label: "done today", value: done.length },
         ]}
