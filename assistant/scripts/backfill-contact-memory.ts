@@ -30,6 +30,9 @@
  *   --limit <n>        Cap correspondents considered (busiest first).
  *   --min-messages <n> Ignore addresses with fewer than n messages. Default 1.
  *   --since-days <n>   Only consider mail from the last n days.
+ *   --force            Re-read mail the scheduled sweep has already been
+ *                      through, instead of skipping it. Only useful after a
+ *                      prompt change; costs a full LLM call per person again.
  *   --json             Emit the report as JSON.
  *
  * PRIVACY: this tool reads the owner's private correspondence. It prints
@@ -104,7 +107,9 @@ if (extract) {
     (a, b) => b.messageCount - a.messageCount,
   );
   for (const target of targets) {
-    const outcome = await runContactCorrespondenceExtraction(target.contactId);
+    const outcome = await runContactCorrespondenceExtraction(target.contactId, {
+      force: flag("force"),
+    });
     const saved = outcome.kind === "extracted" ? outcome.savedCount : 0;
     factsWritten += saved;
     extractions.push({
