@@ -332,10 +332,81 @@ Plus two **deltas rather than gaps**: mobile batching exists in canonical K2 but
 
 ---
 
-## 11 · Precedence — which file wins
+## 11 · Navigation rework — packs v13 → v17 (added 2026-08-02, after the six answers)
 
-1. **v12** — the conversation surface, voice, welcome-back, relationship moments.
-2. **v11** — vocabulary, desktop sidebar, Work's two views, day one.
+Triggered by the built sidebar reaching **13 items**. Four rounds, and two of them corrected us.
+
+### 11.1 · The three tiers (v13 → v14)
+v13 cut the sidebar to two destinations using one test — *how often do you go there*. **That was an over-correction**: it buries anything you visit rarely but need to know exists. Library and Skills aren't settings; they're the surfaces that *show what Cue is*.
+
+| Tier | Test | Where |
+|---|---|---|
+| **1 · Where you work** | go there and stay, daily | **Talk to Cue · HQ · Work** |
+| **2 · What Cue is** | it demonstrates the product | grouped under a **CUE** heading |
+| **3 · How it's set** | genuinely a setting | avatar menu: Trust · Preferences · Billing |
+
+**Tier 2 is capped at six and closed:**
+`◆ Agents` who works for you · `✦ Skills` what they can do · `↻ Rhythms` what runs without you · `🧠 Memory` what Cue knows · `▦ Library` what Cue has made · `👁 Watching` where it comes from.
+**A seventh must displace one, not extend the list.** That cap — not the heading — is what prevents thirteen recurring.
+
+### 11.2 · The final sidebar (v15) — build this
+**Flat hierarchy, no indents.** Talk to Cue is the filled row; HQ and Work sit at the same level. Disclosure is a small `▾` on the **right edge after the count**, so nothing shifts horizontally on open. Expanded items are unindented too — **quieter type does the nesting, not position.**
+
+```
+cue.                                ◧
+[ ✎ Talk to Cue              ⌘N ]
+◈ HQ                          7  ▾
+  Confirm the 24-month position   10:30
+  Resolve dinner conflict         tonight
+  Approve AR-5182                 2d
+  4 more in HQ ›
+▤ Work                        5  ▸
+PINNED / RECENT (5) / All conversations ›
+CUE ▾  ◆ ✦ ↻ 🧠 ▦ 👁
+👤 Manav · Autonomous · $4.10
+```
+
+**Expansion rules:** three items max, always (then "N more ›") · HQ sorts by urgency, Work by what's live · only one section open at a time · **titles only, no buttons in the rail** · collapsed on first run, then remembered.
+
+**Rail auto-collapses to a 52px icon strip the moment you enter a conversation** (`◧` or `⌘\` pins it open). This is what makes discoverability affordable — ten rows is right when navigating and wrong when reading.
+
+### 11.3 · Where the other items went — nothing deleted
+| Removed | Now | Why |
+|---|---|---|
+| New conversation | `✎` inside Talk to Cue | Same intent. Destination keeps the row, action becomes the icon. |
+| Create · Voice | Composer chips | Already there. You *ask for* creation; voice is a mode. |
+| Channels / Email / WhatsApp | Watching + HQ came-in filter | **Inputs, not destinations.** |
+| Pinned | Top of conversation list | Pinned *conversations* belong with conversations. |
+| People | Memory tab | "Who I work with" is something Cue knows. |
+| Intelligence | **renamed Memory** | Names what you came to see, not the machinery. |
+| What Cue does | Watching | Merged — same question. |
+
+**Six Tier-2/3 items are also reachable contextually** — Agents from an agent chip, Trust from a tier chip, Rhythms from HQ's `↻` line, People from any name. **Contextual entry beats a permanent link**, which taxes every screen where you don't want it.
+
+### 11.4 · Destinations, drawn (v16)
+Each had to earn its click beyond the rail's peek:
+- **HQ earns it with *why*** — the thing each item belongs to, draft state, blocking count, calendar fit; plus day rail, delivered, and the Tier-3 lines.
+- **Work earns it with *the counts*** — "1 needs you · 2 running · 9 total" with agents named. A ring alone is a dashboard tile.
+- **Conversations earns it with *quotes*** — people find threads by remembering a sentence, not a title. Each row leads with a line from the conversation plus a `▤` thing chip. **"Unattached · 12"** doubles as the honest count of chats that never became work.
+
+### 11.5 · Detail surfaces, drawn (v17)
+- **Thing detail** — left column is work in state order; right rail is context that doesn't change while you work. **The charter sits under the title, not in `⋯`** — editing it re-steers the agents.
+- **Skills** (new) — installed before marketplace; run counts and reversals as receipts. **A permission-widening update is never silent:** *"v2.1 adds calendar write access"* → amber row + **Review change**, no auto-update.
+- **Watching** (new) — every source states what flowed through it today and how much became work. Carries the **718× no-op card** ("that's a bug, not a quiet week") and **"connected but not watched"**.
+- **Files** — grouped by thing with the agent who made each. **Library is the gallery; Files is the list.**
+
+### 11.6 · Still to draw at desktop size
+**The conversation surface (v12 P1) — highest value remaining.** Then task detail (v3 X4), then Memory / Agents / Library / Rhythms, which all exist elsewhere and need only this shell.
+
+---
+
+## 12 · Precedence — which file wins
+
+1. **v17** — detail surfaces (thing detail, Skills, Watching, Files).
+2. **v16** — the three destinations at desktop size.
+3. **v15** — the sidebar. Supersedes v13 and v14.
+4. **v12** — the conversation surface, voice, welcome-back, relationship moments.
+2. **v11** — vocabulary, Work's two views, day one. *(Its C1 sidebar is superseded by v15.)*
 3. **v10** — HQ vs Work, the detail screen, the domain classifier.
 4. **v9** — the six answers; its tab-bar first pass is superseded by v9.2 in the same file (shown as rejected).
 5. **v7 / v8** — three tiers, landing, stack rows, connector gate, mobile + web rules. Still stand except where above supersedes.

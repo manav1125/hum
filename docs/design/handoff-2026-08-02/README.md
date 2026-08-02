@@ -2,7 +2,7 @@
 **Date:** 2026-08-02 · **From:** design · **For:** Claude Code
 
 > ## → **Start with `BRIEF-FOR-CODE.md`**
-> It covers everything designed since your six questions (packs v9–v12): the answers, the navigation rework, the vocabulary changes, the two naming collisions we fixed, and the four gaps that matter most — with build order, schema delta, invariants and precedence.
+> It covers everything designed since your six questions (packs v9–v17): the answers, the navigation rework, the vocabulary changes, the two naming collisions we fixed, the destinations and detail surfaces, and the four gaps that matter most — with build order, schema delta, invariants and precedence.
 > Then `INDEX.html` for the coverage matrix, and `01-work-surfaces/WORK-SURFACES.md` for the full spec.
 
 ---
@@ -25,6 +25,11 @@ cue-design-handoff/
 │         v10 HQ vs Work, detail screen, domain classifier
 │         v11 consistency pass — vocabulary, desktop sidebar, day one
 │         v12 the partner — conversation surface, voice, welcome back
+│         v13 navigation fix — superseded by v15
+│         v14 navigation v2 — the three tiers; superseded by v15
+│         v15 NAVIGATION FINAL — the sidebar to build
+│         v16 destinations — HQ, Work, All conversations
+│         v17 detail surfaces — thing detail, Skills, Watching, Files
 ├── 02-hq-filing/                      ← batch add · auto-file provenance · dismiss
 ├── 03-discovery-live-plugins/         ← capability discovery · Cue Live clarity · plugin model
 ├── 04-parity-plus/                    ← macOS overlay · web control panel · mobile parity
