@@ -4,7 +4,10 @@ import { maybeRunDbSnapshot } from "../backup/db-snapshot.js";
 import { isAssistantFeatureFlagEnabled } from "../config/assistant-feature-flags.js";
 import { getConfig } from "../config/loader.js";
 import type { AssistantConfig } from "../config/types.js";
-import { runContactMemoryExtraction } from "../contacts/contact-memory-extract-job.js";
+import {
+  runContactMemoryExtraction,
+  runContactMemorySweep,
+} from "../contacts/contact-memory-extract-job.js";
 import {
   checkDiskPressureBackgroundGate,
   diskPressureBackgroundSkipLogFields,
@@ -290,6 +293,7 @@ export async function runMemoryJobsOnce(
       maybeEnqueueScheduledCleanupJobs(config);
     }
     maybeEnqueueGraphMaintenanceJobs(config);
+    maybeEnqueueContactMemorySweepJob(config);
     maybePruneOldMemoryJobs();
     maybeCheckpointWal();
     await maybeRunDbMaintenance();
@@ -347,6 +351,7 @@ export async function runMemoryJobsOnce(
     maybeEnqueueScheduledCleanupJobs(config);
   }
   maybeEnqueueGraphMaintenanceJobs(config);
+  maybeEnqueueContactMemorySweepJob(config);
   maybePruneOldMemoryJobs();
   maybeCheckpointWal();
   await maybeRunDbMaintenance();
@@ -567,6 +572,14 @@ async function contactMemoryExtractJob(
   );
 }
 
+async function contactMemorySweepJob(job: MemoryJob): Promise<void> {
+  const result = await runContactMemorySweep();
+  // Logged at info with the counts, not at debug with a bare "complete": a
+  // sweep that examined people and saved nothing must be legible in the log
+  // without anyone having to already suspect it.
+  log.info({ jobId: job.id, ...result }, "contact-memory sweep complete");
+}
+
 // ── Job error handling ─────────────────────────────────────────────
 
 function handleJobError(job: MemoryJob, err: unknown): void {
@@ -742,6 +755,9 @@ async function processJob(
     case "contact_memory_extract":
       await contactMemoryExtractJob(job);
       return;
+    case "contact_memory_sweep":
+      await contactMemorySweepJob(job);
+      return;
 
     default: {
       const rawType = (job as { type: string }).type;
@@ -822,6 +838,43 @@ const GRAPH_NARRATIVE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 // conservative cadence is fine since
 // the maintenance pass is idempotent and cheap when there's nothing to do.
 const GRAPH_V3_MAINTAIN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/**
+ * How often the correspondence sweep runs. Mail is not a real-time substrate
+ * and each sweep spends flash calls, so this is deliberately slow; the sweep
+ * is idempotent and skips anyone whose mail has not changed.
+ */
+const CONTACT_MEMORY_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+export const CONTACT_MEMORY_SWEEP_CHECKPOINT = "contact_memory_sweep:last_run";
+
+/**
+ * Enqueue the periodic contact-memory correspondence sweep.
+ *
+ * Separate from graph maintenance because it is not graph work and must keep
+ * running whichever memory version is active: the People surface is fed by
+ * `contact_memory`, and the conversation-keyed extraction only ever names
+ * people who arrived through an interactive channel. Without this, an owner
+ * whose correspondence is email accumulates nobody.
+ *
+ * Durable checkpoint so the interval survives restarts, and deduped against an
+ * already-active sweep so a wedged sweep cannot flood the queue.
+ */
+export function maybeEnqueueContactMemorySweepJob(
+  config: AssistantConfig,
+  nowMs = Date.now(),
+): boolean {
+  if (config.memory.enabled === false) return false;
+  const lastRun = parseInt(
+    getMemoryCheckpoint(CONTACT_MEMORY_SWEEP_CHECKPOINT) ?? "0",
+    10,
+  );
+  if (nowMs - lastRun < CONTACT_MEMORY_SWEEP_INTERVAL_MS) return false;
+  if (hasActiveJobOfType("contact_memory_sweep")) return false;
+  enqueueMemoryJob("contact_memory_sweep", {});
+  setMemoryCheckpoint(CONTACT_MEMORY_SWEEP_CHECKPOINT, String(nowMs));
+  return true;
+}
 
 export const GRAPH_MAINTENANCE_CHECKPOINTS = {
   decay: "graph_maintenance:decay:last_run",

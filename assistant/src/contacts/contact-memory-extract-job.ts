@@ -1,20 +1,31 @@
 /**
- * From-conversation contact-memory auto-extraction.
+ * Contact-memory auto-extraction.
  *
  * The People dossier's "WHAT CUE REMEMBERS" section is fed by `contact_memory`
- * (migration 294). This module turns the stubbed
- * `extractContactMemoryFromConversation` persistence path into a live one: a
- * background job that, when a conversation CLEARLY concerns a known contact,
- * runs a cost-optimized FLASH LLM pass over the transcript to pull 0-3 DURABLE
- * facts (stable preferences, relationships, context — not ephemeral chatter)
- * and writes them with source=from_conversation.
+ * (migration 294). This module runs a cost-optimized FLASH LLM pass that pulls
+ * 0-3 DURABLE facts (stable preferences, relationships, context — not
+ * ephemeral chatter) about a person and writes them with
+ * source=from_conversation.
+ *
+ * TWO SOURCES, ONE PROMPT:
+ *   - a CONVERSATION that clearly concerns a known contact (a Slack DM, a
+ *     bound inbound chat), keyed by conversationId; and
+ *   - a person's CORRESPONDENCE — the mail the watchers recorded in
+ *     `arrivals` — keyed by contactId, swept on a cadence.
+ *
+ * The second exists because the first covers almost nobody. Conversation
+ * binding only ever names a person who arrived through an interactive channel,
+ * so on a mailbox-shaped account the pass ran hundreds of times, resolved no
+ * contact every single time, and reported completion each time. Everything in
+ * "Observable health" below exists so that shape can never be silent again.
  *
  * Guardrails (no fabrication):
- *   1. Contact identification is CONFIDENT-ONLY — a conversation resolves to a
+ *   1. Contact identification is CONFIDENT-ONLY. A conversation resolves to a
  *      contact solely through its channel binding (source_channel +
- *      external_chat_id / external_user_id → contact_channels). No name/@-mention
- *      guessing that could bind facts to the wrong person. If identification is
- *      unsure, nothing is extracted.
+ *      external_chat_id / external_user_id → contact_channels); correspondence
+ *      resolves solely through the sender address on an `email` channel. No
+ *      name/@-mention guessing that could bind facts to the wrong person. If
+ *      identification is unsure, nothing is extracted.
  *   2. The extraction runs the flash model (the same cheap call-site
  *      work-item-triage / btw-sidechain use), never a heavy model, and off the
  *      user turn — always as a background job.
@@ -28,6 +39,10 @@ import { eq } from "drizzle-orm";
 import { getDisableContactMemory } from "../config/env-registry.js";
 import { resolveCallSiteConfig } from "../config/llm-resolver.js";
 import { getConfig } from "../config/loader.js";
+import {
+  getMemoryCheckpoint,
+  setMemoryCheckpoint,
+} from "../memory/checkpoints.js";
 import { getConversation, getMessages } from "../memory/conversation-crud.js";
 import { getDb } from "../memory/db-connection.js";
 import { getBindingByConversation } from "../memory/external-conversation-store.js";
@@ -40,10 +55,18 @@ import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
 import { getLogger } from "../util/logger.js";
 import {
+  listCorrespondenceFor,
+  renderCorrespondenceTranscript,
+} from "./contact-correspondence.js";
+import {
   extractContactMemoryFromConversation,
   listContactMemory,
 } from "./contact-memory-store.js";
-import { findContactChannel } from "./contact-store.js";
+import {
+  CORRESPONDENCE_CHANNEL_TYPE,
+  provisionContactsFromCorrespondence,
+} from "./contact-provisioning.js";
+import { findContactChannel, getContactInternal } from "./contact-store.js";
 import type { ContactMemoryKind } from "./memory-types.js";
 
 const log = getLogger("contact-memory-extract");
@@ -63,6 +86,22 @@ const MAX_TRANSCRIPT_MESSAGES = 40;
 
 /** Never write more than this many facts from one pass. */
 const MAX_FACTS_PER_PASS = 3;
+
+/** Max pieces of a person's mail to feed one correspondence pass. */
+const MAX_CORRESPONDENCE_ITEMS = 25;
+
+/** Contacts a single sweep will spend flash calls on. */
+const MAX_CONTACTS_PER_SWEEP = 8;
+
+/**
+ * Per-contact durable cursor: the newest correspondence timestamp already
+ * offered to the extractor. Without it a contact whose mail yields nothing
+ * durable (the correct and common answer) would be re-read on every sweep
+ * forever, burning a flash call per sweep to reach the same empty result.
+ */
+function correspondenceCursorKey(contactId: string): string {
+  return `contact_memory:correspondence:${contactId}`;
+}
 
 const VALID_KINDS: readonly ContactMemoryKind[] = [
   "fact",
@@ -276,6 +315,159 @@ export function dedupeFacts(
 }
 
 // ---------------------------------------------------------------------------
+// Observable health
+// ---------------------------------------------------------------------------
+
+/**
+ * After this many conversation jobs in a row that resolved NOBODY, say so.
+ *
+ * Deliberately larger than the 3 used by the auto-filer and arrival
+ * comprehension: an unbound local conversation genuinely has no contact, so a
+ * short run of `not_identified` is ordinary. A long one is not — it is what
+ * "extraction ran 697 times and wrote nothing" looked like from the inside,
+ * and no counter anywhere was carrying it.
+ */
+export const UNIDENTIFIED_CONVERSATION_WARN_AT = 20;
+
+/** After this many sweeps that read somebody's mail and saved nothing. */
+export const UNPRODUCTIVE_SWEEP_WARN_AT = 3;
+
+/**
+ * What contact-memory extraction has actually been doing. In-memory and
+ * per-process, matching the auto-filer: it describes behaviour since this
+ * daemon started, and a restart genuinely does reset what we know.
+ */
+export interface ContactMemoryHealth {
+  /** Conversation-keyed extractions attempted. */
+  conversationRuns: number;
+  /** Of those, how many resolved to a contact at all. */
+  conversationsIdentified: number;
+  /** Consecutive conversation runs that resolved nobody. */
+  consecutiveUnidentified: number;
+  /** Sweeps of the correspondence path. */
+  sweeps: number;
+  lastSweepAt: number | null;
+  /** People the last sweep read mail for. */
+  lastSweepExamined: number;
+  /** Facts the last sweep wrote. */
+  lastSweepSaved: number;
+  /** Consecutive sweeps that read somebody's mail and wrote nothing. */
+  consecutiveUnproductiveSweeps: number;
+  /** Contacts provisioned from correspondence since start. */
+  contactsProvisioned: number;
+  /** Facts written by either path since start. */
+  factsWritten: number;
+  /** True when extraction is running but not learning anything. */
+  degraded: boolean;
+  /** Plain-language reason, in the owner's terms, or null when healthy. */
+  degradedReason: string | null;
+}
+
+function freshHealth(): ContactMemoryHealth {
+  return {
+    conversationRuns: 0,
+    conversationsIdentified: 0,
+    consecutiveUnidentified: 0,
+    sweeps: 0,
+    lastSweepAt: null,
+    lastSweepExamined: 0,
+    lastSweepSaved: 0,
+    consecutiveUnproductiveSweeps: 0,
+    contactsProvisioned: 0,
+    factsWritten: 0,
+    degraded: false,
+    degradedReason: null,
+  };
+}
+
+let health: ContactMemoryHealth = freshHealth();
+
+/** A snapshot; the caller cannot mutate the live record. */
+export function getContactMemoryHealth(): ContactMemoryHealth {
+  return { ...health };
+}
+
+/** Test-only: forget the record so files do not leak state into each other. */
+export function resetContactMemoryHealth(): void {
+  health = freshHealth();
+}
+
+/**
+ * Decide whether extraction is currently failing the owner, and say it in the
+ * terms they would use. "Degraded" is deliberately not "errored": a pass that
+ * completes several hundred times and writes nothing has thrown nothing at
+ * all, and an empty People surface is the only symptom that exists.
+ */
+function evaluateDegraded(): void {
+  if (health.consecutiveUnidentified >= UNIDENTIFIED_CONVERSATION_WARN_AT) {
+    health.degraded = true;
+    health.degradedReason = `Cue has looked at ${health.consecutiveUnidentified} conversations in a row and could not tie any of them to a person, so it has learned nothing about anybody.`;
+    return;
+  }
+  if (health.consecutiveUnproductiveSweeps >= UNPRODUCTIVE_SWEEP_WARN_AT) {
+    health.degraded = true;
+    health.degradedReason = `Cue has read ${health.lastSweepExamined} people's correspondence ${health.consecutiveUnproductiveSweeps} sweeps running and remembered nothing from any of it.`;
+    return;
+  }
+  health.degraded = false;
+  health.degradedReason = null;
+}
+
+/** Fold one conversation-keyed run into the record. */
+function recordConversationRun(outcome: ContactMemoryExtractOutcome): void {
+  // "disabled" is a switch the owner threw, not a failure — it must not
+  // accumulate a streak that reads as breakage.
+  if (outcome.kind === "disabled") return;
+
+  health.conversationRuns++;
+  if (outcome.kind === "extracted") {
+    health.conversationsIdentified++;
+    health.consecutiveUnidentified = 0;
+    health.factsWritten += outcome.savedCount;
+  } else {
+    health.consecutiveUnidentified++;
+  }
+
+  evaluateDegraded();
+
+  // The line that was missing for 697 jobs.
+  if (health.consecutiveUnidentified === UNIDENTIFIED_CONVERSATION_WARN_AT) {
+    log.warn(
+      {
+        consecutiveUnidentified: health.consecutiveUnidentified,
+        conversationRuns: health.conversationRuns,
+        lastOutcome: outcome.kind,
+      },
+      "contact-memory extraction has resolved no contact for many conversations running",
+    );
+  }
+}
+
+/** Fold one correspondence sweep into the record. */
+function recordSweep(result: ContactMemorySweepResult): void {
+  health.sweeps++;
+  health.lastSweepAt = Date.now();
+  health.lastSweepExamined = result.examined;
+  health.lastSweepSaved = result.saved;
+  health.contactsProvisioned += result.provisioned;
+  health.factsWritten += result.saved;
+
+  if (result.saved > 0) health.consecutiveUnproductiveSweeps = 0;
+  else if (result.examined > 0) health.consecutiveUnproductiveSweeps++;
+
+  evaluateDegraded();
+
+  if (health.consecutiveUnproductiveSweeps === UNPRODUCTIVE_SWEEP_WARN_AT) {
+    log.warn(
+      { ...result, sweeps: health.sweeps },
+      "contact-memory sweeps have read correspondence and remembered nothing for several sweeps running",
+    );
+  } else if (result.examined > 0 || result.provisioned > 0) {
+    log.info({ ...result }, "contact-memory sweep finished");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
 
@@ -314,11 +506,76 @@ export type ContactMemoryExtractOutcome =
   | { kind: "extracted"; contactId: string; savedCount: number };
 
 /**
+ * The one flash pass both sources share: prompt the model over a transcript,
+ * dedupe what comes back against what the contact already has, persist the
+ * remainder. Returns how many rows were WRITTEN — never how many were parsed,
+ * because "the model answered" and "Cue learned something" are different
+ * claims and only the second one is the product.
+ */
+async function extractAndPersist(args: {
+  contactId: string;
+  displayName: string;
+  transcript: string;
+  /** What `contact_memory.source_ref` records, for provenance. */
+  sourceRef: string;
+}): Promise<{ saved: number } | { noProvider: true }> {
+  const existing = listContactMemory(args.contactId).map((m) => m.statement);
+
+  const provider = await getConfiguredProvider("conversationTitle");
+  if (!provider) return { noProvider: true };
+
+  const config = getConfig();
+  const resolved = resolveCallSiteConfig("conversationTitle", config.llm);
+  const result = await runBtwSidechain({
+    content: buildExtractionPrompt({
+      displayName: args.displayName,
+      transcript: args.transcript,
+      existingStatements: existing,
+    }),
+    provider,
+    systemPrompt:
+      "You extract durable relationship memory. Reply with ONLY the requested JSON array. Prefer returning [] over guessing.",
+    messages: [],
+    tools: [],
+    callSite: "conversationTitle",
+    maxTokens: resolved.maxTokens,
+    timeoutMs: EXTRACTION_TIMEOUT_MS,
+  });
+
+  const facts = dedupeFacts(parseExtractionResponse(result.text), existing);
+  if (facts.length === 0) return { saved: 0 };
+
+  const persisted = extractContactMemoryFromConversation({
+    contactId: args.contactId,
+    conversationId: args.sourceRef,
+    facts,
+  });
+
+  log.info(
+    { contactId: args.contactId, saved: persisted.length },
+    "contact-memory auto-extraction saved durable facts",
+  );
+  return { saved: persisted.length };
+}
+
+/**
  * Run the full extraction pass for one conversation. Never throws for the
  * expected "nothing to do" outcomes; only genuine provider errors propagate
  * (so the job worker can retry with backoff).
+ *
+ * Every return path folds into the health record before it returns, so there
+ * is no way to reach "the job completed" without the record knowing what the
+ * job actually achieved.
  */
 export async function runContactMemoryExtraction(
+  conversationId: string,
+): Promise<ContactMemoryExtractOutcome> {
+  const outcome = await runContactMemoryExtractionInner(conversationId);
+  recordConversationRun(outcome);
+  return outcome;
+}
+
+async function runContactMemoryExtractionInner(
   conversationId: string,
 ): Promise<ContactMemoryExtractOutcome> {
   if (getDisableContactMemory()) {
@@ -352,12 +609,13 @@ export async function runContactMemoryExtraction(
   const transcript = renderTranscript(slice, identified.displayName);
   if (!transcript.trim()) return { kind: "no_transcript" };
 
-  const existing = listContactMemory(identified.contactId).map(
-    (m) => m.statement,
-  );
-
-  const provider = await getConfiguredProvider("conversationTitle");
-  if (!provider) {
+  const result = await extractAndPersist({
+    contactId: identified.contactId,
+    displayName: identified.displayName,
+    transcript,
+    sourceRef: conversationId,
+  });
+  if ("noProvider" in result) {
     log.debug(
       { conversationId },
       "no provider configured for flash extraction; skipping",
@@ -365,52 +623,170 @@ export async function runContactMemoryExtraction(
     return { kind: "no_provider" };
   }
 
-  const config = getConfig();
-  const resolved = resolveCallSiteConfig("conversationTitle", config.llm);
-  const result = await runBtwSidechain({
-    content: buildExtractionPrompt({
-      displayName: identified.displayName,
-      transcript,
-      existingStatements: existing,
-    }),
-    provider,
-    systemPrompt:
-      "You extract durable relationship memory. Reply with ONLY the requested JSON array. Prefer returning [] over guessing.",
-    messages: [],
-    tools: [],
-    callSite: "conversationTitle",
-    maxTokens: resolved.maxTokens,
-    timeoutMs: EXTRACTION_TIMEOUT_MS,
-  });
-
-  const facts = dedupeFacts(parseExtractionResponse(result.text), existing);
-  if (facts.length === 0) {
-    return {
-      kind: "extracted",
-      contactId: identified.contactId,
-      savedCount: 0,
-    };
-  }
-
-  const persisted = extractContactMemoryFromConversation({
-    contactId: identified.contactId,
-    conversationId,
-    facts,
-  });
-
-  log.info(
-    {
-      conversationId,
-      contactId: identified.contactId,
-      saved: persisted.length,
-    },
-    "contact-memory auto-extraction saved durable facts",
-  );
   return {
     kind: "extracted",
     contactId: identified.contactId,
-    savedCount: persisted.length,
+    savedCount: result.saved,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The correspondence path
+// ---------------------------------------------------------------------------
+
+export type ContactCorrespondenceOutcome =
+  | { kind: "disabled" }
+  | { kind: "unknown_contact" }
+  | { kind: "no_correspondence" }
+  | { kind: "already_read" }
+  | { kind: "no_provider" }
+  | { kind: "extracted"; contactId: string; savedCount: number };
+
+/**
+ * Extract durable facts about ONE contact from the mail they sent.
+ *
+ * The contact is resolved by their `email` channels, so a fact can only ever
+ * be bound to the person whose address the message came from — the same
+ * confident-only rule the conversation path follows, applied to the identity
+ * key mail actually carries.
+ */
+export async function runContactCorrespondenceExtraction(
+  contactId: string,
+  opts: { force?: boolean } = {},
+): Promise<ContactCorrespondenceOutcome> {
+  if (getDisableContactMemory()) return { kind: "disabled" };
+  if (!isMemoryEnabled()) return { kind: "disabled" };
+
+  const contact = getContactInternal(contactId);
+  if (!contact) return { kind: "unknown_contact" };
+
+  const addresses = contact.channels
+    .filter((c) => c.type === CORRESPONDENCE_CHANNEL_TYPE)
+    .map((c) => c.address);
+  if (addresses.length === 0) return { kind: "no_correspondence" };
+
+  const items = addresses
+    .flatMap((a) => listCorrespondenceFor(a, MAX_CORRESPONDENCE_ITEMS))
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, MAX_CORRESPONDENCE_ITEMS);
+  if (items.length === 0) return { kind: "no_correspondence" };
+
+  const newest = items[0].createdAt;
+  const cursorKey = correspondenceCursorKey(contactId);
+  const cursor =
+    Number.parseInt(getMemoryCheckpoint(cursorKey) ?? "0", 10) || 0;
+  if (!opts.force && newest <= cursor) return { kind: "already_read" };
+
+  const transcript = renderCorrespondenceTranscript(items, contact.displayName);
+  if (!transcript.trim()) return { kind: "no_correspondence" };
+
+  const result = await extractAndPersist({
+    contactId,
+    displayName: contact.displayName,
+    transcript,
+    sourceRef: `correspondence:${contactId}`,
+  });
+  if ("noProvider" in result) return { kind: "no_provider" };
+
+  // Advance the cursor on a completed pass whatever it yielded: "their mail
+  // holds nothing durable" is a real answer, and re-asking it every sweep
+  // costs a flash call to learn the same thing.
+  setMemoryCheckpoint(cursorKey, String(newest));
+
+  return { kind: "extracted", contactId, savedCount: result.saved };
+}
+
+export interface ContactMemorySweepResult {
+  /** Contacts minted or refreshed from correspondence this sweep. */
+  provisioned: number;
+  /** Contacts with correspondence that could be read. */
+  candidates: number;
+  /** Contacts whose mail was actually sent to the extractor. */
+  examined: number;
+  /** Facts written this sweep. */
+  saved: number;
+  /** Contacts skipped because their mail had not changed since last time. */
+  alreadyRead: number;
+  /** Why the sweep ended — every early return names itself. */
+  outcome:
+    | "disabled"
+    | "no_candidates"
+    | "no_provider"
+    | "nothing_new"
+    | "progress"
+    | "barren";
+}
+
+/**
+ * One correspondence sweep: provision contacts from the mail that has arrived,
+ * then spend a bounded number of flash calls on the people with something new
+ * to read.
+ */
+export async function runContactMemorySweep(opts?: {
+  maxContacts?: number;
+}): Promise<ContactMemorySweepResult> {
+  const result: ContactMemorySweepResult = {
+    provisioned: 0,
+    candidates: 0,
+    examined: 0,
+    saved: 0,
+    alreadyRead: 0,
+    outcome: "no_candidates",
+  };
+
+  if (getDisableContactMemory() || !isMemoryEnabled()) {
+    result.outcome = "disabled";
+    return result;
+  }
+
+  const provision = provisionContactsFromCorrespondence();
+  result.provisioned = provision.created + provision.updated;
+
+  // Busiest correspondents first — the people the owner would notice missing.
+  const withMail = provision.contacts
+    .filter((c) => c.contactId !== "(would create)")
+    .sort((a, b) => b.messageCount - a.messageCount);
+  result.candidates = withMail.length;
+  if (withMail.length === 0) {
+    recordSweep(result);
+    return result;
+  }
+
+  const budget = Math.max(1, opts?.maxContacts ?? MAX_CONTACTS_PER_SWEEP);
+  for (const candidate of withMail) {
+    if (result.examined >= budget) break;
+    let outcome: ContactCorrespondenceOutcome;
+    try {
+      outcome = await runContactCorrespondenceExtraction(candidate.contactId);
+    } catch (err) {
+      // One person's failed pass must not abort the sweep, and must not be
+      // mistaken for "they had nothing to say".
+      log.warn(
+        { err: String(err) },
+        "correspondence extraction failed for one contact (sweep continues)",
+      );
+      continue;
+    }
+    if (outcome.kind === "already_read") {
+      result.alreadyRead++;
+      continue;
+    }
+    if (outcome.kind === "no_provider") {
+      result.outcome = "no_provider";
+      recordSweep(result);
+      return result;
+    }
+    if (outcome.kind !== "extracted") continue;
+    result.examined++;
+    result.saved += outcome.savedCount;
+  }
+
+  if (result.examined === 0) result.outcome = "nothing_new";
+  else if (result.saved > 0) result.outcome = "progress";
+  else result.outcome = "barren";
+
+  recordSweep(result);
+  return result;
 }
 
 /**

@@ -1,14 +1,12 @@
 /**
  * contact_memory store — the "WHAT CUE REMEMBERS" backend.
  *
- * CRUD over durable facts Cue knows about a person, plus a light
- * conversation-extraction entry point. Facts enter through:
- *   - the manual/told path (rememberFact / the POST dossier route) — the honest
- *     source that the dossier renders today, and
- *   - from_conversation (extractContactMemoryFromConversation) — auto-extraction
- *     that is STUBBED in this pass (see the TODO there): the store function is
- *     ready to call, but no LLM pass runs yet, so the dossier never shows
- *     fabricated facts.
+ * CRUD over durable facts Cue knows about a person, plus the persistence entry
+ * point the auto-extraction pass writes through. Facts enter through:
+ *   - the manual/told path (rememberFact / the POST dossier route), and
+ *   - from_conversation (extractContactMemoryFromConversation), called by
+ *     contact-memory-extract-job.ts with facts a flash pass pulled from a
+ *     bound conversation or from the person's correspondence.
  *
  * Referential integrity to contacts is a real FK (ON DELETE CASCADE) — see
  * migration 294 — so forgetting a contact forgets its memory.
@@ -193,33 +191,25 @@ export function forgetFact(id: string): boolean {
   return result.changes > 0;
 }
 
-// ── Auto-extraction (STUBBED) ────────────────────────────────────────
+// ── Auto-extraction persistence ──────────────────────────────────────
 
 /**
- * Extract 0-3 durable facts from a conversation that clearly concerns a known
- * contact, persisting them with source=from_conversation and source_ref set to
- * the conversation id.
+ * Persist 0-3 durable facts about a contact with source=from_conversation and
+ * source_ref set to where they came from.
  *
- * TODO(people-memory): implement the LLM extraction pass. The intended shape:
- *   1. caller resolves the conversation -> contact binding (already done at the
- *      call site — this function is handed a resolved contactId);
- *   2. run a bounded flash-model prompt over the conversation transcript that
- *      returns 0-3 { statement, kind, confidence } durable facts (explicitly
- *      NOT transient chit-chat), and
- *   3. persist each via the loop below.
- *
- * Until that pass exists this is a no-op that returns [] — the dossier's memory
- * section stays honest (only manual/told facts appear, never fabricated ones).
- * The persistence loop is written and exercised by tests via `facts`, so wiring
- * the extractor later is a one-line change at the call site.
+ * The caller resolves the person first — this function is handed a contactId
+ * that was established through a channel identity, never guessed from message
+ * content. Returns the rows actually WRITTEN, which is the number the callers
+ * report on: "the model answered" and "Cue learned something" are different
+ * claims, and only the second one is worth counting.
  */
 export function extractContactMemoryFromConversation(params: {
   contactId: string;
+  /** Conversation id, or another provenance ref for the source_ref column. */
   conversationId: string;
   /**
-   * Pre-extracted facts. Left undefined by the (not-yet-implemented) auto
-   * path, so the default is a no-op. Tests and a future extractor pass facts
-   * here to exercise the persistence path.
+   * The facts to persist. An empty/omitted list is a legitimate outcome (the
+   * extractor found nothing durable) and writes nothing.
    */
   facts?: Array<{
     statement: string;

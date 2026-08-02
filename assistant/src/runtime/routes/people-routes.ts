@@ -21,6 +21,7 @@ import {
   getContactInteractions,
   getContactReachability,
 } from "../../contacts/contact-dossier-store.js";
+import { getContactMemoryHealth } from "../../contacts/contact-memory-extract-job.js";
 import {
   forgetFact,
   isContactMemoryKind,
@@ -206,6 +207,62 @@ function handleForgetMemory({ pathParams = {} }: RouteHandlerArgs) {
 // ── Route definitions ─────────────────────────────────────────────────────
 
 export const ROUTES: RouteDefinition[] = [
+  {
+    operationId: "getContactMemoryHealth",
+    endpoint: "people/memory/health",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Contact-memory extraction health",
+    description:
+      "What contact-memory extraction has actually been doing in this daemon " +
+      "process. This exists because a pass that resolves no contact is " +
+      "indistinguishable from a pass with nothing to learn — from the " +
+      "outside, both are a completed job and an empty People surface. The " +
+      "extraction job ran several hundred times and wrote nothing, and no " +
+      "counter anywhere was carrying it. `degraded` plus `degradedReason` is " +
+      "what a 'Cue has learned nothing about anybody' empty state should " +
+      "read, instead of inferring health from an empty dossier. In-memory " +
+      "and per-process by design: it describes behaviour since this daemon " +
+      "started, and a restart genuinely does reset what we know.",
+    tags: ["people"],
+    responseBody: z.object({
+      conversationRuns: z
+        .number()
+        .describe("Conversation-keyed extractions attempted"),
+      conversationsIdentified: z
+        .number()
+        .describe("Of those, how many resolved to a contact at all"),
+      consecutiveUnidentified: z
+        .number()
+        .describe("Consecutive conversation runs that resolved nobody"),
+      sweeps: z.number().describe("Correspondence sweeps run"),
+      lastSweepAt: z.number().nullable().describe("Epoch ms of the last sweep"),
+      lastSweepExamined: z
+        .number()
+        .describe("People the last sweep read mail for"),
+      lastSweepSaved: z.number().describe("Facts the last sweep wrote"),
+      consecutiveUnproductiveSweeps: z
+        .number()
+        .describe("Consecutive sweeps that read mail and wrote nothing"),
+      contactsProvisioned: z
+        .number()
+        .describe("Contacts minted or refreshed from correspondence"),
+      factsWritten: z
+        .number()
+        .describe("Facts written by either path since this daemon started"),
+      degraded: z
+        .boolean()
+        .describe("True when extraction runs but learns nothing"),
+      degradedReason: z
+        .string()
+        .nullable()
+        .describe("Plain-language reason in the owner's terms, or null"),
+    }),
+    handler: () => getContactMemoryHealth(),
+  },
   {
     operationId: "getContactDossier",
     endpoint: "contacts/:id/dossier",

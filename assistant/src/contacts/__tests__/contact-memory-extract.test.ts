@@ -16,13 +16,25 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 let mockSidechainText = "[]";
 let sidechainCalls = 0;
 
+// Each factory spreads the real module and overrides only the seam it drives.
+// A hand-written export list here deletes every other export of these modules
+// for every file that runs after this one — see assistant/AGENTS.md.
+const realProviderSend =
+  await import("../../providers/provider-send-message.js");
 mock.module("../../providers/provider-send-message.js", () => ({
+  ...realProviderSend,
   getConfiguredProvider: async () => ({}),
 }));
+
+const realResolver = await import("../../config/llm-resolver.js");
 mock.module("../../config/llm-resolver.js", () => ({
+  ...realResolver,
   resolveCallSiteConfig: () => ({ provider: "mock", maxTokens: 256 }),
 }));
+
+const realSidechain = await import("../../runtime/btw-sidechain.js");
 mock.module("../../runtime/btw-sidechain.js", () => ({
+  ...realSidechain,
   runBtwSidechain: async () => {
     sidechainCalls++;
     return { text: mockSidechainText, hadTextDeltas: true, response: {} };
@@ -37,9 +49,12 @@ import { upsertBinding } from "../../memory/external-conversation-store.js";
 import {
   buildExtractionPrompt,
   dedupeFacts,
+  getContactMemoryHealth,
   identifyConversationContact,
   parseExtractionResponse,
+  resetContactMemoryHealth,
   runContactMemoryExtraction,
+  UNIDENTIFIED_CONVERSATION_WARN_AT,
 } from "../contact-memory-extract-job.js";
 import { listContactMemory } from "../contact-memory-store.js";
 import { upsertContact } from "../contact-store.js";
@@ -50,6 +65,7 @@ beforeEach(() => {
   mockSidechainText = "[]";
   sidechainCalls = 0;
   delete process.env.CUE_DISABLE_CONTACT_MEMORY;
+  resetContactMemoryHealth();
   getDb().run("DELETE FROM contact_memory");
   getDb().run("DELETE FROM external_conversation_bindings");
   getDb().run("DELETE FROM assistant_inbox_conversation_state");
@@ -231,6 +247,72 @@ describe("runContactMemoryExtraction", () => {
     expect(outcome.kind).toBe("extracted");
     if (outcome.kind === "extracted") expect(outcome.savedCount).toBe(0);
     expect(listContactMemory(contact.id)).toHaveLength(0);
+  });
+});
+
+// ── The 697-completed-jobs shape ───────────────────────────────────────────
+
+describe("a run of conversations that resolve nobody", () => {
+  test("stops being silent: the health record goes degraded and says why", async () => {
+    // Exactly what production did: local conversations, no channel binding,
+    // every job completing having written nothing.
+    for (let i = 0; i < UNIDENTIFIED_CONVERSATION_WARN_AT; i++) {
+      const conv = bootstrapConversation({
+        conversationType: "standard",
+        source: "vellum",
+        origin: "local",
+        systemHint: "local chat",
+      });
+      const outcome = await runContactMemoryExtraction(conv.id);
+      expect(outcome.kind).toBe("not_identified");
+    }
+
+    const health = getContactMemoryHealth();
+    expect(health.conversationRuns).toBe(UNIDENTIFIED_CONVERSATION_WARN_AT);
+    expect(health.conversationsIdentified).toBe(0);
+    expect(health.factsWritten).toBe(0);
+    expect(health.degraded).toBe(true);
+    expect(health.degradedReason).toContain("could not tie any of them");
+  });
+
+  test("one identified conversation that writes a fact clears it", async () => {
+    for (let i = 0; i < UNIDENTIFIED_CONVERSATION_WARN_AT; i++) {
+      const conv = bootstrapConversation({
+        conversationType: "standard",
+        source: "vellum",
+        origin: "local",
+        systemHint: "local chat",
+      });
+      await runContactMemoryExtraction(conv.id);
+    }
+    expect(getContactMemoryHealth().degraded).toBe(true);
+
+    const { conversationId } = await makeBoundConversation();
+    mockSidechainText = JSON.stringify([
+      { statement: "Based in Berlin", kind: "context", confidence: 0.9 },
+    ]);
+    await runContactMemoryExtraction(conversationId);
+
+    const health = getContactMemoryHealth();
+    expect(health.factsWritten).toBe(1);
+    expect(health.degraded).toBe(false);
+    expect(health.degradedReason).toBeNull();
+  });
+
+  test("the kill-switch does not accumulate a streak that reads as breakage", async () => {
+    process.env.CUE_DISABLE_CONTACT_MEMORY = "1";
+    for (let i = 0; i < UNIDENTIFIED_CONVERSATION_WARN_AT + 5; i++) {
+      const conv = bootstrapConversation({
+        conversationType: "standard",
+        source: "vellum",
+        origin: "local",
+        systemHint: "local chat",
+      });
+      await runContactMemoryExtraction(conv.id);
+    }
+    const health = getContactMemoryHealth();
+    expect(health.conversationRuns).toBe(0);
+    expect(health.degraded).toBe(false);
   });
 });
 

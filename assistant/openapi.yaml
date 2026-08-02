@@ -32172,6 +32172,81 @@ paths:
           schema:
             type: string
           description: Conversation ID (optional)
+  /v1/people/memory/health:
+    get:
+      operationId: people_memory_health_get
+      summary: Contact-memory extraction health
+      description:
+        "What contact-memory extraction has actually been doing in this daemon process. This exists because a pass
+        that resolves no contact is indistinguishable from a pass with nothing to learn — from the outside, both are a
+        completed job and an empty People surface. The extraction job ran several hundred times and wrote nothing, and
+        no counter anywhere was carrying it. `degraded` plus `degradedReason` is what a 'Cue has learned nothing about
+        anybody' empty state should read, instead of inferring health from an empty dossier. In-memory and per-process
+        by design: it describes behaviour since this daemon started, and a restart genuinely does reset what we know."
+      tags:
+        - people
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversationRuns:
+                    type: number
+                    description: Conversation-keyed extractions attempted
+                  conversationsIdentified:
+                    type: number
+                    description: Of those, how many resolved to a contact at all
+                  consecutiveUnidentified:
+                    type: number
+                    description: Consecutive conversation runs that resolved nobody
+                  sweeps:
+                    type: number
+                    description: Correspondence sweeps run
+                  lastSweepAt:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                    description: Epoch ms of the last sweep
+                  lastSweepExamined:
+                    type: number
+                    description: People the last sweep read mail for
+                  lastSweepSaved:
+                    type: number
+                    description: Facts the last sweep wrote
+                  consecutiveUnproductiveSweeps:
+                    type: number
+                    description: Consecutive sweeps that read mail and wrote nothing
+                  contactsProvisioned:
+                    type: number
+                    description: Contacts minted or refreshed from correspondence
+                  factsWritten:
+                    type: number
+                    description: Facts written by either path since this daemon started
+                  degraded:
+                    type: boolean
+                    description: True when extraction runs but learns nothing
+                  degradedReason:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                    description: Plain-language reason in the owner's terms, or null
+                required:
+                  - conversationRuns
+                  - conversationsIdentified
+                  - consecutiveUnidentified
+                  - sweeps
+                  - lastSweepAt
+                  - lastSweepExamined
+                  - lastSweepSaved
+                  - consecutiveUnproductiveSweeps
+                  - contactsProvisioned
+                  - factsWritten
+                  - degraded
+                  - degradedReason
+                additionalProperties: false
   /v1/platform/callback-routes:
     get:
       operationId: platform_callbackroutes_get
@@ -42280,6 +42355,7 @@ paths:
                   enum:
                     - came_in
                     - agent
+                    - record_only
               required:
                 - name
                 - provider
@@ -42447,6 +42523,7 @@ paths:
                   enum:
                     - came_in
                     - agent
+                    - record_only
               required:
                 - watcher_id
               additionalProperties: false
