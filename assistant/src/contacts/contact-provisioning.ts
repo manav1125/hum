@@ -34,7 +34,15 @@ import {
   listCorrespondents,
 } from "./contact-correspondence.js";
 import { emitContactChange } from "./contact-events.js";
-import { findContactByAddress, upsertContact } from "./contact-store.js";
+import {
+  findContactByAddress,
+  updateChannelStatus,
+  upsertContact,
+} from "./contact-store.js";
+import {
+  type ContactWithChannels,
+  CORRESPONDENCE_RETIRED_REASON_PREFIX,
+} from "./types.js";
 
 const log = getLogger("contact-provisioning");
 
@@ -117,6 +125,40 @@ function emailChannelId(contactId: string, address: string): string | null {
   return row?.id ?? null;
 }
 
+/**
+ * Undo a cleanup retirement for somebody who has since been surfaced.
+ *
+ * A correspondent only reaches this function once `listCorrespondents` has
+ * accepted them, which now requires at least one arrival the gate surfaced. If
+ * the cleanup had previously retired them as a robot, that verdict has been
+ * overtaken by evidence and the row must come back — otherwise a real person
+ * who was once mistaken for a mailing list stays invisible forever.
+ *
+ * Only this cleanup's own marker is cleared. A channel the owner revoked by
+ * hand is left exactly as they left it.
+ */
+function unretireIfCorrespondenceRetired(
+  contact: ContactWithChannels,
+  address: string,
+): void {
+  const channel = contact.channels.find(
+    (ch) =>
+      ch.type === CORRESPONDENCE_CHANNEL_TYPE &&
+      ch.address === address &&
+      ch.status === "revoked" &&
+      (ch.revokedReason ?? "").startsWith(CORRESPONDENCE_RETIRED_REASON_PREFIX),
+  );
+  if (!channel) return;
+  updateChannelStatus(channel.id, {
+    status: "unverified",
+    revokedReason: null,
+  });
+  log.info(
+    { contactId: contact.id },
+    "un-retired a correspondent whose mail is being surfaced again",
+  );
+}
+
 /** Provision one correspondent. Returns null when nothing could be written. */
 function provisionOne(person: Correspondent): ProvisionedContact | null {
   const existing = findContactByAddress(
@@ -132,6 +174,7 @@ function provisionOne(person: Correspondent): ProvisionedContact | null {
         person.messageCount,
         person.lastSeenAt,
       );
+      unretireIfCorrespondenceRetired(existing, person.address);
     }
     return {
       contactId: existing.id,

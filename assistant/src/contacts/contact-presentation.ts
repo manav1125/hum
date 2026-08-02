@@ -13,7 +13,33 @@
  * The rail would then show two near-empty cards for the same person.
  */
 
-import type { ContactWithChannels } from "./types.js";
+import {
+  type ContactWithChannels,
+  CORRESPONDENCE_RETIRED_REASON_PREFIX,
+} from "./types.js";
+
+/**
+ * True when every channel this contact has was revoked by the correspondence
+ * cleanup — i.e. Cue provisioned them from mail the arrival gate never once
+ * surfaced, and the owner never touched the row.
+ *
+ * Hidden at READ time, exactly like the duplicate collapse above: the row and
+ * its history stay on disk untouched, so the undo run is a database write
+ * rather than a resurrection. The marker is required, so a channel the owner
+ * revoked by hand still renders — a person you blocked is still a person you
+ * know, and making them vanish would be a different product decision than the
+ * one this module is allowed to make.
+ */
+export function isRetiredCorrespondent(
+  contact: Pick<ContactWithChannels, "channels">,
+): boolean {
+  if (contact.channels.length === 0) return false;
+  return contact.channels.every(
+    (ch) =>
+      ch.status === "revoked" &&
+      (ch.revokedReason ?? "").startsWith(CORRESPONDENCE_RETIRED_REASON_PREFIX),
+  );
+}
 
 /**
  * Canonical form of a display name for duplicate detection:
@@ -121,15 +147,18 @@ function mergeGroup(group: ContactWithChannels[]): ContactWithChannels {
 /**
  * Collapse duplicate person rows (same normalized display name) into one
  * card each, merging channels/notes/interaction stats from the duplicates,
- * and strip degenerate note bodies everywhere.
+ * strip degenerate note bodies everywhere, and drop retired correspondents.
  *
  * Order-preserving: each merged card sits where the group's first row
  * appeared in the input. Nameless rows are passed through unmerged (an empty
  * name is not evidence of identity).
  */
 export function dedupeContactsForDisplay(
-  contacts: ContactWithChannels[],
+  input: ContactWithChannels[],
 ): ContactWithChannels[] {
+  // Before grouping: a retired robot must not pull a real person into its
+  // group and hand them a revoked channel.
+  const contacts = input.filter((c) => !isRetiredCorrespondent(c));
   const groups = new Map<string, ContactWithChannels[]>();
   // Position (in the output) of each group / passthrough row, in input order.
   const ordered: Array<

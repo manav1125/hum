@@ -56,8 +56,24 @@ export interface Contact {
   userFile: string | null;
 }
 
+/**
+ * Written to `contact_channels.revoked_reason` when the correspondence
+ * cleanup retires an auto-provisioned contact whose mail the arrival gate
+ * never once surfaced.
+ *
+ * It is a marker, not prose: the retirement is reversible precisely because
+ * this string identifies the rows the cleanup touched and nothing else, so a
+ * channel the OWNER revoked by hand is never restored by an undo run and never
+ * hidden by the read-time filter.
+ */
+export const CORRESPONDENCE_RETIRED_REASON_PREFIX = "correspondence-retired:";
+
 export type ChannelStatus =
-  "active" | "pending" | "revoked" | "blocked" | "unverified";
+  | "active"
+  | "pending"
+  | "revoked"
+  | "blocked"
+  | "unverified";
 export type ChannelPolicy = "allow" | "deny" | "escalate";
 
 export interface ContactChannel {
@@ -92,4 +108,10 @@ export interface ContactWriteResult {
 }
 
 export type ChannelType =
-  "email" | "slack" | "whatsapp" | "phone" | "telegram" | "discord" | "other";
+  | "email"
+  | "slack"
+  | "whatsapp"
+  | "phone"
+  | "telegram"
+  | "discord"
+  | "other";

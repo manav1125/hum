@@ -24,8 +24,10 @@
  * structurally refused a reply is not a correspondent. The owner's own
  * addresses (any channel on a guardian contact) are dropped too: Cue must not
  * mint a contact for its own owner and then remember facts about them here.
- * Nothing else is filtered. `support@`, `hello@` and `team@` are routinely
- * human, and a person who emailed once is still a person.
+ * And a sender whose every last message the arrival gate FILED is dropped by
+ * {@link isNeverSurfacedSender} — see below. Nothing else is filtered.
+ * `support@`, `hello@` and `team@` are routinely human, and a person who
+ * emailed once is still a person.
  */
 
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
@@ -96,6 +98,91 @@ export function humanizeAddress(address: string): string {
     .trim();
 }
 
+/**
+ * What the arrival gate decided about one sender address, over all history.
+ *
+ * `surfaced` counts reversals too: reversing a filing rewrites the row's
+ * disposition to `surfaced`, so an item the owner personally rescued reads
+ * here as exactly what it is — a message that reached them.
+ */
+export interface SenderArrivalJudgement {
+  /** Arrivals from this address, whatever the gate decided about them. */
+  total: number;
+  /** How many of those the gate put in front of the owner. */
+  surfaced: number;
+  /** How many it explicitly filed. */
+  filed: number;
+}
+
+/**
+ * The gate's dispositions, tallied per sender address.
+ *
+ * Deliberately NOT bounded by the caller's `since` window. "Never once
+ * surfaced" is a claim about a correspondent's whole history; scoping it to a
+ * window would let a quiet month demote somebody the owner has been reading
+ * for a year.
+ */
+export function tallySenderArrivals(): Map<string, SenderArrivalJudgement> {
+  const db = getDb();
+  const rows = db
+    .select({
+      address: arrivals.senderAddress,
+      total: sql<number>`count(*)`,
+      surfaced: sql<number>`sum(case when ${arrivals.disposition} = 'surfaced' then 1 else 0 end)`,
+      filed: sql<number>`sum(case when ${arrivals.disposition} = 'filed' then 1 else 0 end)`,
+    })
+    .from(arrivals)
+    .where(
+      and(
+        isNotNull(arrivals.senderAddress),
+        sql`trim(${arrivals.senderAddress}) <> ''`,
+      ),
+    )
+    .groupBy(arrivals.senderAddress)
+    .all();
+
+  const out = new Map<string, SenderArrivalJudgement>();
+  for (const row of rows) {
+    const address = (row.address ?? "").trim().toLowerCase();
+    if (!address) continue;
+    out.set(address, {
+      total: Number(row.total) || 0,
+      surfaced: Number(row.surfaced) || 0,
+      filed: Number(row.filed) || 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * True when the gate has judged this sender and filed EVERY message they sent.
+ *
+ * The rule this encodes: a correspondent whose mail has never once been
+ * surfaced is a sender, not a person. It reuses a decision Cue already made
+ * and stored, rather than inventing a second classifier that can disagree with
+ * the first — which is why it catches `HSBC@…`, whose local part is nothing
+ * like `noreply@` but whose every message the gate filed.
+ *
+ * THE DIRECTION MATTERS, and it is the whole safety of this test. Excluding
+ * requires a judgement to exist AND to be unanimous: `total > 0` and every
+ * one of those rows explicitly `filed`. An address with no arrival rows at all
+ * — a channel that predates the gate, an import, a sender whose history was
+ * pruned — is NOT excluded. Absence of judgement is not a judgement, and
+ * reading it as one would silently drop real people, which is the exact
+ * failure the correspondence reader exists to undo.
+ *
+ * Counting `filed` rather than negating `surfaced` is the same caution one
+ * level down: a row carrying any other disposition has not been filed, so it
+ * cannot contribute to a claim that everything was.
+ */
+export function isNeverSurfacedSender(
+  judgement: SenderArrivalJudgement | undefined | null,
+): boolean {
+  if (!judgement) return false;
+  if (judgement.total <= 0) return false;
+  return judgement.filed === judgement.total;
+}
+
 /** Every address reachable on a guardian contact — the owner's own mail. */
 function guardianAddresses(): Set<string> {
   const db = getDb();
@@ -111,9 +198,10 @@ function guardianAddresses(): Set<string> {
 /**
  * Who the owner corresponds with, busiest first.
  *
- * Aggregated in SQL so a long history stays one query; the bulk-sender and
- * guardian exclusions run in TypeScript because both are shared judgements
- * that must read identically here and at the arrival boundary.
+ * Aggregated in SQL so a long history stays one query; the bulk-sender,
+ * guardian and never-surfaced exclusions run in TypeScript because all three
+ * are shared judgements that must read identically here and at the arrival
+ * boundary.
  */
 export function listCorrespondents(
   opts: ListCorrespondentsOptions = {},
@@ -185,12 +273,14 @@ export function listCorrespondents(
   );
 
   const guardians = guardianAddresses();
+  const judgements = tallySenderArrivals();
   const out: Correspondent[] = [];
   for (const row of counts) {
     const address = (row.address ?? "").trim().toLowerCase();
     if (!address || !looksLikeEmailAddress(address)) continue;
     if (isBulkSenderAddress(address)) continue;
     if (guardians.has(address)) continue;
+    if (isNeverSurfacedSender(judgements.get(address))) continue;
     const name = nameByAddress.get(address)?.trim();
     out.push({
       address,
@@ -203,6 +293,31 @@ export function listCorrespondents(
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/**
+ * Every display name this address has ever signed its mail with.
+ *
+ * Used to tell a provisioned name apart from one the owner typed: provisioning
+ * can only ever have written a name that appeared in a header, or the
+ * humanized local part. A name that is neither came from a human hand.
+ */
+export function senderNamesFor(address: string): string[] {
+  const db = getDb();
+  const rows = db
+    .selectDistinct({ senderName: arrivals.senderName })
+    .from(arrivals)
+    .where(
+      and(
+        eq(arrivals.senderAddress, address.trim().toLowerCase()),
+        isNotNull(arrivals.senderName),
+        sql`trim(${arrivals.senderName}) <> ''`,
+      ),
+    )
+    .all();
+  return rows
+    .map((r) => (r.senderName ?? "").trim())
+    .filter((n) => n.length > 0);
 }
 
 /** One correspondent's most recent mail, newest first. */

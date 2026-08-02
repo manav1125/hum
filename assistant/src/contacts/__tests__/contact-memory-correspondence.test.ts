@@ -48,7 +48,11 @@ import { getDb, getSqliteFrom } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { enqueueMemoryJob } from "../../memory/jobs-store.js";
 import { runMemoryJobsOnce } from "../../memory/jobs-worker.js";
-import { listCorrespondents } from "../contact-correspondence.js";
+import {
+  isNeverSurfacedSender,
+  listCorrespondents,
+  tallySenderArrivals,
+} from "../contact-correspondence.js";
 import {
   getContactMemoryHealth,
   resetContactMemoryHealth,
@@ -67,6 +71,8 @@ function seedArrival(opts: {
   title: string;
   snippet?: string | null;
   createdAt?: number;
+  /** What the gate decided. Defaults to the surfaced case. */
+  disposition?: "surfaced" | "filed";
 }): void {
   const now = opts.createdAt ?? Date.now();
   getSqliteFrom(getDb())
@@ -74,7 +80,7 @@ function seedArrival(opts: {
       `INSERT INTO arrivals
          (id, channel, external_id, title, sender_address, sender_name, snippet,
           disposition, decided_by, created_at, updated_at)
-       VALUES (?, 'watcher:gmail', ?, ?, ?, ?, ?, 'surfaced', 'rule', ?, ?)`,
+       VALUES (?, 'watcher:gmail', ?, ?, ?, ?, ?, ?, 'rule', ?, ?)`,
     )
     .run(
       randomUUID(),
@@ -83,6 +89,7 @@ function seedArrival(opts: {
       opts.address.toLowerCase(),
       opts.senderName ?? null,
       opts.snippet ?? null,
+      opts.disposition ?? "surfaced",
       now,
       now,
     );
@@ -156,6 +163,111 @@ describe("listCorrespondents", () => {
 
     const addresses = listCorrespondents().map((p) => p.address);
     expect(addresses).toEqual(["ada@example.com"]);
+  });
+});
+
+// ── The gate's own judgement decides who is a person ────────────────────────
+//
+// The bug: `isBulkSenderAddress` only matches noreply-shaped LOCAL PARTS, so a
+// bank writing from `examplebank@example.com` sailed through and became
+// a contact. The arrival gate had already filed every one of those messages.
+
+describe("the never-surfaced rule", () => {
+  test("a sender whose every message was filed is not offered as a person", () => {
+    for (let i = 0; i < 3; i++) {
+      seedArrival({
+        address: "examplebank@example.com",
+        senderName: "Example Bank",
+        title: `Statement ${i}`,
+        disposition: "filed",
+      });
+    }
+
+    expect(listCorrespondents()).toHaveLength(0);
+  });
+
+  test("the real provisioning path mints nobody for that sender", () => {
+    seedArrival({
+      address: "examplebank@example.com",
+      senderName: "Example Bank",
+      title: "Your monthly statement",
+      disposition: "filed",
+    });
+
+    const report = provisionContactsFromCorrespondence();
+    expect(report.created).toBe(0);
+    expect(getDb().all("SELECT id FROM contacts")).toHaveLength(0);
+    expect(findContactByAddress("email", "examplebank@example.com")).toBeNull();
+  });
+
+  test("one surfaced message out of many is enough to be a person", () => {
+    for (let i = 0; i < 6; i++) {
+      seedArrival({
+        address: "grace@example.com",
+        senderName: "Grace Hopper",
+        title: `Bulk ${i}`,
+        disposition: "filed",
+      });
+    }
+    seedArrival({
+      address: "grace@example.com",
+      senderName: "Grace Hopper",
+      title: "Can we move Thursday?",
+      disposition: "surfaced",
+    });
+
+    const report = provisionContactsFromCorrespondence();
+    expect(report.created).toBe(1);
+    const contact = findContactByAddress("email", "grace@example.com");
+    expect(contact?.displayName).toBe("Grace Hopper");
+  });
+
+  test("a filing the owner reversed counts as surfaced", () => {
+    seedArrival({
+      address: "ada@example.com",
+      senderName: "Ada Byron",
+      title: "Filed by mistake",
+      disposition: "filed",
+    });
+    // Reversal rewrites the disposition — that IS the record of the owner
+    // saying this mattered, and the rule has to read it as one.
+    getDb().run(
+      `UPDATE arrivals SET disposition = 'surfaced', reversed_at = 1, reversed_by = 'user'`,
+    );
+
+    expect(listCorrespondents().map((p) => p.address)).toEqual([
+      "ada@example.com",
+    ]);
+  });
+
+  test("absence of judgement is not a judgement", () => {
+    // The direction this can go wrong in. A sender with NO arrival rows has
+    // not been judged; treating that as "never surfaced" would silently drop
+    // every person whose channel predates the gate.
+    expect(isNeverSurfacedSender(undefined)).toBe(false);
+    expect(isNeverSurfacedSender(null)).toBe(false);
+    expect(isNeverSurfacedSender({ total: 0, surfaced: 0, filed: 0 })).toBe(
+      false,
+    );
+    // And the positive case, so the test cannot pass by never excluding.
+    expect(isNeverSurfacedSender({ total: 4, surfaced: 0, filed: 4 })).toBe(
+      true,
+    );
+    expect(isNeverSurfacedSender({ total: 4, surfaced: 1, filed: 3 })).toBe(
+      false,
+    );
+  });
+
+  test("a disposition the gate never wrote cannot make a sender excludable", () => {
+    seedArrival({
+      address: "ada@example.com",
+      title: "Hello",
+      disposition: "filed",
+    });
+    getDb().run(`UPDATE arrivals SET disposition = 'pending'`);
+    const tally = tallySenderArrivals().get("ada@example.com");
+    expect(tally).toEqual({ total: 1, surfaced: 0, filed: 0 });
+    expect(isNeverSurfacedSender(tally)).toBe(false);
   });
 });
 
