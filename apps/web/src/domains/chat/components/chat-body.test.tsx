@@ -87,6 +87,9 @@ mock.module("@/domains/chat/components/question-prompt-slot", () => ({
 // Import after mocks are registered.
 const { ChatBody } = await import("@/domains/chat/components/chat-body");
 
+const { auditHomeCanvas, canvasElement, canvasRegion } =
+  await import("@/domains/chat/home-canvas/home-canvas-model");
+
 const noop = () => {};
 const noopDrag = () => {};
 
@@ -259,5 +262,81 @@ describe("ChatBody — channel footer slot", () => {
     expect(html.indexOf("CHANNEL_FOOTER")).toBeLessThan(
       html.indexOf("COMPOSER"),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The home canvas — positions 1 and 2
+// ---------------------------------------------------------------------------
+
+/**
+ * `ChatBody` owns two of the six elements design ruled onto the home canvas
+ * (`docs/design/handoff-2026-08-02/FINAL-NAV-BRIEF.md` §4): the greeting, and
+ * the composer — which §8 lists as an invariant because it has been
+ * accidentally dropped twice.
+ *
+ * They cannot be rendered from the manifest the way positions 3–4 are: the
+ * composer has to hold a fixed position in the React tree or it loses its
+ * focus, draft and attachments on first send. So they are *marked* where they
+ * live, and this is the assertion that the marks are there and are singular.
+ */
+describe("ChatBody — the home canvas (FINAL-NAV-BRIEF §4)", () => {
+  function auditMarkup(html: string) {
+    const host = document.createElement("div");
+    host.innerHTML = html;
+    return { host, audit: auditHomeCanvas(host) };
+  }
+
+  test("the empty state carries the mark and the composer, once each", () => {
+    const { audit } = auditMarkup(
+      renderBody(
+        withEmptyState({
+          // Stand-ins for positions 3–4, composed through the same marker
+          // helper the real region uses. `home-canvas.test.tsx` drives the
+          // real ones.
+          startersSlot: (
+            <div {...canvasRegion()}>
+              <div {...canvasElement("prompts")} />
+              <div {...canvasElement("door")} />
+            </div>
+          ),
+        }),
+      ),
+    );
+
+    expect(audit.ok).toBe(true);
+    expect([...audit.found].sort()).toEqual([
+      "composer",
+      "door",
+      "mark",
+      "prompts",
+    ]);
+    expect(audit.duplicated).toEqual([]);
+  });
+
+  test("the composer survives the empty→active transition", () => {
+    // §8's invariant. Both renders must carry position 2 — the composer is not
+    // an empty-state decoration, it is furniture.
+    expect(auditMarkup(renderBody(withEmptyState())).audit.found).toContain(
+      "composer",
+    );
+    expect(auditMarkup(renderBody(baseProps())).audit.found).toContain(
+      "composer",
+    );
+  });
+
+  test("the greeting is an empty-state element only", () => {
+    expect(auditMarkup(renderBody(baseProps())).audit.found).not.toContain(
+      "mark",
+    );
+  });
+
+  test("a read-only channel replaces the composer, and says so", () => {
+    // The one case where position 2 is legitimately absent: there is nothing
+    // to type into. It must not be silently missing — the banner takes its
+    // place, so the canvas is short an element for a stated reason.
+    const html = renderBody(baseProps({ isChannelReadonly: true }));
+    expect(auditMarkup(html).audit.found).not.toContain("composer");
+    expect(html).toContain("Read-only conversation");
   });
 });

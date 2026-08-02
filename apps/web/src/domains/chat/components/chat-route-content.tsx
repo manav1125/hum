@@ -32,7 +32,6 @@ import { useEscapeCancel } from "@/domains/chat/hooks/use-escape-cancel";
 import { useChatUIState } from "@/domains/chat/hooks/use-chat-ui-state";
 import { useTranscriptData } from "@/domains/chat/hooks/use-transcript-data";
 import { useChatEmptyState } from "@/domains/chat/hooks/use-chat-empty-state";
-import { ChatLauncher } from "@/domains/chat/components/chat-launcher";
 import { useComposerSubmit } from "@/domains/chat/hooks/use-composer-submit";
 import { DiskPressureBannerSlot } from "@/domains/chat/components/disk-pressure-banner-slot";
 import { useRuleEditorBridge } from "@/domains/chat/hooks/use-rule-editor-bridge";
@@ -763,6 +762,9 @@ export function ChatMainPanel({
     isAssistantStreaming,
     activeConversationIsProcessing,
     onSelectStarter: handleSelectStarter,
+    // Only the mobile greeting screen still draws the daemon's generic starter
+    // list; the desktop canvas derives its chips from real state instead.
+    wantsDaemonStarters: isMobile,
   });
 
   // -------------------------------------------------------------------------
@@ -1032,16 +1034,12 @@ export function ChatMainPanel({
         bannerSlot={isSidePanel ? undefined : mainBannerSlot}
         queuedDrawerSlot={isSidePanel ? undefined : mainQueuedDrawerSlot}
         readonlyBannerSlot={slackReadonlyBannerSlot}
-        startersSlot={
-          isEmptyConversation && assistantId ? (
-            <>
-              <ChatLauncher assistantId={assistantId} onSeed={setInput} />
-              {startersSlot}
-            </>
-          ) : (
-            startersSlot
-          )
-        }
+        // Positions 3–4 of the home canvas, and nothing beside them. The
+        // `ChatLauncher` that used to be spliced in here (six hardcoded
+        // capability pills over three needs-you cards) is gone: needs-you is
+        // in the rail AND in HQ, so §4's admission test rules it off the
+        // canvas. See `home-canvas-model.ts`.
+        startersSlot={startersSlot}
       />
       <MicPermissionPrimer
         open={showPrimer}

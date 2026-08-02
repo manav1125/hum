@@ -13,6 +13,7 @@ import {
 } from "@/domains/chat/components/chat-composer/chat-composer";
 import { InChatVoiceOverlay } from "@/domains/chat/components/in-chat-voice-overlay";
 import { QuestionPromptSlot } from "@/domains/chat/components/question-prompt-slot";
+import { canvasElement } from "@/domains/chat/home-canvas/home-canvas-model";
 import { SpawnedWorkSlot } from "@/domains/chat/components/spawned-work-slot";
 import {
   ChatScrollArea,
@@ -304,12 +305,19 @@ export function ChatBody({
               />
             )
           ) : (
-            <ChatComposer
-              {...composerProps}
-              onEnterVoiceMode={
-                supportsVoiceMode ? handleEnterVoiceMode : undefined
-              }
-            />
+            // Position 2 of the home canvas — the composer, which §8 lists as
+            // an invariant because it has been accidentally dropped twice.
+            // The wrapper is unstyled and always present on this branch, so
+            // the composer keeps its position in the React tree (and with it
+            // its focus, draft text and attachments) across empty→active.
+            <div {...canvasElement("composer")}>
+              <ChatComposer
+                {...composerProps}
+                onEnterVoiceMode={
+                  supportsVoiceMode ? handleEnterVoiceMode : undefined
+                }
+              />
+            </div>
           )}
           {startersSlot}
         </div>

@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 
+import { canvasElement } from "@/domains/chat/home-canvas/home-canvas-model";
 import { DEFAULT_EMPTY_STATE_GREETING } from "@/domains/chat/utils/empty-state-constants";
 
 // Theme-aware tokens pointing at the shipped `--mv1-*` CSS-variable system so
@@ -74,7 +75,9 @@ export function ChatEmptyState({
   );
 
   return (
-    <div className="py-8">
+    // Position 1 of the home canvas — "the mark + one serif line". The marker
+    // is what `auditHomeCanvas` counts; see `home-canvas-model.ts`.
+    <div className="py-8" {...canvasElement("mark")}>
       <div className="mx-auto w-full max-w-[var(--chat-max-width)] px-3 sm:px-6">
         <div className="flex flex-col items-center justify-center gap-3 md:flex-row md:items-center">
           {avatarSlot}
