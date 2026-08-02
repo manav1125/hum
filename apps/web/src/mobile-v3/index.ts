@@ -11,6 +11,12 @@ export { GlassCard, type GlassTint } from "./glass-card";
 export { CueRing, CueRingHero, type OrbitChip } from "./cue-ring";
 export { StateChip, type Mv3State } from "./state-chip";
 export { TabBarV3 } from "./tab-bar-v3";
+export { Mv3OverflowMenu } from "./overflow-menu";
+export {
+  overflowVisible,
+  CORNER_CHROME_BAND,
+  CORNER_CHROME_INSET,
+} from "./corner-chrome";
 export { LargeTitleHeader } from "./large-title-header";
 export {
   SharedMobileHeader,

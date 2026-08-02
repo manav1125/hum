@@ -7,22 +7,46 @@
  * reach for occasionally:
  *
  *   ☰ top-left    — past conversations, search, batch capture.
- *   ◍ top-right   — the CUE group (Agents · Skills · Rhythms · Memory ·
- *                   Library · Watching) and the account cluster (People ·
- *                   Create · Brand · Connections · Trust · Appearance ·
- *                   Settings · Logs).
+ *   ⓜ top-right   — the owner's initial: the two accumulating destinations,
+ *                   then the single door to everything you configure.
  *
- * The right-hand menu reads its first six rows from `CUE_NAV`, the same list
- * the desktop sidebar renders under its **CUE** heading — so the two platforms
- * cannot drift about what "what Cue is" contains. A row whose surface does not
- * exist yet (`to: null`) is skipped here rather than rendered disabled: the
- * desktop rail is a persistent map where an honest gap is worth a line, and a
- * transient phone menu is not.
+ * ## The right-hand menu is the same model the desktop rail renders
  *
- * Placement note: the right-hand button sits inboard of the true corner
- * because the HQ/Today header still paints its own decorative initial chip
- * there. That chip is meant to BECOME this affordance; until the HQ surface
- * retires it, two circles in the same 34px square would be the collision.
+ * It used to list `CUE_NAV`'s six (Agents · Skills · Rhythms · Memory ·
+ * Library · Watching) as if that were "what Cue is". Desktop retired that
+ * grouping: four of the six were configuration rather than destinations, and
+ * they are now leaves behind **Your Cue**. The phone kept rendering the old
+ * list, so the two platforms had quietly started describing different
+ * products — which is worse than either being wrong alone.
+ *
+ * The menu now mirrors the shipped model exactly:
+ *
+ *   People · Library      the two rows that accumulate on their own
+ *   ─────────
+ *   Your Cue              the door — every configuration surface
+ *   ─────────
+ *   Create · Data & logs  actions, not places
+ *
+ * Nothing became unreachable. Every row this menu dropped (Agents, Skills,
+ * Automations, Memory, Connections, Brand kit, Explore, Trust, Appearance,
+ * Notifications, Settings) is a row on the You screen, one tap behind
+ * **Your Cue** — that screen IS the phone's Your Cue, and design's mobile
+ * ruling already said this cluster lives behind the avatar, top-right.
+ *
+ * ## Why the button carries an initial
+ *
+ * "Trust / brand / connections / data / settings → **avatar, top-right**"
+ * (BRIEF-FOR-CODE §2). It rendered a `◍` glyph inboard of the true corner,
+ * because the HQ/Today header painted its own initial chip in that corner —
+ * so the thing that LOOKED like the door was a decorative `<span>` and the
+ * live affordance was the anonymous circle beside it. The Today chip is gone
+ * (it never navigated); this button took over its position and its initial,
+ * which is what the placement note here always said should happen.
+ *
+ * The initial comes from the signed-in user, never a hardcoded letter — the
+ * same `homeState.userName` the You screen reads. With no name on file the
+ * button falls back to `☺`, matching the You screen's avatar rather than
+ * inventing a plausible letter.
  *
  * Renders ONLY on the primary surfaces where root-layout hides the legacy
  * chrome — detail screens carry their own ‹ back and ⋯ in the v3 grammar.
@@ -30,10 +54,12 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
-import { CUE_NAV } from "@/components/nav/nav-model";
-import { readStoredThemePreference } from "@/domains/settings/utils/theme-preferences";
+import {
+  SIDEBAR_DESTINATIONS,
+  YOUR_CUE_DOOR,
+} from "@/components/nav/nav-model";
+import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { Mv3AddTasksSheet } from "@/pages/projects/mv3-add-tasks-sheet";
-import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { haptic } from "@/utils/haptics";
@@ -52,6 +78,8 @@ const SAFE_TOP = "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))";
 interface MenuEntry {
   label: string;
   meta?: string;
+  /** Draw a hairline above this row — separates destinations, door, actions. */
+  startsGroup?: boolean;
   run: () => void;
 }
 
@@ -90,9 +118,11 @@ function CornerMenu({
       style={{
         position: "fixed",
         top: `calc(${SAFE_TOP} + 8px)`,
-        // See the placement note in the module docblock for the right-hand
-        // inset.
-        ...(side === "left" ? { left: 18 } : { right: 62 }),
+        // Both corners now sit on the same 18px gutter. The right-hand button
+        // used to be inset to 62px to clear Today's decorative initial chip;
+        // that chip is gone (see the module docblock), so the live affordance
+        // takes the corner the spec asks for.
+        ...(side === "left" ? { left: 18 } : { right: 18 }),
         zIndex: 45,
         fontFamily: "var(--mv3-font)",
       }}
@@ -110,12 +140,20 @@ function CornerMenu({
           width: 34,
           height: 34,
           borderRadius: "50%",
-          border: "1px solid var(--mv3-glass-border)",
-          background: "var(--mv3-glass)",
+          // The right-hand button inherits Today's avatar material — it IS the
+          // avatar now, so it must not read as a second, weaker chip.
+          border:
+            side === "right"
+              ? "1px solid var(--mv3-avatar-border)"
+              : "1px solid var(--mv3-glass-border)",
+          background:
+            side === "right" ? "var(--mv3-avatar-bg)" : "var(--mv3-glass)",
+          boxShadow: side === "right" ? "var(--mv3-avatar-shadow)" : undefined,
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
-          color: "var(--mv3-muted)",
-          fontSize: 15,
+          color: side === "right" ? "var(--mv3-text)" : "var(--mv3-muted)",
+          fontSize: side === "right" ? 13 : 15,
+          fontWeight: side === "right" ? 600 : 400,
           lineHeight: 1,
           cursor: "pointer",
           display: "flex",
@@ -125,7 +163,7 @@ function CornerMenu({
           padding: 0,
         }}
       >
-        {glyph}
+        <span aria-hidden>{glyph}</span>
       </button>
       {open ? (
         <div
@@ -165,6 +203,12 @@ function CornerMenu({
                 textAlign: "left",
                 background: "transparent",
                 border: "none",
+                // The hairline is the group boundary — destinations, then the
+                // door, then actions. `borderTop` rather than a separate <hr>
+                // so the rule can never drift away from the row it belongs to.
+                borderTop: item.startsGroup
+                  ? "1px solid var(--mv3-sheet-border)"
+                  : "none",
                 borderRadius: 11,
                 padding: "12px 14px",
                 minHeight: 44,
@@ -212,13 +256,14 @@ export function Mv3OverflowMenu() {
   const [addTasksOpen, setAddTasksOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createMounted, setCreateMounted] = useState(false);
-  // Value preview for the Appearance link row ("Appearance · Dark ›"). Read
-  // fresh on each render — the leaf writes localStorage, and the menu
-  // re-renders when it toggles open.
-  const velvet = useClientFeatureFlagStore.use.velvet();
-  const themePreference = readStoredThemePreference({ velvetEnabled: velvet });
-  const themeLabel =
-    themePreference.charAt(0).toUpperCase() + themePreference.slice(1);
+  // The button's initial. Same source as the You screen's avatar — never a
+  // hardcoded letter, and `☺` (not a plausible-looking initial) when no name
+  // is on file.
+  const stateQuery = useHomeStateQuery(assistantId ?? null);
+  const ownerName =
+    (stateQuery.data as { userName?: string } | undefined)?.userName?.trim() ||
+    null;
+  const ownerInitial = (ownerName ?? "").charAt(0).toUpperCase() || "☺";
 
   // ☰ — what you have already said, and what you want to capture.
   const historyItems: MenuEntry[] = [
@@ -235,35 +280,41 @@ export function Mv3OverflowMenu() {
       : []),
   ];
 
-  // ◍ — the CUE group, then the account cluster.
+  // ⓜ — the two destinations, the door, then the actions.
   const accountItems: MenuEntry[] = [
-    ...CUE_NAV.filter(
-      (d): d is typeof d & { to: string } => typeof d.to === "string",
-    ).map((d) => ({
+    // The rows that accumulate on their own. Labels come from the shared
+    // model so People cannot be called one thing on a phone and another on a
+    // desktop; only the ORDER and the grouping are the phone's own.
+    ...SIDEBAR_DESTINATIONS.map((d) => ({
       label: d.label,
       run: () => navigate(d.to),
     })),
     {
+      // The door. The LABEL is `YOUR_CUE_DOOR`'s, so the two platforms can
+      // never disagree about what the settings door is called.
+      //
+      // The DESTINATION is not: `YOUR_CUE_DOOR.to` redirects into the Identity
+      // leaf, which is the right landing for a desktop rail that renders the
+      // leaf column beside it, and the wrong one for a phone that would arrive
+      // inside a single setting with no map. The phone's Your Cue is the v3
+      // You screen at `routes.channels` — the mode dial, the track record and
+      // every leaf as a row — and every one of those leaves already carries
+      // `back={routes.channels}`. This row is what those back arrows were
+      // pointing at: until now nothing on the phone navigated FORWARD to it,
+      // so the whole screen was reachable only by leaving somewhere else.
+      label: YOUR_CUE_DOOR.label,
+      meta: ownerName ?? undefined,
+      startsGroup: true,
+      run: () => navigate(routes.channels),
+    },
+    {
       label: "Create",
+      startsGroup: true,
       run: () => {
         setCreateMounted(true);
         setCreateOpen(true);
       },
     },
-    // People and Trust are NOT in v15's six. They keep a row here rather than
-    // being dropped: both are live surfaces, and design has not yet said where
-    // People belongs. Reachable beats tidy while that is open.
-    { label: "People", run: () => navigate(routes.people) },
-    { label: "Trust & guardrails", run: () => navigate(routes.guardrails) },
-    { label: "What Cue does", run: () => navigate(routes.explore) },
-    { label: "Brand kit", run: () => navigate(routes.brandKit) },
-    { label: "Connections", run: () => navigate(routes.connectors) },
-    {
-      label: "Appearance",
-      meta: themeLabel,
-      run: () => navigate(routes.settings.general),
-    },
-    { label: "Settings", run: () => navigate(routes.settings.root) },
     { label: "Data & logs", run: () => navigate(routes.logs.root) },
   ];
 
@@ -277,8 +328,15 @@ export function Mv3OverflowMenu() {
       />
       <CornerMenu
         side="right"
-        glyph="◍"
-        ariaLabel="You — settings and deeper surfaces"
+        glyph={ownerInitial}
+        // The accessible name says whose workspace and where the button goes.
+        // It must not depend on the glyph: a single letter is meaningless to a
+        // screen reader, and `☺` is worse than meaningless.
+        ariaLabel={
+          ownerName
+            ? `${ownerName} — People, Library and Your Cue`
+            : "You — People, Library and Your Cue"
+        }
         items={accountItems}
       />
 

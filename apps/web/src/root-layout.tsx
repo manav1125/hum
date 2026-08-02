@@ -8,6 +8,7 @@ import { useGlobalDeepLinkConsumer } from "@/hooks/use-global-deep-link-consumer
 import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { TabBarV3 } from "@/mobile-v3";
+import { overflowVisible } from "@/mobile-v3/corner-chrome";
 import { LiveActivityBridge } from "@/mobile-v3/live-activity-bridge";
 import { Mv3OverflowMenu } from "@/mobile-v3/overflow-menu";
 import { OfflineTakeover } from "@/mobile-v3/offline-takeover";
@@ -127,23 +128,10 @@ function preAppTabBarHidden(pathname: string): boolean {
   );
 }
 
-/** Where the ☰ / ◍ corner chrome renders — the primary v3 tab landings whose
- *  header (and its conversations / search / settings reachability) was
- *  removed. One entry per primary destination: HQ, Work (`projects`), and the
- *  bare chats index that ◉ lands beside. `/home` is the legacy landing that
- *  redirects to HQ; it stays listed so the chrome is present during the hop. */
-const MV3_OVERFLOW_SURFACES = [
-  routes.hq,
-  routes.home,
-  routes.projects,
-  routes.conversations,
-];
-
-function overflowVisible(pathname: string): boolean {
-  // Exact-match only: detail screens (e.g. a project) carry their own ⋯ menu
-  // in the v3 grammar — a second global dots-button would double the chrome.
-  return MV3_OVERFLOW_SURFACES.some((p) => p === pathname);
-}
+// `MV3_OVERFLOW_SURFACES` / `overflowVisible` moved to
+// `mobile-v3/corner-chrome` — the v3 headers need the same predicate to inset
+// themselves out from under these buttons, and they cannot import it from here
+// without a cycle. See that module's header for the collision it prevents.
 
 export function RootLayout() {
   useAppTheme();

@@ -45,7 +45,7 @@ import {
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ContactsByIdDossierGetResponse } from "@/generated/daemon/types.gen";
 import { postChatMessage } from "@/domains/chat/api/messages";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 
@@ -227,7 +227,18 @@ function ExtractionHealthNotice({ assistantId }: { assistantId: string }) {
 
 export function PeoplePage() {
   const assistantId = useActiveAssistantId();
-  const isMobile = useIsMobile();
+  // `useMobileLayout`, not `useIsMobile`: the branch below is STRUCTURAL — it
+  // suppresses auto-selection and swaps the master–detail split for a
+  // push-and-back detail. A narrow desktop window (a 720px chat pop-out, two
+  // presses of Cmd+) is not a phone; taking the phone branch there loses the
+  // list beside the dossier and leaves a back arrow as the only way out, on a
+  // surface where the pointer can perfectly well drive both panes.
+  //
+  const isMobile = useMobileLayout();
+  // The grid template IS a width question — 300px of list plus a dossier does
+  // not fit in a 720px window whatever is driving the pointer — so it keeps
+  // the raw viewport read. Two names because they are two different questions.
+  const isNarrow = useIsMobile();
 
   const contactsQuery = useQuery({
     ...contactsGetOptions({ path: { assistant_id: assistantId } }),
@@ -359,10 +370,10 @@ export function PeoplePage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isMobile
+              gridTemplateColumns: isNarrow
                 ? "1fr"
                 : "minmax(0,300px) minmax(0,1fr)",
-              gap: isMobile ? 16 : 22,
+              gap: isNarrow ? 16 : 22,
               alignItems: "start",
               marginTop: 22,
             }}

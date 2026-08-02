@@ -76,6 +76,7 @@ import { CueRing, CueRingHero, type OrbitChip } from "../cue-ring";
 import { EmptyOrbit } from "../empty-orbit";
 import { GlassCard } from "../glass-card";
 import { DismissX, dismissLeave, useDismissTask } from "../undo-toast";
+import { CORNER_CHROME_BAND, CORNER_CHROME_INSET } from "../corner-chrome";
 import {
   cardBody,
   cardTitle,
@@ -1096,7 +1097,10 @@ export function Mv3Today({
     : glanceCount === 0
       ? "Nothing needs you."
       : `${glanceCount} ${glanceCount === 1 ? "needs" : "need"} you.`;
-  const initial = (userName ?? "").trim().charAt(0).toUpperCase() || "M";
+  // (The owner's initial used to be derived here, defaulting to a hardcoded
+  // "M". It moved to `Mv3OverflowMenu` along with the chip that rendered it,
+  // and the fallback there is `☺` — a letter nobody is named beats a letter
+  // that looks like a name Cue does not actually know.)
   const greeting = userName
     ? `Good ${dayPart()}, ${userName}.`
     : `Good ${dayPart()}.`;
@@ -1365,7 +1369,19 @@ export function Mv3Today({
             style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
+              // The corner chrome (`Mv3OverflowMenu`) is FIXED-position: two
+              // 34px buttons on an 18px gutter, at this same safe-area offset.
+              // This row is the only content that shares their band, and it was
+              // sliding underneath the left one — "SUNDAY · 2 AUG" rendered as
+              // a ☰ button with "DAY · 2 AUG" beside it. The insets are the
+              // buttons' outer edges (18 + 34) less this container's own 22px
+              // padding, plus a gap.
+              paddingLeft: CORNER_CHROME_INSET,
+              paddingRight: CORNER_CHROME_INSET,
+              // Holds the band open to the buttons' height. The avatar `<span>`
+              // that used to sit in this row was doing this incidentally; when
+              // it moved into the corner chrome the hero jumped 21px up.
+              minHeight: CORNER_CHROME_BAND,
             }}
           >
             <div
@@ -1379,25 +1395,20 @@ export function Mv3Today({
             >
               {dateEyebrow()}
             </div>
-            <span
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: "50%",
-                background: "var(--mv3-avatar-bg)",
-                border: "1px solid var(--mv3-avatar-border)",
-                boxShadow: "var(--mv3-avatar-shadow)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 13,
-                fontWeight: 600,
-                backdropFilter: "blur(10px)",
-                WebkitBackdropFilter: "blur(10px)",
-              }}
-            >
-              {initial}
-            </span>
+            {/*
+              The avatar that used to sit here was a `<span>`. It carried the
+              owner's initial in the exact corner design assigns to the
+              settings door — and it did nothing. The live affordance was an
+              anonymous `◍` circle inset 62px beside it, so the element that
+              looked like the door was dead and the one that worked looked
+              like decoration.
+
+              `Mv3OverflowMenu` now renders the initial, in this position, as
+              a real button. It is fixed-position chrome from the root layout,
+              which is why nothing replaces the node here: leaving a spacer
+              would only re-create the collision at a smaller size. The eyebrow
+              row keeps `space-between` so the date still sits left of it.
+            */}
           </div>
           {/* Greeting + headline — fade out 40–100 as "Today" takes over
               100–160. **The headline IS the number** (v8 M2): the big line is

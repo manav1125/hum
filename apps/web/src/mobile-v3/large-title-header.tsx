@@ -17,6 +17,13 @@
  * (spec's Today keeps header + hero fixed above the stack).
  */
 import { useEffect, useRef } from "react";
+import { useLocation } from "react-router";
+
+import {
+  CORNER_CHROME_BAND,
+  CORNER_CHROME_INSET,
+  overflowVisible,
+} from "./corner-chrome";
 
 /** Scroll distance (px) over which the large title hands off to the compact one. */
 const CONDENSE_RANGE = 44;
@@ -38,6 +45,10 @@ export function LargeTitleHeader({
   const largeRef = useRef<HTMLDivElement>(null);
   const compactRef = useRef<HTMLDivElement>(null);
   const eyebrowRef = useRef<HTMLDivElement>(null);
+  // Whether the fixed ☰ / avatar buttons are painted over this header. Read
+  // from the route rather than taken as a prop — see `corner-chrome.ts`: a
+  // prop is a thing each new screen can forget, and two screens forgot.
+  const underCornerChrome = overflowVisible(useLocation().pathname);
 
   useEffect(() => {
     const scroller = scrollRef?.current;
@@ -97,8 +108,19 @@ export function LargeTitleHeader({
           left: 0,
           right: 0,
           // Mirrors the padded top inset — absolute position is measured from
-          // the border box, so the inset must be re-added here.
-          top: "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 4px)",
+          // the border box, so the inset must be re-added here. Under the
+          // corner chrome the condensed title centres INSIDE the button band
+          // (iOS nav-bar grammar) instead of above it.
+          top: `calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + ${
+            underCornerChrome ? 14 : 4
+          }px)`,
+          // ...and keeps clear of both buttons, so a long title truncates
+          // rather than sliding under them.
+          paddingLeft: underCornerChrome ? CORNER_CHROME_INSET : 0,
+          paddingRight: underCornerChrome ? CORNER_CHROME_INSET : 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
           textAlign: "center",
           fontSize: 16,
           fontWeight: 600,
@@ -110,11 +132,19 @@ export function LargeTitleHeader({
         {title}
       </div>
 
+      {/* The eyebrow row doubles as the nav band. With the corner chrome above,
+          it holds the buttons' height open (even with no eyebrow to show) so
+          the large title below starts clear of them — the Work screen used to
+          render its title as "☰ork" — and insets its own content so an eyebrow
+          does not slide under them either. */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          minHeight: underCornerChrome ? CORNER_CHROME_BAND : undefined,
+          paddingLeft: underCornerChrome ? CORNER_CHROME_INSET : 0,
+          paddingRight: underCornerChrome ? CORNER_CHROME_INSET : 0,
         }}
       >
         {eyebrow ? (

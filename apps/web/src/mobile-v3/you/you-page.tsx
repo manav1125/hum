@@ -35,13 +35,7 @@ import { routes } from "@/utils/routes";
 
 import { GlassCard } from "../glass-card";
 import { microLabel, rise } from "../mv3-kit";
-import {
-  Eyebrow,
-  NavRow,
-  QuietLink,
-  StatTile,
-  YouScreen,
-} from "./you-kit";
+import { Eyebrow, NavRow, QuietLink, StatTile, YouScreen } from "./you-kit";
 import {
   dialDescription,
   dialModeOf,
@@ -399,9 +393,7 @@ export function Mv3YouPage() {
               ? connectionsMeta(liveCount, attention)
               : undefined
           }
-          metaColor={
-            attention > 0 ? "var(--mv3-amber)" : "var(--mv3-green)"
-          }
+          metaColor={attention > 0 ? "var(--mv3-amber)" : "var(--mv3-green)"}
           onPress={() => navigate(routes.connectors)}
         />
         <NavRow
@@ -442,7 +434,11 @@ export function Mv3YouPage() {
           }
           iconBg="rgba(79,199,199,.15)"
           label="Agents"
-          meta={staffCount != null && staffCount > 0 ? `${staffCount} on staff` : undefined}
+          meta={
+            staffCount != null && staffCount > 0
+              ? `${staffCount} on staff`
+              : undefined
+          }
           onPress={() => navigate(routes.hqAgents)}
         />
         <NavRow
@@ -505,6 +501,16 @@ export function Mv3YouPage() {
           onPress={() => navigate(routes.settings.general)}
         />
         <Dot />
+        {/* The settings INDEX, not a leaf. This screen is the phone's Your
+            Cue, and Your Cue absorbed Settings — but the two links above only
+            reach two panels, so everything else (voice, sounds, devices,
+            privacy, archive, billing, advanced) had no door on the phone once
+            the ⓜ menu's flat "Settings" row was folded into this screen. */}
+        <FooterLink
+          label="All settings"
+          onPress={() => navigate(routes.settings.root)}
+        />
+        <Dot />
         <FooterLink
           label="Sign out"
           onPress={() => void handleLogout(navigate)}
@@ -533,10 +539,7 @@ export function Mv3YouPage() {
         <Dot />
         {/* Round-4 frame 64: "Workspace" describes a desktop browser; the
             phone job is retrieval, so the mobile label is "Files". */}
-        <FooterLink
-          label="Files"
-          onPress={() => navigate(routes.workspace)}
-        />
+        <FooterLink label="Files" onPress={() => navigate(routes.workspace)} />
       </div>
     </YouScreen>
   );

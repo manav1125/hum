@@ -17,7 +17,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Component, lazy, Suspense, useEffect } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
-import { TabBarV3 } from "@/mobile-v3";
+import { Mv3OverflowMenu, TabBarV3 } from "@/mobile-v3";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 
 const ASSISTANT_ID = "a-preview";
@@ -967,6 +967,14 @@ interface Screen {
   element: React.ReactNode;
   /** Whether the real shell shows the tab bar on this surface. */
   tabBar?: boolean;
+  /**
+   * Whether the real shell shows the ☰ / ⓜ corner chrome here — i.e. whether
+   * this key is one of `root-layout`'s `MV3_OVERFLOW_SURFACES`. Worth having
+   * in the harness because the corners are fixed-position and overlap the
+   * screen's own header: the collision between the live affordance and Today's
+   * decorative avatar chip was invisible to every screen-only preview.
+   */
+  overflow?: boolean;
 }
 
 const SCREENS: Screen[] = [
@@ -1025,6 +1033,7 @@ const SCREENS: Screen[] = [
       />
     ),
     tabBar: true,
+    overflow: true,
   },
   {
     key: "review-queue",
@@ -1072,6 +1081,7 @@ const SCREENS: Screen[] = [
     route: "/assistant/projects",
     element: <Mv3Projects />,
     tabBar: true,
+    overflow: true,
   },
   {
     key: "project-detail",
@@ -1088,6 +1098,9 @@ const SCREENS: Screen[] = [
     route: "/assistant/work",
     element: <Mv3AllWork />,
     tabBar: true,
+    // No `overflow` — `/assistant/work` is NOT one of the chrome's routes, and
+    // a harness that paints chrome production does not paint is worse than no
+    // harness.
   },
   {
     key: "task-sheet",
@@ -1103,6 +1116,7 @@ const SCREENS: Screen[] = [
     route: "/assistant/conversations",
     element: <ChatsIndexPage />,
     tabBar: true,
+    overflow: true,
   },
   {
     key: "you",
@@ -1297,6 +1311,7 @@ export function MobileAuditGallery() {
               </Boundary>
             </Suspense>
           </div>
+          {screen.overflow ? <Mv3OverflowMenu /> : null}
           {screen.tabBar ? <TabBarV3 /> : null}
           <div id="viewport-overlays" />
         </div>
