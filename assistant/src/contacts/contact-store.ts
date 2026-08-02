@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, inArray, isNotNull, like, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  isNotNull,
+  isNull,
+  like,
+  not,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 import { getDb } from "../memory/db-connection.js";
@@ -793,19 +804,35 @@ export function reconcileGuardianContacts(): number {
 /**
  * Find a contact the owner actually stood behind on this address.
  *
- * A plain {@link findContactByAddress} now matches contacts HARVESTED from
- * inbound mail, because correspondence provisioning mints one per sender. That
- * is right for People — you should be able to browse who writes to you — and
- * wrong for anything that treats "is a contact" as evidence about the sender.
+ * A plain {@link findContactByAddress} matches contacts HARVESTED from inbound
+ * mail, because correspondence provisioning mints one per sender. That is right
+ * for People — you should be able to browse who writes to you — and wrong for
+ * anything that treats "is a contact" as evidence about the sender.
  *
  * It closed a loop in the arrival gate's safety floor: mail minted a contact,
  * the contact satisfied the floor, the floor surfaced the mail, and the
  * surfacing was then read back as evidence the sender was a person. Every turn
  * of that made the next turn easier, and it had already fired once.
  *
- * A harvested channel is `unverified`. A channel the owner invited, verified or
- * added by hand is not. That distinction is the whole difference between "I
- * know this person" and "this address has written to me".
+ * THE POLARITY MATTERS, and getting it backwards is how this function spent a
+ * day doing harm. The first version was an ALLOWLIST — status in
+ * (active, pending) — on the reasoning that a harvested channel is
+ * `unverified` and anything else was deliberate. But nothing marks an email
+ * channel active: verification exists for invites and Slack, not for the
+ * address your accountant writes from. So the allowlist admitted almost
+ * nothing, `known_contact` fired twice in thirty days while the list rule
+ * filed 87, and mail from people the owner knows was being filed in silence.
+ * That is the exact failure the floor exists to prevent, introduced by the
+ * guard meant to protect it.
+ *
+ * So this is a DENYLIST now: everything counts except what provisioning
+ * created. Harvesting is identifiable without a migration — provisioning is
+ * the only writer of `policy: "escalate"` with no `verifiedVia` — and naming
+ * the harvested case directly is both narrower and more honest than guessing
+ * at curation from a status field that real relationships never set.
+ *
+ * Revoked and blocked never count, whatever their provenance: a channel the
+ * owner turned off is not a person they want surfaced by it.
  */
 export function findCuratedContactByAddress(
   type: string,
@@ -819,10 +846,21 @@ export function findCuratedContactByAddress(
       and(
         eq(contactChannels.type, type),
         eq(contactChannels.address, address.toLowerCase()),
-        // Anything but `unverified` means somebody deliberately did something
-        // about this address. Revoked and blocked are excluded too: a channel
-        // the owner turned off is not a person they want surfaced by it.
-        inArray(contactChannels.status, ["active", "pending"]),
+        notInArray(contactChannels.status, ["revoked", "blocked"]),
+        // The harvested shape, excluded — and it is the WHOLE shape, all three
+        // fields together, because each one alone is met by channels that are
+        // genuinely curated. `contact-provisioning.ts` writes exactly
+        // unverified + escalate + no verifiedVia, and nothing else writes all
+        // three: a verified or invited channel carries a `verifiedVia`, one
+        // added by hand or by a channel binding keeps the default `allow`
+        // policy, and an active channel has had somebody act on it.
+        not(
+          and(
+            eq(contactChannels.status, "unverified"),
+            eq(contactChannels.policy, "escalate"),
+            isNull(contactChannels.verifiedVia),
+          )!,
+        ),
       ),
     )
     .get();

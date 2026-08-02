@@ -32,7 +32,16 @@ beforeEach(() => {
 });
 
 /** Mint a contact carrying one email channel in the given state. */
-function contactWith(address: string, status: string): string {
+function contactWith(
+  address: string,
+  status: string,
+  opts: { policy?: string; verifiedVia?: string | null } = {},
+): string {
+  const policy = opts.policy ?? "escalate";
+  const verifiedVia =
+    opts.verifiedVia === undefined || opts.verifiedVia === null
+      ? "NULL"
+      : `'${opts.verifiedVia}'`;
   const id = randomUUID();
   const now = Date.now();
   getDb().run(
@@ -41,8 +50,8 @@ function contactWith(address: string, status: string): string {
   );
   getDb().run(
     `INSERT INTO contact_channels
-       (id, contact_id, type, address, is_primary, status, policy, interaction_count, created_at)
-     VALUES ('${randomUUID()}', '${id}', 'email', '${address}', 1, '${status}', 'escalate', 0, ${now})`,
+       (id, contact_id, type, address, is_primary, status, policy, verified_via, interaction_count, created_at)
+     VALUES ('${randomUUID()}', '${id}', 'email', '${address}', 1, '${status}', '${policy}', ${verifiedVia}, 0, ${now})`,
   );
   return id;
 }
@@ -104,5 +113,83 @@ describe("findCuratedContactByAddress", () => {
     expect(
       findContactByAddress("email", "harvested@example.com"),
     ).not.toBeNull();
+  });
+});
+
+describe("the polarity — an allowlist here filed real mail for a day", () => {
+  /**
+   * The first version of this guard was an allowlist: status in
+   * (active, pending). The reasoning sounded right — a harvested channel is
+   * `unverified`, so anything else was deliberate — but nothing in the product
+   * ever marks an email channel active. Verification exists for invites and
+   * Slack, not for the address your accountant writes from.
+   *
+   * So the allowlist admitted almost nobody. On production over thirty days
+   * `known_contact` surfaced 2 arrivals while the mailing-list rule filed 87,
+   * and a person the owner knows forwarding a list thread was filed in
+   * silence. The floor exists to stop exactly that, and the guard protecting
+   * the floor caused it.
+   *
+   * These tests hold the denylist to its narrow job: exclude the harvested
+   * shape, admit everything else.
+   */
+
+  test("the exact provisioning shape is excluded — this is the loop", () => {
+    // unverified + escalate + no verifiedVia is what
+    // contact-provisioning.ts writes, and all 47 email channels on the
+    // owner's instance carry it.
+    contactWith("harvested@example.com", "unverified", {
+      policy: "escalate",
+      verifiedVia: null,
+    });
+    expect(
+      findCuratedContactByAddress("email", "harvested@example.com"),
+    ).toBeNull();
+  });
+
+  test("a contact somebody added by hand IS curated, though nothing verified it", () => {
+    // `upsertContact` defaults the policy to `allow`. This is the case the
+    // allowlist got wrong: a real person, saved deliberately, treated as a
+    // stranger because no verification flow exists for their email.
+    contactWith("added-by-hand@example.com", "unverified", {
+      policy: "allow",
+      verifiedVia: null,
+    });
+    expect(
+      findCuratedContactByAddress("email", "added-by-hand@example.com"),
+    ).not.toBeNull();
+  });
+
+  test("a verified channel counts even under an escalate policy", () => {
+    contactWith("verified@example.com", "unverified", {
+      policy: "escalate",
+      verifiedVia: "challenge",
+    });
+    expect(
+      findCuratedContactByAddress("email", "verified@example.com"),
+    ).not.toBeNull();
+  });
+
+  test("all three fields are required to call something harvested", () => {
+    // Each condition alone is met by channels that are genuinely curated, so
+    // a two-field test would start excluding real people again — the same
+    // failure in a smaller costume.
+    contactWith("active-escalate@example.com", "active", {
+      policy: "escalate",
+      verifiedVia: null,
+    });
+    expect(
+      findCuratedContactByAddress("email", "active-escalate@example.com"),
+    ).not.toBeNull();
+  });
+
+  test("revoked still loses, whatever its provenance", () => {
+    contactWith("revoked-but-verified@example.com", "revoked", {
+      policy: "allow",
+      verifiedVia: "invite",
+    });
+    expect(
+      findCuratedContactByAddress("email", "revoked-but-verified@example.com"),
+    ).toBeNull();
   });
 });
