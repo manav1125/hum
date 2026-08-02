@@ -54,11 +54,13 @@ import { BuildOutTiles } from "@/pages/command-center/build-out-tiles";
 import { AssessmentSignal, holdReason } from "@/pages/hq/assessment-kit";
 import {
   dismissMeter,
+  hasRealUsage,
   shouldShowSetupMeter,
   useSetupProgress,
   useSetupState,
   type AccountUsageSignals,
 } from "@/pages/hq-onboarding/setup-state";
+import type { WorkspaceMode } from "@/pages/hq-onboarding/use-setup-data";
 import {
   useProjects,
   usePatchWorkItem,
@@ -123,8 +125,6 @@ import {
   DayRail,
   type DayPicture,
   type Horizon,
-  LensSwitch,
-  type Lens,
   LifeHorizons,
   TrustChip,
   type Unavailable,
@@ -1127,6 +1127,7 @@ function HqDeck({
   agentsNow,
   waiting,
   waitingUnavailable,
+  established,
   moveIsExtraToNeedsYou,
   heartbeatRuns,
   watchingCount,
@@ -1175,7 +1176,17 @@ function HqDeck({
   arrivals: ArrivalsSummary;
   arrivalsError: boolean;
   /** Autonomy tier + spend, shown beside the greeting (§23 step 7). */
-  trust: { mode: string; spentCents: number | null; capCents: number | null };
+  trust: {
+    mode: WorkspaceMode;
+    spentCents: number | null;
+    capCents: number | null;
+  };
+  /**
+   * Live evidence that this account already has work in it. The only thing it
+   * gates is the first-run explainer, which must never teach the loop to
+   * someone who has been running it for weeks — see `useHqFirstRun`.
+   */
+  established: boolean;
   /** Today's calendar picture, or why there isn't one. */
   day: DayPicture | null;
   dayUnavailable?: Unavailable;
@@ -1190,11 +1201,8 @@ function HqDeck({
   onNewMission: () => void;
   onSuggest: (title: string) => void;
 }) {
-  const firstRun = useHqFirstRun();
+  const firstRun = useHqFirstRun({ established });
   const isMobile = useIsMobile();
-  // The lens is view state, not a route: §2 calls Life a lens, not a level, and
-  // a separate page would put the privacy boundary in the wrong place.
-  const [lens, setLens] = useState<Lens>("all");
   // Stamped once per mount, like `dayLabel`. Reading the clock during render is
   // impure — the now-marker would move on every unrelated re-render.
   const [nowMs] = useState(() => Date.now());
@@ -1347,36 +1355,42 @@ function HqDeck({
     })),
   };
 
-  const lifeCount = lifeGroups.reduce((n, g) => n + g.titles.length, 0);
-  // Everything Cue currently holds. Only lanes we actually queried — a lane we
-  // cannot answer must be absent, never rendered as 0 (see "never a fake
-  // number"): a zero reads as "none", which would be a claim, not a gap.
-  const trackedCount = needsYou.length + running.length + cameIn.length;
-  const lensCounts = {
-    all: trackedCount + lifeCount,
-    work: trackedCount,
-    life: lifeCount,
-  };
-
   return (
     <div data-slot="hq-stream">
-      <MicroLabel
-        color={C.t3}
-        style={{ fontSize: 11, letterSpacing: "0.14em" }}
-      >
-        {dayLabel}
-      </MicroLabel>
+      {/*
+        The day and the greeting are ONE row.
+
+        They were two, and the greeting is computed from the same clock the
+        stamp above it prints — "SUNDAY 21:17" then "Good evening." is the time
+        of day rendered twice, one line apart, which is §4's "is this already
+        visible somewhere else on this screen?" at the tightest possible range.
+        Neither fact is dropped; they stop taking a line each.
+      */}
       <div
-        data-slot="hq-title"
         style={{
-          fontFamily: serif,
-          fontSize: isMobile ? 26 : 34,
-          lineHeight: 1.08,
-          color: C.ink,
-          marginTop: 8,
+          display: "flex",
+          alignItems: "baseline",
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
-        {userName ? `Good ${dayPart()}, ${userName}.` : `Good ${dayPart()}.`}
+        <div
+          data-slot="hq-title"
+          style={{
+            fontFamily: serif,
+            fontSize: isMobile ? 26 : 34,
+            lineHeight: 1.08,
+            color: C.ink,
+          }}
+        >
+          {userName ? `Good ${dayPart()}, ${userName}.` : `Good ${dayPart()}.`}
+        </div>
+        <MicroLabel
+          color={C.t3}
+          style={{ fontSize: 11, letterSpacing: "0.14em" }}
+        >
+          {dayLabel}
+        </MicroLabel>
       </div>
 
       {/*
@@ -1396,23 +1410,15 @@ function HqDeck({
         />
       </div>
 
-      {/* Trust chip + lens. Trust lives where the work is, not in Settings
-          (§23 step 7); the lens is §2's "Life is a lens, not a level". */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          flexWrap: "wrap",
-          marginTop: 14,
-        }}
-      >
+      {/* Trust chip. Trust lives where the work is, not in Settings (§23 step
+          7), and the chip is the contextual door to Guardrails (§3). The lens
+          switch that shared this row is gone — see the note in hq-k1-modules. */}
+      <div style={{ marginTop: 14 }}>
         <TrustChip
           mode={trust.mode}
           spentCents={trust.spentCents}
           capCents={trust.capCents}
         />
-        <LensSwitch lens={lens} counts={lensCounts} onChange={setLens} />
       </div>
 
       {/* 1 · THE COMPOSER — fixed furniture. It has been dropped twice; the
@@ -2567,9 +2573,11 @@ export function HqPage() {
             moveIsExtraToNeedsYou={moveIsExtraToNeedsYou}
             arrivals={arrivals}
             arrivalsError={arrivalsQuery.isError}
+            established={hasRealUsage(setupUsage)}
             trust={{
-              mode:
-                workspaceMode.charAt(0).toUpperCase() + workspaceMode.slice(1),
+              // The id, not a capitalised copy of it: TrustChip renders the
+              // label design wrote (`MODE_META`), never the raw enum.
+              mode: workspaceMode,
               // Both sources report dollars, not cents — convert once here so
               // TrustChip only ever deals in one unit.
               spentCents:

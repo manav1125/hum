@@ -19,7 +19,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 
-import { C, MicroLabel, mono, serif } from "./hq-kit";
+import { C, MicroLabel, MODE_META, mono, serif } from "./hq-kit";
 import { routes } from "@/utils/routes";
 
 export type { Unavailable } from "./hq-tiers";
@@ -34,19 +34,31 @@ export type { Unavailable } from "./hq-tiers";
  * §23 step 7: trust belongs where the work is, not buried in Settings — it is
  * the product's actual moat and it should be one tap from the deck. Spend is
  * shown beside the tier because an autonomy level without a number attached is
- * a promise with no receipt.
+ * a promise with no receipt. The chip is also the contextual door to Guardrails
+ * (§3: "Guardrails from a tier chip"), which is what keeps it on the deck even
+ * though the rail's account line carries the same tier and the same spend.
+ *
+ * The tier arrives as its **id** and is rendered through {@link MODE_META}, not
+ * as a capitalised copy of the enum value. `AUTONOMOUS` was the raw enum with a
+ * `text-transform` on it; `⚡ Autonomous` is the label design wrote, and the
+ * blurb goes on the title so the word can be checked without leaving HQ.
+ *
+ * Spend states its own period. `$4.10 of $50` is two numbers whose relationship
+ * is implied by "of" and whose window is implied by nothing at all — §8's "never
+ * a number whose meaning isn't stated" applies to the units as much as the digit.
  */
 export function TrustChip({
   mode,
   spentCents,
   capCents,
 }: {
-  mode: string;
+  mode: keyof typeof MODE_META;
   spentCents: number | null;
   capCents: number | null;
 }) {
   const money = (c: number) =>
     c % 100 === 0 ? `$${c / 100}` : `$${(c / 100).toFixed(2)}`;
+  const meta = MODE_META[mode];
   return (
     <div
       data-slot="hq-trust-chip"
@@ -58,7 +70,11 @@ export function TrustChip({
       }}
     >
       <span
+        title={meta.blurb}
         style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
           fontFamily: mono,
           fontSize: 10.5,
           letterSpacing: "0.08em",
@@ -69,13 +85,14 @@ export function TrustChip({
           padding: "3px 9px",
         }}
       >
-        {mode}
+        <span aria-hidden>{meta.glyph}</span>
+        {meta.label}
       </span>
       {/* Spend only renders when it is real — a "$0 of $0" chip would imply a
           cap that does not exist. */}
       {spentCents != null && capCents != null && capCents > 0 ? (
         <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
-          {money(spentCents)} of {money(capCents)}
+          {money(spentCents)} of {money(capCents)} this month
         </span>
       ) : null}
       <Link
@@ -93,67 +110,21 @@ export function TrustChip({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Lens switch (§2 — work by why, life by when)
-// ---------------------------------------------------------------------------
-
-export type Lens = "all" | "work" | "life";
-
-/**
- * The Life lens is a lens, not a level (§2).
+/*
+ * The lens switch that used to sit beside this chip has been removed.
  *
- * Same engine, same rows, different spine: work groups by mission, life groups
- * by horizon. Rendering it as a switch rather than a nav item is the whole
- * point — a separate "Personal" page would make Cue a project tool with a
- * second inbox, and would put the privacy boundary in the wrong place.
+ * It rendered `All 96 · ◎ 96 · ⌂ 0` — three numbers, two of them behind
+ * unlabelled glyphs, and by construction the first two are the SAME number
+ * whenever nothing personal is on the list (all = work + life). That is §8's
+ * "no raw enums" and "never a number whose meaning isn't stated" in one row.
+ *
+ * More to the point, it did nothing: the `lens` value was state that no lane,
+ * filter or query ever read, so pressing a segment changed which pill was
+ * highlighted and nothing else. Life is still a lens and not a level — it is a
+ * Tier-2 lane on this deck, a card when there is something personal and a line
+ * saying so when there is not. When the lens is wired to actually re-spine the
+ * deck, it comes back with labels on its counts.
  */
-export function LensSwitch({
-  lens,
-  counts,
-  onChange,
-}: {
-  lens: Lens;
-  counts: { all: number; work: number; life: number };
-  onChange: (next: Lens) => void;
-}) {
-  const opts: { key: Lens; label: string; n: number }[] = [
-    { key: "all", label: "All", n: counts.all },
-    { key: "work", label: "◎", n: counts.work },
-    { key: "life", label: "⌂", n: counts.life },
-  ];
-  return (
-    <div
-      data-slot="hq-lens"
-      role="group"
-      aria-label="Work or life"
-      style={{ display: "inline-flex", gap: 4 }}
-    >
-      {opts.map((o) => {
-        const on = lens === o.key;
-        return (
-          <button
-            key={o.key}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onChange(o.key)}
-            style={{
-              fontFamily: mono,
-              fontSize: 11,
-              padding: "4px 10px",
-              borderRadius: 999,
-              cursor: "pointer",
-              border: `1px solid ${on ? C.line2 : "transparent"}`,
-              background: on ? C.surface : "transparent",
-              color: on ? C.ink : C.t3,
-            }}
-          >
-            {o.label} {o.n}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Day rail (K1, row 2)
