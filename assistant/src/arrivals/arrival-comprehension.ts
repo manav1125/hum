@@ -669,8 +669,14 @@ export async function comprehendArrivals(
   // Deadlines are resolved to end-of-day in the OWNER's zone, not the host's.
   // Production runs UTC, so falling back to the host would put a Hong Kong
   // deadline at 08:00 the next morning — a day late on a real obligation.
-  const timeZone =
-    getConfig().ui.userTimezone ?? getConfig().ui.detectedTimezone ?? undefined;
+  // Optional all the way down: a config predating `ui` (or a caller that has
+  // narrowed it) must not throw here. This runs inside intake, so an exception
+  // would cost the whole poll — a missing zone is worth degrading for, never
+  // worth dropping mail for.
+  const ui = getConfig().ui as
+    | { userTimezone?: string | null; detectedTimezone?: string | null }
+    | undefined;
+  const timeZone = ui?.userTimezone ?? ui?.detectedTimezone ?? undefined;
   const raw = await raceDeadline(
     (opts.extractor ?? extractWithFlashLlm)(batch),
   );
