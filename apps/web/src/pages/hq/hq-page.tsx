@@ -70,7 +70,7 @@ import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
 import { MakeItARuleCard } from "@/domains/chat/components/make-it-a-rule-card";
-import { isAutoFiled } from "@/mobile-v3/work-kit";
+import { fullPatchBody, isAutoFiled } from "@/mobile-v3/work-kit";
 import {
   AutoFiledPill,
   FilingKitStyle,
@@ -103,6 +103,13 @@ import {
   type NextMove,
 } from "./hq-modules";
 import { HqOrientationPanel, useHqOrientation } from "./hq-orientation";
+import {
+  useUnreadableArrivals,
+  type UnreadableArrival,
+  type UnreadableArrivalsResult,
+} from "./uncomprehended";
+import { UnreadableCount, UnreadableRow } from "./uncomprehended-row";
+import type { WorkVerbId } from "./work-vocabulary";
 import {
   C,
   HERO_GRADIENT,
@@ -1216,6 +1223,24 @@ function HqDeck({
   const glanceCount = needsYou.length + (moveIsExtraToNeedsYou ? 1 : 0);
   const unfiled = useMemo(() => cameIn.filter((i) => !i.projectId), [cameIn]);
 
+  /**
+   * Everything the deck already holds. Handed to the un-comprehended scan
+   * purely so it can skip a round-trip per item it can already see; it is an
+   * optimisation and nothing more, because an un-comprehended item is excluded
+   * from every one of these list reads and so can never appear here.
+   */
+  const knownWorkItemIds = useMemo(
+    () =>
+      new Set(
+        [...needsYou, ...cameIn, ...running, ...done].map((item) => item.id),
+      ),
+    [needsYou, cameIn, running, done],
+  );
+  // Hoisted out of the strip because the strip's own render is gated on the
+  // FILING lane having rows. An arrival Cue could not read is not a filing
+  // problem and must not be hidden behind one.
+  const unreadable = useUnreadableArrivals(assistantId, { knownWorkItemIds });
+
   // ── Lane states ────────────────────────────────────────────────────────────
   // Each is EITHER a queried payload or a sentence saying we could not ask. A
   // lane never gets to be an empty array standing in for "we didn't check".
@@ -1328,12 +1353,13 @@ function HqDeck({
       "correction",
       correctionState,
       (items) =>
-        items.length === 0 ? null : (
+        items.length === 0 && unreadable.count === 0 ? null : (
           <CameInReassignStrip
             items={items}
             projects={projects}
             missionsByProjectId={missionsByProjectId}
             assistantId={assistantId}
+            unreadable={unreadable}
             onNewMission={onNewMission}
           />
         ),
@@ -1730,23 +1756,115 @@ function moveBody(item: HqWorkItem, projectId: string | null) {
 }
 
 /**
+ * How many `⌗` rows the strip will draw. The rest live in the header count.
+ * Same reasoning as the needs-you cap: the deck never grows.
+ */
+const UNREADABLE_ROW_CAP = 2;
+
+/**
+ * One `⌗` row, wired to the verbs this app can honestly perform on it.
+ *
+ * `File` is offered and it does move the item — but note what it does NOT do:
+ * filing an un-comprehended arrival does not return it to the task list.
+ * Comprehension is a separate verdict and filing does not re-run it, so the row
+ * stays `⌗` under its new project. That is the truthful behaviour and the
+ * reason `File` is not dressed up as a resolution.
+ *
+ * `Archive` and `Done elsewhere` DO retire the row, because the scan drops
+ * settled items. `approve` (nothing was proposed), `later` and `hand_off` (no
+ * mutation exists for either anywhere in this app) are omitted rather than
+ * stubbed — {@link WorkVerbBar} renders only what it is handed, precisely so an
+ * unimplemented verb cannot teach a shortcut that does nothing.
+ */
+function UnreadableCameInRow({
+  entry,
+  assistantId,
+  targets,
+  onNewMission,
+}: {
+  entry: UnreadableArrival;
+  assistantId: string;
+  targets: ReassignTarget[];
+  onNewMission: () => void;
+}) {
+  const patch = usePatchWorkItem(assistantId);
+  const [busyVerb, setBusyVerb] = useState<WorkVerbId | null>(null);
+  const [filing, setFiling] = useState(false);
+
+  const apply = (verb: WorkVerbId, body: ReturnType<typeof fullPatchBody>) => {
+    setBusyVerb(verb);
+    patch.mutate(
+      { path: { assistant_id: assistantId, id: entry.item.id }, body },
+      {
+        onSettled: () => {
+          setBusyVerb(null);
+          setFiling(false);
+        },
+      },
+    );
+  };
+
+  return (
+    <div>
+      <UnreadableRow
+        item={entry}
+        busyVerb={busyVerb}
+        verbs={{
+          file: () => setFiling((v) => !v),
+          archive: () =>
+            apply("archive", fullPatchBody(entry.item, { status: "archived" })),
+          done_elsewhere: () =>
+            apply(
+              "done_elsewhere",
+              fullPatchBody(entry.item, { status: "done" }),
+            ),
+        }}
+      />
+      {filing ? (
+        <div style={{ marginTop: 8, marginLeft: 28 }}>
+          <ReassignMenu
+            targets={targets}
+            currentId={entry.item.projectId}
+            busy={patch.isPending}
+            onPick={(projectId) =>
+              apply("file", fullPatchBody(entry.item, { projectId }))
+            }
+            onNew={onNewMission}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * §4 · The came-in strip, re-filable. Each newest captured item shows its
  * mission/project tag; tapping the tag opens {@link ReassignMenu} (one row's
  * menu open at a time). Items with NO projectId get the honest
  * {@link LowConfidenceFilePrompt} instead of a guessed tag. A successful move
  * confirms out loud via {@link ReassignTeachToast} — the correction teaches.
+ *
+ * The strip also carries the `⌗` rows (v9 §Q3) — arrivals Cue read and could
+ * not make sense of. They are NOT in `items`: the daemon keeps an
+ * un-comprehended arrival out of every task-list read, and this renders the
+ * other side of that rule rather than undoing it. They are counted separately
+ * in the header, because "I couldn't file this" and "I couldn't read this" are
+ * different failures and only one of them is a claim about Cue.
  */
 function CameInReassignStrip({
   items,
   projects,
   missionsByProjectId,
   assistantId,
+  unreadable,
   onNewMission,
 }: {
   items: HqWorkItem[];
   projects: ProjectView[];
   missionsByProjectId: Map<string, Mission>;
   assistantId: string;
+  /** Scanned by the deck, not here — see {@link useUnreadableArrivals}. */
+  unreadable: UnreadableArrivalsResult;
   onNewMission: () => void;
 }) {
   const patch = usePatchWorkItem(assistantId);
@@ -1766,7 +1884,11 @@ function CameInReassignStrip({
     () => [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 4),
     [items],
   );
-  if (recent.length === 0) return null;
+  // The strip renders for either population. Returning null on `recent.length`
+  // alone would put the un-comprehended count behind the very silence it exists
+  // to break: nothing readable arrived, two things Cue couldn't read did, and
+  // the surface would have said nothing at all.
+  if (recent.length === 0 && unreadable.count === 0) return null;
 
   const move = (item: HqWorkItem, projectId: string | null) => {
     const dest = projectId
@@ -1811,7 +1933,13 @@ function CameInReassignStrip({
           justifyContent: "space-between",
         }}
       >
-        <MicroLabel>Came in · {items.length}</MicroLabel>
+        {/* Two counts, never one. "Came in" is what arrived; the `⌗` count is
+            what Cue failed to understand, and folding it into the first would
+            hide the failure rate inside a healthy-looking total. */}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <MicroLabel>Came in · {items.length}</MicroLabel>
+          <UnreadableCount count={unreadable.count} />
+        </span>
         <Link
           to={routes.allWork}
           style={{
@@ -2030,6 +2158,18 @@ function CameInReassignStrip({
             </div>
           );
         })}
+        {/* The `⌗` rows. Capped like every other lane on this deck — the
+            header count is what stays honest at volume; a lane of rows Cue
+            cannot describe is the least useful thing that could grow. */}
+        {unreadable.items.slice(0, UNREADABLE_ROW_CAP).map((entry) => (
+          <UnreadableCameInRow
+            key={entry.workItemId}
+            entry={entry}
+            assistantId={assistantId}
+            targets={targets}
+            onNewMission={onNewMission}
+          />
+        ))}
       </div>
       {/* §4·B — the correction teaches. */}
       {taught ? (
