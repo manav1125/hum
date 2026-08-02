@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { reconcileFeedForWorkItemStatus } from "../home/feed-writer.js";
 import { getDb } from "../memory/db-connection.js";
-import { workItems } from "../memory/schema.js";
+import { workItemComprehension, workItems } from "../memory/schema.js";
 import { getTask } from "../tasks/task-store.js";
 import { recordWorkItemEvent } from "./work-item-events.js";
 
@@ -334,6 +334,17 @@ export function getWorkItem(id: string): WorkItem | undefined {
     | undefined;
 }
 
+/**
+ * Comprehension outcomes that mean "Cue does not know what this is".
+ *
+ * `skipped` is deliberately NOT here. Skipped means comprehension was switched
+ * off or the arrival was not a message — no admission of confusion, so those
+ * items are ordinary tasks. Treating skipped as un-comprehended would empty the
+ * entire task list the moment the feature was disabled, which is the sort of
+ * silent catastrophe this codebase keeps producing.
+ */
+const UNCOMPREHENDED_STATUSES = ["failed", "low_confidence"] as const;
+
 export function listWorkItems(opts?: {
   status?: WorkItemStatus;
   projectId?: string;
@@ -342,6 +353,20 @@ export function listWorkItems(opts?: {
    * gets: a client that knows nothing about domains still sees every item.
    */
   domain?: WorkItemDomain;
+  /**
+   * Include items Cue could not comprehend. Defaults to FALSE.
+   *
+   * An arrival Cue could not read has not earned a task row — it says so in
+   * arrivals with the `⌗` state ("I couldn't tell what this needs") and is
+   * counted separately there, so it is relocated rather than hidden. Excluding
+   * by default is what stops a wall of unreadable rows from being the first
+   * thing a user meets.
+   *
+   * Internal callers that need the true set — dedupe, orchestration, anything
+   * reasoning about what exists rather than what to show — must opt in. The
+   * default is the safe one for a READER; it is the wrong one for a WRITER.
+   */
+  includeUnComprehended?: boolean;
 }): WorkItem[] {
   const db = getDb();
   // Collect the predicates and AND them in one `where`. Drizzle's `.where()`
@@ -353,6 +378,24 @@ export function listWorkItems(opts?: {
     ...(opts?.status ? [eq(workItems.status, opts.status)] : []),
     ...(opts?.projectId ? [eq(workItems.projectId, opts.projectId)] : []),
     ...(opts?.domain ? [eq(workItems.domain, opts.domain)] : []),
+    // A subquery rather than a denormalised column: comprehension is a fact
+    // about a separate pass that can rerun, and copying its verdict onto the
+    // item would give us two answers that can disagree.
+    ...(opts?.includeUnComprehended
+      ? []
+      : [
+          notInArray(
+            workItems.id,
+            db
+              .select({ id: workItemComprehension.workItemId })
+              .from(workItemComprehension)
+              .where(
+                inArray(workItemComprehension.status, [
+                  ...UNCOMPREHENDED_STATUSES,
+                ]),
+              ),
+          ),
+        ]),
   ];
   let query = db.select().from(workItems);
   if (conditions.length > 0) {
