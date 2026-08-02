@@ -1,1 +1,0 @@
-function e(e,t=``){return e==null?t:e<1024?`${e} bytes`:e<1024*1024?`${Math.round(e/1024)} KB`:e>=100*1024*1024?`${(e/(1024*1024*1024)).toFixed(1)} GB`:`${(e/(1024*1024)).toFixed(1)} MB`}export{e as t};

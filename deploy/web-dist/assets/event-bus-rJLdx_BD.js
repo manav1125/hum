@@ -1,1 +1,0 @@
-var e=new Map;function t(t,n){let r=e.get(t);return r||(r=new Set,e.set(t,r)),r.add(n),()=>{let r=e.get(t);r&&(r.delete(n),r.size===0&&e.delete(t))}}function n(t,n){let r=e.get(t);if(!(!r||r.size===0))for(let e of Array.from(r))try{e(n)}catch(e){console.error(`[event-bus] handler threw`,t,e)}}export{t as n,n as t};
