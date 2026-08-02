@@ -30,6 +30,7 @@ import {
   DEFAULT_RETRO_CHANNEL,
   describeReconstruction,
   isBulkSenderAddress,
+  looksTransactional,
   proposeFromStoredLabels,
   retrofitArrivalGate,
 } from "./arrival-retrofit.js";
@@ -191,6 +192,44 @@ describe("isBulkSenderAddress — a claim about the address, not the message", (
     expect(isBulkSenderAddress("")).toBe(false);
     expect(isBulkSenderAddress("noreply")).toBe(false);
     expect(isBulkSenderAddress("@noreply.com")).toBe(false);
+  });
+});
+
+describe("looksTransactional — the rescue that stops a robot's real news being filed", () => {
+  test("the subjects the sender rule got WRONG on real data", () => {
+    // Every one of these arrived from a no-reply@ or notification@ address and
+    // would have been filed by sender shape alone. Each of them mattered.
+    for (const s of [
+      "New request AR-5258 awaits your approval",
+      "Transaction failed",
+      "You've received HKD 10,000.00!",
+      "[GitHub] Your fine-grained personal access token has expired",
+      "Important: Your subscription payment failed",
+      "Your credit card has been unblocked",
+      "Your sign-in link",
+      "Direct debit authorisation payment advice",
+      "Final reminder: annual return due by 30 September",
+    ]) {
+      expect(looksTransactional(s)).toBe(true);
+    }
+  });
+
+  test("ordinary promotional subjects are not rescued", () => {
+    for (const s of [
+      "Got a 'PowerDraw' chance!",
+      "Some things are worth getting excited for",
+      "Daily Growth on Fri Jul 31",
+      "Write a review for Grand Hyatt",
+      "The 10-Point: FIFA Scraps World Cup Proposal",
+      "Discover the pieces that will shine",
+    ]) {
+      expect(looksTransactional(s)).toBe(false);
+    }
+  });
+
+  test("nothing to read is not transactional", () => {
+    expect(looksTransactional(null)).toBe(false);
+    expect(looksTransactional("")).toBe(false);
   });
 });
 

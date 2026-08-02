@@ -346,10 +346,84 @@ export function isBulkSenderAddress(address: string | null): boolean {
  * never captured for mail that arrived before the gate, and the alternative for
  * the owner is reading eight identical promos by hand.
  */
+/**
+ * Subjects that mean "a robot is telling you something you must act on".
+ *
+ * This exists because the sender-shape rule was wrong on real data. A dry run
+ * over the owner's backlog would have filed "New request AR-5258 awaits your
+ * approval", "Transaction failed", "You've received HKD 10,000.00" and "Your
+ * personal access token has expired" — every one from a `no-reply@` or
+ * `notification@` address, and every one of them mattering.
+ *
+ * The lesson, and it is the same one the whole gate is built around: the
+ * address tells you the SENDER is a machine. It says nothing about whether the
+ * MESSAGE is worth reading. Approvals, payment failures, expiring credentials
+ * and security notices are precisely the mail that arrives from an address that
+ * cannot be replied to.
+ *
+ * So this is a rescue list, never a filing list. It can only move an item from
+ * filed to kept.
+ */
+const TRANSACTIONAL_SUBJECT = new RegExp(
+  [
+    "approv", // "awaits your approval", "approval required"
+    "expir", // tokens, cards, subscriptions
+    "declin",
+    "fail", // "Transaction failed", "payment failed"
+    "overdue",
+    "past due",
+    "suspend",
+    "revoked",
+    "unauthori[sz]ed",
+    "security alert",
+    "verify|verification",
+    "confirm your",
+    "action required|action needed",
+    "reset your",
+    "sign-in|sign in|login|log in",
+    "invoice",
+    "receipt",
+    "refund",
+    "chargeback",
+    "you'?ve received",
+    "has been (sent|received|blocked|unblocked|cancelled|canceled)",
+    "final (notice|reminder)",
+    "deadline|due (on|by|date)",
+    // Money moving, or a record of it. A bank writing from a no-reply address
+    // is the norm, not the exception, so without these the sender rule files
+    // statements and payment advices.
+    "payment|payout|direct debit",
+    "statement",
+    "transaction",
+    "transfer",
+    "subscription",
+  ].join("|"),
+  "i",
+);
+
+/**
+ * True when a subject line names something the owner has to do or know about.
+ * Deliberately generous: a false positive here costs one kept promo, a false
+ * negative costs a missed approval or an expired credential.
+ */
+export function looksTransactional(subject: string | null): boolean {
+  if (!subject) return false;
+  return TRANSACTIONAL_SUBJECT.test(subject);
+}
+
 export function proposeFromSenderShape(
   signals: ArrivalSignals | null,
 ): ArrivalDecision | null {
   if (!signals || !isBulkSenderAddress(signals.senderAddress)) return null;
+  // The sender is a machine; that is not grounds to file what it said.
+  // `title` is the subject as stored; `snippet` catches alerts whose subject
+  // is bland but whose first line is not.
+  if (
+    looksTransactional(signals.title) ||
+    looksTransactional(signals.snippet)
+  ) {
+    return null;
+  }
   return {
     disposition: "filed",
     reason: `bulk mail from ${signals.senderName ?? signals.senderAddress ?? "an automated sender"}`,
