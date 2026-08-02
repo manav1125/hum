@@ -76,6 +76,52 @@ TRUNCATE _is_ safe on the daemon's own long-lived in-process connection (e.g. at
 
 When writing or updating comments, **do not reference code that has been removed.** Comments should describe the current state of the codebase, not narrate its history. Avoid phrases like "no longer does X", "previously used Y", or "was removed in PR Z" — future readers should not need to understand past implementations to understand the current code.
 
+## Never write an exhaustive `mock.module` factory
+
+**Always spread the real module and override only the seams you are driving.**
+
+```ts
+// WRONG — silently deletes every other export for every later file in the run
+mock.module("../../config/loader.js", () => ({
+  getConfig: () => ({ watchers: { autoProvision: cfg } }),
+}));
+
+// RIGHT
+const actual = await import("../../config/loader.js");
+mock.module("../../config/loader.js", () => ({ ...actual, getConfig: fake }));
+```
+
+`mock.module()` mutates a **process-global** registry, so a factory written in
+one test file is what every file that runs after it sees. A hand-written list of
+exports is therefore not a local shortcut — it deletes the exports you did not
+name, for unrelated suites, in a different directory.
+
+This has caused **five separate silent failures in one week**, and the failure
+mode is always the same shape: not a visible error, but an absence.
+
+- Two local sign-in suites threw at import and **never ran at all** for months,
+  while being counted as "known baseline" failures. A red file everyone has
+  agreed to ignore stops being read.
+- `home-content-refresh` likewise never ran after `broadcastMessage` was added,
+  hiding two genuinely failing tests.
+- `auto-provision`'s config factory returned a `watchers` object with only
+  `autoProvision` on it. The arrival relevance gate reads
+  `watchers.relevanceGate`, found nothing, and its integration tests then ran
+  against a **disabled gate** — passing alone, failing in company, for reasons
+  with nothing to do with the gate. A test that silently exercises the opposite
+  of its subject is worse than a failing one.
+
+The corollary: **a combination failure is not automatically pollution.** Check
+before you dismiss it. A real regression was once caught only because an
+integration suite went red in a combined run — the exclusion of un-comprehended
+work items would have emptied the task list during a model outage, and the tests
+that noticed drive the real intake path with no model available, which is
+exactly the outage shape.
+
+Run per-file with `bun scripts/run-tests.ts <file>` (or `scripts/test.sh`, which
+is what CI does) for a trustworthy signal, and run the combination too — when it
+disagrees, find out which one is lying.
+
 ## Test machinery isolation
 
 **Test machinery — the test preload, the preload verifier, and shared test helpers — must not reach into `src/`.** Regular `*.test.ts` files may import production modules they exercise (the module under test, types, sibling utilities) like any normal consumer; the strict no-`src/` rule applies only to infrastructure that runs _before_ the per-test workspace override is established.
