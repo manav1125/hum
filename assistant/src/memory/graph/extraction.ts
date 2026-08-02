@@ -979,9 +979,16 @@ export async function runGraphExtraction(
   );
 
   let transcript = opts?.transcript;
+  // The newest message this run actually read. Stays null when the caller
+  // supplied the transcript (bootstrap) or when only images were available.
+  let newestReadTimestamp: number | null = null;
   if (!transcript) {
-    transcript =
-      loadTranscriptFromDisk(conversationId, opts?.afterTimestamp) ?? undefined;
+    const fromDisk = loadTranscriptFromDisk(
+      conversationId,
+      opts?.afterTimestamp,
+    );
+    transcript = fromDisk?.text;
+    newestReadTimestamp = fromDisk?.newestTimestamp ?? null;
     if (!transcript) {
       // If we have a multimodal result but no disk transcript, extract text
       // from the multimodal message content blocks for candidate search.
@@ -1003,6 +1010,12 @@ export async function runGraphExtraction(
 
   // Skip very short conversations (< 100 chars)
   if (transcript.trim().length < 100) {
+    // Logged, because this is a completed run that wrote nothing and every
+    // silent one of those is indistinguishable from a healthy extraction.
+    log.debug(
+      { conversationId, transcriptChars: transcript.trim().length },
+      "graph extraction skipped: transcript too short to extract from",
+    );
     return emptyResult;
   }
 
@@ -1195,7 +1208,23 @@ export async function runGraphExtraction(
     nodesReinforced: result.nodesReinforced,
     edgesCreated,
     triggersCreated,
-    lastProcessedTimestamp: conversationTimestamp,
+    // Checkpoint on what was READ, not on the conversation's newest message.
+    //
+    // This used to return `conversationTimestamp`, which resolves to
+    // MAX(messages.created_at) for the whole conversation. Every conversation
+    // gets at least two extraction jobs — a debounced one and an
+    // end-of-conversation full pass — so after the first job the checkpoint
+    // already sat at the newest message and the "full transcript" pass found
+    // nothing new, every time. Messages that arrived DURING an LLM call were
+    // marked processed without ever being read. On production that was ~190 of
+    // 237 jobs in a day logging completion with `nodesCreated: 0`.
+    //
+    // Falling back to `conversationTimestamp` only when nothing was read from
+    // disk preserves the bootstrap and images paths, which supply their own.
+    lastProcessedTimestamp:
+      newestReadTimestamp ??
+      imageResult?.lastTimestamp ??
+      conversationTimestamp,
   };
 }
 
@@ -1257,10 +1286,64 @@ function resolveImageRefMimeType(
   }
 }
 
+/**
+ * Parse a `messages.jsonl` body into the transcript text plus the timestamp of
+ * the newest message that actually made it in.
+ *
+ * Split out from the file read because that second value is the whole point:
+ * the extraction checkpoint used to be set from MAX(messages.created_at) for
+ * the conversation, which marks messages processed that were never read. Only
+ * what this function returns was read.
+ *
+ * Pure, so the incremental-window behaviour can be tested without a workspace.
+ */
+export function readTranscriptLines(
+  content: string,
+  afterTimestamp?: number,
+): { text: string; newestTimestamp: number | null } | null {
+  const lines = content
+    .trim()
+    .split("\n")
+    .filter((line) => line.length > 0);
+
+  const parts: string[] = [];
+  let newestTimestamp: number | null = null;
+  for (const line of lines) {
+    try {
+      const msg = JSON.parse(line) as {
+        role?: string;
+        content?: string;
+        ts?: string;
+      };
+      if (!msg.role || !msg.content) continue;
+
+      const parsedTs = msg.ts ? new Date(msg.ts).getTime() : null;
+      const msgTime =
+        parsedTs !== null && Number.isFinite(parsedTs) ? parsedTs : null;
+      // Filter by timestamp for incremental extraction. A message with no
+      // usable timestamp is INCLUDED — dropping it would lose content — but
+      // it cannot advance the checkpoint, because we do not know where it sits.
+      if (afterTimestamp && msgTime !== null && msgTime <= afterTimestamp) {
+        continue;
+      }
+
+      parts.push(`[${msg.role}]: ${msg.content}`);
+      if (msgTime !== null) {
+        newestTimestamp = Math.max(newestTimestamp ?? msgTime, msgTime);
+      }
+    } catch {
+      // Skip malformed lines
+    }
+  }
+
+  if (parts.length === 0) return null;
+  return { text: parts.join("\n\n"), newestTimestamp };
+}
+
 function loadTranscriptFromDisk(
   conversationId: string,
   afterTimestamp?: number,
-): string | null {
+): { text: string; newestTimestamp: number | null } | null {
   const db = getDb();
   const conv = db
     .select({ createdAt: conversations.createdAt })
@@ -1275,35 +1358,17 @@ function loadTranscriptFromDisk(
     const messagesPath = join(dirPath, "messages.jsonl");
     const content = readFileSync(messagesPath, "utf-8");
 
-    const lines = content
-      .trim()
-      .split("\n")
-      .filter((line) => line.length > 0);
-
-    const parts: string[] = [];
-    for (const line of lines) {
-      try {
-        const msg = JSON.parse(line) as {
-          role?: string;
-          content?: string;
-          ts?: string;
-        };
-        if (!msg.role || !msg.content) continue;
-
-        // Filter by timestamp for incremental extraction
-        if (afterTimestamp && msg.ts) {
-          const msgTime = new Date(msg.ts).getTime();
-          if (msgTime <= afterTimestamp) continue;
-        }
-
-        parts.push(`[${msg.role}]: ${msg.content}`);
-      } catch {
-        // Skip malformed lines
-      }
-    }
-
-    return parts.length > 0 ? parts.join("\n\n") : null;
-  } catch {
+    return readTranscriptLines(content, afterTimestamp);
+  } catch (err) {
+    // A missing directory and an empty conversation are different facts, and
+    // the caller cannot tell them apart from `null`. The transcript writers
+    // resolve the directory through a path that falls back to a legacy
+    // `<id>_<ISO>` layout while this reader only knows the canonical one, so
+    // ENOENT here is a real and recurring case, not a theoretical one.
+    log.warn(
+      { conversationId, err: String(err) },
+      "graph extraction could not read the transcript file",
+    );
     return null;
   }
 }
