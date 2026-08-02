@@ -5,11 +5,17 @@
  * payment, a publish. The daemon hard-checkpoints them regardless of trust, so
  * until somebody answers, nothing continues.
  *
- * The regression this pins: retiring the deck's approval cards left desktop
- * able to COUNT them and not answer them. The remainder rendered as a line
- * saying "N more approvals are paused for your decision · Decide ›" whose door
- * led to the review queue — a page that completes work items and has no confirm
- * call at all. The label promised the one thing the destination could not do.
+ * Two regressions are pinned here.
+ *
+ * First: retiring the deck's approval cards left desktop able to COUNT them and
+ * not answer them — a line reading "Decide ›" whose door led to the review
+ * queue, which completes work items and has no confirm call at all.
+ *
+ * Second, and the reason these are rows rather than that line: "needs you" is
+ * defined as things blocked on a human decision, and a stopped run is the most
+ * literal instance of it. A separate lane broke the one-definition rule shared
+ * by the badge, the headline and the rows — which is exactly how the door came
+ * to point somewhere that could not act.
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
@@ -36,21 +42,22 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
   }),
 }));
 
-const { PausedApprovals, readPausedApprovals, PAUSED_APPROVAL_CAP } =
-  await import("./paused-approvals");
+const { PausedNeedsYouRow, readPausedApprovals } = await import(
+  "./paused-approvals"
+);
 
 afterEach(() => {
   cleanup();
   confirmCalls.length = 0;
 });
 
-function draw(approvals: { requestId: string; label: string }[]) {
+function draw(approval: { requestId: string; label: string }) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <PausedApprovals assistantId="asst-1" approvals={approvals} />
+      <PausedNeedsYouRow assistantId="asst-1" approval={approval} />
     </QueryClientProvider>,
   );
 }
@@ -81,17 +88,9 @@ describe("readPausedApprovals", () => {
   });
 });
 
-describe("PausedApprovals", () => {
-  test("renders nothing when nothing is paused", () => {
-    const { container } = draw([]);
-    expect(
-      container.querySelector("[data-slot='hq-paused-approvals']"),
-    ).toBeNull();
-  });
-
-  test("a paused run can be approved from the deck, not just counted", async () => {
-    draw([{ requestId: "r1", label: "Send the Acme renewal" }]);
-    fireEvent.click(screen.getByRole("button", { name: /Decide/ }));
+describe("PausedNeedsYouRow", () => {
+  test("a paused run is answerable from the lane, not just counted", async () => {
+    draw({ requestId: "r1", label: "Send the Acme renewal" });
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     await waitFor(() =>
@@ -100,8 +99,7 @@ describe("PausedApprovals", () => {
   });
 
   test("and declined", async () => {
-    draw([{ requestId: "r1", label: "Send the Acme renewal" }]);
-    fireEvent.click(screen.getByRole("button", { name: /Decide/ }));
+    draw({ requestId: "r1", label: "Send the Acme renewal" });
     fireEvent.click(screen.getByRole("button", { name: "Decline" }));
 
     await waitFor(() =>
@@ -109,42 +107,25 @@ describe("PausedApprovals", () => {
     );
   });
 
-  test("it is a line until asked — the deck does not gain a card", () => {
-    // Retiring the board was right. Restoring the function must not restore the
-    // chrome: collapsed, this is one sentence.
-    draw([{ requestId: "r1", label: "Send it" }]);
-    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  test("carries ⏸, not ‖ — a run is stopped, not a thing waiting", () => {
+    // Same amber, different glyph. A reader scanning the lane needs to know
+    // which rows will not move again until they act.
+    const { container } = draw({ requestId: "r1", label: "Send it" });
+    expect(container.querySelector("[aria-hidden]")?.textContent).toBe("⏸");
   });
 
-  test("the count is real and singularised", () => {
-    const { container } = draw([{ requestId: "r1", label: "Send it" }]);
-    expect(container.textContent).toContain("1 run is paused");
-    cleanup();
-    const two = draw([
-      { requestId: "r1", label: "a" },
-      { requestId: "r2", label: "b" },
-    ]);
-    expect(two.container.textContent).toContain("2 runs are paused");
-  });
-
-  test("the deck never grows — rows cap and say so", () => {
-    const many = Array.from({ length: PAUSED_APPROVAL_CAP + 3 }, (_, i) => ({
-      requestId: `r${i}`,
-      label: `Approval ${i}`,
-    }));
-    draw(many);
-    fireEvent.click(screen.getByRole("button", { name: /Decide/ }));
-
-    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(
-      PAUSED_APPROVAL_CAP,
+  test("says why nothing is moving", () => {
+    const { container } = draw({ requestId: "r1", label: "Send it" });
+    expect(container.textContent).toContain(
+      "A run is stopped here until you decide.",
     );
-    expect(
-      screen.getByText(`${PAUSED_APPROVAL_CAP} of ${many.length} — decide these and the rest follow.`),
-    ).toBeTruthy();
   });
 
-  test("state carries a glyph, never colour alone", () => {
-    const { container } = draw([{ requestId: "r1", label: "Send it" }]);
-    expect(container.querySelector("[aria-hidden]")?.textContent).toBe("‖");
+  test("shows what Cue is asking to do", () => {
+    const { container } = draw({
+      requestId: "r1",
+      label: "gmail__GMAIL_SEND_EMAIL",
+    });
+    expect(container.textContent).toContain("gmail__GMAIL_SEND_EMAIL");
   });
 });

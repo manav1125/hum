@@ -77,7 +77,7 @@ import {
 
 import { CaptureBar } from "./capture-bar";
 import {
-  PausedApprovals,
+  PausedNeedsYouRow,
   readPausedApprovals,
   type PausedApproval,
 } from "./paused-approvals";
@@ -825,8 +825,27 @@ function NeedsYouLane({
         >
           {/* ◆ YOUR NEXT MOVE — always the first card in the lane. */}
           <NextMoveCard assistantId={assistantId} move={move} />
-          {items
+          {/* Paused runs sort above everything: unlike a draft awaiting review,
+              NOTHING proceeds until these are answered. */}
+          {extraApprovalItems
             .slice(0, Math.max(0, NEEDS_YOU_CAP - (move.hasMove ? 1 : 0)))
+            .map((approval) => (
+              <PausedNeedsYouRow
+                key={approval.requestId}
+                assistantId={assistantId}
+                approval={approval}
+              />
+            ))}
+          {items
+            .slice(
+              0,
+              Math.max(
+                0,
+                NEEDS_YOU_CAP -
+                  (move.hasMove ? 1 : 0) -
+                  extraApprovalItems.length,
+              ),
+            )
             .map((item) => (
               <NeedsYouCard
                 key={item.id}
@@ -840,20 +859,6 @@ function NeedsYouLane({
             ))}
         </div>
       )}
-      {/*
-        Pending approvals are NOT folded into the count above: invariant 2 fixes
-        one needs-you definition (awaiting_review + assigned to you) shared by
-        the badge, the headline and the rows, and widening it here is exactly
-        what made the headline read 6 while the sidebar read 5. So extra
-        approvals get their own line and their own door.
-      */}
-      {/* Decidable in place. The door used to point at the review queue, which
-          completes work items and has no confirm call — so a link labelled
-          "Decide" led somewhere that could not decide. */}
-      <PausedApprovals
-        assistantId={assistantId}
-        approvals={extraApprovalItems}
-      />
     </section>
   );
 }
@@ -2409,15 +2414,26 @@ export function HqPage() {
   const moveIsExtraToNeedsYou =
     move.hasMove &&
     (review.items.length !== reviewItems.length || move.kind === "approval");
-  const glanceCount = reviewItems.length + (moveIsExtraToNeedsYou ? 1 : 0);
-
-  // The next-move card carries at most one approval; the rest need a door.
   const extraApprovalItems = useMemo(() => {
     const all = readPausedApprovals(interactionsQuery.data?.interactions);
     // The next-move card already carries the top one; the rest need to be
     // decidable here rather than counted here and decidable nowhere.
     return move.hasMove && move.kind === "approval" ? all.slice(1) : all;
   }, [interactionsQuery.data, move.hasMove, move.kind]);
+
+  // Paused runs count. Invariant 2 says "needs you" has ONE definition shared
+  // by the badge, the headline and the rows — and `use-needs-you-badge` has
+  // always counted approvals + awaiting-review. The headline counted only the
+  // reviews, so the two agreed solely while nothing was paused; the moment a
+  // run stopped they diverged. Design's ruling settles it in the badge's
+  // favour, and rightly: a stopped run is the most literal instance of
+  // "blocked on a human decision" in the product.
+  const glanceCount =
+    reviewItems.length +
+    (moveIsExtraToNeedsYou ? 1 : 0) +
+    extraApprovalItems.length;
+
+  // The next-move card carries at most one approval; the rest need a door.
 
   // MOBILE → the v3 native Today screen (docs/design/mobile-v3, frame 1).
   // Same stores, new skin: next-move → NEXT MOVE card, approvals → NEEDS
