@@ -23,10 +23,14 @@ import {
   type AutoFileAssignment,
   buildAutoFilePrompt,
   classifyTitlesForPreview,
+  getAutoFileHealth,
   MAX_CLASSIFY_PREVIEW_TITLES,
   MAX_ITEMS_PER_SWEEP,
   parseAutoFileResponse,
+  resetAutoFilerForTests,
+  runAutoFileTick,
   sweepUnfiledWorkItems,
+  UNPRODUCTIVE_SWEEP_LIMIT,
 } from "./work-item-auto-file.js";
 import {
   createWorkItem,
@@ -418,5 +422,175 @@ describe("classifyTitlesForPreview", () => {
     expect(after.projectId).toBeNull();
     expect(after.autoFiledBy).toBeNull();
     expect(after.autoFileConfidence).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The tick: single-flight, the stuck-sweep watchdog, and observable health
+// ---------------------------------------------------------------------------
+
+/**
+ * Production regression suite for the failure that left 103 of 116 queued
+ * items unfiled for twelve hours on a healthy daemon with a healthy LLM: the
+ * sweep produced no output at all, so the only symptom was the pile itself.
+ * Every test here asserts something that is legible from OUTSIDE the sweep.
+ */
+describe("auto-file tick", () => {
+  const NEVER = () => new Promise<never>(() => {});
+
+  beforeEach(() => {
+    resetAutoFilerForTests();
+  });
+
+  test("a real backlog is reported whole, not just the slice one sweep can reach", async () => {
+    createProject({ title: "Ops" });
+    const backlog = MAX_ITEMS_PER_SWEEP * 5 + 12;
+    for (let i = 0; i < backlog; i++) makeItem(`Gmail item ${i}`);
+
+    await runAutoFileTick(async (items) =>
+      items.map((i) => ({ id: i.id, projectId: null, confidence: 0.1 })),
+    );
+
+    const health = getAutoFileHealth();
+    // The number the user is staring at, not the number this sweep touched.
+    expect(health.lastResult!.candidates).toBe(backlog);
+    expect(health.lastResult!.scanned).toBe(MAX_ITEMS_PER_SWEEP);
+    expect(health.candidatesWaiting).toBe(backlog);
+  });
+
+  test("a sweep that never settles does not disable filing forever", async () => {
+    createProject({ title: "Ops" });
+    const item = makeItem("Stuck behind a hung scorer");
+
+    // The exact production shape: the first sweep's scorer never resolves.
+    const t0 = 1_000_000;
+    void runAutoFileTick(NEVER, t0);
+    await Promise.resolve();
+
+    // Ticks inside the watchdog window are skipped — the old behaviour, and
+    // correct on its own.
+    await runAutoFileTick(NEVER, t0 + 60_000);
+    expect(getAutoFileHealth().skippedTicks).toBe(1);
+    expect(getWorkItem(item.id)!.projectId).toBeNull();
+
+    // Past the watchdog window the latch is broken and filing resumes. Before
+    // this, one hung call latched the filer off for the life of the process
+    // and a restart just hung again.
+    const project = createProject({ title: "Inbox" });
+    await runAutoFileTick(
+      async (items) =>
+        items.map((i) => ({ id: i.id, projectId: project.id, confidence: 1 })),
+      t0 + 10 * 60_000,
+    );
+
+    const health = getAutoFileHealth();
+    expect(health.stuckReleases).toBe(1);
+    expect(health.lastResult!.filed).toBe(1);
+    expect(getWorkItem(item.id)!.projectId).toBe(project.id);
+    expect(getWorkItem(item.id)!.autoFiledBy).toBe(AUTO_FILED_BY_CUE);
+  });
+
+  test("a wedged sweep that finally settles cannot unlatch a newer sweep", async () => {
+    createProject({ title: "Ops" });
+    makeItem("One");
+
+    let releaseWedged: (v: AutoFileAssignment[] | null) => void = () => {};
+    const wedged = new Promise<AutoFileAssignment[] | null>((resolve) => {
+      releaseWedged = resolve;
+    });
+
+    const t0 = 2_000_000;
+    void runAutoFileTick(() => wedged, t0);
+    await Promise.resolve();
+
+    // The watchdog starts a second sweep, which is itself slow.
+    void runAutoFileTick(NEVER, t0 + 10 * 60_000);
+    await Promise.resolve();
+    expect(getAutoFileHealth().stuckReleases).toBe(1);
+
+    // The abandoned first sweep settles late. It must not hand the latch away
+    // from the sweep that now holds it.
+    releaseWedged(null);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await runAutoFileTick(NEVER, t0 + 11 * 60_000);
+    expect(getAutoFileHealth().skippedTicks).toBe(1);
+  });
+
+  test("scanning candidates and filing none, repeatedly, is reported as broken", async () => {
+    createProject({ title: "Ops" });
+    for (let i = 0; i < 5; i++) makeItem(`Ambiguous ${i}`);
+
+    // A scorer that judges every item but never clears the bar, and whose
+    // verdicts are never persisted (no stamp) — so the same items come back
+    // every sweep. Nothing throws; nothing moves.
+    const noOpScorer = async () => [];
+
+    for (let n = 1; n < UNPRODUCTIVE_SWEEP_LIMIT; n++) {
+      await runAutoFileTick(noOpScorer, 3_000_000 + n * 300_000);
+      expect(getAutoFileHealth().degraded).toBe(false);
+    }
+    await runAutoFileTick(
+      noOpScorer,
+      3_000_000 + UNPRODUCTIVE_SWEEP_LIMIT * 300_000,
+    );
+
+    const health = getAutoFileHealth();
+    expect(health.unproductiveStreak).toBe(UNPRODUCTIVE_SWEEP_LIMIT);
+    expect(health.degraded).toBe(true);
+    expect(health.degradedReason).toContain("filed none");
+    expect(health.lastResult!.outcome).toBe("no_match");
+  });
+
+  test("a productive sweep clears the broken state", async () => {
+    const project = createProject({ title: "Ops" });
+    for (let i = 0; i < 4; i++) makeItem(`Item ${i}`);
+    for (let n = 0; n <= UNPRODUCTIVE_SWEEP_LIMIT; n++) {
+      await runAutoFileTick(async () => [], 4_000_000 + n * 300_000);
+    }
+    expect(getAutoFileHealth().degraded).toBe(true);
+
+    await runAutoFileTick(async (items) =>
+      items.map((i) => ({ id: i.id, projectId: project.id, confidence: 1 })),
+    );
+    const health = getAutoFileHealth();
+    expect(health.degraded).toBe(false);
+    expect(health.unproductiveStreak).toBe(0);
+    expect(health.lastResult!.outcome).toBe("progress");
+  });
+
+  test("every silent early return names itself", async () => {
+    // Nothing queued at all: the honest idle state.
+    await runAutoFileTick(async () => []);
+    expect(getAutoFileHealth().lastResult!.outcome).toBe("no_candidates");
+    expect(getAutoFileHealth().degraded).toBe(false);
+
+    // Candidates with nowhere to put them is NOT the idle state, and the
+    // difference used to be invisible.
+    makeItem("Homeless");
+    await runAutoFileTick(async () => []);
+    const noProjects = getAutoFileHealth();
+    expect(noProjects.lastResult!.outcome).toBe("no_projects");
+    expect(noProjects.lastResult!.candidates).toBe(1);
+    expect(noProjects.degraded).toBe(true);
+    expect(noProjects.degradedReason).toContain("no active projects");
+
+    // A scorer miss (failure or deadline) is distinct from both.
+    createProject({ title: "Ops" });
+    await runAutoFileTick(async () => null);
+    expect(getAutoFileHealth().lastResult!.outcome).toBe("scorer_miss");
+  });
+
+  test("the tick records liveness even when there is nothing to do", async () => {
+    await runAutoFileTick(async () => [], 5_000_000);
+    const first = getAutoFileHealth();
+    expect(first.ticks).toBe(1);
+    expect(first.lastTickAt).toBe(5_000_000);
+
+    await runAutoFileTick(async () => [], 5_300_000);
+    // An idle filer and a dead filer look identical without this.
+    expect(getAutoFileHealth().lastTickAt).toBe(5_300_000);
+    expect(getAutoFileHealth().ticks).toBe(2);
   });
 });

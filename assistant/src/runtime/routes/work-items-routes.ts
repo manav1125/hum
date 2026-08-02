@@ -22,7 +22,10 @@ import {
 import { createAbortReason } from "../../util/abort-reasons.js";
 import { truncate } from "../../util/truncate.js";
 import { resolveRequiredTools } from "../../work-items/resolve-required-tools.js";
-import { classifyTitlesForPreview } from "../../work-items/work-item-auto-file.js";
+import {
+  classifyTitlesForPreview,
+  getAutoFileHealth,
+} from "../../work-items/work-item-auto-file.js";
 import {
   cycleTimeMs,
   listWorkItemEvents,
@@ -836,6 +839,86 @@ export const ROUTES: RouteDefinition[] = [
       // scorer deadline, failure → []) lives in classifyTitlesForPreview.
       const suggestions = await classifyTitlesForPreview(titles as string[]);
       return { suggestions };
+    },
+  },
+
+  {
+    operationId: "getAutoFileHealth",
+    endpoint: "work-items/auto-file/health",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Auto-filer health",
+    description:
+      "What the background auto-filer has actually been doing in this daemon " +
+      "process: when it last ticked, what the last sweep concluded, how many " +
+      "items are waiting, and whether it is degraded. This exists because a " +
+      "sweep that scans candidates and files none of them is indistinguishable " +
+      "from a sweep with nothing to do — from the outside, both are silence, " +
+      "and the only symptom is a pile of unfiled items the user is staring " +
+      "at. `degraded` plus `degradedReason` is what a 'this is broken' empty " +
+      "state should read instead of inferring health from the pile. In-memory " +
+      "and per-process by design: it describes behaviour since this daemon " +
+      "started, and a restart genuinely does reset what we know.",
+    tags: ["work-items"],
+    responseBody: z.object({
+      running: z.boolean().describe("Whether the interval is running"),
+      ticks: z.number().describe("Interval ticks, including skipped ones"),
+      sweeps: z.number().describe("Sweeps that actually ran"),
+      lastTickAt: z
+        .number()
+        .nullable()
+        .describe(
+          "Epoch ms of the last tick. Much older than the sweep interval " +
+            "means the timer itself stopped firing.",
+        ),
+      lastSweepAt: z
+        .number()
+        .nullable()
+        .describe("Epoch ms the last sweep finished"),
+      lastOutcome: z
+        .string()
+        .nullable()
+        .describe(
+          "Why the last sweep ended: disabled, no_candidates, no_projects, " +
+            "scorer_miss, no_match, progress, or error. Every early return " +
+            "names itself, so 'did nothing' and 'had nothing to do' are " +
+            "different answers.",
+        ),
+      candidatesWaiting: z
+        .number()
+        .describe("Unfiled, unscored items waiting as of the last sweep"),
+      unproductiveStreak: z
+        .number()
+        .describe("Consecutive sweeps that scanned candidates and moved none"),
+      stuckReleases: z
+        .number()
+        .describe("Times a wedged sweep had to have its latch broken"),
+      degraded: z
+        .boolean()
+        .describe("True when the filer is running but not doing its job"),
+      degradedReason: z
+        .string()
+        .nullable()
+        .describe("Plain-language reason in the user's terms, or null"),
+    }),
+    handler: () => {
+      const health = getAutoFileHealth();
+      return {
+        running: health.running,
+        ticks: health.ticks,
+        sweeps: health.sweeps,
+        lastTickAt: health.lastTickAt,
+        lastSweepAt: health.lastSweepAt,
+        lastOutcome: health.lastResult?.outcome ?? null,
+        candidatesWaiting: health.candidatesWaiting,
+        unproductiveStreak: health.unproductiveStreak,
+        stuckReleases: health.stuckReleases,
+        degraded: health.degraded,
+        degradedReason: health.degradedReason,
+      };
     },
   },
 

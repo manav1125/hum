@@ -342,7 +342,37 @@ export async function classifyTitlesForPreview(
 // Sweep
 // ---------------------------------------------------------------------------
 
+/**
+ * Why a sweep ended the way it did. A sweep has exactly one outcome, and every
+ * early return names its own — "did nothing" and "had nothing to do" are
+ * different answers and must never share a silence.
+ */
+export type AutoFileSweepOutcome =
+  /** Config kill switch is off. */
+  | "disabled"
+  /** Nothing unfiled and unscored in the queued lane — the honest idle state. */
+  | "no_candidates"
+  /** Candidates exist but there is no active project to file them into. */
+  | "no_projects"
+  /** The scorer returned nothing (failure, unparseable reply, or deadline). */
+  | "scorer_miss"
+  /** Scored, but nothing was filed and nothing was stamped. */
+  | "no_match"
+  /** At least one item was filed or stamped. */
+  | "progress"
+  /** The sweep threw; everything degraded to "item stays unfiled". */
+  | "error";
+
 export interface AutoFileSweepResult {
+  /** Why the sweep ended — set on every path, including the early returns. */
+  outcome: AutoFileSweepOutcome;
+  /**
+   * Unfiled, unscored queued items waiting right now, BEFORE the per-sweep
+   * cap. This is the number the user is staring at; `scanned` is only what
+   * one sweep could reach. A large `candidates` with a zero `filed` is the
+   * signature of a filer that is running and achieving nothing.
+   */
+  candidates: number;
   /** Unfiled queued items sent to the scorer this sweep (post-cap). */
   scanned: number;
   /** Items filed into a project (provenance stamped, event broadcast). */
@@ -358,8 +388,18 @@ export interface AutoFileSweepResult {
   skipped: number;
 }
 
-function emptyResult(): AutoFileSweepResult {
-  return { scanned: 0, filed: 0, belowThreshold: 0, stamped: 0, skipped: 0 };
+function emptyResult(
+  outcome: AutoFileSweepOutcome = "no_candidates",
+): AutoFileSweepResult {
+  return {
+    outcome,
+    candidates: 0,
+    scanned: 0,
+    filed: 0,
+    belowThreshold: 0,
+    stamped: 0,
+    skipped: 0,
+  };
 }
 
 /** An item the sweep may consider: unfiled and not deliberately unfiled. */
@@ -392,23 +432,39 @@ export async function sweepUnfiledWorkItems(
   const result = emptyResult();
   try {
     const cfg = getConfig().workItems.autoFile;
-    if (!cfg.enabled) return result;
+    if (!cfg.enabled) {
+      result.outcome = "disabled";
+      return result;
+    }
 
     // Cheap pre-checks: no unfiled items or no projects → no LLM call at all.
-    const unfiled = listWorkItems({ status: "queued" })
+    // `candidates` counts the whole waiting pool, not just this sweep's slice:
+    // "20 scanned" reads like progress when 200 are queued behind it.
+    const candidates = listWorkItems({ status: "queued" })
       .filter(isSweepCandidate)
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .slice(0, MAX_ITEMS_PER_SWEEP);
-    if (unfiled.length === 0) return result;
+      .sort((a, b) => a.createdAt - b.createdAt);
+    result.candidates = candidates.length;
+    const unfiled = candidates.slice(0, MAX_ITEMS_PER_SWEEP);
+    if (unfiled.length === 0) {
+      result.outcome = "no_candidates";
+      return result;
+    }
 
     const projects = listProjects();
-    if (projects.length === 0) return result;
+    if (projects.length === 0) {
+      // Candidates with nowhere to go. Not an error, but not "nothing to do"
+      // either — the filer cannot make progress until a project exists, and
+      // the health record has to be able to say so.
+      result.outcome = "no_projects";
+      return result;
+    }
 
     result.scanned = unfiled.length;
     // Deadline-raced: a stalled provider resolution must not wedge the sweep.
     const assignments = await raceScorerDeadline(scorer(unfiled, projects));
     if (!assignments) {
       result.skipped = unfiled.length;
+      result.outcome = "scorer_miss";
       return result;
     }
 
@@ -492,6 +548,12 @@ export async function sweepUnfiledWorkItems(
       // work_item_status_changed broadcasts above carry the item ids. Stamped
       // items ride the same refetch so the amber "?" card lights up live.
       broadcastMessage({ type: "tasks_changed" });
+      result.outcome = "progress";
+    } else {
+      // Scored the batch and moved nothing. One of these is normal; a run of
+      // them is a filer that is alive and useless, which is what the caller
+      // watches for.
+      result.outcome = "no_match";
     }
     if (result.scanned > 0) {
       log.info({ ...result }, "auto-file sweep finished");
@@ -499,7 +561,199 @@ export async function sweepUnfiledWorkItems(
     return result;
   } catch (err) {
     log.warn({ err: String(err) }, "auto-file sweep failed (ignored)");
+    result.outcome = "error";
     return result;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Observable health
+// ---------------------------------------------------------------------------
+
+/**
+ * After this many consecutive sweeps that reached the scorer and moved
+ * nothing, the filer is declared degraded and says so at WARN. One such sweep
+ * is ordinary (the batch was genuinely ambiguous); a run of them means the
+ * filer is burning LLM calls to achieve nothing, and the user is watching an
+ * unfiled pile that never shrinks.
+ */
+export const UNPRODUCTIVE_SWEEP_LIMIT = 3;
+
+/**
+ * A tick that finds the previous sweep still running logs at debug — cheap and
+ * usually right. After this many consecutive skips the overlap is no longer
+ * incidental and gets said out loud.
+ */
+const SKIPPED_TICK_WARN_LIMIT = 3;
+
+/**
+ * How long an in-flight sweep may hold the single-flight latch before the
+ * watchdog breaks it.
+ *
+ * The bug this exists for: `sweepInFlight` was a plain boolean cleared only by
+ * the sweep promise's own `.finally()`. One sweep that never settles latches
+ * it forever — every later tick returns at the guard, the guard logs at debug,
+ * and the filer is dead with no line above debug anywhere in the log. It
+ * survives restarts too, because the next process's first tick hangs the same
+ * way. Nothing may be trusted to settle on its own.
+ */
+const SWEEP_STUCK_MS = 4 * SCORER_DEADLINE_MS;
+
+/**
+ * One INFO line every this many ticks whatever the outcome. An idle filer and
+ * a dead filer produce identical silence otherwise, and telling them apart is
+ * the whole point: absence of this line means the timer stopped firing.
+ */
+const HEARTBEAT_EVERY_TICKS = 12;
+
+/**
+ * What the auto-filer has actually been doing — the record a "the filer is
+ * broken" surface can read instead of inferring health from an unfiled pile.
+ * In-memory by design: it describes this process's behaviour since start, and
+ * a restart genuinely does reset what we know.
+ */
+export interface AutoFileHealth {
+  /** Whether the interval is running in this process. */
+  running: boolean;
+  /** Ticks the interval has fired, including skipped and watchdog ones. */
+  ticks: number;
+  /** Sweeps that actually ran (ticks minus skips). */
+  sweeps: number;
+  /** Epoch ms of the last tick — stale means the timer stopped firing. */
+  lastTickAt: number | null;
+  /** Epoch ms the last sweep finished. */
+  lastSweepAt: number | null;
+  /** The last finished sweep's full result, outcome included. */
+  lastResult: AutoFileSweepResult | null;
+  /** Unfiled, unscored items waiting as of the last sweep. */
+  candidatesWaiting: number;
+  /** Consecutive sweeps that scanned candidates and moved none of them. */
+  unproductiveStreak: number;
+  /** Consecutive ticks skipped because a sweep was still in flight. */
+  skippedTicks: number;
+  /** When the in-flight sweep started, or null when idle. */
+  inFlightSince: number | null;
+  /** Times the watchdog had to break a wedged sweep's latch. */
+  stuckReleases: number;
+  /** Epoch ms of the most recent watchdog release. */
+  lastStuckAt: number | null;
+  /** True when the filer is running but not doing its job. */
+  degraded: boolean;
+  /** Plain-language reason, in the user's terms, or null when healthy. */
+  degradedReason: string | null;
+}
+
+function freshHealth(): AutoFileHealth {
+  return {
+    running: false,
+    ticks: 0,
+    sweeps: 0,
+    lastTickAt: null,
+    lastSweepAt: null,
+    lastResult: null,
+    candidatesWaiting: 0,
+    unproductiveStreak: 0,
+    skippedTicks: 0,
+    inFlightSince: null,
+    stuckReleases: 0,
+    lastStuckAt: null,
+    degraded: false,
+    degradedReason: null,
+  };
+}
+
+let health: AutoFileHealth = freshHealth();
+
+/**
+ * A snapshot of what the filer has been doing. Safe to call at any time; the
+ * returned object is a copy, so a caller cannot mutate the live record.
+ */
+export function getAutoFileHealth(): AutoFileHealth {
+  return {
+    ...health,
+    lastResult: health.lastResult && { ...health.lastResult },
+  };
+}
+
+/**
+ * Reset the in-memory record AND release the single-flight latch. Test-only:
+ * a test that deliberately wedges a sweep would otherwise leak the latch into
+ * the next test, which is the very failure mode under test.
+ */
+export function resetAutoFilerForTests(): void {
+  health = freshHealth();
+  sweepInFlight = false;
+  sweepGeneration++;
+}
+
+/**
+ * Decide whether the filer is currently failing the user, and say it in the
+ * terms the user would use. "Degraded" is deliberately not the same as
+ * "errored": a filer that scores batch after batch and files nothing has
+ * thrown nothing at all, and is the exact failure the pile of unfiled items
+ * represents.
+ */
+function evaluateDegraded(): void {
+  const r = health.lastResult;
+  if (health.unproductiveStreak >= UNPRODUCTIVE_SWEEP_LIMIT) {
+    health.degraded = true;
+    health.degradedReason = `Cue has looked at these ${health.candidatesWaiting} unfiled items ${health.unproductiveStreak} times running and filed none of them.`;
+    return;
+  }
+  if (r?.outcome === "no_projects") {
+    health.degraded = true;
+    health.degradedReason = `${r.candidates} items are waiting to be filed, but there are no active projects to file them into.`;
+    return;
+  }
+  if (health.skippedTicks >= SKIPPED_TICK_WARN_LIMIT) {
+    health.degraded = true;
+    health.degradedReason =
+      "Auto-filing sweeps are taking longer than the interval between them, so most sweeps are being skipped.";
+    return;
+  }
+  health.degraded = false;
+  health.degradedReason = null;
+}
+
+/** Fold a finished sweep into the health record and say anything worth saying. */
+function recordSweep(result: AutoFileSweepResult): void {
+  health.sweeps++;
+  health.lastSweepAt = Date.now();
+  health.lastResult = result;
+  health.candidatesWaiting = result.candidates;
+
+  const moved = result.filed > 0 || result.stamped > 0;
+  const reachedScorer = result.scanned > 0;
+  if (moved) health.unproductiveStreak = 0;
+  else if (reachedScorer) health.unproductiveStreak++;
+
+  evaluateDegraded();
+
+  // The line that was missing. A sweep that scans and files nothing, over and
+  // over, is not a quiet success — it is the only symptom of this failure that
+  // exists before a human notices the pile.
+  if (health.unproductiveStreak === UNPRODUCTIVE_SWEEP_LIMIT) {
+    log.warn(
+      {
+        unproductiveStreak: health.unproductiveStreak,
+        candidates: result.candidates,
+        scanned: result.scanned,
+        outcome: result.outcome,
+      },
+      "auto-file has scanned candidates and filed nothing for several sweeps running",
+    );
+  }
+  if (health.ticks % HEARTBEAT_EVERY_TICKS === 0) {
+    log.info(
+      {
+        ticks: health.ticks,
+        sweeps: health.sweeps,
+        outcome: result.outcome,
+        candidates: result.candidates,
+        degraded: health.degraded,
+      },
+      "auto-file heartbeat",
+    );
   }
 }
 
@@ -518,8 +772,81 @@ let activeController: AutoFilerController | null = null;
  * than expected (key-less daemons spend ~a minute failing platform auth), and
  * an interval tick that fires while the previous sweep is still in flight
  * must not start a second concurrent LLM call over the same candidates.
+ *
+ * Held with a start time and released by generation, never by a bare boolean —
+ * see {@link SWEEP_STUCK_MS}.
  */
 let sweepInFlight = false;
+
+/**
+ * Increments on every sweep start. A sweep only clears the latch if it is
+ * still the current generation, so a wedged sweep that settles hours later
+ * cannot release a latch that a newer sweep now holds.
+ */
+let sweepGeneration = 0;
+
+/**
+ * One tick of the auto-filer: the single-flight guard, the stuck-sweep
+ * watchdog, and the health bookkeeping around one sweep.
+ *
+ * `scorer` and `now` are injectable for deterministic tests; production drives
+ * this from the interval with both defaulted. It never rejects, and it always
+ * leaves the latch in a state a later tick can recover from.
+ */
+export async function runAutoFileTick(
+  scorer: AutoFileScorer = scoreWithFlashLlm,
+  now: number = Date.now(),
+): Promise<void> {
+  health.ticks++;
+  health.lastTickAt = now;
+
+  if (sweepInFlight) {
+    const heldMs = now - (health.inFlightSince ?? now);
+    if (heldMs < SWEEP_STUCK_MS) {
+      health.skippedTicks++;
+      evaluateDegraded();
+      if (health.skippedTicks === SKIPPED_TICK_WARN_LIMIT) {
+        log.warn(
+          { heldMs, skippedTicks: health.skippedTicks },
+          "auto-file sweeps keep overlapping; ticks are being skipped",
+        );
+      } else {
+        log.debug("auto-file sweep still in flight; skipping this tick");
+      }
+      return;
+    }
+    // The watchdog. Whatever that sweep is waiting on, it has had four times
+    // its own hard deadline and is not coming back. Filing must not stay off
+    // until someone restarts the daemon.
+    health.stuckReleases++;
+    health.lastStuckAt = now;
+    log.warn(
+      { heldMs, stuckReleases: health.stuckReleases },
+      "auto-file: the previous sweep never finished — breaking the latch and sweeping anyway",
+    );
+    sweepInFlight = false;
+  }
+
+  sweepInFlight = true;
+  sweepGeneration++;
+  const generation = sweepGeneration;
+  health.inFlightSince = now;
+  health.skippedTicks = 0;
+  try {
+    recordSweep(await sweepUnfiledWorkItems(scorer));
+  } catch (err) {
+    // sweepUnfiledWorkItems never rejects; belt-and-suspenders catch anyway.
+    log.warn({ err: String(err) }, "auto-file sweep failed (ignored)");
+    recordSweep(emptyResult("error"));
+  } finally {
+    // A sweep the watchdog already gave up on must not clear a latch that a
+    // newer sweep is holding.
+    if (sweepGeneration === generation) {
+      sweepInFlight = false;
+      health.inFlightSince = null;
+    }
+  }
+}
 
 /**
  * Start the periodic auto-filer. Idempotent — a second call returns the
@@ -538,21 +865,10 @@ export function startWorkItemAutoFiler(): AutoFilerController {
     { intervalMs, enabled: cfg.enabled },
     "work-item auto-filer started",
   );
+  health.running = true;
 
   const timer = setInterval(() => {
-    if (sweepInFlight) {
-      log.debug("auto-file sweep still in flight; skipping this tick");
-      return;
-    }
-    sweepInFlight = true;
-    // sweepUnfiledWorkItems never rejects; belt-and-suspenders catch anyway.
-    void sweepUnfiledWorkItems()
-      .catch((err) => {
-        log.warn({ err: String(err) }, "auto-file sweep failed (ignored)");
-      })
-      .finally(() => {
-        sweepInFlight = false;
-      });
+    void runAutoFileTick();
   }, intervalMs);
   timer.unref?.();
 
@@ -560,6 +876,7 @@ export function startWorkItemAutoFiler(): AutoFilerController {
     stop() {
       clearInterval(timer);
       activeController = null;
+      health.running = false;
     },
   };
   return activeController;
