@@ -6,9 +6,16 @@
  * no longer a redirect and `assistant-side-menu.click-through.test.tsx` asserts
  * the row reaches it; this file asserts the page itself is worth arriving at.
  *
- * v16 D3: *"people find threads by remembering a sentence, not a title"* — so
- * the assertion that matters is that search renders the **excerpt**, and that
- * the two things the API cannot support are said out loud rather than drawn.
+ * What is pinned down here is the house rules rather than the pixels:
+ *
+ * - **v16 D3** — *"people find threads by remembering a sentence, not a title"*
+ *   → search renders the **excerpt**, and the two things the API cannot support
+ *   (the thing chip, "Unattached · N") are said out loud rather than drawn.
+ * - **§11.3** — *"Pinned | Top of conversation list"* → the PINNED section
+ *   leads, and everything else buckets strictly by recency.
+ * - **An honest empty state** — an empty list says *why*, and a fetch that
+ *   failed reads as an error, never as "you have no conversations".
+ * - **No colour-only state** — unread carries a glyph and a word, not a hue.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -19,13 +26,14 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { createElement } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 
 const okResponse = { response: new Response(), error: undefined };
 
-let conversations: {
+interface RawConversation {
   id: string;
   title: string;
   createdAt: number;
@@ -34,16 +42,29 @@ let conversations: {
   conversationType: string;
   source: string;
   groupId: string | null;
+  isPinned?: true;
+  isProcessing?: boolean;
+  assistantAttention?: { hasUnseenLatestAssistantMessage: boolean };
+}
+
+let conversations: RawConversation[] = [];
+let groups: {
+  id: string;
+  name: string;
+  sortPosition: number;
+  isSystemGroup: boolean;
 }[] = [];
 let searchResults: unknown[] = [];
+let listFails = false;
 
 const sdkActual = await import("@/generated/daemon/sdk.gen");
 mock.module("@/generated/daemon/sdk.gen", () => ({
   ...sdkActual,
-  conversationsGet: mock(async () => ({
-    data: { conversations },
-    ...okResponse,
-  })),
+  conversationsGet: mock(async () => {
+    if (listFails) throw new Error("gateway 401");
+    return { data: { conversations }, ...okResponse };
+  }),
+  groupsGet: mock(async () => ({ data: { groups }, ...okResponse })),
   conversationsSearchGet: mock(
     async (options?: { query?: { q?: string } }) => ({
       data: { query: options?.query?.q ?? "", results: searchResults },
@@ -75,7 +96,8 @@ mock.module("@/hooks/use-is-mobile", () => ({
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 
-const { ConversationsIndexPage } = await import("./conversations-index-page");
+const { ConversationsIndexPage, buildFilters } =
+  await import("./conversations-index-page");
 
 function LocationProbe() {
   const { pathname } = useLocation();
@@ -101,29 +123,47 @@ function renderPage() {
   );
 }
 
-function conversation(id: string, title: string) {
+const DAY = 86_400_000;
+
+function conversation(
+  id: string,
+  title: string,
+  extra: Partial<RawConversation> = {},
+): RawConversation {
+  const at = extra.lastMessageAt ?? Date.now();
   return {
     id,
     title,
-    createdAt: 1,
-    updatedAt: 2,
-    lastMessageAt: 2,
+    createdAt: at,
+    updatedAt: at,
+    lastMessageAt: at,
     conversationType: "standard",
     source: "vellum",
     groupId: null,
+    ...extra,
   };
+}
+
+/** The `<section>` a recency heading owns, so bucket membership is checkable. */
+function bucket(label: string): HTMLElement {
+  const heading = screen.getByText(label);
+  const section = heading.closest("section");
+  if (!section) throw new Error(`No section for ${label}`);
+  return section as HTMLElement;
 }
 
 beforeEach(() => {
   conversations = [];
+  groups = [];
   searchResults = [];
+  listFails = false;
   isMobileRef.value = false;
 });
 
 afterEach(cleanup);
 
 describe("the index lists what the rail's five-row peek cannot", () => {
-  test("every conversation, with a heading that counts them", async () => {
+  test("every conversation, under a census counted from the rows themselves", async () => {
     conversations = [
       conversation("c1", "Renewal terms"),
       conversation("c2", "Dinner conflict"),
@@ -133,7 +173,9 @@ describe("the index lists what the rail's five-row peek cannot", () => {
       expect(screen.getByText("Renewal terms")).toBeDefined();
     });
     expect(screen.getByText("Dinner conflict")).toBeDefined();
-    expect(screen.getByText(/2 conversations/)).toBeDefined();
+    // "N conversations · M this week" — both legs are counted from the list in
+    // hand, so the headline can never disagree with what is drawn.
+    expect(screen.getByText("2 conversations · 2 this week")).toBeDefined();
   });
 
   test("a row opens the conversation", async () => {
@@ -146,6 +188,213 @@ describe("the index lists what the rail's five-row peek cannot", () => {
     expect(screen.getByTestId("pathname").textContent).toBe(
       "/assistant/conversations/c1",
     );
+  });
+});
+
+describe("pinned leads, then strict recency (§11.3)", () => {
+  test("a known set lands in the right buckets", async () => {
+    const now = Date.now();
+    conversations = [
+      conversation("old", "Airtel deadline prep", {
+        lastMessageAt: now - 30 * DAY,
+      }),
+      conversation("mid", "Watcher provision trigger", {
+        lastMessageAt: now - 3 * DAY,
+      }),
+      conversation("yday", "Flight detail inquiry", {
+        lastMessageAt: now - 30 * 60 * 60 * 1000,
+      }),
+      conversation("today", "Amex suspension steps", { lastMessageAt: now }),
+      conversation("pin", "Acme pricing", {
+        lastMessageAt: now - 40 * DAY,
+        isPinned: true,
+      }),
+    ];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Amex suspension steps")).toBeDefined();
+    });
+
+    // Pinned outranks its own age — a 40-day-old pinned row still leads.
+    expect(within(bucket("PINNED")).getByText("Acme pricing")).toBeDefined();
+    expect(
+      within(bucket("TODAY")).getByText("Amex suspension steps"),
+    ).toBeDefined();
+    expect(
+      within(bucket("YESTERDAY")).getByText("Flight detail inquiry"),
+    ).toBeDefined();
+    expect(
+      within(bucket("EARLIER THIS WEEK")).getByText(
+        "Watcher provision trigger",
+      ),
+    ).toBeDefined();
+    expect(
+      within(bucket("EARLIER")).getByText("Airtel deadline prep"),
+    ).toBeDefined();
+
+    // PINNED is first on the page, not merely present.
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    expect(headings[0]?.textContent).toBe("PINNED");
+  });
+
+  test("an undated row sinks to EARLIER rather than being given a time", async () => {
+    conversations = [
+      conversation("dated", "Kids activity schedule"),
+      {
+        ...conversation("undated", "Imported thread"),
+        createdAt: 0,
+        updatedAt: 0,
+        lastMessageAt: null,
+      },
+    ];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Imported thread")).toBeDefined();
+    });
+    expect(
+      within(bucket("EARLIER")).getByText("Imported thread"),
+    ).toBeDefined();
+    // …and no invented timestamp beside it.
+    const row = screen.getByText("Imported thread").closest("button");
+    expect(row?.textContent).toBe("·Imported thread");
+  });
+});
+
+describe("states carry a glyph and a word, never a hue alone", () => {
+  test("unread says so", async () => {
+    conversations = [
+      conversation("c1", "Renewal terms", {
+        assistantAttention: { hasUnseenLatestAssistantMessage: true },
+      }),
+    ];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Renewal terms")).toBeDefined();
+    });
+    const row = screen.getByText("Renewal terms").closest("button");
+    expect(row?.textContent).toContain("●");
+    expect(row?.textContent).toContain("unread");
+  });
+
+  test("a running turn says so, and outranks unread", async () => {
+    conversations = [
+      conversation("c1", "Renewal terms", {
+        isProcessing: true,
+        assistantAttention: { hasUnseenLatestAssistantMessage: true },
+      }),
+    ];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Renewal terms")).toBeDefined();
+    });
+    const row = screen.getByText("Renewal terms").closest("button");
+    expect(row?.textContent).toContain("◐");
+    expect(row?.textContent).toContain("running");
+    expect(row?.textContent).not.toContain("unread");
+  });
+});
+
+describe("the ▤ chip is a real group, and only a real group", () => {
+  test("a filed conversation wears its group's name", async () => {
+    groups = [
+      { id: "g1", name: "Renew Acme", sortPosition: 0, isSystemGroup: false },
+    ];
+    conversations = [conversation("c1", "Acme pricing", { groupId: "g1" })];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Acme pricing")).toBeDefined();
+    });
+    // The chip is on the row, not only in the filter bar above it.
+    const row = screen.getByText("Acme pricing").closest("button");
+    expect(row?.textContent).toContain("▤ Renew Acme");
+  });
+
+  test("a groupId with no matching group draws no chip", async () => {
+    // The group list and the conversation list are separate reads and can
+    // disagree. An unresolvable id must not become a chip with an id in it.
+    groups = [];
+    conversations = [conversation("c1", "Acme pricing", { groupId: "g-gone" })];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Acme pricing")).toBeDefined();
+    });
+    expect(screen.queryByText(/g-gone/)).toBeNull();
+  });
+});
+
+describe("filters only exist when something is behind them", () => {
+  test("Unread appears with a count and narrows the list", async () => {
+    conversations = [
+      conversation("c1", "Renewal terms", {
+        assistantAttention: { hasUnseenLatestAssistantMessage: true },
+      }),
+      conversation("c2", "Dinner conflict"),
+    ];
+    renderPage();
+    const chip = await screen.findByRole("button", { name: /Unread/ });
+    fireEvent.click(chip);
+    await waitFor(() => {
+      expect(screen.queryByText("Dinner conflict")).toBeNull();
+    });
+    expect(screen.getByText("Renewal terms")).toBeDefined();
+  });
+
+  test("the chip you are standing on survives its count reaching zero", () => {
+    // Otherwise the view silently resets to All and the user is never told why
+    // their filter emptied — and the "Nothing under X" state below would be
+    // unreachable code pretending to be a feature.
+    const read = [{ conversationId: "c1" }] as never;
+    const withUnread = buildFilters(read, [], "all");
+    expect(withUnread.some((f) => f.id === "unread")).toBe(false);
+
+    const held = buildFilters(read, [], "unread");
+    const unread = held.find((f) => f.id === "unread");
+    expect(unread?.count).toBe(0);
+    expect(unread?.emptyLine).toContain("nothing is waiting to be read");
+  });
+
+  test("no unread rows, no Unread chip", async () => {
+    conversations = [conversation("c2", "Dinner conflict")];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Dinner conflict")).toBeDefined();
+    });
+    expect(screen.queryByRole("button", { name: /Unread/ })).toBeNull();
+  });
+});
+
+describe("an empty list says why it is empty", () => {
+  test("no conversations — a sentence and a way out, not a bare 'none'", async () => {
+    conversations = [];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("No conversations yet")).toBeDefined();
+    });
+    expect(
+      screen.getByText(/Nothing has been said to Cue on this assistant/),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Start a conversation" }),
+    ).toBeDefined();
+    // The failure bar: a bare "none" with no explanation.
+    expect(screen.queryByText("None")).toBeNull();
+    expect(screen.queryByText("Nothing here")).toBeNull();
+  });
+});
+
+describe("a failed fetch is an error, not an empty list", () => {
+  test("it reads differently and never claims there are no conversations", async () => {
+    listFails = true;
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeDefined();
+    });
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Couldn’t read your conversations");
+    expect(alert.textContent).toContain("not because there is nothing there");
+    // The empty-state copy must not appear on an error.
+    expect(screen.queryByText("No conversations yet")).toBeNull();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
   });
 });
 
@@ -205,9 +454,19 @@ describe("search finds the sentence, not just the title", () => {
       target: { value: "ghost" },
     });
     await waitFor(() => {
-      expect(screen.getByText(/Nothing said that/)).toBeDefined();
+      expect(screen.getByText("Nothing said that")).toBeDefined();
     });
     expect(screen.queryByText("Ghost")).toBeNull();
+  });
+
+  test("a one-character term explains itself instead of showing nothing", async () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText("Search conversations"), {
+      target: { value: "g" },
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/search needs two characters/)).toBeDefined();
+    });
   });
 
   test("a search hit opens its conversation", async () => {
@@ -235,13 +494,14 @@ describe("search finds the sentence, not just the title", () => {
 
 describe("what it cannot show, it says", () => {
   test("no thing chip and no 'unattached' count — nothing relates the two", async () => {
-    // D3 asks for both. No endpoint relates a conversation to a thing, so the
-    // page states the gap instead of drawing a chip that is always empty.
+    // D3 asks for both. No endpoint relates a conversation to a work item, so
+    // the page states the gap and labels its ▤ chips as what they really are.
     renderPage();
     await waitFor(() => {
       expect(
-        screen.getByText(/isn't recorded yet, so there are no thing chips/),
+        screen.getByText(/The ▤ chips are conversation groups/),
       ).toBeDefined();
     });
+    expect(screen.getByText(/isn’t recorded anywhere yet/)).toBeDefined();
   });
 });
