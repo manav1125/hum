@@ -7,6 +7,7 @@ import {
   Monitor,
   Search as SearchIcon,
   Settings,
+  Sparkles,
   SquarePen,
   ZoomIn,
   ZoomOut,
@@ -57,6 +58,10 @@ function buildActionsSection(assistantName: string): CommandPaletteSection {
         shortcutHint: "⌘,",
       },
       { id: "action-library", icon: LayoutGrid, title: "Library" },
+      // Create lost its rail row in the v15 cleanup and had no other desktop
+      // door — it was reachable only from the phone. A surface you can only
+      // reach on one platform is one most people never find.
+      { id: "action-create", icon: Sparkles, title: "Create" },
       { id: "action-intelligence", icon: Globe, title: assistantName },
       {
         id: "action-back",
@@ -146,6 +151,10 @@ function dispatchCommandPaletteAction(
     case "action-library":
       haptic.light();
       ctx.navigate(routes.library.root);
+      break;
+    case "action-create":
+      haptic.light();
+      ctx.navigate(routes.create);
       break;
     case "action-back":
       ctx.navigate(-1);
