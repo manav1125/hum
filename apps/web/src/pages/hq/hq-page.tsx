@@ -41,6 +41,7 @@ import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import {
   actsSummaryGetOptions,
   arrivalsSummaryGetOptions,
+  pendinginteractionsGetOptions,
   workitemsAutofileHealthGetOptions,
   usageTotalsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -75,7 +76,6 @@ import {
 } from "@/pages/projects/filing-desktop";
 
 import { CaptureBar } from "./capture-bar";
-import { HqWorkLoopBoard } from "./hq-board";
 import { HqFirstRun, useHqFirstRun } from "./hq-firstrun";
 import { useAgentFor } from "./hq-agent-identity";
 import { DriftNudge, driftFromEvents } from "./drift-nudge";
@@ -87,16 +87,12 @@ import {
 } from "./reassign-menu";
 import { CompanyPanel } from "./company-panel";
 import {
-  CameInErrorStrip,
   HqDeckSkeleton,
   NextMoveCard,
-  QueuedScheduledSection,
   ReconnectBanner,
-  TimeBackChip,
   useDegradedState,
   useNextMove,
   useTodayStart,
-  WatchingLine,
   type NextMove,
 } from "./hq-modules";
 import { HqOrientationPanel, useHqOrientation } from "./hq-orientation";
@@ -104,6 +100,7 @@ import {
   C,
   HERO_GRADIENT,
   HqStyle,
+  LiveBars,
   MicroLabel,
   MODE_META,
   RING_META,
@@ -115,7 +112,6 @@ import {
   serif,
   sourceBadge,
 } from "./hq-kit";
-import type { RingStatus } from "./hq-kit";
 import {
   AgentsNow,
   type AgentNow,
@@ -127,7 +123,7 @@ import {
   LifeHorizons,
   TrustChip,
   type Unavailable,
-  WaitingOnPeople,
+  waitingSentence,
   type WaitingItem,
 } from "./hq-k1-modules";
 import {
@@ -136,14 +132,30 @@ import {
   useWaitingOnPeople,
 } from "./use-hq-k1-data";
 import {
-  ArrivalsDigest,
+  arrivalsSentence,
   type ArrivalsSummary,
   CensusBar,
   DeliveredBlock,
   EmptyState,
   NEEDS_YOU_CAP,
-  PulseStrip,
+  pulseSentence,
 } from "./hq-deck";
+import {
+  counted,
+  DeliverySentence,
+  fromUnavailable,
+  known,
+  LaneCards,
+  type LaneId,
+  type LaneSlot,
+  TIER1_IDS,
+  TIER2_IDS,
+  tier1,
+  tier2,
+  tier3,
+  TierRail,
+  unavailable,
+} from "./hq-tiers";
 import { useWatchers } from "@/mobile-v3/you/use-automations-data";
 import { NewMissionModal } from "./new-mission-modal";
 import {
@@ -157,6 +169,7 @@ import {
   useMissions,
   usePatchMission,
   useRunCycle,
+  type HqSchedule,
   type HqWorkItem,
   type Mission,
 } from "./use-missions";
@@ -272,7 +285,8 @@ function HqApertureMark({ size = 30 }: { size?: number }) {
           position: "absolute",
           inset: 0,
           borderRadius: 9,
-          border: "1.5px solid color-mix(in srgb, var(--mv1-blue) 55%, transparent)",
+          border:
+            "1.5px solid color-mix(in srgb, var(--mv1-blue) 55%, transparent)",
           opacity: 0,
           animation: "cuePing 2.8s ease-out infinite",
         }}
@@ -706,7 +720,6 @@ const SUGGESTED_MISSIONS: Array<{
   },
 ];
 
-/** The pulse — HQ with zero missions. Never a blank canvas. */
 /**
  * First line of a provider error, capped. Watcher failures can be an entire
  * HTML 404 page — Gmail returns one — and pasting that into a card tells the
@@ -718,13 +731,405 @@ function firstLine(raw: string, max = 120): string {
   return line.length > max ? `${line.slice(0, max)}…` : line;
 }
 
-function PulseLayout({
+/** "4 rhythms run on their own — the next fires in 2h." */
+function rhythmsSentence(schedules: HqSchedule[]): string {
+  if (schedules.length === 0) return "Nothing runs on a schedule yet.";
+  const next = relativeTime(schedules[0]!.nextRunAt);
+  const many = schedules.length === 1 ? "rhythm runs" : "rhythms run";
+  return `${schedules.length} ${many} on their own${next ? ` — the next fires ${next}` : ""}.`;
+}
+
+/** "Cue is doing 2 things · 128 acts, 0 reversed." */
+function inMotionSentence(running: HqWorkItem[], queued: HqWorkItem[]): string {
+  if (running.length === 0 && queued.length === 0)
+    return "Nothing is running and nothing is queued.";
+  if (running.length === 0)
+    return `Nothing is running — ${queued.length} ${queued.length === 1 ? "item is" : "items are"} queued.`;
+  return `Cue is working on ${running.length} ${running.length === 1 ? "thing" : "things"}.`;
+}
+
+/** Tier 1 · Needs you — a card at zero, because "nothing needs you" earns it. */
+function NeedsYouLane({
+  assistantId,
+  move,
+  items,
+  glanceCount,
+  extraApprovals,
+  missionsByProjectId,
+}: {
+  assistantId: string;
+  move: NextMove;
+  items: HqWorkItem[];
+  glanceCount: number;
+  /** Pending interactions beyond the one the next-move card already carries. */
+  extraApprovals: number;
+  missionsByProjectId: Map<string, Mission>;
+}) {
+  return (
+    <section data-slot="hq-needs-you">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <MicroLabel color={glanceCount > 0 ? C.danger : C.t3}>
+          ‖ Needs you ·{" "}
+          {glanceCount > NEEDS_YOU_CAP
+            ? `${NEEDS_YOU_CAP} of ${glanceCount}`
+            : glanceCount}
+        </MicroLabel>
+        {glanceCount > NEEDS_YOU_CAP ? (
+          <Link
+            to={routes.reviewQueue}
+            style={{
+              marginLeft: "auto",
+              fontSize: 11.5,
+              color: C.t3,
+              textDecoration: "none",
+              fontFamily: mono,
+            }}
+          >
+            Triage the rest ›
+          </Link>
+        ) : null}
+      </div>
+      {glanceCount === 0 ? (
+        /* Zero is a real number, not a hidden absence. Cue says it in its own
+           voice rather than rendering "0 items" — and the lane keeps its card,
+           because a calm deck and a broken query must not look alike. */
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 9,
+            marginTop: 10,
+            fontSize: 13.5,
+            color: C.t2,
+          }}
+        >
+          <span aria-hidden style={{ color: C.green }}>
+            ✓
+          </span>
+          <span>Nothing needs you. Go do something else.</span>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 9,
+            marginTop: 12,
+          }}
+        >
+          {/* ◆ YOUR NEXT MOVE — always the first card in the lane. */}
+          <NextMoveCard assistantId={assistantId} move={move} />
+          {items
+            .slice(0, Math.max(0, NEEDS_YOU_CAP - (move.hasMove ? 1 : 0)))
+            .map((item) => (
+              <NeedsYouCard
+                key={item.id}
+                item={item}
+                mission={
+                  item.projectId
+                    ? (missionsByProjectId.get(item.projectId) ?? null)
+                    : null
+                }
+              />
+            ))}
+        </div>
+      )}
+      {/*
+        Pending approvals are NOT folded into the count above: invariant 2 fixes
+        one needs-you definition (awaiting_review + assigned to you) shared by
+        the badge, the headline and the rows, and widening it here is exactly
+        what made the headline read 6 while the sidebar read 5. So extra
+        approvals get their own line and their own door.
+      */}
+      {extraApprovals > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 9,
+            marginTop: 11,
+            fontSize: 12.5,
+            color: "var(--hq-muted)",
+          }}
+        >
+          <span aria-hidden style={{ color: C.amberText }}>
+            ‖
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {extraApprovals} more{" "}
+            {extraApprovals === 1 ? "approval is" : "approvals are"} paused for
+            your decision.
+          </span>
+          <Link
+            to={routes.reviewQueue}
+            style={{
+              fontFamily: mono,
+              fontSize: 11,
+              color: "var(--hq-muted)",
+              textDecoration: "none",
+            }}
+          >
+            Decide ›
+          </Link>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * Tier 1 · Missions — the rings when there are any, the offer when there
+ * aren't.
+ *
+ * The zero state used to be three full suggestion cards in a second column.
+ * They are one line each now: a suggestion is an offer, and an offer does not
+ * need a card to be legible.
+ */
+function MissionsLane({
+  assistantId,
+  missions,
+  doneToday,
+  dayLabel,
+  onNewMission,
+  onSuggest,
+}: {
+  assistantId: string;
+  missions: Mission[];
+  doneToday: number;
+  dayLabel: string;
+  onNewMission: () => void;
+  onSuggest: (title: string) => void;
+}) {
+  if (missions.length === 0) {
+    return (
+      <section data-slot="hq-missions">
+        <MicroLabel>◎ Missions · 0</MicroLabel>
+        <div
+          style={{
+            fontSize: 13,
+            color: C.t2,
+            marginTop: 10,
+            lineHeight: 1.5,
+          }}
+        >
+          No missions yet — and that&rsquo;s fine. Cue still catches what comes
+          in. Three it could take on:
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            marginTop: 10,
+          }}
+        >
+          {SUGGESTED_MISSIONS.map((s) => (
+            <button
+              key={s.title}
+              type="button"
+              className="cue-pressable"
+              onClick={() => {
+                haptic.light();
+                onSuggest(s.title);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 10,
+                textAlign: "left",
+                background: "none",
+                border: "none",
+                padding: "7px 0",
+                cursor: "pointer",
+                font: "inherit",
+                fontSize: 13,
+                color: C.ink,
+              }}
+            >
+              <span aria-hidden style={{ fontSize: 13 }}>
+                {s.glyph}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>{s.title}</span>
+              <span
+                style={{
+                  fontFamily: mono,
+                  fontSize: 11,
+                  color: C.blueText,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Start ›
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onNewMission}
+          style={{
+            border: "none",
+            background: "none",
+            padding: "8px 0 0",
+            fontSize: 12.5,
+            color: C.blueText,
+            cursor: "pointer",
+          }}
+        >
+          Or name your own ›
+        </button>
+      </section>
+    );
+  }
+  return (
+    <section data-slot="hq-missions">
+      <RingsHeroCard
+        missions={missions}
+        doneToday={doneToday}
+        dayLabel={dayLabel}
+      />
+      {/* §6 · Drifting — the honest nudge on any mission that's idling. It
+          belongs INSIDE this lane: a drift is a fact about a mission, and
+          floating it as its own deck card was chrome. */}
+      <MissionDriftNudges assistantId={assistantId} missions={missions} />
+      <MicroLabel style={{ margin: "20px 0 10px" }}>
+        Missions · {missions.length}
+      </MicroLabel>
+      <MissionList missions={missions} />
+    </section>
+  );
+}
+
+/** Tier 2 · In motion — running work, with the staff's receipts underneath. */
+function InMotionLane({
+  running,
+  queued,
+  agents,
+  missionsByProjectId,
+}: {
+  running: HqWorkItem[];
+  queued: HqWorkItem[];
+  agents: AgentNow[];
+  missionsByProjectId: Map<string, Mission>;
+}) {
+  return (
+    <section data-slot="hq-in-motion" data-coach="hq-lanes">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <MicroLabel>◉ In motion · {running.length + queued.length}</MicroLabel>
+        <Link
+          to={routes.allWork}
+          style={{
+            marginLeft: "auto",
+            fontFamily: mono,
+            fontSize: 11.5,
+            color: C.t3,
+            textDecoration: "none",
+          }}
+        >
+          Open the ledger ›
+        </Link>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          marginTop: 12,
+        }}
+      >
+        {running.slice(0, 3).map((item) => {
+          const mission = item.projectId
+            ? (missionsByProjectId.get(item.projectId) ?? null)
+            : null;
+          return (
+            <div
+              key={item.id}
+              style={{ display: "flex", alignItems: "center", gap: 10 }}
+            >
+              <LiveBars color={C.blue} />
+              <span
+                style={{
+                  fontSize: 13,
+                  color: C.t1,
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.title}
+                {mission ? (
+                  <span style={{ color: C.t3 }}> · {mission.title}</span>
+                ) : null}
+              </span>
+              <span
+                style={{
+                  fontFamily: mono,
+                  fontSize: 11,
+                  color: C.t3,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.lastProgressNote
+                  ? item.lastProgressNote.slice(0, 40)
+                  : (relativeTime(item.updatedAt) ?? "")}
+              </span>
+            </div>
+          );
+        })}
+        {queued.length > 0 ? (
+          <div style={{ fontSize: 12.5, color: "var(--hq-muted)" }}>
+            <span aria-hidden style={{ marginRight: 8 }}>
+              ○
+            </span>
+            {queued.length} queued behind {running.length === 1 ? "it" : "them"}
+            .
+          </div>
+        ) : null}
+      </div>
+      {/* The staff, with receipts. "128 acts · 0 reversed" is what makes
+          autonomy credible, and both halves are queryable today. */}
+      <div data-coach="hq-agents">
+        <AgentsNow agents={agents} />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The HQ deck — ONE surface, whether the account has missions or not.
+ *
+ * There used to be two decks here: a `PulseLayout` for zero-mission accounts
+ * carrying every K1 module, and a separate mission layout carrying a board, a
+ * came-in strip, a schedules block and a spend chip. Two HQs meant a reorder had
+ * to be done twice and the tiers could only be true on one of them. Missions
+ * are now a lane like any other — a Tier-1 card that shows rings or an offer.
+ *
+ * Reading order is design's Q2 answer, and it is load-bearing:
+ *
+ *   delivery sentence · composer · needs-you · delivered · missions ·
+ *   the Tier-2 cards that earned one · the Tier-3 rail · the census
+ *
+ * Invariant 1 says lead with delivered, not needed. The exception it names is
+ * exactly this screen: needs-you leads the CARDS because the delivery sentence
+ * one line above has already given the receipts. When the landing surface ships,
+ * that sentence lifts out and becomes the door, and no further reorder is owed.
+ */
+function HqDeck({
   assistantId,
   move,
   needsYou,
+  needsYouError,
+  extraApprovals,
   cameIn,
   running,
   done,
+  doneError,
+  missions,
+  missionsError,
+  projects,
+  schedules,
+  schedulesError,
   missionsByProjectId,
   userName,
   dayLabel,
@@ -734,25 +1139,32 @@ function PulseLayout({
   lifeGroups,
   lifeUnavailable,
   agentsNow,
-  agentsUnavailable,
   waiting,
   waitingUnavailable,
-  missionRings,
   moveIsExtraToNeedsYou,
   heartbeatRuns,
   watchingCount,
   failingWatchers,
   autoFileDegraded,
   arrivals,
+  arrivalsError,
   onNewMission,
   onSuggest,
 }: {
   assistantId: string;
   move: NextMove;
   needsYou: HqWorkItem[];
+  needsYouError: boolean;
+  extraApprovals: number;
   cameIn: HqWorkItem[];
   running: HqWorkItem[];
   done: HqWorkItem[];
+  doneError: boolean;
+  missions: Mission[];
+  missionsError: boolean;
+  projects: ProjectView[];
+  schedules: HqSchedule[];
+  schedulesError: boolean;
   missionsByProjectId: Map<string, Mission>;
   userName: string | null;
   dayLabel: string;
@@ -775,6 +1187,7 @@ function PulseLayout({
   autoFileDegraded: string | null;
   /** What arrived on its own, and what Cue did with it. */
   arrivals: ArrivalsSummary;
+  arrivalsError: boolean;
   /** Autonomy tier + spend, shown beside the greeting (§23 step 7). */
   trust: { mode: string; spentCents: number | null; capCents: number | null };
   /** Today's calendar picture, or why there isn't one. */
@@ -785,41 +1198,180 @@ function PulseLayout({
   lifeUnavailable?: Unavailable;
   /** The staff, with receipts. */
   agentsNow: AgentNow[];
-  agentsUnavailable?: Unavailable;
   /** Waiting on people, four states (§7). */
   waiting: WaitingItem[];
   waitingUnavailable?: Unavailable;
-  /** Mission rings, already ordered live-first. */
-  missionRings: { id: string; title: string; status: RingStatus; open: number }[];
   onNewMission: () => void;
   onSuggest: (title: string) => void;
 }) {
-  // `needsYou` has already had the next-move item filtered out when the move
-  // WAS one of the review rows, so adding 1 unconditionally double-counted a
-  // move that is neither a review row nor an approval — a queued work item.
-  // That is what made this headline read 6 while the sidebar badge, reading the
-  // same two queries, read 5.
-  const glanceCount = needsYou.length + (moveIsExtraToNeedsYou ? 1 : 0);
-  const deliveredCount = done.length;
-  // Everything Cue currently holds. Only lanes we actually queried — a lane we
-  // cannot answer must be absent, never rendered as 0 (see "never a fake
-  // number"): a zero reads as "none", which would be a claim, not a gap.
-  const trackedCount = needsYou.length + running.length + cameIn.length;
   const firstRun = useHqFirstRun();
   const isMobile = useIsMobile();
-  const deckNavigate = useNavigate();
   // The lens is view state, not a route: §2 calls Life a lens, not a level, and
   // a separate page would put the privacy boundary in the wrong place.
   const [lens, setLens] = useState<Lens>("all");
   // Stamped once per mount, like `dayLabel`. Reading the clock during render is
   // impure — the now-marker would move on every unrelated re-render.
   const [nowMs] = useState(() => Date.now());
+  const [hour] = useState(() => new Date().getHours());
+
+  // `needsYou` has already had the next-move item filtered out when the move
+  // WAS one of the review rows, so adding 1 unconditionally double-counted a
+  // move that is neither a review row nor an approval — a queued work item.
+  // That is what made this headline read 6 while the sidebar badge, reading the
+  // same two queries, read 5.
+  const glanceCount = needsYou.length + (moveIsExtraToNeedsYou ? 1 : 0);
+  const unfiled = useMemo(() => cameIn.filter((i) => !i.projectId), [cameIn]);
+
+  // ── Lane states ────────────────────────────────────────────────────────────
+  // Each is EITHER a queried payload or a sentence saying we could not ask. A
+  // lane never gets to be an empty array standing in for "we didn't check".
+  const needsYouState = needsYouError
+    ? unavailable<{ move: NextMove; items: HqWorkItem[]; glanceCount: number }>(
+        "Cue couldn't read your review queue just now.",
+      )
+    : known({ move, items: needsYou, glanceCount });
+  const deliveredState = doneError
+    ? unavailable<HqWorkItem[]>("Cue couldn't read what it finished today.")
+    : known(done);
+  const missionsState = missionsError
+    ? unavailable<Mission[]>("Cue couldn't load your missions just now.")
+    : known(missions);
+  const inMotionState = known({ running, queued: cameIn });
+  const dayState = fromUnavailable(day, dayUnavailable);
+  const lifeState = fromUnavailable(lifeGroups, lifeUnavailable);
+  // The batch offer has no data behind it yet. It states that rather than
+  // vanishing — a lane we have not built and a lane with nothing in it are
+  // different sentences.
+  const batchState = unavailable<null>(
+    "Cue isn't grouping arrivals into batches yet — when it does it will offer, never merge on its own.",
+  );
+  const correctionState = known(unfiled);
+  const arrivalsState = arrivalsError
+    ? unavailable<ArrivalsSummary>("Cue couldn't read what arrived today.")
+    : known(arrivals);
+  const waitingState = fromUnavailable(waiting, waitingUnavailable);
+  const rhythmsState = schedulesError
+    ? unavailable<HqSchedule[]>("Cue couldn't read your schedules just now.")
+    : known(schedules);
+  const pulseState = known({
+    sources: watchingCount,
+    checks: heartbeatRuns,
+  });
+
+  /**
+   * Every lane, in one exhaustive record.
+   *
+   * TypeScript will not let this object literal omit a `LaneId`, and no builder
+   * can return "nothing" — so "a lane went silently absent" is a compile error
+   * rather than a bug you find in production three weeks later.
+   */
+  const lanes: Record<LaneId, LaneSlot> = {
+    needs_you: tier1("needs_you", needsYouState, (p) => (
+      <NeedsYouLane
+        assistantId={assistantId}
+        move={p.move}
+        items={p.items}
+        glanceCount={p.glanceCount}
+        extraApprovals={extraApprovals}
+        missionsByProjectId={missionsByProjectId}
+      />
+    )),
+    delivered: tier1("delivered", deliveredState, (items) => (
+      <DeliveredBlock items={items} />
+    )),
+    missions: tier1("missions", missionsState, (ms) => (
+      <MissionsLane
+        assistantId={assistantId}
+        missions={ms}
+        doneToday={done.length}
+        dayLabel={dayLabel}
+        onNewMission={onNewMission}
+        onSuggest={onSuggest}
+      />
+    )),
+    in_motion: tier2(
+      "in_motion",
+      inMotionState,
+      (p) =>
+        p.running.length === 0 ? null : (
+          <InMotionLane
+            running={p.running}
+            queued={p.queued}
+            agents={agentsNow}
+            missionsByProjectId={missionsByProjectId}
+          />
+        ),
+      (p) => ({ sentence: inMotionSentence(p.running, p.queued) }),
+    ),
+    day: tier2(
+      "day",
+      dayState,
+      (d) =>
+        d == null || d.commitments.length === 0 ? null : (
+          <DayRail day={d} nowMs={nowMs} />
+        ),
+      (d) => ({
+        sentence:
+          d == null
+            ? "Cue is still reading your calendar."
+            : `Nothing is booked today — ${Math.floor(d.unbookedMinutes / 60)}h free.`,
+      }),
+    ),
+    life: tier2(
+      "life",
+      lifeState,
+      (groups) =>
+        groups.length === 0 ? null : <LifeHorizons groups={groups} />,
+      () => ({ sentence: "Nothing personal is on your list." }),
+    ),
+    batch: tier2(
+      "batch",
+      batchState,
+      () => null,
+      () => ({ sentence: "Cue isn't batching anything." }),
+    ),
+    correction: tier2(
+      "correction",
+      correctionState,
+      (items) =>
+        items.length === 0 ? null : (
+          <CameInReassignStrip
+            items={items}
+            projects={projects}
+            missionsByProjectId={missionsByProjectId}
+            assistantId={assistantId}
+            onNewMission={onNewMission}
+          />
+        ),
+      () => ({ sentence: "Everything that arrived found a home." }),
+    ),
+    arrivals: tier3("arrivals", arrivalsState, (a) => ({
+      sentence: arrivalsSentence(a),
+      tone: a.kept > 0 ? "attention" : "muted",
+    })),
+    waiting: tier3("waiting", waitingState, (items) => ({
+      sentence: waitingSentence(items),
+      tone: items.some((w) => w.state === "going_cold") ? "attention" : "muted",
+    })),
+    rhythms: tier3("rhythms", rhythmsState, (ss) => ({
+      sentence: rhythmsSentence(ss),
+    })),
+    pulse: tier3("pulse", pulseState, (p) => ({
+      sentence: pulseSentence(p.sources, p.checks, null),
+    })),
+  };
+
   const lifeCount = lifeGroups.reduce((n, g) => n + g.titles.length, 0);
+  // Everything Cue currently holds. Only lanes we actually queried — a lane we
+  // cannot answer must be absent, never rendered as 0 (see "never a fake
+  // number"): a zero reads as "none", which would be a claim, not a gap.
+  const trackedCount = needsYou.length + running.length + cameIn.length;
   const lensCounts = {
     all: trackedCount + lifeCount,
     work: trackedCount,
     life: lifeCount,
   };
+
   return (
     <div data-slot="hq-stream">
       <MicroLabel
@@ -839,27 +1391,27 @@ function PulseLayout({
         }}
       >
         {userName ? `Good ${dayPart()}, ${userName}.` : `Good ${dayPart()}.`}
-        <br />
-        {/*
-          The greeting states DELIVERY, not obligation. It used to read "N
-          things I'd glance at", which opens the product on the user's debts —
-          the same move every competitor's dashboard makes, and the reason HQ
-          read as another inbox. Cue's differentiator is that it has already
-          done work; the headline is where that gets claimed.
-
-          Falls back to what is queryable rather than inventing warmth: with
-          nothing delivered today it reports what Cue is tracking and where
-          that came from, which is true on day one and on day one hundred.
-        */}
-        {deliveredCount > 0
-          ? `Cue finished ${deliveredCount === 1 ? "one thing" : `${deliveredCount} things`} for you today.`
-          : trackedCount > 0
-            ? `Cue is tracking ${trackedCount} ${trackedCount === 1 ? "thing" : "things"} for you.`
-            : "Cue is ready when you are."}
       </div>
 
-      {/* 0 · trust chip + lens, beside the greeting. Trust lives where the
-          work is, not in Settings (§23 step 7). */}
+      {/*
+        0 · THE DELIVERY SENTENCE — "While you slept: 3 done, 2 need you."
+
+        One line, no new surface, no new data: it reads the two lanes the deck
+        already queried, which is why both counts are `Queried` and a lane we
+        could not ask contributes nothing rather than a zero. It is a strict
+        subset of the landing screen, so when that ships the sentence lifts out
+        of HQ and becomes the door.
+      */}
+      <div style={{ marginTop: 10 }}>
+        <DeliverySentence
+          delivered={counted(deliveredState, (items) => items.length)}
+          needsYou={counted(needsYouState, (p) => p.glanceCount)}
+          hour={hour}
+        />
+      </div>
+
+      {/* Trust chip + lens. Trust lives where the work is, not in Settings
+          (§23 step 7); the lens is §2's "Life is a lens, not a level". */}
       <div
         style={{
           display: "flex",
@@ -874,117 +1426,29 @@ function PulseLayout({
           spentCents={trust.spentCents}
           capCents={trust.capCents}
         />
-        <LensSwitch
-          lens={lens}
-          counts={lensCounts}
-          onChange={setLens}
-        />
+        <LensSwitch lens={lens} counts={lensCounts} onChange={setLens} />
       </div>
 
-      {/* 1 · CAPTURE BAR — fixed furniture. It has been dropped twice; the
+      {/* 1 · THE COMPOSER — fixed furniture. It has been dropped twice; the
           handoff makes it an invariant. Never remove it. */}
       <div style={{ marginTop: 18, maxWidth: 640 }} data-coach="hq-capture">
         <CaptureBar
-          placeholder={'Tell Cue what you need — or "take the Halo pricing" to hand it straight over'}
+          placeholder={
+            'Tell Cue what you need — or "take the Halo pricing" to hand it straight over'
+          }
           autoFilesChip={false}
         />
       </div>
 
-      {/* 2 · DAY RAIL */}
-      <DayRail day={day} nowMs={nowMs} unavailable={dayUnavailable} />
-
-      {/* 3 · MISSIONS beside LIFE — work by why, life by when (§2). */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
-          gap: 26,
-          marginTop: 26,
-        }}
-      >
-        {lens !== "life" ? (
-          <section style={{ minWidth: 0 }}>
-            <MicroLabel>◎ Work · by mission</MicroLabel>
-            {missionRings.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.t3, marginTop: 9 }}>
-                No missions yet — Cue still catches what comes in.
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  marginTop: 12,
-                }}
-              >
-                {missionRings.slice(0, 4).map((m) => (
-                  <Link
-                    key={m.id}
-                    to={routes.hqMission(m.id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      textDecoration: "none",
-                    }}
-                  >
-                    <StatusRing status={m.status} size={22} />
-                    <span style={{ fontSize: 13, color: C.t1, minWidth: 0 }}>
-                      {m.title}
-                    </span>
-                    <span
-                      style={{
-                        marginLeft: "auto",
-                        fontFamily: mono,
-                        fontSize: 11,
-                        color: C.t3,
-                      }}
-                    >
-                      {RING_META[m.status].label}
-                      {m.open > 0 ? ` · ${m.open} open` : ""}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
-        ) : null}
-        {lens !== "work" ? (
-          <LifeHorizons groups={lifeGroups} unavailable={lifeUnavailable} />
-        ) : null}
-      </div>
-
-      {/* First-run — three cards that teach the loop, once. Shown on the pulse
-          path too: a zero-mission account is exactly who needs the explainer. */}
+      {/* First-run — three cards that teach the loop, once. */}
       {firstRun.show ? <HqFirstRun onDismiss={firstRun.dismiss} /> : null}
 
       {/*
-        The NOT-SET-UP state, and the most important sentence on this screen.
-
-        Cue has connectors attached — it can read the inbox on request — but
-        nothing observes them, so nothing ever arrives unasked. That gap is the
-        difference between the product people think they bought and the one
-        they have, and until watchers land it has to be stated outright rather
-        than hidden behind a calm-looking deck.
-
-        Shown only while nothing is watching; it disappears the moment the
-        first source is live.
-      */}
-      {/*
-        The BROKEN state (§14, third treatment): amber and NAMED. A watcher that
-        was provisioned but cannot poll is worse than no watcher, because the
-        user believes observation is on. Naming the source and quoting the
-        actual error is the difference between "something went wrong" — which is
-        not a state — and a fact they can act on.
-      */}
-      {/*
-        Filing silently stopping is its own broken state, and it is the one the
-        owner actually hit: the auto-filer held a stuck latch and filed nothing
-        for twelve hours while looking, from the outside, exactly like a filer
-        with nothing to do. The only symptom was a lane of unfiled items. The
-        daemon now knows the difference and says so in words; this renders that
-        sentence rather than leaving the owner to infer it from a long list.
+        The screen-OWNING empty states (§14). These keep their cards: a filer
+        that has silently stopped, a watcher that cannot be reached, and an
+        inbox nothing is watching are not routine emptiness — they are the
+        product being less than the user believes it is, and a grey line would
+        under-state them. Everything routine became a Tier-3 line instead.
       */}
       {autoFileDegraded ? (
         <EmptyState
@@ -1058,254 +1522,29 @@ function PulseLayout({
         />
       ) : null}
 
-      {/* auto-fit + minmax(0,…) so the pair collapses to one column on narrow
-          viewports AND the tracks can shrink below their content's min-content
-          width — a bare `1fr` refuses to, which pushed these cards ~100px past
-          a 390px screen (the clipped-card bug). */}
-      <div
-        data-slot="hq-columns"
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
-          gap: 30,
-          marginTop: 32,
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          {/*
-            4 · DELIVERED — above needs-you, always. Value before cost is the
-            invariant that survives every version of this deck.
-          */}
-          <DeliveredBlock items={done} />
-
-          {/* 5 · NEEDS YOU — capped. The deck never grows: at 6 open or 600,
-              this renders NEEDS_YOU_CAP rows and the census below moves
-              instead. "3 of 6" is the honest framing; a scrolling wall is not. */}
-          {glanceCount > 0 ? (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  gap: 10,
-                  marginTop: done.length > 0 ? 30 : 0,
-                }}
-              >
-                <MicroLabel color={C.danger}>
-                  Needs you ·{" "}
-                  {glanceCount > NEEDS_YOU_CAP
-                    ? `${NEEDS_YOU_CAP} of ${glanceCount}`
-                    : glanceCount}
-                </MicroLabel>
-                {glanceCount > NEEDS_YOU_CAP ? (
-                  <Link
-                    to={routes.reviewQueue}
-                    style={{
-                      marginLeft: "auto",
-                      fontSize: 11.5,
-                      color: C.t3,
-                      textDecoration: "none",
-                      fontFamily: mono,
-                    }}
-                  >
-                    Triage the rest ›
-                  </Link>
-                ) : null}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 9,
-                  marginTop: 12,
-                }}
-              >
-                {/* ◆ YOUR NEXT MOVE — always the first card in the lane. */}
-                <NextMoveCard assistantId={assistantId} move={move} />
-                {needsYou
-                  .slice(0, Math.max(0, NEEDS_YOU_CAP - (move.hasMove ? 1 : 0)))
-                  .map((item) => (
-                    <NeedsYouCard
-                      key={item.id}
-                      item={item}
-                      mission={
-                        item.projectId
-                          ? (missionsByProjectId.get(item.projectId) ?? null)
-                          : null
-                      }
-                    />
-                  ))}
-              </div>
-            </>
-          ) : null}
-
-          {/* 6 · CENSUS — the honest count and the door to the ledger. */}
-          <CensusBar
-            segments={[
-              { label: "need you", value: needsYou.length },
-              { label: "Cue is doing", value: running.length },
-              { label: "waiting", value: cameIn.length },
-              { label: "done today", value: done.length },
-            ]}
-          />
-
-          {/*
-            7 · CAME IN — ONE row, whatever the volume (§9).
-
-            This used to render arrivals as a list. That is the failure mode the
-            whole product exists to avoid: handing the user the entire pile and
-            calling it surfacing. 119 emails arrived here and became 119 rows,
-            which is an inbox with extra steps.
-
-            The digest says what Cue DID with the pile. The only number that
-            asks for attention is the one Cue scored and genuinely could not
-            place — everything else is filed, with provenance, and nothing is
-            lost.
-          */}
-          <MicroLabel style={{ margin: "26px 0 0" }}>Came in</MicroLabel>
-          {arrivals.total > 0 ? (
-            <ArrivalsDigest
-              summary={arrivals}
-              onExpand={() => deckNavigate(routes.allWork)}
-            />
-          ) : (
-            <EmptyState
-              kind="nothing_yet"
-              title="Nothing has arrived"
-              body="Because nothing is watching — not because it's quiet. Connect a source and things start arriving on their own."
-            />
-          )}
-
-          {/* 7 · AGENTS + WAITING — the staff, and the people. */}
-          <AgentsNow agents={agentsNow} unavailable={agentsUnavailable} />
-          <WaitingOnPeople items={waiting} unavailable={waitingUnavailable} />
-
-          {/* 8 · PULSE — what Cue watches on your behalf. */}
-          <PulseStrip
-            sourceCount={0}
-            checkCount={heartbeatRuns}
-            lastCheckLabel={null}
-          />
-        </div>
-
-        <div style={{ minWidth: 0 }}>
-          <MicroLabel color={C.blueS}>Cue could take these on</MicroLabel>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 11,
-              marginTop: 12,
-            }}
-          >
-            {SUGGESTED_MISSIONS.map((s) => (
-              <div
-                key={s.title}
-                style={{
-                  border: `1px solid ${C.line}`,
-                  borderRadius: 14,
-                  padding: 16,
-                  background: `linear-gradient(160deg, ${C.surface}, color-mix(in srgb, ${C.blue} 4%, ${C.surface}))`,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span aria-hidden style={{ fontSize: 18 }}>
-                    {s.glyph}
-                  </span>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>
-                    {s.title}
-                  </div>
-                </div>
-                <div
-                  style={{
-                    fontSize: 12.5,
-                    color: C.t2,
-                    marginTop: 7,
-                    lineHeight: 1.45,
-                  }}
-                >
-                  {s.blurb}
-                </div>
-                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-                  <button
-                    type="button"
-                    className="cue-pressable"
-                    onClick={() => {
-                      haptic.light();
-                      onSuggest(s.title);
-                    }}
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      background: C.blue,
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 9,
-                      padding: "8px 14px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Start mission
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div
-            style={{
-              marginTop: 14,
-              fontSize: 12,
-              color: C.t3,
-              lineHeight: 1.5,
-            }}
-          >
-            No open missions yet — and that&rsquo;s fine. Cue keeps catching
-            what comes in;{" "}
-            <button
-              type="button"
-              onClick={onNewMission}
-              style={{
-                border: "none",
-                background: "none",
-                padding: 0,
-                fontSize: 12,
-                color: C.blueS,
-                cursor: "pointer",
-                textDecoration: "underline",
-              }}
-            >
-              give it a mission
-            </button>{" "}
-            when you&rsquo;re ready.
-          </div>
-        </div>
+      {/* 2 · TIER 1 — always a card: needs-you, delivered, missions. */}
+      <div style={{ marginTop: 30 }}>
+        <LaneCards lanes={lanes} ids={TIER1_IDS} gap={30} />
       </div>
 
-      {/* The work loop doesn't depend on missions — a zero-mission account
-          still captures, runs, and reviews work, so the board belongs here
-          too (it's the whole point of the surface). */}
-      <HqWorkLoopBoard
-        assistantId={assistantId}
-        running={running}
-        review={needsYou}
-        done={done}
-        byProject={missionsByProjectId}
+      {/* 3 · TIER 2 — a card only where there was something to put in it.
+          Everything else demoted into the rail below, never to nothing. */}
+      <div style={{ marginTop: 30 }}>
+        <LaneCards lanes={lanes} ids={TIER2_IDS} gap={26} />
+      </div>
+
+      {/* 4 · TIER 3 — one grey line each, always present. */}
+      <TierRail lanes={lanes} />
+
+      {/* 5 · CENSUS — the honest count and the door to the ledger. */}
+      <CensusBar
+        segments={[
+          { label: "need you", value: needsYou.length },
+          { label: "Cue is doing", value: running.length },
+          { label: "waiting", value: cameIn.length },
+          { label: "done today", value: done.length },
+        ]}
       />
-
-      <div
-        style={{
-          marginTop: 36,
-          textAlign: "center",
-          fontFamily: mono,
-          fontSize: 10,
-          letterSpacing: "0.08em",
-          color: C.t3,
-        }}
-      >
-        NO MISSIONS YET
-        {glanceCount === 0 ? " · NOTHING TO REVIEW" : ""}
-      </div>
     </div>
   );
 }
@@ -1933,7 +2172,11 @@ export function HqPage() {
   // SSE keeps every lane current; polls below are 60s safety-nets.
   useActivitySync(assistantId, true);
 
-  const { missions: liveMissions, isLoading } = useMissions(assistantId);
+  const {
+    missions: liveMissions,
+    isLoading,
+    isError: missionsError,
+  } = useMissions(assistantId);
   // Abandoned missions still get a ring, in the blocked tone. A goal that
   // drifted is information; omitting it made a real deck look like an empty
   // product. Appended after live ones so they never outrank active work.
@@ -1947,7 +2190,7 @@ export function HqPage() {
   const running = useHqWorkItems(assistantId, "running");
   const queued = useHqWorkItems(assistantId, "pending");
   const done = useHqWorkItems(assistantId, "done");
-  const { schedules } = useHqSchedules(assistantId);
+  const { schedules, isError: schedulesError } = useHqSchedules(assistantId);
   // Stamped once per mount: "waiting 6 days" must not tick over mid-session
   // because something unrelated re-rendered. Reading the clock during render is
   // impure for exactly that reason.
@@ -1971,12 +2214,26 @@ export function HqPage() {
   // erroring; the ones that are erroring get named in the broken state instead.
   const liveWatchers = watchers.filter((w) => w.enabled && !w.lastError);
   const failingWatchers = watchers.filter((w) => w.enabled && w.lastError);
+  /**
+   * Pending approvals. These are deliberately NOT folded into the needs-you
+   * count: invariant 2 fixes one needs-you definition (`awaiting_review` +
+   * assigned to you) shared by the badge, the headline and the rows, and
+   * widening it here is what made the headline read 6 while the sidebar read 5.
+   * The next-move card already carries the top one, so only the remainder gets
+   * its own line inside the lane.
+   */
+  const interactionsQuery = useQuery({
+    ...pendinginteractionsGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: 60_000,
+    staleTime: 10_000,
+  });
+  const pendingApprovals = interactionsQuery.data?.interactions?.length ?? 0;
+
   const stateQuery = useHomeStateQuery(assistantId);
   const { profile } = useCompanyProfile(assistantId);
   const { move, isLoading: moveLoading } = useNextMove(assistantId);
   const { degraded, syncedLabel } = useDegradedState();
   const orientation = useHqOrientation();
-  const firstRun = useHqFirstRun();
   const todayStart = useTodayStart();
 
   const month = monthWindow();
@@ -2019,19 +2276,6 @@ export function HqPage() {
   // NOT guessed (the auto-filer stamps a confidence while leaving the item
   // unfiled — that shape is the "Cue was unsure" signal). Anything in neither
   // bucket is still in flight and is not counted as handled.
-  // Mission rings for the deck, live first then abandoned (which ring blocked
-  // rather than vanishing — a goal that drifted is still information).
-  const missionRings = useMemo(
-    () =>
-      missions.map((m) => ({
-        id: m.id,
-        title: m.title,
-        status: ringStatusFor(m),
-        open: m.rollup.counts.open,
-      })),
-    [missions],
-  );
-
   // The staff, with receipts. "128 acts · 0 reversed" is the line that makes
   // autonomy credible, and both halves are queryable today.
   const actsSummary = useQuery({
@@ -2066,7 +2310,9 @@ export function HqPage() {
   // Filing health. Polled on the slow lane — a stalled filer is measured in
   // sweeps, not seconds, and this must never add load to the deck.
   const autoFileHealth = useQuery({
-    ...workitemsAutofileHealthGetOptions({ path: { assistant_id: assistantId } }),
+    ...workitemsAutofileHealthGetOptions({
+      path: { assistant_id: assistantId },
+    }),
     refetchInterval: 120_000,
     staleTime: 60_000,
   });
@@ -2133,6 +2379,23 @@ export function HqPage() {
   const doneToday = done.items.filter(
     (item) => (item.updatedAt ?? item.createdAt) >= todayStart,
   );
+  /**
+   * The one needs-you number. `reviewItems` has already had the next-move item
+   * filtered out when the move WAS one of the review rows, so adding 1
+   * unconditionally double-counted a move that is neither a review row nor an
+   * approval — a queued work item. That is what made the headline read 6 while
+   * the sidebar badge, reading the same two queries, read 5.
+   */
+  const moveIsExtraToNeedsYou =
+    move.hasMove &&
+    (review.items.length !== reviewItems.length || move.kind === "approval");
+  const glanceCount = reviewItems.length + (moveIsExtraToNeedsYou ? 1 : 0);
+
+  // The next-move card carries at most one approval; the rest need a door.
+  const extraApprovals = Math.max(
+    0,
+    pendingApprovals - (move.hasMove && move.kind === "approval" ? 1 : 0),
+  );
 
   // MOBILE → the v3 native Today screen (docs/design/mobile-v3, frame 1).
   // Same stores, new skin: next-move → NEXT MOVE card, approvals → NEEDS
@@ -2146,8 +2409,28 @@ export function HqPage() {
         move={move}
         moveLoading={moveLoading}
         review={reviewItems}
+        reviewError={review.isError}
+        // Computed ONCE, here, and handed to both surfaces — the badge, the
+        // headline and the rows are provably the same set (invariant 2).
+        glanceCount={glanceCount}
         running={running.items}
         cameIn={cameIn}
+        done={doneToday}
+        doneError={done.isError}
+        missions={deckMissions}
+        missionsError={missionsError}
+        day={dayPicture.day}
+        dayUnavailable={dayPicture.unavailable}
+        lifeGroups={life.groups}
+        lifeUnavailable={life.unavailable}
+        arrivals={arrivals}
+        arrivalsError={arrivalsQuery.isError}
+        waiting={waitingOn.items}
+        waitingUnavailable={waitingOn.unavailable}
+        schedules={schedules}
+        schedulesError={schedulesError}
+        watchingCount={liveWatchers.length}
+        heartbeatRuns={null}
         degraded={degraded}
       />
     );
@@ -2236,17 +2519,16 @@ export function HqPage() {
 
         {isLoading ? (
           <HqDeckSkeleton />
-        ) : !hasMissions ? (
-          <PulseLayout
+        ) : (
+          <HqDeck
             assistantId={assistantId}
             move={move}
             needsYou={reviewItems}
-            moveIsExtraToNeedsYou={
-              move.hasMove &&
-              (review.items.length !== reviewItems.length ||
-                move.kind === "approval")
-            }
+            needsYouError={review.isError}
+            extraApprovals={extraApprovals}
+            moveIsExtraToNeedsYou={moveIsExtraToNeedsYou}
             arrivals={arrivals}
+            arrivalsError={arrivalsQuery.isError}
             trust={{
               mode:
                 workspaceMode.charAt(0).toUpperCase() + workspaceMode.slice(1),
@@ -2261,35 +2543,21 @@ export function HqPage() {
                   ? Math.round(budget.data.monthlyCapUsd * 100)
                   : null,
             }}
-            missionRings={missionRings}
-            // Every module below renders regardless; where the data does not
-            // exist yet it states WHY rather than going quiet. A silent module
-            // is indistinguishable from a calm one.
+            missions={deckMissions}
+            missionsError={missionsError}
+            projects={projects}
+            schedules={schedules}
+            schedulesError={schedulesError}
+            // Each of these is EITHER data or a sentence saying why there is
+            // none. What changed with v7 is what happens next: an empty lane
+            // is now one grey line rather than a card stating its emptiness.
             day={dayPicture.day}
             dayUnavailable={dayPicture.unavailable}
             lifeGroups={life.groups}
-            lifeUnavailable={
-              life.unavailable ??
-              (life.groups.length === 0
-                ? {
-                    reason:
-                      "Nothing is marked as life yet — personal items get their own lens, grouped by when rather than why.",
-                  }
-                : undefined)
-            }
+            lifeUnavailable={life.unavailable}
             agentsNow={agentsNow}
-            agentsUnavailable={
-              agentsNow.length === 0
-                ? { reason: "No agents have run yet." }
-                : undefined
-            }
             waiting={waitingOn.items}
-            waitingUnavailable={
-              waitingOn.unavailable ??
-              (waitingOn.items.length === 0
-                ? { reason: "Cue isn't tracking who owes you anything yet." }
-                : undefined)
-            }
+            waitingUnavailable={waitingOn.unavailable}
             autoFileDegraded={
               autoFileHealth.data?.degraded
                 ? (autoFileHealth.data.degradedReason ??
@@ -2306,6 +2574,7 @@ export function HqPage() {
             cameIn={cameIn}
             running={running.items}
             done={doneToday}
+            doneError={done.isError}
             missionsByProjectId={byProject}
             userName={stateQuery.data?.userName?.trim() || null}
             dayLabel={dayLabel}
@@ -2314,116 +2583,6 @@ export function HqPage() {
               setShowNewMission({ open: true, presetTitle: title })
             }
           />
-        ) : (
-          <div data-slot="hq-stream" style={{ minWidth: 0 }}>
-            <div data-coach="hq-capture">
-              <CaptureBar />
-            </div>
-            <RingsHeroCard
-              missions={deckMissions}
-              doneToday={doneToday.length}
-              dayLabel={dayLabel}
-            />
-
-            {/* Inbound — the watching line + came-in strip. Reassign/teach
-                lives here; the board below picks the loop up from Running. */}
-            <WatchingLine assistantId={assistantId} />
-            {queued.isError ? (
-              <CameInErrorStrip onRetry={() => void queued.refetch()} />
-            ) : (
-              <CameInReassignStrip
-                items={cameIn}
-                projects={projects}
-                missionsByProjectId={byProject}
-                assistantId={assistantId}
-                onNewMission={() => setShowNewMission({ open: true })}
-              />
-            )}
-
-            {/* §6 · Drifting — honest nudge on any mission that's idling. */}
-            <MissionDriftNudges
-              assistantId={assistantId}
-              missions={deckMissions}
-            />
-
-            {/* ◆ YOUR NEXT MOVE — the chief-of-staff pick, emphasized above the
-                board. reviewItems already excludes it, so it never doubles. */}
-            {move.hasMove ? (
-              <div style={{ marginTop: 16 }}>
-                <NextMoveCard assistantId={assistantId} move={move} />
-              </div>
-            ) : null}
-
-            {/* First-run — three cards that teach the loop, once. */}
-            {firstRun.show ? <HqFirstRun onDismiss={firstRun.dismiss} /> : null}
-
-            {/* The work-loop board — Running → Needs you → Review → Done, with
-                live movement on the running cards. Inbound stays in the strip
-                above, so this is the four-lane active loop. */}
-            <HqWorkLoopBoard
-              assistantId={assistantId}
-              running={running.items}
-              review={reviewItems}
-              done={doneToday}
-              byProject={byProject}
-            />
-
-            {/* Standing schedules — what fires on its own. */}
-            <QueuedScheduledSection
-              queued={cameIn}
-              schedules={schedules}
-              missionsByProjectId={byProject}
-            />
-
-            {/* Spend + time-back — the honest cost line (from the retired rail). */}
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                marginTop: 16,
-              }}
-            >
-              <div
-                style={{
-                  minWidth: 140,
-                  background: C.surface,
-                  border: `1px solid ${C.line}`,
-                  borderRadius: 10,
-                  padding: 11,
-                }}
-              >
-                <MicroLabel style={{ fontSize: 9.5 }}>Spend · month</MicroLabel>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: C.ink,
-                    marginTop: 2,
-                  }}
-                >
-                  $
-                  {(usage.data?.totalEstimatedCostUsd ?? 0).toFixed(
-                    (usage.data?.totalEstimatedCostUsd ?? 0) >= 100 ? 0 : 2,
-                  )}
-                  {budget.data?.monthlyCapUsd != null ? (
-                    <span
-                      style={{ fontSize: 11, color: C.t3, fontWeight: 400 }}
-                    >
-                      {" "}
-                      / ${budget.data.monthlyCapUsd}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <TimeBackChip ledger={null} />
-            </div>
-
-            <MicroLabel style={{ margin: "20px 0 10px" }}>
-              Missions · {deckMissions.length}
-            </MicroLabel>
-            <MissionList missions={deckMissions} />
-          </div>
         )}
       </div>
 

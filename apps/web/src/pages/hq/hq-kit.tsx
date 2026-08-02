@@ -56,6 +56,15 @@ export function HqStyle() {
         __html: [
           ":root{--hq-teal:#0E8C8C;--hq-teal-bright:#19B3B3;}",
           '[data-theme="dark"],[data-theme="velvet"]{--hq-teal:#2CC4C4;--hq-teal-bright:#2CC4C4;}',
+          // Muted TEXT, and only text. Invariant 15: #5B5B68 has regressed four
+          // times and is never a text colour (~2.5:1 on our dark grounds);
+          // #8A8A7E and #A8A89C are ground/hairline colours, never type. The
+          // global --mv1-t3 is a chrome grey that dips under 4:1 on the dark
+          // canvas, so the Tier-3 rail — which is nothing BUT small grey text —
+          // rides this token instead: #6B6B60 light (5.4:1), #9A9AA8 dark
+          // (6.9:1).
+          ":root{--hq-muted:#6B6B60;}",
+          '[data-theme="dark"],[data-theme="velvet"]{--hq-muted:#9A9AA8;}',
           "@keyframes hqBar{0%,100%{height:5px}50%{height:13px}}",
           "@keyframes hqBlink{0%,100%{opacity:1}50%{opacity:.35}}",
           "@keyframes hqReveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}",

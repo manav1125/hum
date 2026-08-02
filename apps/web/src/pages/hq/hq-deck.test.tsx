@@ -17,11 +17,11 @@ import { cleanup, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import {
-  ArrivalsDigest,
+  arrivalsSentence,
   CensusBar,
   DeliveredBlock,
   EmptyState,
-  PulseStrip,
+  pulseSentence,
 } from "@/pages/hq/hq-deck";
 
 afterEach(cleanup);
@@ -31,10 +31,14 @@ function wrap(ui: React.ReactNode) {
 }
 
 describe("DeliveredBlock", () => {
-  test("renders nothing when nothing was delivered", () => {
-    // An empty receipts block is a worse opening than no block at all.
+  test("still renders a card at zero — Delivered is Tier 1", () => {
+    // v7 §A: Tier 1 is always a card, even empty. An absent Delivered lane is
+    // indistinguishable from one we failed to query.
     const { container } = wrap(<DeliveredBlock items={[]} />);
-    expect(container.querySelector("[data-slot='hq-delivered']")).toBeNull();
+    expect(
+      container.querySelector("[data-slot='hq-delivered']"),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("haven");
   });
 
   test("shows delivered work with a glyph, not colour alone", () => {
@@ -97,43 +101,28 @@ describe("CensusBar — never a fake number", () => {
   });
 });
 
-describe("PulseStrip", () => {
+describe("pulseSentence — the Tier-3 pulse line", () => {
   test("watching nothing says WHY, and never implies quiet", () => {
-    const { container } = wrap(
-      <PulseStrip sourceCount={0} checkCount={1851} lastCheckLabel={null} />,
-    );
-    const text = container.textContent ?? "";
+    const text = pulseSentence(0, 1851, null);
     expect(text).toContain("Watching nothing");
     // The evidence that Cue has in fact been working the whole time.
     expect(text).toContain("1,851");
   });
 
   test("does not invent a check count it was not given", () => {
-    const { container } = wrap(
-      <PulseStrip sourceCount={0} checkCount={null} lastCheckLabel={null} />,
-    );
-    expect(container.textContent).toBe("○Watching nothing yet");
+    expect(pulseSentence(0, null, null)).toBe("Watching nothing yet.");
   });
 
   test("reports real sources once watching is live", () => {
-    const { container } = wrap(
-      <PulseStrip
-        sourceCount={3}
-        checkCount={1851}
-        lastCheckLabel="4 min ago"
-      />,
-    );
-    const text = container.textContent ?? "";
+    const text = pulseSentence(3, 1851, "4 min ago");
     expect(text).toContain("Watching 3 sources");
     expect(text).toContain("4 min ago");
   });
 
   test("singularises one source", () => {
-    const { container } = wrap(
-      <PulseStrip sourceCount={1} checkCount={null} lastCheckLabel={null} />,
-    );
-    expect(container.textContent).toContain("Watching 1 source");
-    expect(container.textContent).not.toContain("1 sources");
+    const text = pulseSentence(1, null, null);
+    expect(text).toContain("Watching 1 source");
+    expect(text).not.toContain("1 sources");
   });
 });
 
@@ -184,9 +173,7 @@ describe("EmptyState — three kinds, three treatments", () => {
   test("each kind carries a distinct glyph, so state is never colour alone", () => {
     const kinds = ["not_set_up", "nothing_yet", "broken"] as const;
     const glyphs = kinds.map((kind) => {
-      const { container } = wrap(
-        <EmptyState kind={kind} title="t" body="b" />,
-      );
+      const { container } = wrap(<EmptyState kind={kind} title="t" body="b" />);
       const g = container.querySelector("[aria-hidden]")?.textContent ?? "";
       cleanup();
       return g;
@@ -195,12 +182,9 @@ describe("EmptyState — three kinds, three treatments", () => {
   });
 });
 
-describe("ArrivalsDigest — 40 arrivals must not become 40 cards", () => {
+describe("arrivalsSentence — 40 arrivals must not become 40 cards", () => {
   test("says what Cue DID with the pile, not what the pile contains", () => {
-    const { container } = wrap(
-      <ArrivalsDigest summary={{ total: 119, filed: 46, kept: 14 }} />,
-    );
-    const text = container.textContent ?? "";
+    const text = arrivalsSentence({ total: 119, filed: 46, kept: 14 });
     expect(text).toContain("119 arrived");
     expect(text).toContain("filed 46");
     expect(text).toContain("kept 14");
@@ -209,49 +193,40 @@ describe("ArrivalsDigest — 40 arrivals must not become 40 cards", () => {
   test("only the uncertain count is framed as needing the user", () => {
     // The whole point: 119 arrived but 14 need a decision. Presenting all 119
     // as things to look at is an inbox with extra steps.
-    const { container } = wrap(
-      <ArrivalsDigest summary={{ total: 119, filed: 46, kept: 14 }} />,
+    expect(arrivalsSentence({ total: 119, filed: 46, kept: 14 })).toContain(
+      "14 need a decision",
     );
-    expect(container.textContent).toContain("14 need a decision");
   });
 
   test("nothing uncertain reads as nothing needing you", () => {
-    const { container } = wrap(
-      <ArrivalsDigest summary={{ total: 27, filed: 27, kept: 0 }} />,
-    );
-    const text = container.textContent ?? "";
-    expect(text).toContain("nothing needs you");
+    const text = arrivalsSentence({ total: 27, filed: 27, kept: 0 });
+    expect(text).toContain("Nothing needs you");
     expect(text).not.toContain("kept");
   });
 
   test("always promises nothing was lost", () => {
     // Filing is only trustworthy if the user knows the alternative was not
     // deletion. Both branches carry it.
-    for (const s of [
+    for (const summary of [
       { total: 119, filed: 46, kept: 14 },
       { total: 27, filed: 27, kept: 0 },
     ]) {
-      const { container } = wrap(<ArrivalsDigest summary={s} />);
-      expect(container.textContent).toContain("nothing lost");
-      cleanup();
+      expect(arrivalsSentence(summary)).toContain("nothing lost");
     }
   });
 
-  test("renders nothing when nothing arrived", () => {
-    const { container } = wrap(
-      <ArrivalsDigest summary={{ total: 0, filed: 0, kept: 0 }} />,
-    );
-    expect(
-      container.querySelector("[data-slot='hq-arrivals-digest']"),
-    ).toBeNull();
+  test("nothing arrived names the reason instead of going quiet", () => {
+    // Tier 3 is ALWAYS present, so this is a sentence rather than an absence —
+    // and "nothing arrived" on its own would read as a calm inbox.
+    const text = arrivalsSentence({ total: 0, filed: 0, kept: 0 });
+    expect(text).toContain("Nothing has arrived");
+    expect(text).toContain("nothing is watching");
   });
 
-  test("one row regardless of volume", () => {
-    const { container } = wrap(
-      <ArrivalsDigest summary={{ total: 4000, filed: 3990, kept: 10 }} />,
+  test("one sentence regardless of volume", () => {
+    const text = arrivalsSentence({ total: 4000, filed: 3990, kept: 10 });
+    expect(text.split(".").filter((part) => part.trim()).length).toBeLessThan(
+      4,
     );
-    expect(
-      container.querySelectorAll("[data-slot='hq-arrivals-digest']"),
-    ).toHaveLength(1);
   });
 });

@@ -28,7 +28,7 @@
  * Capture stays reachable through the tab bar's + (Create) — the v3 design
  * moves capture there, so Today carries no capture bar.
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
@@ -45,9 +45,34 @@ import {
   type NextMove,
   type NextMoveAction,
 } from "@/pages/command-center/use-next-move";
-import { holdsForYou } from "@/pages/hq/assessment-kit";
-import { sourceBadge } from "@/pages/hq/hq-kit";
-import type { HqWorkItem } from "@/pages/hq/use-missions";
+import type { ArrivalsSummary } from "@/pages/hq/hq-deck";
+import { RING_META, sourceBadge } from "@/pages/hq/hq-kit";
+import type {
+  DayPicture,
+  Horizon,
+  Unavailable,
+  WaitingItem,
+} from "@/pages/hq/hq-k1-modules";
+import {
+  counted,
+  deliverySentence,
+  known,
+  LANE_META,
+  laneSlotsFor,
+  TIER3_IDS,
+  TIER2_IDS,
+  TIER1_IDS,
+  unavailable,
+  type LaneId,
+} from "@/pages/hq/hq-tiers";
+import {
+  ringStatusFor,
+  type HqSchedule,
+  type HqWorkItem,
+  type Mission,
+} from "@/pages/hq/use-missions";
+
+import { buildMv3Lanes } from "./mv3-lanes";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
@@ -55,7 +80,6 @@ import { AuroraBackdrop } from "../aurora-backdrop";
 import { CueRing, CueRingHero, type OrbitChip } from "../cue-ring";
 import { EmptyOrbit } from "../empty-orbit";
 import { GlassCard } from "../glass-card";
-import { StateChip } from "../state-chip";
 import { DismissX, dismissLeave, useDismissTask } from "../undo-toast";
 import {
   cardBody,
@@ -401,204 +425,421 @@ function ReviewSeeAllStrip({ total }: { total: number }) {
   );
 }
 
-/** The 3-bar live equalizer (spec: 2px bars, 12px tall, staggered mv3Bar). */
-function LiveBarsV3() {
-  return (
-    <span
-      aria-hidden
-      style={{ display: "flex", gap: 1.5, height: 12, alignItems: "center" }}
-    >
-      {[0, 0.3, 0.6].map((d) => (
-        <span
-          key={d}
-          style={{
-            width: 2,
-            height: "100%",
-            background: "var(--mv3-accent)",
-            borderRadius: 1,
-            animation: `mv3Bar .9s ease-in-out ${d}s infinite`,
-          }}
-        />
-      ))}
-    </span>
-  );
-}
-
-/** WORKING NOW — running items with live movement + Watch. */
-function WorkingNowV3({
-  running,
-  delay,
+/**
+ * Tier 1 · Needs you — the lane, not a single card.
+ *
+ * At 390px the lane is a stack: the next move, any paused approvals, then the
+ * review cards, under one header carrying the number. **The headline IS the
+ * number** (v8 M2), and at zero it says so out loud — "0 need you" is a real
+ * number, not a hidden absence, and hiding the lane on a quiet morning is
+ * exactly how a calm deck and a broken query come to look identical.
+ */
+function NeedsYouV3({
+  assistantId,
+  move,
+  moveLoading,
+  approvals,
+  review,
+  count,
+  leavingId,
+  onDismiss,
 }: {
-  running: HqWorkItem[];
-  delay: number;
+  assistantId: string;
+  move: NextMove;
+  moveLoading: boolean;
+  approvals: PendingInteraction[];
+  review: HqWorkItem[];
+  count: number;
+  leavingId: string | null;
+  onDismiss: (item: HqWorkItem) => void;
 }) {
-  const navigate = useNavigate();
-  if (running.length === 0) return null;
-  const watch = () => {
-    haptic.light();
-    // Watch live (frame 17) — the running item's step stream.
-    const first = running[0];
-    if (first) navigate(routes.workLive(first.id));
-    else navigate(routes.allWork);
-  };
+  let slot = 0;
+  const nextDelay = () => 0.1 + 0.15 * slot++;
+  if (move.hasMove) slot = 1; // NextMove takes .1 itself
   return (
-    <GlassCard padding="12px 17px" style={rise(delay)}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 7,
-          marginBottom: 9,
+          gap: 8,
+          padding: "2px 6px 0",
         }}
       >
-        <span style={{ ...microLabel, color: "var(--mv3-muted)" }}>
-          Working now · {running.length}
-        </span>
-        <button
-          type="button"
-          onClick={watch}
+        <span
           style={{
-            marginLeft: "auto",
-            fontSize: 11.5,
-            color: "var(--mv3-micro)",
-            background: "none",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-            fontFamily: "inherit",
+            ...microLabel,
+            color: count > 0 ? "var(--mv3-amber)" : "var(--mv3-muted)",
           }}
         >
-          Watch ›
-        </button>
+          ‖ Needs you · {count}
+        </span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-        {running.slice(0, 3).map((item, i) => (
-          <div key={item.id} style={{ opacity: i === 0 ? 1 : 0.75 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <LiveBarsV3 />
-              <span
-                style={{
-                  fontSize: 13,
-                  flex: 1,
-                  minWidth: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  color: "var(--mv3-text)",
-                }}
-              >
-                {item.title}
-              </span>
-              {item.updatedAt ? (
-                <span style={{ fontSize: 11.5, color: "var(--mv3-faint)" }}>
-                  {relativeTime(item.updatedAt)}
-                </span>
-              ) : null}
-            </div>
-            {item.lastProgressNote ? (
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--mv3-muted)",
-                  marginTop: 3,
-                  paddingLeft: 17,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {item.lastProgressNote}
-              </div>
-            ) : null}
+      {count === 0 && approvals.length === 0 ? (
+        <GlassCard blur={false} style={rise(0.1)}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 9,
+              fontSize: 14,
+              color: "var(--mv3-text)",
+            }}
+          >
+            <span aria-hidden style={{ color: "var(--mv3-green, #4CAF82)" }}>
+              ✓
+            </span>
+            <span>Nothing needs you. Go do something else.</span>
           </div>
-        ))}
-      </div>
-    </GlassCard>
+        </GlassCard>
+      ) : null}
+      {moveLoading && !move.hasMove ? (
+        // Reserve the Next-move slot while the pick computes so the card
+        // streaming in later never shoves the Review cards down mid-read.
+        <div
+          aria-hidden
+          style={{
+            height: 96,
+            borderRadius: 18,
+            background: "var(--mv3-btn2-bg)",
+            border: "1px solid var(--mv3-line)",
+            opacity: 0.55,
+          }}
+        />
+      ) : (
+        <NextMoveV3 assistantId={assistantId} move={move} />
+      )}
+      {approvals.slice(0, 2).map((interaction) => (
+        <NeedsOkV3
+          key={interaction.requestId}
+          assistantId={assistantId}
+          interaction={interaction}
+          delay={nextDelay()}
+        />
+      ))}
+      {review.length > REVIEW_SHOWN_MAX ? (
+        <ReviewSeeAllStrip total={review.length} />
+      ) : null}
+      {review.slice(0, REVIEW_SHOWN_MAX).map((item) => (
+        <ReviewV3
+          key={item.id}
+          item={item}
+          delay={nextDelay()}
+          leaving={leavingId === item.id}
+          onDismiss={() => onDismiss(item)}
+        />
+      ))}
+    </div>
   );
 }
 
-/** "Came in today · N auto-filed / See all ›" strip (not a card). */
-function CameInStripV3({
-  items,
-  delay,
+/* -------------------------------------------------------------------------- */
+/* The tiers at 390px (v8 M2)                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * **At 390px there is no Tier 2: a lane is a card or a line, never between.**
+ *
+ * Desktop can afford a middle tier because horizontal space is cheap. The phone
+ * forces the question "does this lane deserve a card *today*?" — which is the
+ * question that fixed the desktop deck, so this is not a shrink-to-fit. Cards
+ * for needs-you, delivered and missions; everything else is one grey line with
+ * the same honest statement desktop shows, including "0 need you", which is a
+ * real number rather than a hidden absence.
+ *
+ * The lane roster, the builders and the two invariants are the SAME module the
+ * desktop deck uses (`@/pages/hq/hq-tiers`). That is deliberate: if mobile kept
+ * its own list, a lane could be present on one surface and silently absent on
+ * the other, and nothing would catch it.
+ */
+function Mv3TierLine({
+  id,
+  line,
 }: {
-  items: HqWorkItem[];
-  delay: number;
+  id: LaneId;
+  line: {
+    sentence: string;
+    href?: string;
+    linkLabel?: string;
+    tone?: "muted" | "attention";
+  };
 }) {
   const navigate = useNavigate();
-  if (items.length === 0) return null;
-  const filed = items.filter((i) => i.projectId != null).length;
-  // The pre-run verdicts that WAIT on a person (a question Cue needs answered,
-  // or something it is missing). Only these are called out — a captured item
-  // Cue can simply do gets no badge.
-  const held = items.filter((i) => holdsForYou(i) != null).length;
+  const meta = LANE_META[id];
+  const href = line.href ?? meta.href;
   return (
     <div
+      data-lane={id}
+      data-slot="mv3-tier-line"
+      role="button"
+      tabIndex={0}
+      onClick={() => {
+        haptic.light();
+        navigate(href);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") navigate(href);
+      }}
       style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: "baseline",
         gap: 10,
-        padding: "2px 6px",
-        ...rise(delay),
+        padding: "9px 6px",
+        // --mv3-muted is #9A9AA8 dark / #5A6672 light. Never #5B5B68.
+        color: "var(--mv3-muted)",
+        fontSize: 12.5,
+        lineHeight: 1.45,
+        cursor: "pointer",
       }}
     >
       <span
         aria-hidden
         style={{
-          width: 22,
-          height: 22,
-          borderRadius: 8,
-          background: "color-mix(in srgb, var(--mv3-accent) 15%, transparent)",
-          color: "var(--mv3-micro)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 11,
+          fontFamily: mv3Mono,
+          fontSize: 12,
+          width: 13,
           flexShrink: 0,
+          color:
+            line.tone === "attention" ? "var(--mv3-amber)" : "var(--mv3-muted)",
         }}
       >
-        ↴
+        {meta.glyph}
       </span>
+      <span style={{ flex: 1, minWidth: 0 }}>{line.sentence}</span>
       <span
-        style={{
-          fontSize: 13,
-          color: "var(--mv3-muted)",
-          flex: 1,
-          minWidth: 0,
-        }}
+        aria-hidden
+        style={{ fontSize: 12, flexShrink: 0, color: "var(--mv3-faint)" }}
       >
-        Came in today ·{" "}
-        <b style={{ color: "var(--mv3-text)", fontWeight: 600 }}>
-          {filed > 0 ? `${filed} auto-filed` : `${items.length} captured`}
-        </b>
-        {held > 0 ? (
-          <span style={{ display: "block", marginTop: 3 }}>
-            <StateChip
-              state="needs_you"
-              size="sm"
-              label={held === 1 ? "1 waits on you" : `${held} wait on you`}
-            />
+        ›
+      </span>
+    </div>
+  );
+}
+
+/** Tier 1 · Delivered — Cue's receipts, and a card even when there are none. */
+function DeliveredV3({ items, delay }: { items: HqWorkItem[]; delay: number }) {
+  const navigate = useNavigate();
+  return (
+    <GlassCard blur={false} style={rise(delay)}>
+      <div style={{ ...microLabel, color: "var(--mv3-green, #4CAF82)" }}>
+        ✓ Delivered · {items.length}
+      </div>
+      {items.length === 0 ? (
+        <div style={{ ...cardBody, marginTop: 7 }}>
+          I haven&rsquo;t finished anything for you yet today.
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            marginTop: 10,
+          }}
+        >
+          {items.slice(0, 3).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="cue-pressable"
+              onClick={() => {
+                haptic.light();
+                navigate(
+                  item.lastRunConversationId
+                    ? routes.conversation(item.lastRunConversationId)
+                    : routes.allWork,
+                );
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                background: "none",
+                border: "none",
+                padding: 0,
+                textAlign: "left",
+                font: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              <span
+                aria-hidden
+                style={{ color: "var(--mv3-green, #4CAF82)", fontSize: 13 }}
+              >
+                ✓
+              </span>
+              <span
+                style={{
+                  fontSize: 13.5,
+                  color: "var(--mv3-text)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.title}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+/** Tier 1 · Missions — the rings as rows, or the offer when there are none. */
+function MissionsV3({
+  missions,
+  delay,
+}: {
+  missions: Mission[];
+  delay: number;
+}) {
+  const navigate = useNavigate();
+  return (
+    <GlassCard blur={false} style={rise(delay)}>
+      <div style={{ ...microLabel, color: "var(--mv3-micro)" }}>
+        ◎ Missions · {missions.length}
+      </div>
+      {missions.length === 0 ? (
+        <div style={{ ...cardBody, marginTop: 7 }}>
+          No missions yet — and that&rsquo;s fine. Cue still catches what comes
+          in.
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 9,
+            marginTop: 10,
+          }}
+        >
+          {missions.slice(0, 4).map((m) => {
+            const status = ringStatusFor(m);
+            const meta = RING_META[status];
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className="cue-pressable"
+                onClick={() => {
+                  haptic.light();
+                  navigate(routes.hqMission(m.id));
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  textAlign: "left",
+                  font: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                {/* Glyph, never colour alone. */}
+                <span aria-hidden style={{ color: meta.color, fontSize: 13 }}>
+                  {meta.glyph}
+                </span>
+                <span
+                  style={{
+                    fontSize: 13.5,
+                    color: "var(--mv3-text)",
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {m.title}
+                </span>
+                <span
+                  style={{
+                    fontFamily: mv3Mono,
+                    fontSize: 10.5,
+                    color: "var(--mv3-muted)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {meta.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+/**
+ * The census, docked above the home indicator.
+ *
+ * It never needs scrolling to — the one number that says how much Cue is
+ * holding should not be the thing you have to hunt for at the bottom of a
+ * card stack. Segments with nothing in them are omitted rather than shown as
+ * zero: a zero here reads as "none", which is a claim.
+ */
+function Mv3Census({
+  segments,
+}: {
+  segments: { label: string; value: number }[];
+}) {
+  const navigate = useNavigate();
+  const shown = segments.filter((s) => s.value > 0);
+  if (shown.length === 0) return null;
+  return (
+    <div
+      data-slot="mv3-census"
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 3,
+        padding: `9px 18px calc(10px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))`,
+        background: "color-mix(in srgb, var(--mv3-bg) 78%, transparent)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        borderTop: "1px solid var(--mv3-line)",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontFamily: mv3Mono,
+        fontSize: 11,
+        color: "var(--mv3-muted)",
+      }}
+    >
+      <span style={{ flex: 1, minWidth: 0 }}>
+        {shown.map((s, i) => (
+          <span key={s.label}>
+            {i > 0 ? " · " : ""}
+            <span style={{ color: "var(--mv3-text)" }}>{s.value}</span>{" "}
+            {s.label}
           </span>
-        ) : null}
+        ))}
       </span>
       <button
         type="button"
         onClick={() => {
           haptic.light();
-          // Swipe-triage surface (frame 15).
-          navigate(routes.cameIn);
+          navigate(routes.allWork);
         }}
         style={{
-          fontSize: 12,
-          color: "var(--mv3-micro)",
           background: "none",
           border: "none",
           padding: 0,
-          cursor: "pointer",
           fontFamily: "inherit",
+          fontSize: 11,
+          color: "var(--mv3-micro)",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
         }}
       >
-        See all ›
+        All work ›
       </button>
     </div>
   );
@@ -796,8 +1037,26 @@ export function Mv3Today({
   move,
   moveLoading = false,
   review,
+  reviewError,
+  glanceCount,
   running,
   cameIn,
+  done,
+  doneError,
+  missions,
+  missionsError,
+  day,
+  dayUnavailable,
+  lifeGroups,
+  lifeUnavailable,
+  arrivals,
+  arrivalsError,
+  waiting,
+  waitingUnavailable,
+  schedules,
+  schedulesError,
+  watchingCount,
+  heartbeatRuns,
   degraded,
 }: {
   assistantId: string;
@@ -807,9 +1066,34 @@ export function Mv3Today({
   moveLoading?: boolean;
   /** awaiting_review items (next-move item already excluded by HqPage). */
   review: HqWorkItem[];
+  reviewError: boolean;
+  /**
+   * The needs-you number, computed once by HqPage so the badge, the headline
+   * and the rows are provably the same set (invariant 2). Mobile must not
+   * re-derive it — that is exactly how the two disagreed before.
+   */
+  glanceCount: number;
   running: HqWorkItem[];
   /** pending (came-in) items. */
   cameIn: HqWorkItem[];
+  /** done-today items — the Delivered lane. */
+  done: HqWorkItem[];
+  doneError: boolean;
+  missions: Mission[];
+  missionsError: boolean;
+  day: DayPicture | null;
+  dayUnavailable?: Unavailable;
+  lifeGroups: { horizon: Horizon; titles: string[] }[];
+  lifeUnavailable?: Unavailable;
+  arrivals: ArrivalsSummary;
+  arrivalsError: boolean;
+  waiting: WaitingItem[];
+  waitingUnavailable?: Unavailable;
+  schedules: HqSchedule[];
+  schedulesError: boolean;
+  /** Sources currently observed AND healthy. Existing != working. */
+  watchingCount: number;
+  heartbeatRuns: number | null;
   degraded: boolean;
 }) {
   const navigate = useNavigate();
@@ -859,6 +1143,23 @@ export function Mv3Today({
   const approvals = (interactionsQuery.data?.interactions ??
     []) as PendingInteraction[];
 
+  // Stamped once per mount — reading the clock during render is impure.
+  const [hour] = useState(() => new Date().getHours());
+  /**
+   * The delivered count, minted from the lane's own answer. `Queried` cannot be
+   * built from a literal, so the sentence physically cannot claim a number the
+   * deck did not ask for — a lane we could not read contributes nothing rather
+   * than a zero.
+   */
+  const deliveredCount = counted(
+    doneError ? unavailable<HqWorkItem[]>("unreadable") : known(done),
+    (items) => items.length,
+  );
+  const needsYouHeadline = reviewError
+    ? "I couldn't read your queue."
+    : glanceCount === 0
+      ? "Nothing needs you."
+      : `${glanceCount} ${glanceCount === 1 ? "needs" : "need"} you.`;
   const initial = (userName ?? "").trim().charAt(0).toUpperCase() || "M";
   const greeting = userName
     ? `Good ${dayPart()}, ${userName}.`
@@ -884,15 +1185,26 @@ export function Mv3Today({
     );
   }, [review, gone, move.hasMove, move.headline, move.itemId]);
 
-  // First-morning empty state (frame 22): when every slot is empty, the orbit
-  // waits — dashed, still, inviting — instead of a blank card stack. The
-  // early return lives BELOW the last hook (chips useMemo) per hooks rules.
-  const orbitEmpty =
+  /**
+   * First-morning empty state (frame 22): the orbit waits — dashed, still,
+   * inviting — instead of a blank card stack.
+   *
+   * v7 narrows when this is allowed to take the screen. A screen-owning empty
+   * is for the NOT-SET-UP case, and nothing else: an account with watchers
+   * running and a genuinely quiet morning must get the deck, because "0 need
+   * you" is a real number and the Tier-1 cards are what state it. Taking the
+   * whole screen there would hide the delivered lane, the missions lane and the
+   * four honest lines behind a picture.
+   */
+  const everyLaneEmpty =
     !move.hasMove &&
     approvals.length === 0 &&
     reviewShown.length === 0 &&
     running.length === 0 &&
-    cameIn.length === 0;
+    cameIn.length === 0 &&
+    done.length === 0 &&
+    missions.length === 0;
+  const orbitEmpty = everyLaneEmpty && watchingCount === 0;
 
   // Orbit chips = the active work streams (running items), spec hues per slot.
   const chips: OrbitChip[] = useMemo(
@@ -906,6 +1218,58 @@ export function Mv3Today({
         ),
       })),
     [running],
+  );
+
+  const lanes = buildMv3Lanes({
+    glanceCount,
+    reviewError,
+    done,
+    doneError,
+    missions,
+    missionsError,
+    running,
+    cameIn,
+    day,
+    dayUnavailable,
+    lifeGroups,
+    lifeUnavailable,
+    arrivals,
+    arrivalsError,
+    waiting,
+    waitingUnavailable,
+    schedules,
+    schedulesError,
+    watchingCount,
+    heartbeatRuns,
+    cards: {
+      needsYou: (count) => (
+        <NeedsYouV3
+          assistantId={assistantId}
+          move={move}
+          moveLoading={moveLoading}
+          approvals={approvals}
+          review={reviewShown}
+          count={count}
+          leavingId={leavingId}
+          onDismiss={dismiss}
+        />
+      ),
+      delivered: (items) => <DeliveredV3 items={items} delay={0.25} />,
+      missions: (ms) => <MissionsV3 missions={ms} delay={0.4} />,
+    },
+  });
+  // Cards and lines come out of the SAME roster, so nothing can fall between
+  // them: `laneSlotsFor` throws if a lane is neither. The rail then reads
+  // Tier 3 first and demoted Tier 2 after, which is v7 §A's order and the same
+  // order the desktop rail uses.
+  const { cards: tierCards, lines: tierLines } = laneSlotsFor(lanes);
+  const railOrder: readonly LaneId[] = [
+    ...TIER3_IDS,
+    ...TIER2_IDS,
+    ...TIER1_IDS,
+  ];
+  const railLines = [...tierLines].sort(
+    (a, b) => railOrder.indexOf(a.id) - railOrder.indexOf(b.id),
   );
 
   if (orbitEmpty && !interactionsQuery.isLoading) {
@@ -924,12 +1288,6 @@ export function Mv3Today({
     if (first) navigate(routes.workLive(first.id));
     else navigate(routes.allWork);
   };
-
-  // Stagger delays follow the spec's cadence (.1/.25/.4/.55) across whatever
-  // slots actually rendered.
-  let slot = 0;
-  const nextDelay = () => 0.1 + 0.15 * slot++;
-  if (move.hasMove) slot = 1; // NextMove takes .1 itself
 
   return (
     <div
@@ -1113,18 +1471,42 @@ export function Mv3Today({
               {initial}
             </span>
           </div>
-          {/* Greeting — fades out 40–100 as "Today" takes over 100–160. */}
-          <div
-            ref={greetingRef}
-            style={{
-              fontSize: 29,
-              fontWeight: 700,
-              letterSpacing: "-0.8px",
-              marginTop: 4,
-              lineHeight: 1.08,
-            }}
-          >
-            {greeting}
+          {/* Greeting + headline — fade out 40–100 as "Today" takes over
+              100–160. **The headline IS the number** (v8 M2): the big line is
+              what needs you, and the delivery sentence underneath carries the
+              receipts. Both read counts the deck actually queried — a lane we
+              could not ask contributes nothing rather than a zero. */}
+          <div ref={greetingRef} style={{ marginTop: 4 }}>
+            <div
+              style={{
+                fontSize: 13.5,
+                color: "var(--mv3-muted)",
+                lineHeight: 1.3,
+              }}
+            >
+              {greeting}
+            </div>
+            <div
+              style={{
+                fontSize: 29,
+                fontWeight: 700,
+                letterSpacing: "-0.8px",
+                lineHeight: 1.08,
+                marginTop: 2,
+              }}
+            >
+              {needsYouHeadline}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--mv3-muted)",
+                marginTop: 4,
+                lineHeight: 1.4,
+              }}
+            >
+              {deliverySentence(deliveredCount, null, hour)}
+            </div>
           </div>
         </div>
 
@@ -1158,50 +1540,46 @@ export function Mv3Today({
           captionRef={captionRef}
         />
 
-        {/* Card stack — rides the same page scroll (frame 60). */}
-        <div style={{ padding: "4px 16px 16px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {moveLoading && !move.hasMove ? (
-              // Reserve the Next-move slot while the pick computes so the card
-              // streaming in later never shoves the Review cards down mid-read.
-              <div
-                aria-hidden
-                style={{
-                  height: 96,
-                  borderRadius: 18,
-                  background: "var(--mv3-btn2-bg)",
-                  border: "1px solid var(--mv3-line)",
-                  opacity: 0.55,
-                }}
-              />
-            ) : (
-              <NextMoveV3 assistantId={assistantId} move={move} />
-            )}
-            {approvals.slice(0, 2).map((interaction) => (
-              <NeedsOkV3
-                key={interaction.requestId}
-                assistantId={assistantId}
-                interaction={interaction}
-                delay={nextDelay()}
-              />
+        {/*
+          Card stack — rides the same page scroll (frame 60).
+
+          Three Tier-1 cards, then the rail. The bottom padding clears the
+          docked census so the last line is never trapped under it.
+        */}
+        <div style={{ padding: "4px 16px 104px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {tierCards.map((slot) => (
+              <div key={slot.id} data-lane={slot.id}>
+                {slot.node}
+              </div>
             ))}
-            {reviewShown.length > REVIEW_SHOWN_MAX ? (
-              <ReviewSeeAllStrip total={reviewShown.length} />
-            ) : null}
-            {reviewShown.slice(0, REVIEW_SHOWN_MAX).map((item) => (
-              <ReviewV3
-                key={item.id}
-                item={item}
-                delay={nextDelay()}
-                leaving={leavingId === item.id}
-                onDismiss={() => dismiss(item)}
-              />
-            ))}
-            <WorkingNowV3 running={running} delay={nextDelay()} />
-            <CameInStripV3 items={cameIn} delay={nextDelay()} />
+            {/* Tier 3 — one grey line each, always present. Same honest
+                statements as desktop, including "0 need you". */}
+            <div
+              data-slot="mv3-tier-rail"
+              style={{
+                borderTop: "1px solid var(--mv3-line)",
+                paddingTop: 6,
+                ...rise(0.55),
+              }}
+            >
+              {railLines.map((slot) => (
+                <Mv3TierLine key={slot.id} id={slot.id} line={slot.line} />
+              ))}
+            </div>
           </div>
         </div>
       </div>
+      {/* The census docks above the home indicator, so the one number that
+          says how much Cue is holding never needs scrolling to. */}
+      <Mv3Census
+        segments={[
+          { label: "need you", value: glanceCount },
+          { label: "Cue is doing", value: running.length },
+          { label: "waiting", value: cameIn.length },
+          { label: "done today", value: done.length },
+        ]}
+      />
       {toastNode}
     </div>
   );

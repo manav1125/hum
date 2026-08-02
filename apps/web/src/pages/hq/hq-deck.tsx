@@ -1,18 +1,18 @@
 /**
- * The canonical HQ deck modules — delivered, needs-you, census and pulse.
+ * The canonical HQ deck modules — delivered, census, the honest empty states,
+ * and the sentences behind the Tier-3 arrivals and pulse lines.
  *
- * Built to `01-work-surfaces/canonical/cue-canonical.html` (K1) and the
- * addendum's A2 interim frame. The reading order in `PulseLayout` is the spec
- * and is load-bearing:
+ * Built to `01-work-surfaces/canonical/cue-canonical.html` (K1), the addendum's
+ * A2 interim frame, and v7 §A. The reading order lives in `HqDeck`
+ * (`hq-page.tsx`) and is the interim order design settled in Q2:
  *
- *   0 greeting (states DELIVERY) · 1 capture bar · 2 day rail · 3 missions+Life
- *   4 DELIVERED · 5 needs-you (capped) · 6 census · 7 agents/waiting/came-in
- *   8 pulse
+ *   delivery sentence · composer · needs-you · delivered · the rest per v7
  *
  * The one rule everything else follows from: **value before cost**. A headline
  * of "3 things need you" makes Cue read as another inbox — every competitor
- * opens with your obligations. Ours opens with our receipts. So `Delivered`
- * renders above `NeedsYou` on every surface that shows both.
+ * opens with your obligations. Ours opens with our receipts. Needs-you leads
+ * the CARDS, but only because the delivery sentence one line above has already
+ * given the receipts (invariant 1's stated exception).
  *
  * Two invariants are enforced here rather than left to the caller:
  *   · **The deck never grows.** Needs-you caps at `NEEDS_YOU_CAP` and shows
@@ -21,7 +21,11 @@
  *   · **Never a fake number.** Every count rendered is one the caller actually
  *     queried. Segments whose data does not exist yet (handed off, waiting,
  *     life) are omitted entirely rather than shown as zero — a zero reads as
- *     "none", which is a claim we cannot make.
+ *     "none", which is a claim we cannot make. The counts that cross lanes ride
+ *     `Queried` from `./hq-tiers`, which cannot be minted from a literal.
+ *
+ * What used to be a card here and is now one grey line: arrivals and pulse. See
+ * `./hq-tiers` for why — honesty lives in the statement, not the card.
  */
 
 import type { ReactNode } from "react";
@@ -38,10 +42,14 @@ export const NEEDS_YOU_CAP = 3;
 // ---------------------------------------------------------------------------
 
 /**
- * "While you slept · Cue delivered" — the first thing on the deck.
+ * "While you slept · Cue delivered" — Cue's receipts.
  *
- * Renders nothing when there is nothing delivered: an empty receipts block
- * would be a worse opening than none. The caller decides what follows.
+ * **Tier 1: this renders a card even at zero.** It used to return null on an
+ * empty list, on the reasoning that an empty receipts block is a worse opening
+ * than none. That was true when Delivered opened the deck; it is not true now
+ * that the delivery sentence carries the opening. An absent Delivered lane is
+ * indistinguishable from a Delivered lane we failed to query, and "I haven't
+ * finished anything yet today" is a fact worth stating in Cue's own voice.
  */
 export function DeliveredBlock({
   items,
@@ -50,12 +58,31 @@ export function DeliveredBlock({
   items: { id: string; title: string }[];
   onOpen?: (id: string) => void;
 }) {
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    return (
+      <section data-slot="hq-delivered" style={{ marginTop: 0 }}>
+        <MicroLabel color={C.green}>Delivered</MicroLabel>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 9,
+            marginTop: 10,
+            fontSize: 13,
+            color: C.t2,
+          }}
+        >
+          <span aria-hidden style={{ color: C.t3 }}>
+            ○
+          </span>
+          <span>I haven&rsquo;t finished anything for you yet today.</span>
+        </div>
+      </section>
+    );
+  }
   return (
-    <section data-slot="hq-delivered" style={{ marginTop: 30 }}>
-      <div
-        style={{ display: "flex", alignItems: "baseline", gap: 10 }}
-      >
+    <section data-slot="hq-delivered">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <MicroLabel color={C.green}>While you slept · Cue delivered</MicroLabel>
         <Link
           to={routes.allWork}
@@ -176,60 +203,81 @@ export function CensusBar({ segments }: { segments: CensusSegment[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Pulse
+// Pulse — a Tier-3 line (v7 §A)
 // ---------------------------------------------------------------------------
 
 /**
- * The pulse strip — what Cue is watching on your behalf.
+ * What Cue is watching on your behalf, as one sentence.
  *
  * `sourceCount === 0` is the addendum's A2 interim copy, and it is deliberately
  * blunt: the product currently watches nothing, and saying "all quiet" would be
- * a lie of omission. It states the fact and names the reason.
+ * a lie of omission. It states the fact and names the reason — with the check
+ * count as the evidence that Cue has in fact been running the whole time.
+ *
+ * Every number here is an argument, so the caller cannot get one from anywhere
+ * but the query that produced it; `checkCount === null` prints no number rather
+ * than a zero, because a zero would claim the heartbeat never ran.
  */
-export function PulseStrip({
-  sourceCount,
-  checkCount,
-  lastCheckLabel,
-}: {
-  sourceCount: number;
-  checkCount: number | null;
-  lastCheckLabel: string | null;
-}) {
-  const watching = sourceCount > 0;
-  return (
-    <div
-      data-slot="hq-pulse"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        marginTop: 18,
-        fontFamily: mono,
-        fontSize: 11,
-        color: C.t3,
-        lineHeight: 1.5,
-      }}
-    >
-      <span aria-hidden style={{ opacity: watching ? 1 : 0.5 }}>
-        {watching ? "◉" : "○"}
-      </span>
-      <span>
-        {watching
-          ? [
-              `Watching ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`,
-              lastCheckLabel ? `checked ${lastCheckLabel}` : null,
-              checkCount != null
-                ? `${checkCount.toLocaleString()} checks`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")
-          : checkCount != null
-            ? `Watching nothing · the heartbeat has run ${checkCount.toLocaleString()} times with nothing to check`
-            : "Watching nothing yet"}
-      </span>
-    </div>
-  );
+export function pulseSentence(
+  sourceCount: number,
+  checkCount: number | null,
+  lastCheckLabel: string | null,
+): string {
+  if (sourceCount > 0) {
+    return [
+      `Watching ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`,
+      lastCheckLabel ? `checked ${lastCheckLabel}` : null,
+      checkCount != null ? `${checkCount.toLocaleString()} checks` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return checkCount != null
+    ? `Watching nothing — the heartbeat has run ${checkCount.toLocaleString()} times with nothing to check.`
+    : "Watching nothing yet.";
+}
+
+// ---------------------------------------------------------------------------
+// Arrivals — a Tier-3 line (v7 §A)
+// ---------------------------------------------------------------------------
+
+export interface ArrivalsSummary {
+  /** Everything that arrived on its own. */
+  total: number;
+  /** Auto-filed onto a mission or project, with provenance. */
+  filed: number;
+  /** Scored but below confidence — Cue refused to guess. These need a human. */
+  kept: number;
+}
+
+/**
+ * "Came in" as ONE line, whatever the volume (§9).
+ *
+ * The rule this exists to enforce: *40 Monday arrivals must not become 40
+ * cards.* Rendering arrivals as a list is what turns a chief of staff back into
+ * an inbox — it hands the user the entire pile and calls it surfacing. The
+ * digest says what Cue DID with the pile, and the only number that asks for
+ * attention is the one Cue was genuinely unsure about.
+ *
+ * v7 demotes even the digest card to a Tier-3 line: at eleven items the card
+ * was chrome around a sentence. The sentence is unchanged.
+ *
+ * `filed` and `kept` are the honest split: filed means Cue chose a home and can
+ * name it; kept means it scored the item and declined to guess. Anything in
+ * neither bucket is still in flight and is deliberately not implied to be
+ * handled — which is why two numbers are shown rather than one "processed".
+ */
+export function arrivalsSentence(summary: ArrivalsSummary): string {
+  const { total, filed, kept } = summary;
+  if (total === 0) {
+    // A no-op is not a success: "nothing arrived" alone reads as a calm inbox
+    // when the truth is that observation is switched off.
+    return "Nothing has arrived — because nothing is watching, not because it's quiet.";
+  }
+  const did = `${total} arrived — Cue filed ${filed}${kept > 0 ? `, kept ${kept} for you` : ""}`;
+  return kept > 0
+    ? `${did}. ${kept} ${kept === 1 ? "needs" : "need"} a decision · nothing lost.`
+    : `${did}. Nothing needs you · nothing lost.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,9 +311,17 @@ export function EmptyState({
 }) {
   const tone =
     kind === "not_set_up"
-      ? { accent: C.blue, glyph: "👁", ground: `color-mix(in srgb, ${C.blue} 5%, ${C.surface})` }
+      ? {
+          accent: C.blue,
+          glyph: "👁",
+          ground: `color-mix(in srgb, ${C.blue} 5%, ${C.surface})`,
+        }
       : kind === "broken"
-        ? { accent: C.amber, glyph: "!", ground: `color-mix(in srgb, ${C.amber} 6%, ${C.surface})` }
+        ? {
+            accent: C.amber,
+            glyph: "!",
+            ground: `color-mix(in srgb, ${C.amber} 6%, ${C.surface})`,
+          }
         : { accent: C.t3, glyph: "↴", ground: C.surface };
   return (
     <div
@@ -299,100 +355,6 @@ export function EmptyState({
           {action ? <div style={{ marginTop: 12 }}>{action}</div> : null}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Arrivals digest (§9)
-// ---------------------------------------------------------------------------
-
-export interface ArrivalsSummary {
-  /** Everything that arrived on its own. */
-  total: number;
-  /** Auto-filed onto a mission or project, with provenance. */
-  filed: number;
-  /** Scored but below confidence — Cue refused to guess. These need a human. */
-  kept: number;
-}
-
-/**
- * "Came in" as ONE row, whatever the volume.
- *
- * The rule this exists to enforce (§9): *40 Monday arrivals must not become 40
- * cards.* Rendering arrivals as a list is what turns a chief of staff back into
- * an inbox — it hands the user the entire pile and calls it surfacing. The
- * digest says what Cue DID with the pile, and the only number that asks for
- * attention is the one Cue was genuinely unsure about.
- *
- * `filed` and `kept` are the honest split: filed means Cue chose a home and can
- * name it; kept means it scored the item and declined to guess. Anything not in
- * either bucket is still in flight and is deliberately not implied to be
- * handled — which is why the two numbers are shown rather than a single
- * "processed" count.
- */
-export function ArrivalsDigest({
-  summary,
-  onExpand,
-}: {
-  summary: ArrivalsSummary;
-  onExpand?: () => void;
-}) {
-  if (summary.total === 0) return null;
-  const { total, filed, kept } = summary;
-  return (
-    <div
-      data-slot="hq-arrivals-digest"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 11,
-        marginTop: 12,
-        padding: "13px 15px",
-        border: `1px solid ${C.line}`,
-        borderRadius: 13,
-        background: C.surface,
-      }}
-    >
-      <span aria-hidden style={{ color: C.blue, fontSize: 14 }}>
-        ↴
-      </span>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 13.5, color: C.ink }}>
-          {total} arrived — Cue filed {filed}
-          {kept > 0 ? `, kept ${kept} for you` : ""}
-        </div>
-        <div
-          style={{
-            fontSize: 11.5,
-            color: C.t3,
-            marginTop: 3,
-            fontFamily: mono,
-          }}
-        >
-          {kept > 0
-            ? `${kept} ${kept === 1 ? "needs" : "need"} a decision · nothing lost`
-            : "nothing needs you · nothing lost"}
-        </div>
-      </div>
-      {onExpand ? (
-        <button
-          type="button"
-          onClick={onExpand}
-          style={{
-            border: "none",
-            background: "none",
-            padding: 0,
-            fontSize: 11.5,
-            fontFamily: mono,
-            color: C.t3,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Where it went ›
-        </button>
-      ) : null}
     </div>
   );
 }

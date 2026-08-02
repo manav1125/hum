@@ -223,7 +223,12 @@ const MISSIONS = [
     updatedAt: NOW - 60 * MIN,
     rollup: {
       projects: [
-        { id: "p-1", title: "Partner growth & quarterly comms", emoji: "🤝", status: "active" },
+        {
+          id: "p-1",
+          title: "Partner growth & quarterly comms",
+          emoji: "🤝",
+          status: "active",
+        },
       ],
       counts: {
         queued: 2,
@@ -334,8 +339,7 @@ const FIXTURES: [RegExp, () => unknown][] = [
   [
     /\/work-items\/[^/]+\/events$/,
     () => ({
-      events:
-        STATE === "long" ? LONG_EVENTS : STATE === "empty" ? [] : EVENTS,
+      events: STATE === "long" ? LONG_EVENTS : STATE === "empty" ? [] : EVENTS,
     }),
   ],
   [
@@ -359,17 +363,24 @@ const FIXTURES: [RegExp, () => unknown][] = [
         STATE === "assess" || STATE === "assess-long"
           ? withAssessments(WORK_ITEMS, STATE === "assess-long")
           : STATE === "review"
-          ? [{ ...WORK_ITEMS[0], status: "awaiting_review" }, ...WORK_ITEMS.slice(1)]
-          : STATE === "stress"
-            ? WORK_ITEMS.map((w) => ({
-                ...w,
-                title: `${LONG_TITLE} ${UNBREAKABLE}`,
-                lastProgressNote: `Fetching ${UNBREAKABLE}`,
-                sourceContext: JSON.stringify({
-                  sender: "priya.raman@northwind-logistics-international.example",
-                }),
-              }))
-            : WORK_ITEMS,
+            ? [
+                { ...WORK_ITEMS[0], status: "awaiting_review" },
+                ...WORK_ITEMS.slice(1),
+              ]
+            : STATE === "stress"
+              ? WORK_ITEMS.map((w) => ({
+                  ...w,
+                  title: `${LONG_TITLE} ${UNBREAKABLE}`,
+                  lastProgressNote: `Fetching ${UNBREAKABLE}`,
+                  sourceContext: JSON.stringify({
+                    // Long local part, reserved domain: the fixture is here to
+                    // stress unbreakable-string truncation, and the repo's
+                    // generic-examples rule wants the domain to be example.com.
+                    sender:
+                      "priya.raman.northwind.logistics.international@example.com",
+                  }),
+                }))
+              : WORK_ITEMS,
     }),
   ],
   [
@@ -928,9 +939,7 @@ function TaskSheetPreview() {
     lastProgressNote: null,
     lastRunConversationId: null,
   });
-  const item = id
-    ? { ...base, id, ...(map[id] ?? {}) }
-    : base;
+  const item = id ? { ...base, id, ...(map[id] ?? {}) } : base;
   return (
     <Mv3TaskSheet
       assistantId={ASSISTANT_ID}
@@ -990,9 +999,28 @@ const SCREENS: Screen[] = [
             { id: "a2", label: "Snooze", kind: "snooze" },
           ],
         }}
-        review={TODAY_ITEMS.filter((i) => i.status === "awaiting_review") as any}
+        review={
+          TODAY_ITEMS.filter((i) => i.status === "awaiting_review") as any
+        }
         running={TODAY_ITEMS.filter((i) => i.status === "running") as any}
         cameIn={TODAY_ITEMS.filter((i) => i.status === "pending") as any}
+        done={TODAY_ITEMS.filter((i) => i.status === "done") as any}
+        doneError={false}
+        reviewError={false}
+        glanceCount={
+          TODAY_ITEMS.filter((i) => i.status === "awaiting_review").length + 1
+        }
+        missions={[]}
+        missionsError={false}
+        day={null}
+        lifeGroups={[]}
+        arrivals={{ total: 0, filed: 0, kept: 0 }}
+        arrivalsError={false}
+        waiting={[]}
+        schedules={[]}
+        schedulesError={false}
+        watchingCount={2}
+        heartbeatRuns={1851}
         degraded={false}
       />
     ),
@@ -1262,10 +1290,10 @@ export function MobileAuditGallery() {
           >
             <Suspense fallback={<div />}>
               <Boundary>
-              <Routes>
-                <Route path={screen.route} element={screen.element} />
-                <Route path="*" element={<div>no route</div>} />
-              </Routes>
+                <Routes>
+                  <Route path={screen.route} element={screen.element} />
+                  <Route path="*" element={<div>no route</div>} />
+                </Routes>
               </Boundary>
             </Suspense>
           </div>

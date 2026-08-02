@@ -5,13 +5,15 @@
  * Built from `docs/design/handoff-2026-08-01/01-work-surfaces/canonical/
  * cue-canonical.html` (K1) and WORK-SURFACES.md §2, §5, §6, §7.
  *
- * **Every module renders, always.** Where the data behind one does not exist
- * yet it shows the addendum's A2 interim treatment — a specific, named reason —
- * rather than being omitted. A missing module is indistinguishable from a calm
- * one, and the deck's job is to be readable in ten seconds *and* honest about
- * what it cannot see. That is why these take an explicit `unavailable` reason
- * instead of a nullable payload: "no data" and "not connected" are different
- * sentences and the caller has to say which.
+ * **"Every module renders, always" is retired** (v7 §A). These used to take a
+ * required `Unavailable` reason so a module could never go quiet; the reason was
+ * right and the mechanism was wrong. Honesty requires a lane never be silently
+ * absent and never fake a number — it does not require a card. The render
+ * policy now lives one level up in {@link ./hq-tiers}, which places each of
+ * these in a tier and demotes an empty one to a grey line rather than dropping
+ * it. So the components below are simply the CARD form of a lane: they are only
+ * ever handed data that was actually queried, which is why none of them carries
+ * an `unavailable` prop any more.
  */
 
 import type { ReactNode } from "react";
@@ -20,40 +22,7 @@ import { Link } from "react-router";
 import { C, MicroLabel, mono, serif } from "./hq-kit";
 import { routes } from "@/utils/routes";
 
-/** Why a module has nothing to show. Never rendered as silence. */
-export type Unavailable = {
-  /** One sentence, specific. "Not connected" — never "no data". */
-  reason: string;
-  /** Optional route that would fix it. */
-  fixHref?: string;
-  fixLabel?: string;
-};
-
-function ModuleNote({ note }: { note: Unavailable }) {
-  return (
-    <div
-      style={{
-        fontSize: 12,
-        color: C.t3,
-        lineHeight: 1.5,
-        marginTop: 9,
-      }}
-    >
-      {note.reason}
-      {note.fixHref ? (
-        <>
-          {" "}
-          <Link
-            to={note.fixHref}
-            style={{ color: C.blueText, textDecoration: "none" }}
-          >
-            {note.fixLabel ?? "Set it up"} ›
-          </Link>
-        </>
-      ) : null}
-    </div>
-  );
-}
+export type { Unavailable } from "./hq-tiers";
 
 // ---------------------------------------------------------------------------
 // Trust chip (K1, row 0)
@@ -81,7 +50,12 @@ export function TrustChip({
   return (
     <div
       data-slot="hq-trust-chip"
-      style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+      }}
     >
       <span
         style={{
@@ -214,12 +188,15 @@ export function DayRail({
   day,
   nowMs,
   offer,
-  unavailable,
 }: {
-  day: DayPicture | null;
+  day: DayPicture;
   nowMs: number;
-  offer?: { text: string; detail?: string; onAccept?: () => void; onDismiss?: () => void } | null;
-  unavailable?: Unavailable;
+  offer?: {
+    text: string;
+    detail?: string;
+    onAccept?: () => void;
+    onDismiss?: () => void;
+  } | null;
 }) {
   const hhmm = (ms: number) =>
     new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -228,7 +205,10 @@ export function DayRail({
     const h = d.getHours() + d.getMinutes() / 60;
     return Math.min(
       100,
-      Math.max(0, ((h - RAIL_START_HOUR) / (RAIL_END_HOUR - RAIL_START_HOUR)) * 100),
+      Math.max(
+        0,
+        ((h - RAIL_START_HOUR) / (RAIL_END_HOUR - RAIL_START_HOUR)) * 100,
+      ),
     );
   };
 
@@ -236,157 +216,149 @@ export function DayRail({
     <section data-slot="hq-day-rail" style={{ marginTop: 26 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <MicroLabel>Your day</MicroLabel>
-        {day ? (
-          <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
-            · {Math.floor(day.unbookedMinutes / 60)}h{" "}
-            {day.unbookedMinutes % 60}m unbooked
-          </span>
-        ) : null}
+        <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
+          · {Math.floor(day.unbookedMinutes / 60)}h {day.unbookedMinutes % 60}m
+          unbooked
+        </span>
       </div>
 
-      {unavailable ? (
-        <ModuleNote note={unavailable} />
-      ) : day == null ? null : (
-        <>
+      <div
+        style={{
+          position: "relative",
+          height: 34,
+          marginTop: 12,
+          borderRadius: 8,
+          background: C.sunken,
+          overflow: "hidden",
+        }}
+      >
+        {day.freeBlock ? (
           <div
+            title="Free"
             style={{
-              position: "relative",
-              height: 34,
-              marginTop: 12,
-              borderRadius: 8,
-              background: C.sunken,
-              overflow: "hidden",
+              position: "absolute",
+              left: `${pct(day.freeBlock.startMs)}%`,
+              width: `${Math.max(2, pct(day.freeBlock.endMs) - pct(day.freeBlock.startMs))}%`,
+              top: 0,
+              bottom: 0,
+              background: `color-mix(in srgb, ${C.green} 14%, transparent)`,
             }}
-          >
-            {day.freeBlock ? (
+          />
+        ) : null}
+        {day.commitments.map((c) => (
+          <div
+            key={c.id}
+            title={c.title}
+            style={{
+              position: "absolute",
+              left: `${pct(c.startMs)}%`,
+              width: `${Math.max(2, pct(c.endMs) - pct(c.startMs))}%`,
+              top: 5,
+              bottom: 5,
+              borderRadius: 5,
+              background: C.blue,
+              opacity: 0.85,
+            }}
+          />
+        ))}
+        {/* Now-marker — the rail is useless without knowing where you are. */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: `${pct(nowMs)}%`,
+            top: 0,
+            bottom: 0,
+            width: 2,
+            background: C.danger,
+          }}
+        />
+      </div>
+      {offer ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginTop: 11,
+            padding: "11px 13px",
+            border: `1px solid ${C.line}`,
+            borderRadius: 12,
+            background: C.surface,
+          }}
+        >
+          <span aria-hidden style={{ color: C.green }}>
+            ◷
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13, color: C.ink }}>{offer.text}</div>
+            {offer.detail ? (
               <div
-                title="Free"
                 style={{
-                  position: "absolute",
-                  left: `${pct(day.freeBlock.startMs)}%`,
-                  width: `${Math.max(2, pct(day.freeBlock.endMs) - pct(day.freeBlock.startMs))}%`,
-                  top: 0,
-                  bottom: 0,
-                  background: `color-mix(in srgb, ${C.green} 14%, transparent)`,
+                  fontSize: 11.5,
+                  color: C.t3,
+                  marginTop: 2,
+                  fontFamily: mono,
                 }}
-              />
-            ) : null}
-            {day.commitments.map((c) => (
-              <div
-                key={c.id}
-                title={c.title}
-                style={{
-                  position: "absolute",
-                  left: `${pct(c.startMs)}%`,
-                  width: `${Math.max(2, pct(c.endMs) - pct(c.startMs))}%`,
-                  top: 5,
-                  bottom: 5,
-                  borderRadius: 5,
-                  background: C.blue,
-                  opacity: 0.85,
-                }}
-              />
-            ))}
-            {/* Now-marker — the rail is useless without knowing where you are. */}
-            <div
-              aria-hidden
-              style={{
-                position: "absolute",
-                left: `${pct(nowMs)}%`,
-                top: 0,
-                bottom: 0,
-                width: 2,
-                background: C.danger,
-              }}
-            />
-          </div>
-          {offer ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                marginTop: 11,
-                padding: "11px 13px",
-                border: `1px solid ${C.line}`,
-                borderRadius: 12,
-                background: C.surface,
-              }}
-            >
-              <span aria-hidden style={{ color: C.green }}>
-                ◷
-              </span>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 13, color: C.ink }}>{offer.text}</div>
-                {offer.detail ? (
-                  <div
-                    style={{
-                      fontSize: 11.5,
-                      color: C.t3,
-                      marginTop: 2,
-                      fontFamily: mono,
-                    }}
-                  >
-                    {offer.detail}
-                  </div>
-                ) : null}
+              >
+                {offer.detail}
               </div>
-              {offer.onAccept ? (
-                <button
-                  type="button"
-                  onClick={offer.onAccept}
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    background: C.blue,
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: 8,
-                    padding: "7px 12px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Block it
-                </button>
-              ) : null}
-              {offer.onDismiss ? (
-                <button
-                  type="button"
-                  onClick={offer.onDismiss}
-                  style={{
-                    fontSize: 12,
-                    background: "none",
-                    border: "none",
-                    color: C.t3,
-                    cursor: "pointer",
-                  }}
-                >
-                  Not today
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {day.commitments.length > 0 ? (
-            <div
+            ) : null}
+          </div>
+          {offer.onAccept ? (
+            <button
+              type="button"
+              onClick={offer.onAccept}
               style={{
-                display: "flex",
-                gap: 12,
-                flexWrap: "wrap",
-                marginTop: 9,
-                fontSize: 11.5,
-                color: C.t3,
-                fontFamily: mono,
+                fontSize: 12,
+                fontWeight: 600,
+                background: C.blue,
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "7px 12px",
+                cursor: "pointer",
               }}
             >
-              {day.commitments.slice(0, 4).map((c) => (
-                <span key={c.id}>
-                  {hhmm(c.startMs)} {c.title}
-                </span>
-              ))}
-            </div>
+              Block it
+            </button>
           ) : null}
-        </>
-      )}
+          {offer.onDismiss ? (
+            <button
+              type="button"
+              onClick={offer.onDismiss}
+              style={{
+                fontSize: 12,
+                background: "none",
+                border: "none",
+                color: C.t3,
+                cursor: "pointer",
+              }}
+            >
+              Not today
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {day.commitments.length > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            marginTop: 9,
+            fontSize: 11.5,
+            color: C.t3,
+            fontFamily: mono,
+          }}
+        >
+          {day.commitments.slice(0, 4).map((c) => (
+            <span key={c.id}>
+              {hhmm(c.startMs)} {c.title}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -412,78 +384,70 @@ const HORIZON_LABEL: Record<Horizon, string> = {
  */
 export function LifeHorizons({
   groups,
-  unavailable,
 }: {
   groups: { horizon: Horizon; titles: string[] }[];
-  unavailable?: Unavailable;
 }) {
   return (
     <section data-slot="hq-life" style={{ minWidth: 0 }}>
-      <MicroLabel>⌂ Life · by horizon</MicroLabel>
-      {unavailable ? (
-        <ModuleNote note={unavailable} />
-      ) : (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 7,
-            marginTop: 12,
-          }}
-        >
-          {(["this_week", "soon", "someday"] as Horizon[]).map((h) => {
-            const g = groups.find((x) => x.horizon === h);
-            const n = g?.titles.length ?? 0;
-            return (
-              <div
-                key={h}
+      <MicroLabel>⌂ Personal · by horizon</MicroLabel>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 7,
+          marginTop: 12,
+        }}
+      >
+        {(["this_week", "soon", "someday"] as Horizon[]).map((h) => {
+          const g = groups.find((x) => x.horizon === h);
+          const n = g?.titles.length ?? 0;
+          return (
+            <div
+              key={h}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "9px 12px",
+                borderRadius: 11,
+                // Warm ground — the Life lens's only visual signature.
+                background: "var(--mv1-life-ground, #FAF7F2)",
+                border: `1px solid ${C.line}`,
+              }}
+            >
+              <span
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "9px 12px",
-                  borderRadius: 11,
-                  // Warm ground — the Life lens's only visual signature.
-                  background: "var(--mv1-life-ground, #FAF7F2)",
-                  border: `1px solid ${C.line}`,
+                  fontFamily: mono,
+                  fontSize: 9.5,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: C.t3,
+                  minWidth: 74,
                 }}
               >
-                <span
-                  style={{
-                    fontFamily: mono,
-                    fontSize: 9.5,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    color: C.t3,
-                    minWidth: 74,
-                  }}
-                >
-                  {HORIZON_LABEL[h]}
+                {HORIZON_LABEL[h]}
+              </span>
+              <span
+                style={{
+                  fontSize: 12.5,
+                  color: n > 0 ? C.t1 : C.t3,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flex: 1,
+                }}
+              >
+                {n > 0 ? g!.titles.slice(0, 3).join(" · ") : "—"}
+              </span>
+              {n > 0 ? (
+                <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
+                  {n}
                 </span>
-                <span
-                  style={{
-                    fontSize: 12.5,
-                    color: n > 0 ? C.t1 : C.t3,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    flex: 1,
-                  }}
-                >
-                  {n > 0 ? g!.titles.slice(0, 3).join(" · ") : "—"}
-                </span>
-                {n > 0 ? (
-                  <span
-                    style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}
-                  >
-                    {n}
-                  </span>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -509,57 +473,48 @@ export interface AgentNow {
  * queryable today — `agent_acts` carries both. Showing acts without reversals
  * would be marketing; the pair is a track record.
  */
-export function AgentsNow({
-  agents,
-  unavailable,
-}: {
-  agents: AgentNow[];
-  unavailable?: Unavailable;
-}) {
+export function AgentsNow({ agents }: { agents: AgentNow[] }) {
+  if (agents.length === 0) return null;
   return (
-    <section data-slot="hq-agents-now" style={{ marginTop: 26 }}>
+    <section data-slot="hq-agents-now" style={{ marginTop: 18 }}>
       <MicroLabel>Agents, right now</MicroLabel>
-      {unavailable ? (
-        <ModuleNote note={unavailable} />
-      ) : (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            marginTop: 12,
-          }}
-        >
-          {agents.slice(0, 4).map((a) => (
-            <div
-              key={a.name}
-              style={{ display: "flex", alignItems: "center", gap: 10 }}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          marginTop: 12,
+        }}
+      >
+        {agents.slice(0, 4).map((a) => (
+          <div
+            key={a.name}
+            style={{ display: "flex", alignItems: "center", gap: 10 }}
+          >
+            <span aria-hidden style={{ fontSize: 13 }}>
+              {a.emoji ?? "◆"}
+            </span>
+            <span style={{ fontSize: 13, color: C.t1, minWidth: 0 }}>
+              {a.name}
+              {a.activity ? (
+                <span style={{ color: C.t3 }}> — {a.activity}</span>
+              ) : null}
+            </span>
+            <span
+              style={{
+                marginLeft: "auto",
+                fontFamily: mono,
+                fontSize: 11,
+                color: C.t3,
+                whiteSpace: "nowrap",
+              }}
             >
-              <span aria-hidden style={{ fontSize: 13 }}>
-                {a.emoji ?? "◆"}
-              </span>
-              <span style={{ fontSize: 13, color: C.t1, minWidth: 0 }}>
-                {a.name}
-                {a.activity ? (
-                  <span style={{ color: C.t3 }}> — {a.activity}</span>
-                ) : null}
-              </span>
-              <span
-                style={{
-                  marginLeft: "auto",
-                  fontFamily: mono,
-                  fontSize: 11,
-                  color: C.t3,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {a.acts} acts · {a.reversed} reversed
-                {a.tier != null ? ` · Tier ${a.tier}` : ""}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+              {a.acts} acts · {a.reversed} reversed
+              {a.tier != null ? ` · Tier ${a.tier}` : ""}
+            </span>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -577,115 +532,34 @@ export interface WaitingItem {
   state: "going_cold" | "on_time" | "chased" | "system";
 }
 
-const WAITING_COPY: Record<WaitingItem["state"], string> = {
-  going_cold: "going cold",
-  on_time: "on time",
-  chased: "already chased",
-  system: "waiting on a system",
-};
-
 /**
- * Waiting has four states and each has a different right answer (§7).
+ * Waiting, as one Tier-3 sentence.
  *
- * Going cold wants a nudge; already-chased wants an escalation, not a second
- * nudge; on-time wants to be forgotten; waiting-on-a-system wants nothing at
- * all, and saying so IS the value. Collapsing them into one "waiting" list is
- * what makes a follow-up tool nagging rather than useful.
+ * Waiting has four states and each has a different right answer (§7) — going
+ * cold wants a nudge, already-chased wants an escalation rather than a second
+ * nudge, on-time wants to be forgotten, and waiting-on-a-system wants nothing
+ * at all. This used to be a card that rendered up to three rows plus a Nudge
+ * button. At eleven items on the deck it was three rows of chrome around a fact
+ * that fits in a sentence, so v7 puts it in Tier 3 and the rows live on the
+ * People surface the line links to.
+ *
+ * The one thing the sentence must not lose is which state is costing you time:
+ * "going cold" is the only one with a clock on it, so it is named separately
+ * rather than folded into a total.
+ *
+ * A function of the queried list, never of a count passed in — which is how the
+ * number here is guaranteed to be one we actually asked for.
  */
-export function WaitingOnPeople({
-  items,
-  onNudge,
-  unavailable,
-}: {
-  items: WaitingItem[];
-  onNudge?: (id: string) => void;
-  unavailable?: Unavailable;
-}) {
-  return (
-    <section data-slot="hq-waiting" style={{ marginTop: 26 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-        <MicroLabel>Waiting on people</MicroLabel>
-        {!unavailable && items.length > 0 ? (
-          <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
-            · {items.length}
-          </span>
-        ) : null}
-      </div>
-      {unavailable ? (
-        <ModuleNote note={unavailable} />
-      ) : items.length === 0 ? (
-        <div style={{ fontSize: 12, color: C.t3, marginTop: 9 }}>
-          Nothing is waiting on anyone.
-        </div>
-      ) : (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            marginTop: 12,
-          }}
-        >
-          {items.slice(0, 3).map((w) => (
-            <div
-              key={w.id}
-              style={{ display: "flex", alignItems: "center", gap: 10 }}
-            >
-              <span
-                aria-hidden
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 999,
-                  background: C.sunken,
-                  color: C.t2,
-                  fontSize: 10,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                {w.person.slice(0, 1).toUpperCase()}
-              </span>
-              <span style={{ fontSize: 13, color: C.t1, minWidth: 0 }}>
-                {w.person} · {w.what}
-              </span>
-              <span
-                style={{
-                  marginLeft: "auto",
-                  fontFamily: mono,
-                  fontSize: 11,
-                  color: w.state === "going_cold" ? C.amberText : C.t3,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {w.days}d — {WAITING_COPY[w.state]}
-              </span>
-              {/* A nudge is only offered where a nudge is the right move. */}
-              {w.state === "going_cold" && onNudge ? (
-                <button
-                  type="button"
-                  onClick={() => onNudge(w.id)}
-                  style={{
-                    fontSize: 11.5,
-                    border: `1px solid ${C.line2}`,
-                    background: C.surface,
-                    color: C.ink,
-                    borderRadius: 8,
-                    padding: "4px 9px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Nudge
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
+export function waitingSentence(items: WaitingItem[]): string {
+  if (items.length === 0) return "Nothing is waiting on anyone.";
+  const cold = items.filter((w) => w.state === "going_cold").length;
+  const people = new Set(items.map((w) => w.person)).size;
+  const who =
+    people === 1
+      ? `${items[0]!.person} owes you something`
+      : `${people} people owe you something`;
+  if (cold === 0) return `${who} — all still on time.`;
+  return `${who} — ${cold} ${cold === 1 ? "is" : "are"} going cold.`;
 }
 
 // ---------------------------------------------------------------------------
