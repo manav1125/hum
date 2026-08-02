@@ -279,6 +279,86 @@ export function proposeFromStoredLabels(
   return null;
 }
 
+/**
+ * Local-parts that only ever belong to a machine sending to a crowd.
+ *
+ * This is a claim about the ADDRESS, not about the content — which is the only
+ * reason it is allowed on a thin row. `noreply@` is not a judgement that the
+ * message is unimportant; it is an observation that the sender has structurally
+ * refused a reply, and a correspondent who cannot be answered is not
+ * correspondence. That property survived in the stored `from`, so it can be
+ * read retroactively without inventing anything.
+ *
+ * Deliberately NOT included: `support@`, `hello@`, `team@`, `billing@`,
+ * `admin@`, `accounts@`. Every one of those is routinely a human, or a robot
+ * whose message needs an answer — an approval request, an expiring token, an
+ * invoice. Those are exactly the items the owner needs surfaced, and the eight
+ * identical promos this rule exists to clear are not worth one missed invoice.
+ */
+const BULK_LOCAL_PARTS = [
+  "noreply",
+  "no-reply",
+  "no_reply",
+  "donotreply",
+  "do-not-reply",
+  "newsletter",
+  "newsletters",
+  "news",
+  "promotions",
+  "promo",
+  "campaigns",
+  "campaign",
+  "marketing",
+  "mailer",
+  "mailing",
+  "notification",
+  "notifications",
+  "buzz",
+  "digest",
+  "updates",
+  "bounce",
+] as const;
+
+/**
+ * True when the address is structurally a bulk sender.
+ *
+ * Matches the local part exactly, or as a `-`/`.`/`_`-delimited token within
+ * it, so `news-noreply@` and `en_flight_noreply@` both hit while `newsome@`
+ * (a surname) does not. Substring matching would
+ * catch the surname, and filing a person's mail because their name contains
+ * "news" is precisely the failure this whole system is built to avoid.
+ */
+export function isBulkSenderAddress(address: string | null): boolean {
+  if (!address) return false;
+  const at = address.lastIndexOf("@");
+  if (at <= 0) return false;
+  const local = address.slice(0, at).toLowerCase();
+  const tokens = local.split(/[-._+]/).filter(Boolean);
+  return BULK_LOCAL_PARTS.some((p) => local === p || tokens.includes(p));
+}
+
+/**
+ * The retro-only sender-shape rule.
+ *
+ * Retro-only on purpose: at the live boundary the real headers are present, and
+ * `List-Unsubscribe` / `Precedence` / `Auto-Submitted` are strictly better
+ * evidence than an address pattern. This exists because those headers were
+ * never captured for mail that arrived before the gate, and the alternative for
+ * the owner is reading eight identical promos by hand.
+ */
+export function proposeFromSenderShape(
+  signals: ArrivalSignals | null,
+): ArrivalDecision | null {
+  if (!signals || !isBulkSenderAddress(signals.senderAddress)) return null;
+  return {
+    disposition: "filed",
+    reason: `bulk mail from ${signals.senderName ?? signals.senderAddress ?? "an automated sender"}`,
+    decidedBy: "rule",
+    ruleId: "bulk_sender_address",
+    confidence: null,
+  };
+}
+
 /** The verdict for a row nothing could justify filing. */
 function keepDecision(reason: string): ArrivalDecision {
   return {
@@ -452,8 +532,13 @@ export async function retrofitArrivalGate(
     } else {
       // Thin row: only a signal actually stored on it may file it, and the
       // safety floor still gets the last word.
+      // Gmail's own category first — it is Google's judgement, not ours, and
+      // it is the stronger of the two. The sender shape is the fallback for
+      // mail Gmail never categorised, and it reads the address rather than the
+      // message, which is why it is safe on a row whose headers are gone.
       const proposed =
         proposeFromStoredLabels(payload) ??
+        proposeFromSenderShape(signals) ??
         keepDecision(
           "Cue could not tell from what it still has about this message — kept for you",
         );

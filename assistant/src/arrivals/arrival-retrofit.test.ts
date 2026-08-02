@@ -29,6 +29,7 @@ import {
   BULK_GMAIL_CATEGORIES,
   DEFAULT_RETRO_CHANNEL,
   describeReconstruction,
+  isBulkSenderAddress,
   proposeFromStoredLabels,
   retrofitArrivalGate,
 } from "./arrival-retrofit.js";
@@ -133,6 +134,63 @@ describe("describeReconstruction", () => {
 
   test("a missing payload is unavailable, never thin", () => {
     expect(describeReconstruction(null).quality).toBe("unavailable");
+  });
+});
+
+describe("isBulkSenderAddress — a claim about the address, not the message", () => {
+  test("catches the shapes that flooded the lane", () => {
+    for (const a of [
+      // The local-part shapes that flooded the real lane. The domain is
+      // deliberately constant: the rule reads the local part only, so varying
+      // the domain would suggest it matters.
+      "notification@example.com",
+      "noreply@example.com",
+      "news-noreply@example.com",
+      "en_flight_noreply@example.com",
+      "buzz@example.com",
+      "promotions@example.com",
+      "news@example.com",
+      "newsletter@example.com",
+      "do-not-reply@example.com",
+    ]) {
+      expect(isBulkSenderAddress(a)).toBe(true);
+    }
+  });
+
+  test("a surname is not a newsletter", () => {
+    // The failure a substring match would produce: filing a real person's mail
+    // because their name contains one of the tokens. This is the whole reason
+    // the match is on delimited tokens rather than `includes`.
+    for (const a of [
+      "newsome@example.com",
+      "promotional.director@example.com",
+      "jnews@example.com",
+      "buzzard@example.com",
+    ]) {
+      expect(isBulkSenderAddress(a)).toBe(false);
+    }
+  });
+
+  test("addresses that are routinely a human, or a robot owed an answer", () => {
+    // Approval requests, expiring tokens and invoices arrive from addresses
+    // like these. One missed invoice costs more than eight promos kept.
+    for (const a of [
+      "support@example.com",
+      "hello@example.com",
+      "billing@example.com",
+      "accounts@example.com",
+      "team@example.com",
+      "admin@example.com",
+    ]) {
+      expect(isBulkSenderAddress(a)).toBe(false);
+    }
+  });
+
+  test("malformed input is never bulk", () => {
+    expect(isBulkSenderAddress(null)).toBe(false);
+    expect(isBulkSenderAddress("")).toBe(false);
+    expect(isBulkSenderAddress("noreply")).toBe(false);
+    expect(isBulkSenderAddress("@noreply.com")).toBe(false);
   });
 });
 
