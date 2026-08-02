@@ -46,6 +46,22 @@ let workItems: FakeItem[] = [];
 let interactions: { requestId: string; toolName?: string }[] = [];
 let projectsFail = false;
 
+/**
+ * The People row's gate reads live data — contacts, and the relationship
+ * memories extraction has written against them. These two refs are the whole
+ * input; `shouldShowPeopleRow` is the whole rule.
+ */
+interface FakeContact {
+  id: string;
+  displayName: string;
+  role: string;
+  interactionCount: number;
+  lastInteraction?: number | null;
+  channels: unknown[];
+}
+let contacts: FakeContact[] = [];
+let contactMemories: Record<string, { id: string }[]> = {};
+
 const sdkActual = await import("@/generated/daemon/sdk.gen");
 mock.module("@/generated/daemon/sdk.gen", () => ({
   ...sdkActual,
@@ -69,6 +85,11 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
   }),
   pendinginteractionsGet: mock(async () => ({
     data: { interactions },
+    ...okResponse,
+  })),
+  contactsGet: mock(async () => ({ data: { contacts }, ...okResponse })),
+  contactsByIdMemoryGet: mock(async (options?: { path?: { id?: string } }) => ({
+    data: { memory: contactMemories[options?.path?.id ?? ""] ?? [] },
     ...okResponse,
   })),
 }));
@@ -117,9 +138,26 @@ afterEach(() => {
   workItems = [];
   interactions = [];
   projectsFail = false;
+  contacts = [];
+  contactMemories = {};
   globalThis.localStorage?.clear();
   cleanup();
 });
+
+/** A contact with `memories` relationship memories written against it. */
+function seedContact(id: string, memories: number): void {
+  contacts.push({
+    id,
+    displayName: id,
+    role: "contact",
+    interactionCount: 1,
+    lastInteraction: 1,
+    channels: [],
+  });
+  contactMemories[id] = Array.from({ length: memories }, (_, i) => ({
+    id: `${id}-m${i}`,
+  }));
+}
 
 describe("the rail's top three match the phone's three tabs", () => {
   test.each(["Talk to Cue", "HQ", "Work"])("%s is in the rail", (label) => {
@@ -183,34 +221,125 @@ describe("Work's two views belong to the Work page, not the rail", () => {
   });
 });
 
-describe("the CUE group", () => {
-  test.each(["Agents", "Skills", "Rhythms", "Memory", "Library", "Watching"])(
-    "%s is in the group",
-    (label) => {
-      renderRail();
-      expect(screen.getByText(label)).toBeDefined();
-    },
-  );
-
-  test("Watching ships disabled — it has no surface and does not pretend to", () => {
-    renderRail();
-    const watching = screen.getByText("Watching").closest("button");
-    expect(watching?.hasAttribute("disabled")).toBe(true);
-    expect(watching?.getAttribute("title")).toContain("Not built yet");
+describe("one column, five rows, a door", () => {
+  // The bug this replaces: v20 rendered the Tier-2 rows as a two-column CSS
+  // grid, and the live app showed "Watching" as "Wat…". Design's ruling — a
+  // grid reads as a keypad, breaks vertical scanning, truncates labels — is
+  // asserted structurally here, because a class name is the thing that
+  // regressed.
+  test("the Tier-2 rows are NOT laid out in a grid", () => {
+    const { container } = renderRail();
+    expect(container.querySelector(".grid-cols-2")).toBeNull();
+    expect(container.querySelector('[class*="grid-cols"]')).toBeNull();
   });
 
-  test("the rows the group displaced are gone from the rail", () => {
-    // Each is still routable; none of them is a rail row any more.
+  test("Library sits below the conversation list, alone with the door", () => {
+    renderRail();
+    expect(screen.getByText("Library")).toBeDefined();
+    expect(screen.getByText("Your Cue")).toBeDefined();
+  });
+
+  test("the four rows that became Your Cue leaves are gone from the rail", () => {
+    // Each is still routable and each is a leaf inside Your Cue; none of them
+    // is a rail row any more. "You go there to change something" is a leaf;
+    // "the data accumulates on its own" is a rail row.
+    renderRail();
+    for (const gone of ["Agents", "Skills", "Rhythms", "Memory", "Watching"]) {
+      expect(screen.queryByText(gone)).toBeNull();
+    }
+  });
+
+  test("the rows earlier rounds displaced are still gone", () => {
     renderRail();
     for (const gone of [
       "Create",
       "Voice",
-      "People",
       "What Cue does",
       "Trust & guardrails",
+      // Settings is not a second door beside Your Cue.
+      "Settings",
     ]) {
       expect(screen.queryByText(gone)).toBeNull();
     }
+  });
+
+  test("Your Cue is the last row and lands on the door", () => {
+    renderRail();
+    const door = screen.getByText("Your Cue").closest("button");
+    expect(door).toBeDefined();
+    expect(door?.hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("the People row is gated on real data", () => {
+  test("absent while extraction has written nothing", async () => {
+    // The live instance: 2 contacts, 0 memories. Contact extraction ran 697
+    // times, completed every time, and wrote nothing — this is that state.
+    seedContact("ada", 0);
+    seedContact("grace", 0);
+    renderRail();
+    await waitFor(() => {
+      expect(screen.getByText("Library")).toBeDefined();
+    });
+    expect(screen.queryByText("People")).toBeNull();
+  });
+
+  test("absent with no contacts at all", async () => {
+    renderRail();
+    await waitFor(() => {
+      expect(screen.getByText("Library")).toBeDefined();
+    });
+    expect(screen.queryByText("People")).toBeNull();
+  });
+
+  test("present once a real memory exists against a real contact", async () => {
+    seedContact("ada", 3);
+    seedContact("grace", 0);
+    renderRail();
+    await waitFor(() => {
+      expect(screen.getByText("People")).toBeDefined();
+    });
+  });
+
+  test("the badge counts contacts, and never renders a zero", async () => {
+    seedContact("ada", 1);
+    seedContact("grace", 1);
+    renderRail();
+    await waitFor(() => {
+      expect(screen.getByText("People")).toBeDefined();
+    });
+    expect(screen.getByText("2")).toBeDefined();
+  });
+
+  test("the assistant and the guardian are not contacts for this purpose", async () => {
+    // Otherwise a fresh install clears the gate with two rows that are both
+    // you — which is precisely the "prominent destination with 2 rows" design
+    // refused to ship.
+    contacts.push(
+      {
+        id: "self",
+        displayName: "Cue",
+        role: "assistant",
+        interactionCount: 9,
+        lastInteraction: 9,
+        channels: [],
+      },
+      {
+        id: "me",
+        displayName: "Manav",
+        role: "guardian",
+        interactionCount: 9,
+        lastInteraction: 9,
+        channels: [],
+      },
+    );
+    contactMemories.self = [{ id: "x" }];
+    contactMemories.me = [{ id: "y" }];
+    renderRail();
+    await waitFor(() => {
+      expect(screen.getByText("Library")).toBeDefined();
+    });
+    expect(screen.queryByText("People")).toBeNull();
   });
 });
 

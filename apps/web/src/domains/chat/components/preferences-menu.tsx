@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  ChartColumn,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -8,7 +7,6 @@ import {
   MessageSquareText,
   Settings as SettingsIcon,
   Shield,
-  ShieldCheck,
   SlidersHorizontal,
   SunMoon,
 } from "lucide-react";
@@ -225,42 +223,18 @@ export function PreferencesMenuContent({
       ) : null}
 
       {/*
-        Guardrails — checkpoints, agent scopes and the ACT LEDGER.
-        Until now it had no entry in ANY persistent desktop navigation: the
-        rail is deliberately surface-only (see assistant-side-menu's docblock),
-        the Settings sidebar never listed it (it is not a /settings route), and
-        the command palette does not carry it. It was reachable on desktop only
-        from contextual cards — the automations board, "make it a rule", an
-        agent's Adjust-scope — i.e. only if you already had a reason to be
-        there. That fails the trust principle exactly where it matters most:
-        the ledger is the surface a user goes looking for when they suspect Cue
-        did something they did not sanction, and at that moment they are not on
-        an agent card.
+        Guardrails and Usage used to have rows here, because at the time they
+        had no entry in ANY persistent desktop navigation — the rail was
+        surface-only and the Settings sidebar never listed them. Both are now
+        leaves in Your Cue (What it does alone → Guardrails; Running Cue →
+        Usage & spend), which is a permanent, findable home rather than a menu
+        you have to know to open.
 
-        It lands here rather than as an eighth rail row because this menu is
-        the desktop counterpart of mobile's You screen, which already carries
-        Guardrails + the ledger — one entry, in the matching place, instead of
-        a second landing row of the kind this rail has had to clean up before.
-        The desktop Guardrails page renders the ledger inline, so this single
-        entry reaches it.
+        They are NOT duplicated here. "No second nav path to the same
+        destination" is the rule this whole round is enforcing, and a menu row
+        beside a leaf row is exactly that — the thing this rail has already had
+        to clean up twice.
       */}
-      <PanelItem
-        icon={ShieldCheck}
-        label="Guardrails"
-        onSelect={() => {
-          onClose();
-          navigate(routes.guardrails);
-        }}
-      />
-
-      <PanelItem
-        icon={ChartColumn}
-        label="Usage"
-        onSelect={() => {
-          onClose();
-          navigate(routes.logs.usage);
-        }}
-      />
 
       {(platformGate === "full" || isElectron()) && (
         <PanelItem
@@ -285,16 +259,21 @@ export function PreferencesMenuContent({
       ) : null}
 
       {/*
-        Settings is intentionally last: the popover anchors side="top", so
-        the final item sits closest to the Preferences trigger. Item-level
-        ordering can't be asserted by the SSR test harness (open={false}).
+        Your Cue is intentionally last: the popover anchors side="top", so the
+        final item sits closest to the Preferences trigger. Item-level ordering
+        can't be asserted by the SSR test harness (open={false}).
+
+        This is the same door as the rail's ⚙ Your Cue row, deliberately: it is
+        the account cluster's way back to configuration and it lands on the
+        identical destination, so it is one path rendered in the two places a
+        cursor already is — not two destinations.
       */}
       <PanelItem
         icon={SettingsIcon}
-        label="Settings"
+        label="Your Cue"
         onSelect={() => {
           onClose();
-          navigate(routes.settings.root);
+          navigate(routes.yourCue);
         }}
       />
     </>

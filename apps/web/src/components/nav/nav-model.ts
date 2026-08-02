@@ -167,59 +167,81 @@ export function readWorkView(search: string | URLSearchParams): WorkView {
   return params.get("view") === "everything" ? "everything" : "things";
 }
 
-// --- The CUE group ----------------------------------------------------------
+// --- The accumulating destinations ------------------------------------------
 
 /**
- * The group under the **CUE** heading — Tier 2, "what Cue is".
+ * The two rows between the dividers — Tier 2, and the ONLY survivors of what
+ * v15 called "the CUE group".
  *
- * The owner's complaint about v13/v14 was that "the navigation got a bit crazy
- * with so many things", and he was right: the rail carried thirteen entries.
- * A heading alone would not have fixed that, because a heading has no arity.
- * {@link CUE_GROUP_CAP} does: **a seventh item must DISPLACE one of these, not
- * extend the list.** `nav-model.test.ts` fails if the array grows, which is the
- * only mechanism that has ever stopped this list growing.
+ * v15 put six rows here (Agents · Skills · Rhythms · Memory · Library ·
+ * Watching) and v20 laid them out as a two-column grid to fit. Design
+ * overturned both: a grid *"reads as a keypad, breaks vertical scanning, and
+ * truncates labels"* — it shipped with "Watching" rendered as "Wat…" — and
+ * four of the six were configuration, not destinations.
  *
- * Each row answers one part of *"what is this thing I'm using?"* — that shared
- * sentence is the admission test, and it is why frequency alone (v13's test)
- * was the wrong one:
+ * The admission test is no longer "does it explain the product" (which admits
+ * everything) but one you can check against the database:
  *
- *   ◆ Agents   — who works for you
- *   ✦ Skills   — what they can do
- *   ↻ Rhythms  — what runs without you
- *   🧠 Memory  — what Cue knows
- *   ▦ Library  — what Cue has made
- *   👁 Watching — where it comes from
+ *   **Does the data accumulate on its own?**  → a sidebar row.
+ *   **Do you only go there to change something?** → a leaf inside Your Cue.
  *
- * Agents and Skills sit adjacent deliberately: an agent's capabilities *are*
- * its skills, so the org chart and the marketplace belong together.
+ * People and Library pass; Agents, Skills, Rhythms/Schedules and Watching do
+ * not, and they now live in {@link ../../domains/intelligence/your-cue-model}.
+ * That test is a property of the surface rather than a matter of taste, which
+ * is why it should not drift the way "does it demo well" did.
+ *
+ * **One column, same left margin as HQ and Work.** Rendering is the rail's
+ * job, but the shape of this array is what makes a single column the only
+ * natural rendering: two entries have nothing to pair off into.
  */
-export const CUE_GROUP_CAP = 6;
+export interface SidebarDestination {
+  key: "people" | "library";
+  label: string;
+  to: string;
+  match: (pathname: string) => boolean;
+}
+
+export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
+  {
+    // Gated — see `shouldShowPeopleRow`. The row is built and wired; whether
+    // it renders is a question about the data, asked at runtime.
+    key: "people",
+    label: "People",
+    to: routes.people,
+    match: (p) => p === routes.people || p.startsWith(`${routes.people}/`),
+  },
+  {
+    key: "library",
+    label: "Library",
+    to: routes.library.root,
+    match: (p) => p.includes("/library"),
+  },
+] as const;
+
+// --- The phone's ◍ menu (compatibility) -------------------------------------
 
 export interface CueDestination {
   key: string;
   label: string;
-  /**
-   * Where the row lands, or `null` when the surface does not exist yet.
-   *
-   * `null` is not a placeholder for "wire this up later" — it is the honest
-   * state, and the rail renders it as a disabled row carrying
-   * {@link CueDestination.unavailableReason}. Pointing a row at the nearest
-   * lookalike surface is the failure mode this field exists to prevent: an
-   * entry that lies about where it goes is worse than one that admits it has
-   * nowhere to go.
-   */
+  /** `null` when the surface does not exist. The ◍ menu filters those out. */
   to: string | null;
-  /** Shown on a `to: null` row. Required for one, meaningless for the rest. */
   unavailableReason?: string;
   match: (pathname: string) => boolean;
 }
 
+/**
+ * @deprecated Desktop no longer reads this. The rail's Tier-2 group is now
+ * {@link SIDEBAR_DESTINATIONS} (two rows) plus {@link YOUR_CUE_DOOR}, and the
+ * four rows that used to live here are leaves inside Your Cue.
+ *
+ * It survives because `mobile-v3/overflow-menu.tsx` renders it, and the phone
+ * follows the v3 NATIVE spec rather than this brief — changing it here would
+ * silently restructure a surface this round did not review. Left byte-identical
+ * on purpose: when the phone's ◍ menu is next revisited, delete this and read
+ * `your-cue-model.ts` instead.
+ */
 export const CUE_NAV: readonly CueDestination[] = [
   {
-    // The org chart lives at `/assistant/hq/agents`. NOT `routes.agentsAtWork`
-    // (`/assistant/agents`), which is a `<Navigate to={routes.hq}>` redirect —
-    // pointing the Agents row there would land the user on HQ under a label
-    // that promised the roster.
     key: "agents",
     label: "Agents",
     to: routes.hqAgents,
@@ -232,17 +254,12 @@ export const CUE_NAV: readonly CueDestination[] = [
     match: (p) => p.includes("/skills") || p.includes("/marketplace"),
   },
   {
-    // "Rhythms" is the design's word for recurring work. The surface that
-    // holds it today is Automations (Watchers + Playbooks) — the label moved,
-    // the surface did not.
     key: "rhythms",
     label: "Rhythms",
     to: routes.automations,
     match: (p) => p.includes("/automations"),
   },
   {
-    // v14's one rename: "Intelligence" names the machinery, "Memory" names
-    // what you came to look at — and it is the word Cue itself uses.
     key: "memory",
     label: "Memory",
     to: routes.memory,
@@ -255,19 +272,118 @@ export const CUE_NAV: readonly CueDestination[] = [
     match: (p) => p.includes("/library"),
   },
   {
-    // The one real gap. v17 E3 specifies Watching — per-source "40 in — 31
-    // filed, 9 dropped, 0 needed you", the no-op card, "connected but not
-    // watched", "what Cue skips" — and none of it is built. Channels &
-    // Agents (`routes.channels`) is the closest existing surface and is NOT
-    // the same thing: it is where a source is CONNECTED, not what Cue did
-    // with what arrived. So the row ships disabled and says so, which keeps
-    // the group at its designed six without inventing a destination.
     key: "watching",
     label: "Watching",
     to: null,
     unavailableReason: "Not built yet — sources live under Skills › Channels",
     match: () => false,
   },
+] as const;
+
+// --- The People gate --------------------------------------------------------
+
+/**
+ * Whether the People row has earned its slot.
+ *
+ * Design's ruling, verbatim: *"Promote it when contact memories are non-zero
+ * and growing week-over-week — not when the code ships. A prominent
+ * destination with 2 rows teaches people the slot is worthless."* The live
+ * instance has 2 contacts and 0 memories, because contact extraction ran 697
+ * times and wrote nothing.
+ *
+ * So this is **one predicate over real, fetched numbers** — not a commented-out
+ * block and not a hardcoded `false`. When extraction starts working, the row
+ * appears on its own; nobody has to remember to come back here. And if someone
+ * wants it sooner, there is exactly one function to change.
+ *
+ * **What this can and cannot see.** "Non-zero" is checkable from the client and
+ * is what this enforces. "Growing week-over-week" is not — no endpoint reports
+ * a contact-memory time series — so it is deliberately NOT approximated here.
+ * Treat this as the necessary half of design's condition: it will not promote
+ * People while the slot is worthless, but a human still owns the judgement
+ * that the trend is real.
+ */
+export interface PeopleSignal {
+  /** Contacts that are neither the assistant nor the guardian. */
+  contactCount: number;
+  /**
+   * Relationship memories observed across the sampled contacts. See
+   * `use-people-signal.ts` for why this is a sample rather than a total.
+   */
+  memoryCount: number;
+}
+
+/**
+ * Memories required before People is a destination rather than an empty room.
+ *
+ * One. The bar is deliberately "extraction has ever written anything", because
+ * the failure this guards against is a *silent* pipeline, not a small one.
+ */
+export const PEOPLE_ROW_MIN_MEMORIES = 1;
+
+export function shouldShowPeopleRow(
+  signal: PeopleSignal | null | undefined,
+): boolean {
+  // No signal yet (no assistant, first paint, a failed read) is not evidence
+  // of data. Withholding the row costs a click; showing an empty one costs
+  // trust in every other row beside it.
+  if (!signal) return false;
+  return (
+    signal.contactCount > 0 && signal.memoryCount >= PEOPLE_ROW_MIN_MEMORIES
+  );
+}
+
+// --- The door ---------------------------------------------------------------
+
+/**
+ * `⚙ Your Cue` — the last row above the account line, and the single door to
+ * every configuration surface in the app.
+ *
+ * It is a door, not a destination: nothing accumulates behind it, you go there
+ * to change something and come back. Settings used to be a second door to the
+ * same rooms; it now redirects here (see `routes.tsx`), because a second nav
+ * path to one destination is the exact duplication this round removed.
+ */
+export const YOUR_CUE_DOOR = {
+  key: "your-cue",
+  label: "Your Cue",
+  to: routes.yourCue,
+  /**
+   * Every leaf, plus the legacy `/assistant/settings/*` URLs that still
+   * resolve into the shell. Kept as a path test rather than a list of routes
+   * so a new leaf cannot forget to light the door.
+   */
+  match: (pathname: string): boolean =>
+    pathname.startsWith(routes.yourCue) ||
+    pathname.startsWith(routes.settings.root) ||
+    YOUR_CUE_LEAF_PATHS.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    ),
+} as const;
+
+/**
+ * The leaf paths the door lights on. Declared here (rather than imported from
+ * the Your Cue model) to keep this module free of anything that imports React
+ * — the phone renders the same model.
+ */
+const YOUR_CUE_LEAF_PATHS: readonly string[] = [
+  routes.identity,
+  routes.hqAgents,
+  routes.skills,
+  routes.plugins,
+  routes.marketplace,
+  routes.connectors,
+  routes.channels,
+  routes.agentNetwork,
+  routes.contacts.root,
+  routes.cueLive,
+  routes.desktopControl,
+  routes.memory,
+  routes.automations,
+  routes.guardrails,
+  routes.workspace,
+  routes.explore,
+  routes.impact,
 ] as const;
 
 // --- The peek ---------------------------------------------------------------

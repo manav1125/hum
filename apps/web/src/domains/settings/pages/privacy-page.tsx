@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 
 import { settingsClientPut } from "@/generated/daemon/sdk.gen";
 import { captureError } from "@/lib/sentry/capture-error";
@@ -7,10 +8,7 @@ import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { DetailCard } from "@/components/detail-card";
 import { SystemPermissionsCard } from "@/components/system-permissions-card";
 import { AccessConsentSetting } from "@/domains/settings/components/access-consent-setting";
-import { AutonomySettings } from "@/domains/settings/components/autonomy-settings";
 import { BiometricSettingsCard } from "@/domains/settings/components/biometric-settings-card";
-import { RiskToleranceSettings } from "@/domains/settings/components/risk-tolerance-settings";
-import { TrustRules } from "@/domains/settings/components/trust-rules/trust-rules";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { useHasPlatformSession } from "@/stores/auth-store";
 import {
@@ -19,6 +17,7 @@ import {
   setDeviceSetting,
 } from "@/utils/device-settings";
 import { savePreferenceToggle } from "@/utils/onboarding-cleanup";
+import { routes } from "@/utils/routes";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { Toggle } from "@vellumai/design-library/components/toggle";
 
@@ -121,9 +120,21 @@ export function PrivacyPage() {
     <div className="space-y-4">
       <BiometricSettingsCard />
       <SystemPermissionsCard />
-      <TrustRules />
-      <AutonomySettings />
-      <RiskToleranceSettings />
+      {/*
+        `TrustRules`, `AutonomySettings` and `RiskToleranceSettings` used to
+        render here as well. They are Guardrails — checkpoints, agent scopes,
+        autonomy and trust rules — and having them in two places meant two
+        surfaces could disagree about what Cue is allowed to do unattended,
+        which is the one disagreement this app cannot afford. They now live
+        only at `/assistant/guardrails`, and the row below is the way there.
+
+        What stays is what design drew the line around: *"System grants stay
+        separate — those are macOS permissions, not policy."* An OS grant is
+        something the Mac decides and you can only ask for; a trust rule is
+        something you decide. Different lifecycles, so by design's own merging
+        test they do not merge.
+      */}
+      <GuardrailsPointer />
       <DetailCard title="Privacy">
         <div className="space-y-4">
           <SettingRow
@@ -171,5 +182,32 @@ export function PrivacyPage() {
         </div>
       </DetailCard>
     </div>
+  );
+}
+
+/**
+ * The one row left where the autonomy controls used to be.
+ *
+ * A cross-link rather than a silent removal: three cards vanishing from a page
+ * someone has used before is indistinguishable from a regression unless the
+ * page says where they went. It is not a second nav path either — it is a
+ * pointer on the surface that lost them, not an entry in any navigation.
+ */
+function GuardrailsPointer() {
+  return (
+    <DetailCard title="Autonomy & trust rules">
+      <p className="text-body-medium-default text-[var(--content-secondary)]">
+        Checkpoints, agent scopes, autonomy level and trust rules all live in
+        Guardrails now — one place, so two surfaces can't disagree about what
+        Cue may do on its own.
+      </p>
+      <Link
+        to={routes.guardrails}
+        className="mt-3 inline-flex items-center gap-1 text-body-medium-default text-[var(--primary-active)] underline-offset-2 hover:underline"
+      >
+        Open Guardrails
+        <span aria-hidden>›</span>
+      </Link>
+    </DetailCard>
   );
 }

@@ -17,6 +17,8 @@ import type { PrefetchableSurface } from "@/lib/route-prefetch";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { RootHydrateFallback } from "@/components/root-hydrate-fallback";
 import { ActiveAssistantGate } from "@/components/layout/active-assistant-gate";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
+import { UsagePage } from "@/domains/logs/pages/usage-page";
 import { routes } from "@/utils/routes";
 
 /**
@@ -51,6 +53,31 @@ function OnboardingPathRedirect() {
       ? routes.welcome
       : `/assistant/onboarding/${splat}`;
   return <Navigate to={target} replace />;
+}
+
+/**
+ * `/assistant/logs/usage` → Your Cue → Usage & spend, query string intact.
+ *
+ * The query string is the point: `routes.logs.usageForSchedule(id)` encodes the
+ * whole filter (`range`, `groupBy`, `scheduleId`) in the URL and `UsageTab`
+ * reads its state from there, so a redirect that dropped the search would turn
+ * every "View usage" button on the schedules surface into a link to an
+ * unfiltered chart.
+ *
+ * **Phone excepted.** Mobile still renders the v3 usage screen here: that
+ * surface follows the mobile-v3 native spec, which this round did not review,
+ * and `/assistant/settings/budget` has no v3 leaf to land on. Redirecting both
+ * platforms would have silently deleted a designed screen to satisfy a desktop
+ * ruling.
+ */
+function UsageRedirect() {
+  const [searchParams] = useSearchParams();
+  const isMobile = useMobileLayout();
+  if (isMobile) return <UsagePage />;
+  const qs = searchParams.toString();
+  return (
+    <Navigate to={`${routes.settings.budget}${qs ? `?${qs}` : ""}`} replace />
+  );
 }
 
 /**
@@ -454,232 +481,6 @@ export const routeTree = [
           {
             Component: ActiveAssistantGate,
             children: [
-              // Settings routes — full-screen overlay panel (no ChatLayout sidebar).
-              // SidebarShell provides its own layout with back-arrow, sidebar nav,
-              // and content area — the main app sidebar is intentionally hidden.
-              // Lazy-loaded: visited occasionally, heavy deps (Stripe, schedules, voice).
-              {
-                path: "settings",
-                lazy: {
-                  Component: () =>
-                    import("@/domains/settings/settings-layout").then(
-                      (m) => m.SettingsLayout,
-                    ),
-                },
-                children: [
-                  {
-                    index: true,
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/general-page").then(
-                          (m) => m.GeneralPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "general",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/general-page").then(
-                          (m) => m.GeneralPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "ai",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/ai/ai-page").then(
-                          (m) => m.AiPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "integrations",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/integrations-page").then(
-                          (m) => m.IntegrationsPage,
-                        ),
-                    },
-                  },
-                  {
-                    // Settings → Brand — the Brand Kit surface (Create Studio
-                    // SET 2). Owns its own area under `@/pages/brand-kit` and
-                    // wires to the daemon `/brand-profiles` routes.
-                    path: "brand",
-                    lazy: {
-                      Component: () =>
-                        import("@/pages/brand-kit/brand-settings-page").then(
-                          (m) => m.BrandSettingsPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "schedules",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/schedules-page").then(
-                          (m) => m.SchedulesPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "schedules/:scheduleId",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/schedules-page").then(
-                          (m) => m.SchedulesPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "notifications",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/notifications-page").then(
-                          (m) => m.NotificationsPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "keyboard-shortcuts",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/keyboard-shortcuts/keyboard-shortcuts-page").then(
-                          (m) => m.KeyboardShortcutsPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "sounds",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/sounds-page").then(
-                          (m) => m.SoundsPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "voice",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/voice-page").then(
-                          (m) => m.VoicePage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "devices",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/devices-page").then(
-                          (m) => m.DevicesPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "privacy",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/privacy-page").then(
-                          (m) => m.PrivacyPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "budget",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/budget-page").then(
-                          (m) => m.BudgetPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "archive",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/archive-page").then(
-                          (m) => m.ArchivePage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "billing",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/billing/billing-page").then(
-                          (m) => m.BillingPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "billing/upgrade/cancel",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/billing/upgrade-cancel-page").then(
-                          (m) => m.UpgradeCancelPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "billing/upgrade/success",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/billing/upgrade-success-page").then(
-                          (m) => m.UpgradeSuccessPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "debug",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/debug-page").then(
-                          (m) => m.DebugPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "developer",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/developer-page").then(
-                          (m) => m.DeveloperPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "advanced",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/advanced-page").then(
-                          (m) => m.AdvancedPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "danger-zone",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/danger-zone-redirect-page").then(
-                          (m) => m.DangerZoneRedirectPage,
-                        ),
-                    },
-                  },
-                  {
-                    path: "system-events",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/system-events-redirect-page").then(
-                          (m) => m.SystemEventsRedirectPage,
-                        ),
-                    },
-                  },
-                ],
-              },
-
               // Logs routes — full-screen overlay panel (like SettingsLayout).
               // LogsLayout reuses SidebarShell for visual consistency.
               // Lazy-loaded: analytics-only.
@@ -693,13 +494,11 @@ export const routeTree = [
                 },
                 children: [
                   {
+                    // Logs' default tab was Usage, which is now part of
+                    // Usage & spend. Trace is what remains at the top of this
+                    // shell.
                     index: true,
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/logs/pages/usage-page").then(
-                          (m) => m.UsagePage,
-                        ),
-                    },
+                    element: <Navigate to={routes.logs.trace} replace />,
                   },
                   {
                     path: "trace",
@@ -711,13 +510,13 @@ export const routeTree = [
                     },
                   },
                   {
+                    // Folded into Your Cue → Usage & spend (design's fourth
+                    // duplication). Desktop redirects, preserving the query
+                    // string so `usageForSchedule`'s
+                    // `?range=7d&groupBy=schedule&scheduleId=…` still selects
+                    // the right filter on arrival.
                     path: "usage",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/logs/pages/usage-page").then(
-                          (m) => m.UsagePage,
-                        ),
-                    },
+                    Component: UsageRedirect,
                   },
                   {
                     path: "system-events",
@@ -851,18 +650,19 @@ export const routeTree = [
                             ),
                         },
                       },
-                      {
-                        // Agents · the org — the roster/org-chart surface.
-                        // MUST precede `hq/:id` so "agents" isn't captured as
-                        // a mission id.
-                        path: "hq/agents",
-                        lazy: {
-                          Component: () =>
-                            import("@/pages/hq-agents/agents-org-page").then(
-                              (m) => m.AgentsOrgPage,
-                            ),
-                        },
-                      },
+                      // NOTE: `hq/agents` used to be mounted here, as a bare
+                      // sibling of `hq` — which is exactly why it "opened in
+                      // its own container" while every other Your Cue surface
+                      // rendered inside the shell. It now lives in the
+                      // IntelligenceLayout children below, at the SAME URL: the
+                      // agent chip, the mobile You row and the coach tour all
+                      // point at `/assistant/hq/agents`, and re-parenting a
+                      // route costs nothing while moving one costs all three.
+                      //
+                      // It still MUST be declared before `hq/:id` so "agents"
+                      // is not captured as a mission id; React Router matches
+                      // by specificity rather than declaration order for static
+                      // vs dynamic segments, and `routes.test.ts` pins it.
                       // -- Mobile v3 surfaces (docs/design/mobile-v3/) -------
                       // Registered here centrally; the cluster builds own the
                       // page modules under src/mobile-v3/ and never edit this
@@ -1031,17 +831,6 @@ export const routeTree = [
                         },
                       },
                       {
-                        // Guardrails — the Trust console evolved into the
-                        // unified rules/scopes/ledger surface (same nav slot).
-                        path: "guardrails",
-                        lazy: {
-                          Component: () =>
-                            import("@/domains/guardrails/guardrails-page").then(
-                              (m) => m.GuardrailsPage,
-                            ),
-                        },
-                      },
-                      {
                         // The old Trust console URL redirects to Guardrails.
                         path: "trust",
                         element: <Navigate to={routes.guardrails} replace />,
@@ -1065,6 +854,11 @@ export const routeTree = [
                         },
                       },
                       {
+                        // ── Your Cue — the one configuration shell ─────────
+                        // Every leaf renders here, with the same leaf strip.
+                        // Agents and Guardrails were the two outliers that
+                        // opened in their own containers; they are children
+                        // now, at unchanged URLs.
                         lazy: {
                           Component: () =>
                             import("@/domains/intelligence/intelligence-layout").then(
@@ -1072,6 +866,288 @@ export const routeTree = [
                             ),
                         },
                         children: [
+                          {
+                            // The door. A redirect rather than a landing page:
+                            // a screen you must read before reaching the leaf
+                            // you came for is a toll, not a home.
+                            path: "your-cue",
+                            element: <Navigate to={routes.identity} replace />,
+                          },
+                          // ── Settings, absorbed ──────────────────────
+                          // Was a separate SidebarShell at the same URLs, with
+                          // the app rail deliberately hidden. Design's ruling:
+                          // Your Cue "absorbs Settings", so the whole subtree
+                          // is re-parented here and renders in the one shell.
+                          //
+                          // Every path is byte-identical to what it was — six
+                          // of these panels are leaves in their own right and
+                          // the rest hang off Preferences, but a bookmark to
+                          // any of them resolves exactly where it did.
+                          {
+                            path: "settings",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/settings/settings-layout").then(
+                                  (m) => m.SettingsLayout,
+                                ),
+                            },
+                            children: [
+                              {
+                                // `/assistant/settings` and
+                                // `/assistant/settings/general` used to render
+                                // the SAME page under two URLs. One of them is
+                                // now a redirect, so "which one is the real
+                                // Preferences page" has an answer.
+                                index: true,
+                                element: (
+                                  <Navigate
+                                    to={routes.settings.general}
+                                    replace
+                                  />
+                                ),
+                              },
+                              {
+                                path: "general",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/general-page").then(
+                                      (m) => m.GeneralPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "ai",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/ai/ai-page").then(
+                                      (m) => m.AiPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "integrations",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/integrations-page").then(
+                                      (m) => m.IntegrationsPage,
+                                    ),
+                                },
+                              },
+                              {
+                                // Settings → Brand — the Brand Kit surface (Create Studio
+                                // SET 2). Owns its own area under `@/pages/brand-kit` and
+                                // wires to the daemon `/brand-profiles` routes.
+                                path: "brand",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/pages/brand-kit/brand-settings-page").then(
+                                      (m) => m.BrandSettingsPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "schedules",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/schedules-page").then(
+                                      (m) => m.SchedulesPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "schedules/:scheduleId",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/schedules-page").then(
+                                      (m) => m.SchedulesPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "notifications",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/notifications-page").then(
+                                      (m) => m.NotificationsPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "keyboard-shortcuts",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/keyboard-shortcuts/keyboard-shortcuts-page").then(
+                                      (m) => m.KeyboardShortcutsPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "sounds",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/sounds-page").then(
+                                      (m) => m.SoundsPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "voice",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/voice-page").then(
+                                      (m) => m.VoicePage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "devices",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/devices-page").then(
+                                      (m) => m.DevicesPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "privacy",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/privacy-page").then(
+                                      (m) => m.PrivacyPage,
+                                    ),
+                                },
+                              },
+                              {
+                                // "Usage & spend" — the caps page and the usage
+                                // analytics composed into one, which is the
+                                // fourth duplication resolved.
+                                path: "budget",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/pages/usage-and-spend/usage-and-spend-page").then(
+                                      (m) => m.UsageAndSpendPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "archive",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/archive-page").then(
+                                      (m) => m.ArchivePage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "billing",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/billing/billing-page").then(
+                                      (m) => m.BillingPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "billing/upgrade/cancel",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/billing/upgrade-cancel-page").then(
+                                      (m) => m.UpgradeCancelPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "billing/upgrade/success",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/billing/upgrade-success-page").then(
+                                      (m) => m.UpgradeSuccessPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "debug",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/debug-page").then(
+                                      (m) => m.DebugPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "developer",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/developer-page").then(
+                                      (m) => m.DeveloperPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "advanced",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/advanced-page").then(
+                                      (m) => m.AdvancedPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "danger-zone",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/danger-zone-redirect-page").then(
+                                      (m) => m.DangerZoneRedirectPage,
+                                    ),
+                                },
+                              },
+                              {
+                                path: "system-events",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/system-events-redirect-page").then(
+                                      (m) => m.SystemEventsRedirectPage,
+                                    ),
+                                },
+                              },
+                            ],
+                          },
+                          {
+                            // Re-parented from the bare `hq/agents` sibling —
+                            // same URL, now inside the shell.
+                            path: "hq/agents",
+                            lazy: {
+                              Component: () =>
+                                import("@/pages/hq-agents/agents-org-page").then(
+                                  (m) => m.AgentsOrgPage,
+                                ),
+                            },
+                          },
+                          {
+                            // Guardrails — checkpoints · agent scopes ·
+                            // autonomy · trust rules. Re-parented from its own
+                            // container; URL unchanged, so the HQ tier chip and
+                            // the eighteen other inbound links are untouched.
+                            path: "guardrails",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/guardrails/guardrails-page").then(
+                                  (m) => m.GuardrailsPage,
+                                ),
+                            },
+                          },
+                          {
+                            // Agent network — the A2A peering surface, split
+                            // out of `/assistant/channels` where it rendered as
+                            // an unlinkable section under the channel grid.
+                            path: "agent-network",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/agents-page").then(
+                                  (m) => m.AgentsPage,
+                                ),
+                            },
+                          },
                           {
                             path: "identity",
                             lazy: {

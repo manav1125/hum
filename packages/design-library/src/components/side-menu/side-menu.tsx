@@ -22,7 +22,7 @@ import { cn } from "../../utils/cn";
  *
  * Two variants:
  * - `rail` (default) — desktop, docked left. Supports a `collapsed` state
- *   that shrinks the rail to an icon-only 48 px column. When collapsed,
+ *   that shrinks the rail to an icon-only 52 px column. When collapsed,
  *   section titles, sublists, labels, badges, and trailing icons are
  *   suppressed via a shared context so consumers never conditionally render
  *   child content themselves.
@@ -82,7 +82,7 @@ function isCollapsedRail(ctx: SideMenuContextValue): boolean {
 // ---------------------------------------------------------------------------
 
 export const SIDE_MENU_DEFAULT_WIDTH = 230;
-export const SIDE_MENU_COLLAPSED_WIDTH = 48;
+export const SIDE_MENU_COLLAPSED_WIDTH = 52;
 export const SIDE_MENU_MIN_WIDTH = 220;
 export const SIDE_MENU_MAX_WIDTH = 400;
 
@@ -117,29 +117,33 @@ const ROOT_RAIL_EXPANDED_CLASSES = [
 ].join(" ");
 
 const ROOT_RAIL_COLLAPSED_CLASSES = [
-  "w-[48px]",
+  // 52px, per the v21 brief: the icon strip the rail auto-collapses to on
+  // entering a conversation. Was 48.
+  "w-[52px]",
   "rounded-[12px]",
   "pt-4 px-2 pb-2",
 ].join(" ");
 
-const ROOT_RAIL_RESIZABLE_CLASSES = [
-  "rounded-[12px]",
-  "pt-4 px-4 pb-2",
-].join(" ");
+const ROOT_RAIL_RESIZABLE_CLASSES = ["rounded-[12px]", "pt-4 px-4 pb-2"].join(
+  " ",
+);
 
-const ROOT_OVERLAY_CLASSES = [
-  "w-full",
-  "rounded-none",
-  "p-4",
-].join(" ");
+const ROOT_OVERLAY_CLASSES = ["w-full", "rounded-none", "p-4"].join(" ");
 
 const RAIL_TRANSITION_MS = 150;
-const ROOT_RAIL_TRANSITION = "transition-[width,padding] duration-[150ms] ease-in-out";
+const ROOT_RAIL_TRANSITION =
+  "transition-[width,padding] duration-[150ms] ease-in-out";
 
-function rootChromeClasses(variant: SideMenuVariant, collapsed: boolean, resizable: boolean): string {
+function rootChromeClasses(
+  variant: SideMenuVariant,
+  collapsed: boolean,
+  resizable: boolean,
+): string {
   if (variant === "overlay") return ROOT_OVERLAY_CLASSES;
   if (collapsed) return cn(ROOT_RAIL_COLLAPSED_CLASSES, ROOT_RAIL_TRANSITION);
-  const rail = resizable ? ROOT_RAIL_RESIZABLE_CLASSES : ROOT_RAIL_EXPANDED_CLASSES;
+  const rail = resizable
+    ? ROOT_RAIL_RESIZABLE_CLASSES
+    : ROOT_RAIL_EXPANDED_CLASSES;
   return cn(rail, ROOT_RAIL_TRANSITION);
 }
 
@@ -203,7 +207,10 @@ function SideMenuRoot({
       const drag = dragRef.current;
       if (!drag) return;
       const delta = e.clientX - drag.startX;
-      const next = Math.min(maxWidth, Math.max(minWidth, drag.startWidth + delta));
+      const next = Math.min(
+        maxWidth,
+        Math.max(minWidth, drag.startWidth + delta),
+      );
       drag.nav.style.width = `${next}px`;
     },
     [minWidth, maxWidth],
@@ -219,7 +226,10 @@ function SideMenuRoot({
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       const delta = e.clientX - drag.startX;
-      const finalWidth = Math.min(maxWidth, Math.max(minWidth, drag.startWidth + delta));
+      const finalWidth = Math.min(
+        maxWidth,
+        Math.max(minWidth, drag.startWidth + delta),
+      );
       onWidthChange?.(finalWidth);
     },
     [onWidthChange, minWidth, maxWidth],
@@ -481,10 +491,7 @@ function ItemLeadingIcon({
 }) {
   if (indent) {
     return (
-      <span
-        aria-hidden
-        className="inline-block h-[14px] w-[14px] shrink-0"
-      />
+      <span aria-hidden className="inline-block h-[14px] w-[14px] shrink-0" />
     );
   }
   if (!icon) return null;
@@ -531,10 +538,7 @@ function ItemBadge({ children }: { children: ReactNode }) {
   );
 }
 
-type SharedAnchorProps = Omit<
-  ComponentProps<"a">,
-  "href" | "children" | "ref"
->;
+type SharedAnchorProps = Omit<ComponentProps<"a">, "href" | "children" | "ref">;
 type SharedButtonProps = Omit<
   ComponentProps<"button">,
   "children" | "type" | "ref"
@@ -624,10 +628,8 @@ function SideMenuItem({
     );
 
   if (href) {
-    const {
-      onClick: anchorOnClick,
-      ...anchorProps
-    } = rest as SharedAnchorProps;
+    const { onClick: anchorOnClick, ...anchorProps } =
+      rest as SharedAnchorProps;
     return withTooltip(
       <a
         ref={ref as Ref<HTMLAnchorElement>}
@@ -648,7 +650,7 @@ function SideMenuItem({
         {labelNode}
         {badgeNode}
         {trailingNode}
-      </a>
+      </a>,
     );
   }
 

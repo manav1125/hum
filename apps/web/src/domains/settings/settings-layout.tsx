@@ -16,18 +16,30 @@ import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-st
 import { routes } from "@/utils/routes";
 import {
   DEVELOPER_PANEL_IDS,
-  groupSidebarItems,
   SETTINGS_SIDEBAR,
 } from "@/utils/settings-navigation";
-import { SettingsSidebar } from "@/domains/settings/components/settings-sidebar";
-import { SidebarShell } from "@/components/sidebar-shell";
-import { type SidebarItem } from "@/components/sidebar-tree";
 
 /**
  * React Router layout route for `/assistant/settings/*`.
  *
- * Renders the SidebarShell (responsive overlay panel with sidebar
- * navigation) and an `<Outlet />` for the active settings tab page.
+ * **Desktop: this is now a pass-through.** Settings was absorbed into Your Cue
+ * — the subtree is mounted under `IntelligenceLayout`, which supplies the leaf
+ * strip and the Preferences sub-row — so the SidebarShell that used to wrap
+ * these pages would be a second navigation inside the first. Six of these
+ * panels are Your Cue leaves in their own right (Models · Brand · Schedules ·
+ * System access · Usage & spend) and the rest hang off Preferences; either
+ * way, the row that gets you there is above, not beside.
+ *
+ * **Mobile is unchanged.** The phone still gets `MobileSettingsLayout` — the
+ * native v3 settings tree, a grouped index plus touch-adapted leaves. That
+ * surface follows the mobile-v3 spec, which this round did not review, and it
+ * carries its own header and back row (which is why `IntelligenceLayout`
+ * stands its own chrome down for every `/assistant/settings/*` path on a
+ * phone).
+ *
+ * The filtering below still runs on both platforms: `filteredItems` feeds the
+ * phone's index, and the gates it applies — managed-mode, platform, billing,
+ * Electron-only, developer-mode — are policy, not chrome.
  */
 export function SettingsLayout() {
   const settingsDeveloperNav =
@@ -96,25 +108,6 @@ export function SettingsLayout() {
     ],
   );
 
-  const sections = useMemo(
-    () => groupSidebarItems(filteredItems),
-    [filteredItems],
-  );
-
-  const bottomItems = useMemo<SidebarItem[]>(() => {
-    const items: SidebarItem[] = [];
-    // Log Out is pinned to the very bottom of the nav as an action item.
-    if (showLogout) {
-      items.push({
-        id: "logout",
-        label: "Log Out",
-        icon: LogOut,
-        onSelect: () => void handleLogout(navigate),
-      });
-    }
-    return items;
-  }, [showLogout, navigate]);
-
   const pageTitle = useMemo(() => {
     if (pathname === routes.settings.root) return "Settings";
     const match = SETTINGS_SIDEBAR.find(
@@ -135,19 +128,37 @@ export function SettingsLayout() {
     );
   }
 
+  // Desktop: Your Cue's strip is the navigation. Render the page and a quiet
+  // title, nothing else — a second sidebar here would be the duplication this
+  // round removed, drawn one level deeper.
   return (
-    <SidebarShell
-      backHref={routes.assistant}
-      sidebar={
-        <SettingsSidebar
-          sections={sections}
-          bottomItems={bottomItems}
-          indexPath={routes.settings.root}
-        />
-      }
-      title={pageTitle}
-    >
-      <Outlet />
-    </SidebarShell>
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <h2 className="shrink-0 text-title-small text-[var(--content-default)]">
+        {pageTitle}
+      </h2>
+      <div className="min-h-0 flex-1">
+        <Outlet />
+      </div>
+
+      {/*
+        Log Out used to be pinned to the bottom of the settings sidebar. That
+        sidebar is gone, and it was the ONLY desktop control that ends a
+        session — removing it silently would have left a shared laptop with no
+        way to sign out. It lands on General, which is where you go to change
+        who this machine belongs to.
+      */}
+      {showLogout && pathname === routes.settings.general ? (
+        <div className="shrink-0 border-t border-[var(--border-base)] pt-4">
+          <button
+            type="button"
+            onClick={() => void handleLogout(navigate)}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-[6px] border-none bg-transparent px-2 py-1.5 text-body-medium-default text-[var(--content-secondary)] outline-none hover:bg-[var(--surface-hover)] hover:text-[var(--content-default)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          >
+            <LogOut size={14} aria-hidden />
+            Log Out
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }

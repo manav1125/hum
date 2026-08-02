@@ -208,25 +208,33 @@ describe("PreferencesMenuContent", () => {
   });
 
   /**
-   * Reachability of the act ledger.
+   * Reachability of the act ledger — now via Your Cue.
    *
-   * Guardrails (checkpoints · agent scopes · the ledger) had no entry in any
-   * PERSISTENT desktop navigation: not the assistant rail, not the settings
-   * sidebar, not the command palette — only contextual cards on surfaces you
-   * had to already be on. The ledger is exactly what a user goes looking for
-   * when they suspect Cue did something they did not sanction, and at that
-   * moment they are not standing on an agent card. This menu is the rail's
-   * persistent footer, so the entry has to survive here.
+   * Guardrails (checkpoints · agent scopes · the ledger) once had no entry in
+   * any PERSISTENT desktop navigation, which is why this menu carried a row
+   * for it: the ledger is exactly what a user goes looking for when they
+   * suspect Cue did something they did not sanction, and at that moment they
+   * are not standing on an agent card.
+   *
+   * It is now a permanent leaf — Your Cue → What it does alone → Guardrails —
+   * so the row here would be a second nav path to it, which is the thing this
+   * round removed everywhere else. Same for Usage. The menu keeps ONE door,
+   * and it is the same door the rail's ⚙ row opens.
    */
-  test("Guardrails — and so the act ledger — is reachable from the menu", () => {
+  test("Your Cue is the menu's door to configuration", () => {
     render(createElement(PreferencesMenuContent, contentProps));
-    fireEvent.click(screen.getByText("Guardrails"));
-    expect(navigations).toContain("/assistant/guardrails");
+    fireEvent.click(screen.getByText("Your Cue"));
+    expect(navigations).toContain("/assistant/your-cue");
   });
 
-  test("exactly ONE Guardrails entry — a second is duplicate nav", () => {
+  test("exactly ONE door — and no row beside a Your Cue leaf", () => {
     render(createElement(PreferencesMenuContent, contentProps));
-    expect(screen.getAllByText("Guardrails")).toHaveLength(1);
+    expect(screen.getAllByText("Your Cue")).toHaveLength(1);
+    // Both are leaves now. A row here as well is duplicate nav.
+    expect(screen.queryByText("Guardrails")).toBeNull();
+    expect(screen.queryByText("Usage")).toBeNull();
+    // And "Settings" is gone as a word — it is not a place any more.
+    expect(screen.queryByText("Settings")).toBeNull();
   });
 
   test("a narrow MOUSE window keeps the segment", () => {

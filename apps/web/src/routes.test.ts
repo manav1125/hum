@@ -168,3 +168,178 @@ describe("the navigation rework leaves every old URL resolvable", () => {
     expect(redirectTarget("/assistant/projects")).toBeNull();
   });
 });
+
+describe("Your Cue absorbed Settings without 404ing a bookmark", () => {
+  // Settings moved from its own SidebarShell into the Your Cue shell. That is
+  // a re-parenting, not a move: every URL below has been linked from cards,
+  // coach tours and the mobile You cluster for months, and each one must land
+  // exactly where it did.
+  test.each([
+    "/assistant/settings",
+    "/assistant/settings/general",
+    "/assistant/settings/ai",
+    "/assistant/settings/integrations",
+    "/assistant/settings/brand",
+    "/assistant/settings/schedules",
+    "/assistant/settings/schedules/sch-1",
+    "/assistant/settings/notifications",
+    "/assistant/settings/keyboard-shortcuts",
+    "/assistant/settings/sounds",
+    "/assistant/settings/voice",
+    "/assistant/settings/devices",
+    "/assistant/settings/privacy",
+    "/assistant/settings/budget",
+    "/assistant/settings/archive",
+    "/assistant/settings/billing",
+    "/assistant/settings/billing/upgrade/cancel",
+    "/assistant/settings/billing/upgrade/success",
+    "/assistant/settings/debug",
+    "/assistant/settings/developer",
+    "/assistant/settings/advanced",
+    "/assistant/settings/danger-zone",
+    "/assistant/settings/system-events",
+  ])("%s still resolves", (path) => {
+    expect(leafIsNotFound(path)).toBe(false);
+  });
+
+  test("the settings index redirects to General rather than rendering it twice", () => {
+    expect(redirectTarget("/assistant/settings")).toBe(
+      "/assistant/settings/general",
+    );
+  });
+
+  test("the new doors resolve", () => {
+    expect(leafIsNotFound("/assistant/your-cue")).toBe(false);
+    expect(leafIsNotFound("/assistant/agent-network")).toBe(false);
+  });
+
+  test("the Your Cue door lands on Identity, not a landing screen", () => {
+    expect(redirectTarget("/assistant/your-cue")).toBe("/assistant/identity");
+  });
+});
+
+describe("the six contextual entry points survive the move", () => {
+  // Design: "Six leaves must stay reachable contextually as well — Agents from
+  // an agent chip, Guardrails from a tier chip, Schedules from HQ's ↻ line,
+  // Watching from the pulse line, People from a name, Usage from the spend
+  // chip." Re-parenting a route inside a layout must not change its URL, or
+  // every one of those links breaks silently.
+  test.each([
+    // The agent chip and the coach tour both point here.
+    "/assistant/hq/agents",
+    // The HQ tier chip's "Trust ›".
+    "/assistant/guardrails",
+    // HQ's ⟳ Rhythms lane.
+    "/assistant/settings/schedules",
+    // HQ's ○ Pulse lane.
+    "/assistant/automations",
+    // Any name.
+    "/assistant/people",
+    // The spend tile.
+    "/assistant/logs/usage",
+  ])("%s is unchanged and resolves", (path) => {
+    expect(leafIsNotFound(path)).toBe(false);
+  });
+
+  test("Agents kept its URL under /hq/ — it was re-parented, not moved", () => {
+    // Moving it would have broken the agent chip, the mobile You row and the
+    // coach tour's surface match in one go.
+    expect(leafIsNotFound("/assistant/hq/agents")).toBe(false);
+    // And it must still not be swallowed by `hq/:id`.
+    const matches =
+      matchRoutes(routeTree as never, "/assistant/hq/agents") ?? [];
+    const leaf = matches[matches.length - 1]?.route as
+      { path?: string } | undefined;
+    expect(leaf?.path).toBe("hq/agents");
+  });
+});
+
+describe("the four duplications each resolve to one page", () => {
+  test("spend: /assistant/logs/usage no longer renders a second usage page", () => {
+    // It renders `UsageRedirect`, which sends desktop to Usage & spend with
+    // the query string intact (mobile keeps the v3 screen — see the component).
+    const matches =
+      matchRoutes(routeTree as never, "/assistant/logs/usage") ?? [];
+    const leaf = matches[matches.length - 1]?.route as
+      { Component?: { name?: string } } | undefined;
+    expect(leaf?.Component?.name).toBe("UsageRedirect");
+  });
+
+  test("the logs index no longer defaults to the usage page", () => {
+    expect(redirectTarget("/assistant/logs")).toBe("/assistant/logs/trace");
+  });
+
+  test("trust: the old console URL still lands on Guardrails", () => {
+    expect(redirectTarget("/assistant/trust")).toBe("/assistant/guardrails");
+  });
+});
+
+/**
+ * True when `path`'s matched chain includes the Your Cue shell layout.
+ *
+ * The shell is code-split (`lazy: { Component }`), so unlike `AccountLayout`
+ * there is no `Component.name` to read on the raw tree — the loader function's
+ * own source is the only handle on which module it will import. Matching on
+ * that is why this reads a `.toString()` rather than a component reference.
+ */
+function isUnderYourCueShell(path: string): boolean {
+  const matches = matchRoutes(routeTree as never, path) ?? [];
+  return matches.some((m) => {
+    const route = m.route as { lazy?: { Component?: () => unknown } };
+    const loader = route.lazy?.Component;
+    return (
+      typeof loader === "function" &&
+      loader.toString().includes("intelligence-layout")
+    );
+  });
+}
+
+describe("every leaf renders in the same shell", () => {
+  // Design: "Every surface inside Your Cue renders in the same shell with the
+  // same sidebar. Skills and Library are already correct; Agents is the
+  // outlier." Agents opened in its own container because it was mounted as a
+  // bare sibling of `hq`, and Guardrails had the same problem. Both are
+  // children of the shell now — which is the actual fix, rather than restyling
+  // the pages.
+  test.each([
+    "/assistant/identity",
+    "/assistant/settings/brand",
+    // The two that were outliers.
+    "/assistant/hq/agents",
+    "/assistant/guardrails",
+    "/assistant/skills",
+    "/assistant/plugins",
+    "/assistant/marketplace",
+    "/assistant/connectors",
+    "/assistant/connectors/slack",
+    "/assistant/channels",
+    "/assistant/agent-network",
+    "/assistant/cue-live",
+    "/assistant/memory",
+    "/assistant/settings/schedules",
+    "/assistant/automations",
+    "/assistant/settings/privacy",
+    "/assistant/settings/ai",
+    "/assistant/settings/budget",
+    "/assistant/workspace",
+    "/assistant/settings/general",
+    // Preferences panels ride the same shell.
+    "/assistant/settings/notifications",
+    "/assistant/settings/archive",
+    "/assistant/settings/billing",
+  ])("%s renders inside the Your Cue shell", (path) => {
+    expect(isUnderYourCueShell(path)).toBe(true);
+  });
+
+  test("the app's own destinations are NOT inside the config shell", () => {
+    // Your Cue is a door you go through, not a frame around the product.
+    for (const path of [
+      "/assistant/hq",
+      "/assistant/projects",
+      "/assistant/people",
+      "/assistant/library",
+    ]) {
+      expect(isUnderYourCueShell(path)).toBe(false);
+    }
+  });
+});

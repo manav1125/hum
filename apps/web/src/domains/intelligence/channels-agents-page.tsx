@@ -1,17 +1,19 @@
 /**
- * Channels & Agents — the unified "reach + pairing" overview.
+ * Channels — how Cue reaches you.
  *
- * Composes two existing surfaces into one tab, deliberately reusing their
- * component bodies unchanged:
- *  - `ChannelsPage` — the "One you, every channel" reach overview (active /
- *    available channel status, hero stats, deep-links to per-channel setup).
- *  - `AgentsPage` — the A2A section (Enable-A2A toggle, paired-agents grid,
- *    one-time invite flow).
+ * DESKTOP: the "One you, every channel" reach overview — active/available
+ * channel status, hero stats, deep-links to per-channel setup.
+ *
+ * The A2A block (`AgentsPage`) used to render beneath it under an "Agent
+ * network" eyebrow. It is now its own leaf at `/assistant/agent-network`: a
+ * section with no URL cannot be linked to or landed on, and agent pairing is a
+ * different trust decision from channel connection.
  *
  * Per-channel SETUP (token entry, connect/disconnect, the A2A invite dialog)
- * still lives in the Connections workbench at `/assistant/contacts`; both
- * sections deep-link there for the actual wiring. This page is the single
- * place where reachability and agent pairing are surfaced together.
+ * still lives in the Connections workbench at `/assistant/contacts`, which
+ * this page deep-links into for the actual wiring. Connections has no leaf of
+ * its own — see `your-cue-model.ts` — because it is per-person channel
+ * verification, and that belongs on the person's row in People.
  *
  * On MOBILE this route is the "You" tab of the native shell and renders the
  * mobile-v3 You screen (`Mv3YouPage`, spec frame 9 — trust HQ): the autonomy
@@ -23,18 +25,8 @@
  */
 
 import { useMobileLayout } from "@/hooks/use-is-mobile";
-import { AgentsPage } from "@/domains/intelligence/agents-page";
 import { ChannelsPage } from "@/domains/intelligence/channels-page";
 import { Mv3YouPage } from "@/mobile-v3/you/you-page";
-
-const sectionLabelStyle = {
-  fontFamily: "'DM Mono', ui-monospace, monospace",
-  fontSize: 10.5,
-  letterSpacing: ".1em",
-  textTransform: "uppercase" as const,
-  color: "var(--mv1-t3)",
-  margin: "8px 0 16px",
-};
 
 export function ChannelsAgentsPage() {
   const isMobile = useMobileLayout();
@@ -45,23 +37,15 @@ export function ChannelsAgentsPage() {
     return <Mv3YouPage />;
   }
 
+  // DESKTOP: channels only. The A2A block that used to hang below the channel
+  // grid is now its own leaf at `/assistant/agent-network` — design's "Agent
+  // network". It was a section with an eyebrow and no URL, so it could not be
+  // linked to, bookmarked or landed on; and pairing with another agent is a
+  // different trust decision from connecting Slack, which is exactly the test
+  // for whether two things belong on one page.
   return (
     <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}>
       <ChannelsPage />
-
-      {/* Agents (A2A) section — its own labelled block beneath the channel
-          reach overview. The AgentsPage body carries its own hero, so a thin
-          divider + eyebrow is enough to set the two apart. */}
-      <div
-        style={{
-          borderTop: "1px solid var(--mv1-line)",
-          marginTop: 8,
-          paddingTop: 28,
-        }}
-      >
-        <div style={sectionLabelStyle}>Agent network</div>
-        <AgentsPage />
-      </div>
     </div>
   );
 }

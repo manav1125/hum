@@ -1,5 +1,12 @@
 /**
- * Budget & Spend — cost visibility + guardrails.
+ * The spend half of **Usage & spend** — totals, caps, alerts, kill switch.
+ *
+ * Composed with the logs domain's usage analytics by
+ * `pages/usage-and-spend/usage-and-spend-page.tsx`, which is the route
+ * component. The composition happens there rather than here because a
+ * `domains/settings` module may not import from `domains/logs` (see
+ * CONVENTIONS.md → cross-domain imports); page-level composition is the
+ * escape hatch that rule names.
  *
  * Two data sources, both real:
  *   - Spend: the daemon usage totals endpoint (`usageTotalsGet`), queried for

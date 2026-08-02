@@ -1,21 +1,17 @@
 import {
-  Bot,
-  Brain,
   ChevronDown,
   ChevronRight,
   Clock,
-  Eye,
   Hash,
   LayoutGrid,
   LayoutList,
-  Lock,
   Pin,
-  Repeat,
   Rocket,
   Search,
-  Sparkles,
+  Settings2,
   SquarePen,
   Target,
+  Users,
   X,
 } from "lucide-react";
 import { Fragment, useCallback, useId, type ReactNode } from "react";
@@ -52,12 +48,15 @@ import type { Conversation } from "@/types/conversation-types";
 import { canMarkRead, canMarkUnread } from "@/utils/conversation-predicates";
 import { useNeedsYouBadge } from "@/hooks/use-needs-you-badge";
 import {
-  CUE_NAV,
   PRIMARY_NAV,
+  SIDEBAR_DESTINATIONS,
+  YOUR_CUE_DOOR,
+  shouldShowPeopleRow,
   takePeek,
   type PeekSectionKey,
   type PrimaryNavKey,
 } from "@/components/nav/nav-model";
+import { usePeopleSignal } from "@/components/nav/use-people-signal";
 import { isElectron } from "@/runtime/is-electron";
 import { useNavCounts } from "@/components/nav/use-nav-counts";
 import { useRailPeek } from "@/components/nav/use-rail-peek";
@@ -84,23 +83,12 @@ export interface AssistantSideMenuProps extends UseSidebarStateParams {
   onWidthChange?: (width: number) => void;
   activeConversationId?: string;
   onSelectConversation: (key: string) => void;
-  /**
-   * @deprecated v15 retired the Intelligence rail row — "Intelligence" named
-   * the machinery, and the thing you actually came to look at is Memory, which
-   * is now one of the CUE group's six. The hub itself still resolves at
-   * `/assistant/identity` and is reachable from ⌘K and from the tab strip that
-   * Skills and Memory land on. Accepted so `chat-layout` keeps compiling; the
-   * rail no longer reads either.
-   */
-  isIntelligenceActive?: boolean;
-  /** @deprecated See {@link AssistantSideMenuProps.isIntelligenceActive}. */
-  onOpenIntelligence?: () => void;
   isLibraryActive?: boolean;
   onOpenLibrary?: () => void;
   /**
-   * @deprecated People is not in v15's six and design has not said where it
-   * belongs on desktop, so the rail does not guess. `/assistant/people` still
-   * resolves and the phone's ◍ menu still carries it.
+   * @deprecated The People row now decides for itself whether it exists
+   * (`shouldShowPeopleRow`) and whether it is active (its own `match`). These
+   * two are accepted so `chat-layout` keeps compiling and are not read.
    */
   isContactsActive?: boolean;
   /** @deprecated See {@link AssistantSideMenuProps.isContactsActive}. */
@@ -161,15 +149,28 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
  *
  * The brief was one sentence from the owner: *"the navigation got a bit crazy
  * with so many things."* The rail carried thirteen entries. It now carries
- * three Tier-1 rows, the conversation list, and a group of six.
+ * three Tier-1 rows, the conversation list, two destinations and a door.
  *
- *   cue.
+ *   cue.                              ◧
  *   [ ✎ Talk to Cue          ⌘N ]   ← the filled row
  *   ◈ HQ                      7 ▾   ← three most urgent, then "N more ›"
  *   ▤ Work                    5 ▸   ← three with something live
  *   PINNED / RECENT / All conversations ›
- *   CUE   ◆ Agents · ✦ Skills · ↻ Rhythms · 🧠 Memory · ▦ Library · 👁 Watching
- *   👤 avatar (Trust · Preferences · Billing live in here)
+ *   ──────────────
+ *   👤 People               214     ← gated; see `shouldShowPeopleRow`
+ *   ▦ Library                48
+ *   ──────────────
+ *   ⚙ Your Cue
+ *   👤 Manav · Autonomous · $4.10
+ *
+ * **One column below the divider, on HQ and Work's left margin.** v20 shipped
+ * these as a two-column grid and design overturned it: a grid reads as a
+ * keypad, breaks vertical scanning, and truncates labels — "Watching" rendered
+ * as "Wat…" in the live app. The four rows that made six necessary were
+ * configuration, not destinations, and moved into Your Cue.
+ *
+ * The dividers do the grouping. No headings — two rows do not need a label
+ * above them.
  *
  * **Flat hierarchy — no indents.** Expanded peek rows are unindented too; the
  * quieter type does the nesting that position used to. The `▾` sits on the
@@ -184,19 +185,22 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
  *     cannot read its data says so instead of rendering a zero.
  *
  * Displaced, NOT deleted — every one of these still resolves:
- *   · Trust & guardrails, Usage/Billing, Settings → the avatar menu below
- *     (`PreferencesMenu`), which is the desktop counterpart of mobile's You.
+ *   · Agents, Skills, Rhythms/Schedules, Memory, Watching, Guardrails, Usage,
+ *     Channels, Connectors, Cue Live, Workspace and every Settings panel →
+ *     leaves behind ⚙ Your Cue. One door, eighteen rooms.
  *   · Work's Things/Everything views → the Work page's own sub-nav
  *     (`pages/projects/work-views.tsx`). Nesting them here as well was a
  *     second nav path to one destination.
- *   · Intelligence (`/assistant/identity`) → ⌘K, and the tab strip that
- *     Skills and Memory both land on.
- *   · Channels, Connections, Cue Live, Workspace → that same tab strip.
- *   · People (`/assistant/people`) → the phone's ◍ menu. Design has not said
- *     where it belongs on desktop; see the report rather than a guess here.
+ *   · Connections (`/assistant/contacts`) → reached from Channels and from the
+ *     channel-presence dots. It is per-person channel verification, and that
+ *     data belongs on the person's row in People — so it gets no leaf.
  *   · Create (`/assistant/create`) and Voice (`/assistant/voice`) → composer
  *     affordances. Voice already has its mic + orb in the composer; Create's
  *     desktop chip is not built yet.
+ *
+ * And the rail is not there at all while you read a transcript: it collapses
+ * to a 52px icon strip on entering a conversation (`rail-collapse.ts`), which
+ * is what makes carrying this much affordable.
  */
 /**
  * Rail iconography. Lives here rather than in `nav-model` so the model stays
@@ -212,14 +216,24 @@ const PRIMARY_ICON: Record<PrimaryNavKey, typeof Target> = {
   work: LayoutList,
 };
 
-const CUE_ICON: Record<string, typeof Target> = {
-  agents: Bot,
-  skills: Sparkles,
-  rhythms: Repeat,
-  memory: Brain,
+const SIDEBAR_ICON: Record<"people" | "library", typeof Target> = {
+  people: Users,
   library: LayoutGrid,
-  watching: Eye,
 };
+
+/*
+ * A note on the tint the peek rows use.
+ *
+ * They were `--content-tertiary`, which measures **3.98:1** on
+ * `--surface-overlay` in the light theme — under the 4.5:1 bar for text. They
+ * are now `--content-secondary` (5.77:1 light, 7.01:1 dark, 9.21:1 serif).
+ *
+ * This is not the token sweep design vetoed: the ramp itself is fine, and
+ * `--content-tertiary` still carries the `▾` disclosure glyph below, which is
+ * an icon rather than text. What changed is the rule design gave instead —
+ * **recede by size or weight, never contrast.** The peek rows already recede by
+ * size (`size="compact"`), so they were paying for their quietness twice.
+ */
 
 /** What each lane says when it is expanded and has nothing to show. */
 const PEEK_EMPTY: Record<PeekSectionKey, string> = {
@@ -287,6 +301,11 @@ export function AssistantSideMenu({
   // The peek. Reads the same two badge sources above, so the three titles and
   // the "N more" under them can never disagree with the number beside HQ.
   const peek = useRailPeek(assistantId);
+  // The People row's gate. Real numbers, one predicate — see
+  // `shouldShowPeopleRow`. Extraction starting to work is what promotes the
+  // row; nobody has to come back and edit this file.
+  const peopleSignal = usePeopleSignal(assistantId);
+  const showPeopleRow = shouldShowPeopleRow(peopleSignal);
   const openSection = useRailPeekStore.use.openSection();
   const togglePeek = useRailPeekStore.use.toggle();
   const peekPanelId = useId();
@@ -535,7 +554,7 @@ export function AssistantSideMenu({
   ): ReactNode => (
     <div className="pb-1">
       <div className="flex items-center justify-between px-4 py-1">
-        <span className="text-body-small-default text-[var(--content-tertiary)]">
+        <span className="text-body-small-default text-[var(--content-secondary)]">
           {title}
         </span>
       </div>
@@ -719,19 +738,19 @@ export function AssistantSideMenu({
                     <SideMenu.Item
                       label={PEEK_UNREADABLE[section]}
                       size="compact"
-                      className="text-[color:var(--content-tertiary)]"
+                      className="text-[color:var(--content-secondary)]"
                     />
                   ) : lane.status === "loading" ? (
                     <SideMenu.Item
                       label="Checking…"
                       size="compact"
-                      className="text-[color:var(--content-tertiary)]"
+                      className="text-[color:var(--content-secondary)]"
                     />
                   ) : view.shown.length === 0 && view.moreCount === 0 ? (
                     <SideMenu.Item
                       label={PEEK_EMPTY[section]}
                       size="compact"
-                      className="text-[color:var(--content-tertiary)]"
+                      className="text-[color:var(--content-secondary)]"
                     />
                   ) : (
                     <>
@@ -741,7 +760,7 @@ export function AssistantSideMenu({
                           label={item.title}
                           size="compact"
                           badge={item.meta ?? undefined}
-                          className="text-[color:var(--content-tertiary)]"
+                          className="text-[color:var(--content-secondary)]"
                           onSelect={() => cueNav(destination.to)}
                         />
                       ))}
@@ -943,81 +962,85 @@ export function AssistantSideMenu({
         )}
 
         {/*
-          CUE — Tier 2, "what Cue is". Six rows, and the array they come from
-          is capped at six: a seventh must DISPLACE one, not extend the list.
-          That cap, not the heading, is what stops thirteen happening again.
+          The accumulating destinations — People and Library.
 
-          It sits BELOW the conversation list because it is the group you click
-          to explain the product, not the one you live in — and the list above
-          it is bounded at five plus a door, so this never lands off-screen.
+          **One column, same left margin as HQ and Work.** v20 laid this out as
+          a two-column grid to fit six rows in; design overturned it and the
+          live app proved the point — a grid "reads as a keypad, breaks
+          vertical scanning, and truncates labels", and "Watching" shipped
+          rendered as "Wat…". The other four rows were configuration, not
+          destinations, and are now leaves inside Your Cue.
 
-          Two columns when the rail is open (six rows of chrome under a short
-          conversation list is the density the drawing calls for); one column
-          of icons when it is collapsed, where a grid has nothing to align to.
+          No heading. The two separators either side do the grouping, which is
+          what the drawing shows: a heading would be a third piece of furniture
+          to explain two rows.
         */}
-        <SideMenu.Section title="Cue" className="mt-3 gap-1">
-          <div
-            className={cn(
-              "gap-x-1 gap-y-[2px]",
-              collapsed && variant === "rail"
-                ? "flex flex-col items-center"
-                : "grid grid-cols-2",
-            )}
-          >
-            {CUE_NAV.map((destination) => {
-              // Watching has no surface. Rather than pointing it at the
-              // nearest lookalike (Channels & Agents is where a source is
-              // CONNECTED, not what Cue did with what arrived), the row ships
-              // disabled and says why. A lock glyph carries the state, so it
-              // does not depend on the dimmed tint alone.
-              if (destination.to === null) {
-                return (
-                  <SideMenu.Item
-                    key={destination.key}
-                    icon={CUE_ICON[destination.key] ?? Rocket}
-                    label={destination.label}
-                    disabled
-                    trailingIcon={Lock}
-                    title={destination.unavailableReason}
-                    tooltip={destination.unavailableReason}
-                    // Full width, not half. In a two-column grid the label
-                    // plus the lock truncated to "Wat…", which is not a word
-                    // and reads as a rendering bug rather than a state. It
-                    // also earns the row: the one destination that is not
-                    // available should not look like the five that are.
-                    className="col-span-2 cursor-default opacity-60 hover:bg-transparent"
-                  />
-                );
-              }
-              const to = destination.to;
-              const isLibrary = destination.key === "library";
-              return (
-                <SideMenu.Item
-                  key={destination.key}
-                  icon={CUE_ICON[destination.key] ?? Rocket}
-                  label={destination.label}
-                  showCollapsedTooltip
-                  active={
-                    isLibrary
-                      ? isLibraryActive || destination.match(location.pathname)
-                      : destination.match(location.pathname)
-                  }
-                  // Library's host callback navigates to the same route this
-                  // row would; prefer it so the layout keeps whatever panel
-                  // state it wants to set on the way.
-                  onSelect={
-                    isLibrary && onOpenLibrary
-                      ? () => {
-                          onOpenLibrary();
-                          onClose?.();
-                        }
-                      : () => cueNav(to)
-                  }
-                />
-              );
-            })}
-          </div>
-        </SideMenu.Section>
+        <SideMenu.Separator />
+        <div
+          className={cn(
+            "flex flex-col gap-[2px]",
+            collapsed && variant === "rail" && "items-center",
+          )}
+        >
+          {SIDEBAR_DESTINATIONS.map((destination) => {
+            // People is deliberately absent until relationship extraction is
+            // actually writing memories. One predicate, over live data —
+            // `shouldShowPeopleRow`. Nothing here to uncomment.
+            if (destination.key === "people" && !showPeopleRow) return null;
+
+            const isLibrary = destination.key === "library";
+            const count =
+              destination.key === "people" ? peopleSignal?.contactCount : null;
+
+            return (
+              <SideMenu.Item
+                key={destination.key}
+                icon={SIDEBAR_ICON[destination.key]}
+                label={destination.label}
+                showCollapsedTooltip
+                badge={count && count > 0 ? String(count) : undefined}
+                active={
+                  isLibrary
+                    ? isLibraryActive || destination.match(location.pathname)
+                    : destination.match(location.pathname)
+                }
+                // Library's host callback navigates to the same route this row
+                // would; prefer it so the layout keeps whatever panel state it
+                // wants to set on the way.
+                onSelect={
+                  isLibrary && onOpenLibrary
+                    ? () => {
+                        onOpenLibrary();
+                        onClose?.();
+                      }
+                    : () => cueNav(destination.to)
+                }
+              />
+            );
+          })}
+        </div>
+
+        {/*
+          ⚙ Your Cue — the door. Below the second separator, directly above the
+          account line, because it is the row you leave the app's work behind
+          to use. Settings used to be a second door to the same rooms; it now
+          redirects here.
+        */}
+        <SideMenu.Separator />
+        <div
+          className={cn(
+            "flex flex-col",
+            collapsed && variant === "rail" && "items-center",
+          )}
+        >
+          <SideMenu.Item
+            icon={Settings2}
+            label={YOUR_CUE_DOOR.label}
+            showCollapsedTooltip
+            active={YOUR_CUE_DOOR.match(location.pathname)}
+            onSelect={() => cueNav(YOUR_CUE_DOOR.to)}
+          />
+        </div>
 
         {/* Channel presence — live readiness dots (one memory across
             channels). Not a destination; it belongs with the CUE group

@@ -10,7 +10,7 @@ import { Globe } from "lucide-react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { SideMenu } from "./side-menu";
+import { SideMenu, SIDE_MENU_COLLAPSED_WIDTH } from "./side-menu";
 
 describe("SideMenu root", () => {
   test("renders a <nav> with the provided aria-label and data-slot", () => {
@@ -39,7 +39,7 @@ describe("SideMenu root", () => {
     expect(html).toContain("bg-[var(--surface-overlay)]");
   });
 
-  test("collapsed rail shrinks the width", () => {
+  test("collapsed rail shrinks to the 52px icon strip", () => {
     const html = renderToStaticMarkup(
       createElement(
         SideMenu,
@@ -47,7 +47,10 @@ describe("SideMenu root", () => {
         createElement(SideMenu.Body, { key: "body" }, null),
       ),
     );
-    expect(html).toContain("w-[48px]");
+    // 52px, per the v21 nav brief — the strip the assistant rail
+    // auto-collapses to on entering a conversation. Was 48.
+    expect(html).toContain(`w-[${SIDE_MENU_COLLAPSED_WIDTH}px]`);
+    expect(html).toContain("w-[52px]");
     expect(html).not.toContain("w-[230px]");
   });
 

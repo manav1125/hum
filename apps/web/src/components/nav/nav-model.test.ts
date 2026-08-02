@@ -11,14 +11,17 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  CUE_GROUP_CAP,
   CUE_NAV,
   MOBILE_TAB_ORDER,
+  PEOPLE_ROW_MIN_MEMORIES,
   PRIMARY_NAV,
+  SIDEBAR_DESTINATIONS,
   WORK_VIEWS,
+  YOUR_CUE_DOOR,
   activePrimaryKey,
   primaryDestination,
   readWorkView,
+  shouldShowPeopleRow,
   type PrimaryNavKey,
   type WorkView,
 } from "./nav-model";
@@ -141,17 +144,143 @@ describe("Work's two views are views, not destinations", () => {
   });
 });
 
-describe("the CUE group is closed at six", () => {
-  // This is the test the whole pass exists for. The rail carried THIRTEEN
-  // entries; a heading above them would not have helped, because a heading has
-  // no arity. Adding a seventh row must fail here so the author has to decide
-  // which of the six it displaces.
-  test("exactly six — a seventh must displace one, not extend the list", () => {
-    expect(CUE_NAV).toHaveLength(CUE_GROUP_CAP);
-    expect(CUE_GROUP_CAP).toBe(6);
+describe("the sidebar's Tier-2 rows are one column", () => {
+  // The bug: v20 laid these out as a two-column grid to fit six rows in, and
+  // the live app rendered "Watching" as "Wat…". Design's ruling — a grid reads
+  // as a keypad, breaks vertical scanning, truncates labels — is enforced here
+  // structurally rather than in CSS: with two entries there is nothing to pair
+  // off into columns, and a third would have to argue for itself.
+  test("exactly two rows survive — People and Library", () => {
+    expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
+      "people",
+      "library",
+    ]);
   });
 
-  test("the six the design names, in order", () => {
+  test("both pass the admission test: the data accumulates on its own", () => {
+    // Agents, Skills, Rhythms and Watching do not — you go to those to change
+    // something, which makes them leaves inside Your Cue.
+    for (const destination of SIDEBAR_DESTINATIONS) {
+      expect(destination.to.startsWith("/assistant/")).toBe(true);
+    }
+    expect(SIDEBAR_DESTINATIONS.map((d) => d.to)).toEqual([
+      routes.people,
+      routes.library.root,
+    ]);
+  });
+
+  test("no sidebar row duplicates a primary destination", () => {
+    const primary = new Set(PRIMARY_NAV.map((d) => d.to));
+    for (const destination of SIDEBAR_DESTINATIONS) {
+      expect(primary.has(destination.to)).toBe(false);
+    }
+  });
+
+  test("no two rows share a destination — one door per place", () => {
+    const targets = SIDEBAR_DESTINATIONS.map((d) => d.to);
+    expect(new Set(targets).size).toBe(targets.length);
+  });
+});
+
+describe("the People gate", () => {
+  // Design would not promote People on the strength of the code existing:
+  // "A prominent destination with 2 rows teaches people the slot is
+  // worthless." The live instance has 2 contacts and 0 memories.
+
+  test("the live instance's numbers — 2 contacts, 0 memories — keep it hidden", () => {
+    expect(shouldShowPeopleRow({ contactCount: 2, memoryCount: 0 })).toBe(
+      false,
+    );
+  });
+
+  test("contacts without memories are not enough — that is the 697 no-op case", () => {
+    // Contact extraction ran 697 times, completed every time, and wrote
+    // nothing. Gating on contact count alone would have shown the row through
+    // all of it.
+    expect(shouldShowPeopleRow({ contactCount: 214, memoryCount: 0 })).toBe(
+      false,
+    );
+  });
+
+  test("memories without contacts are not enough either", () => {
+    expect(shouldShowPeopleRow({ contactCount: 0, memoryCount: 9 })).toBe(
+      false,
+    );
+  });
+
+  test("one real memory against a real contact promotes the row", () => {
+    expect(
+      shouldShowPeopleRow({
+        contactCount: 2,
+        memoryCount: PEOPLE_ROW_MIN_MEMORIES,
+      }),
+    ).toBe(true);
+  });
+
+  test("no signal is not evidence — a failed or pending read hides the row", () => {
+    // Withholding the row costs a click. Showing an empty one costs trust in
+    // every other row beside it.
+    expect(shouldShowPeopleRow(null)).toBe(false);
+    expect(shouldShowPeopleRow(undefined)).toBe(false);
+  });
+
+  test("the bar is one memory — the failure guarded against is silence, not scale", () => {
+    expect(PEOPLE_ROW_MIN_MEMORIES).toBe(1);
+  });
+});
+
+describe("Your Cue is the one door", () => {
+  test("the door lands on a route in the registry", () => {
+    expect(YOUR_CUE_DOOR.to).toBe(routes.yourCue);
+  });
+
+  test.each([
+    routes.identity,
+    routes.skills,
+    routes.memory,
+    routes.guardrails,
+    routes.hqAgents,
+    routes.workspace,
+    routes.connectors,
+    routes.channels,
+    routes.agentNetwork,
+    routes.cueLive,
+    routes.automations,
+    // Settings was absorbed — every one of its URLs lights the same door.
+    routes.settings.general,
+    routes.settings.ai,
+    routes.settings.budget,
+    routes.settings.privacy,
+    routes.settings.brand,
+    routes.settings.schedules,
+    routes.settings.archive,
+  ])("%s lights the door", (pathname) => {
+    expect(YOUR_CUE_DOOR.match(pathname)).toBe(true);
+  });
+
+  test.each([
+    "/assistant",
+    "/assistant/hq",
+    "/assistant/projects",
+    "/assistant/people",
+    "/assistant/library",
+    "/assistant/conversations/abc",
+  ])("%s does NOT light the door", (pathname) => {
+    expect(YOUR_CUE_DOOR.match(pathname)).toBe(false);
+  });
+
+  test("the door is not one of the sidebar destinations", () => {
+    const targets = new Set(SIDEBAR_DESTINATIONS.map((d) => d.to));
+    expect(targets.has(YOUR_CUE_DOOR.to)).toBe(false);
+  });
+});
+
+describe("CUE_NAV survives only for the phone's ◍ menu", () => {
+  // Deliberately unchanged: `mobile-v3/overflow-menu.tsx` renders it and the
+  // phone follows the v3 native spec, which this round did not review.
+  // Restructuring it here would have silently redesigned a surface nobody
+  // looked at.
+  test("still the six the phone's menu expects", () => {
     expect(CUE_NAV.map((d) => d.label)).toEqual([
       "Agents",
       "Skills",
@@ -162,58 +291,9 @@ describe("the CUE group is closed at six", () => {
     ]);
   });
 
-  test("Agents and Skills are adjacent — an agent's capabilities ARE its skills", () => {
-    const keys = CUE_NAV.map((d) => d.key);
-    expect(keys.indexOf("skills") - keys.indexOf("agents")).toBe(1);
-  });
-
-  test("every row with a destination points at a route in the registry", () => {
-    const known = new Set<string>([
-      routes.hqAgents,
-      routes.skills,
-      routes.automations,
-      routes.memory,
-      routes.library.root,
-    ]);
-    for (const destination of CUE_NAV) {
-      if (destination.to === null) continue;
-      expect(known.has(destination.to)).toBe(true);
-    }
-  });
-
-  test("Agents points at the org chart, NOT the /assistant/agents redirect", () => {
-    // `routes.agentsAtWork` is a `<Navigate to={routes.hq}>`. A row labelled
-    // Agents that lands you on HQ is the exact failure this pass was told to
-    // avoid: an entry that lies about where it goes.
-    const agents = CUE_NAV.find((d) => d.key === "agents");
-    expect(agents?.to).toBe(routes.hqAgents);
-    expect(agents?.to).not.toBe(routes.agentsAtWork);
-  });
-
-  test("a row with no surface admits it instead of pointing somewhere plausible", () => {
-    // Watching is specified (v17 E3) and unbuilt. `to: null` + a reason is the
-    // honest state; aiming it at Channels & Agents would have looked finished
-    // and been wrong — that surface is where a source is CONNECTED, not what
-    // Cue did with what arrived.
-    for (const destination of CUE_NAV) {
-      if (destination.to !== null) continue;
-      expect(destination.unavailableReason?.length).toBeGreaterThan(0);
-      expect(destination.match("/assistant/channels")).toBe(false);
-    }
-  });
-
-  test("no CUE row duplicates a primary destination", () => {
-    const primary = new Set(PRIMARY_NAV.map((d) => d.to));
-    for (const destination of CUE_NAV) {
-      if (destination.to === null) continue;
-      expect(primary.has(destination.to)).toBe(false);
-    }
-  });
-
-  test("no two CUE rows share a destination — one door per place", () => {
-    const targets = CUE_NAV.map((d) => d.to).filter(
-      (to): to is string => to !== null,
-    );
-    expect(new Set(targets).size).toBe(targets.length);
+  test("its unbuilt row still admits it rather than pointing at a lookalike", () => {
+    const watching = CUE_NAV.find((d) => d.key === "watching");
+    expect(watching?.to).toBeNull();
+    expect(watching?.unavailableReason?.length).toBeGreaterThan(0);
   });
 });

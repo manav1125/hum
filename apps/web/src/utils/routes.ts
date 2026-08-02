@@ -162,7 +162,27 @@ export const routes = {
   trust: r("/assistant/trust"),
   people: r("/assistant/people"),
   voice: r("/assistant/voice"),
+  /**
+   * **Your Cue** — the door. One URL for "the place I change things", which
+   * every configuration surface now lives under and which `/assistant/settings`
+   * redirects to.
+   *
+   * It is a redirect, not a page: a door with its own landing screen would be
+   * a seventh thing to read before getting to the leaf you came for. It lands
+   * on Identity, the first leaf of the first group.
+   */
+  yourCue: r("/assistant/your-cue"),
   identity: r("/assistant/identity"),
+  /**
+   * Agent network — the A2A peering surface (invite, pair, revoke). Split out
+   * of `/assistant/channels`, which rendered it as an unlinkable section below
+   * the channel grid: design's "Agent network" is its own leaf because pairing
+   * with another agent and connecting Slack are different trust decisions.
+   *
+   * `/assistant/channels` still renders on mobile as the whole v3 "You" hub,
+   * so that route is unchanged — this is an addition, not a move.
+   */
+  agentNetwork: r("/assistant/agent-network"),
   cueLive: r("/assistant/cue-live"),
   // Desktop control — approve + mirror a run that executes on the paired Mac
   // (web W5 serif / mobile organizer remote frames 71/72).

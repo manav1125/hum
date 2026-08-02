@@ -66,6 +66,11 @@ import { LazyBoundary } from "@/components/lazy-boundary";
 import { StatusBanner } from "@/components/status-banner";
 import { Mv3ChatsIndex } from "@/mobile-v3/chats/mv3-chats-index";
 import { AssistantSideMenu } from "@/domains/chat/components/assistant-side-menu";
+import {
+  isConversationSurface,
+  isRailCollapsed,
+  toggleRail,
+} from "@/components/nav/rail-collapse";
 import { PreferencesMenu } from "@/domains/chat/components/preferences-menu";
 import { useCommandPaletteOrchestrator } from "@/domains/chat/hooks/use-command-palette-orchestrator";
 import { useAddTasksStore } from "@/stores/add-tasks-store";
@@ -89,6 +94,13 @@ const AddTasksModal = lazy(() =>
 );
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "vellum:sidebar:collapsed";
+/**
+ * "Keep the rail open in conversations too." Stored separately from the
+ * collapsed preference because they are different intents — see
+ * `rail-collapse.ts`. A single flag would make pinning the rail open inside a
+ * transcript silently change what HQ looks like when you navigate back.
+ */
+const SIDEBAR_PIN_STORAGE_KEY = "cue:sidebar:pinned-open";
 const SIDEBAR_WIDTH_STORAGE_KEY = "vellum:sidebar:width";
 const DEFAULT_SIDEBAR_WIDTH = 230;
 const MIN_SIDEBAR_WIDTH = 220;
@@ -96,6 +108,11 @@ const MAX_SIDEBAR_WIDTH = 400;
 
 function readPersistedCollapsed(): boolean {
   return getLocalBool(SIDEBAR_COLLAPSED_STORAGE_KEY, false);
+}
+
+/** Default false: the rail gets out of the way until you ask it not to. */
+function readPersistedPin(): boolean {
+  return getLocalBool(SIDEBAR_PIN_STORAGE_KEY, false);
 }
 
 function readPersistedWidth(): number {
@@ -237,10 +254,6 @@ export function ChatLayout() {
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < maxHistoryIndex;
 
-  const handleOpenIdentity = useCallback(() => {
-    navigate(routes.identity);
-  }, [navigate]);
-
   const handleOpenContacts = useCallback(() => {
     navigate(routes.people);
   }, [navigate]);
@@ -253,34 +266,50 @@ export function ChatLayout() {
     navigate(1);
   }, [navigate]);
 
-  // The rail "Contacts" item opens the relationship-memory dossier (/people) —
-  // where Cue learns about + enriches the people you know.
+  // "Which row is lit" is the rail's own question now, answered from the ONE
+  // declaration both platforms read (`nav-model` / `your-cue-model`). The two
+  // hand-maintained path lists that used to live here — one for Contacts, one
+  // enumerating every Intelligence sub-route — were a second copy of that
+  // model, and a leaf added to the shell had to be remembered in both places
+  // or the rail quietly stopped lighting.
   const isContactsActive = location.pathname === routes.people;
 
-  // The Intelligence rail item is the hub: active for every Intelligence
-  // sub-route — Identity, Tools & Apps (= /connectors), Channels & Agents
-  // (= /channels), Connections (= /contacts, the channel/agent setup), Cue
-  // Live, Skills, Memory, Workspace, Plugins.
-  const isIntelligenceActive =
-    location.pathname === routes.identity ||
-    location.pathname === routes.connectors ||
-    location.pathname.startsWith(`${routes.connectors}/`) ||
-    location.pathname === routes.channels ||
-    location.pathname.startsWith(routes.contacts.root) ||
-    location.pathname === routes.cueLive ||
-    location.pathname === routes.skills ||
-    location.pathname === routes.memory ||
-    location.pathname === routes.workspace ||
-    location.pathname === routes.plugins ||
-    location.pathname.startsWith(`${routes.plugins}/`);
-
   // --- Sidebar collapsed / drawer state ---
-  const [collapsed, setCollapsed] = useState<boolean>(readPersistedCollapsed);
+  //
+  // Two flags, not one. `preferenceCollapsed` is the standing choice that
+  // applies everywhere; `pinnedOpen` is "keep the rail open in conversations
+  // too". Design: *"the rail auto-collapses to a 52px icon strip the moment you
+  // enter a conversation (◧ or ⌘\ pins it open) — this is what makes
+  // discoverability affordable."*
+  //
+  // That last clause is the argument for the whole rail. HQ's peek, Work's
+  // peek, five conversations, two destinations and a door are affordable
+  // precisely because none of it is on screen while you read a transcript.
+  // Before this, `collapsed` was a single piece of local state that never
+  // reacted to the route at all.
+  //
+  // The rule itself lives in `rail-collapse.ts`, pure and testable; this
+  // component only owns the persistence.
+  const [preferenceCollapsed, setPreferenceCollapsed] = useState<boolean>(
+    readPersistedCollapsed,
+  );
+  const [pinnedOpen, setPinnedOpen] = useState<boolean>(readPersistedPin);
   const [sidebarWidth, setSidebarWidth] = useState<number>(readPersistedWidth);
 
+  const inConversation = isConversationSurface(location.pathname);
+  const collapsed = isRailCollapsed({
+    preferenceCollapsed,
+    inConversation,
+    pinnedOpen,
+  });
+
   useEffect(() => {
-    setLocalBool(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed);
-  }, [collapsed]);
+    setLocalBool(SIDEBAR_COLLAPSED_STORAGE_KEY, preferenceCollapsed);
+  }, [preferenceCollapsed]);
+
+  useEffect(() => {
+    setLocalBool(SIDEBAR_PIN_STORAGE_KEY, pinnedOpen);
+  }, [pinnedOpen]);
 
   const handleSidebarWidthChange = useCallback((width: number) => {
     setSidebarWidth(width);
@@ -308,10 +337,18 @@ export function ChatLayout() {
     // on a narrow desktop window, making the toggle a dead control.
     if (isMobile) {
       setDrawerOpen((value) => !value);
-    } else {
-      setCollapsed((value) => !value);
+      return;
     }
-  }, [isMobile]);
+    // ◧ / ⌘\ means "pin" inside a conversation and "collapse" outside one —
+    // `toggleRail` owns that branch so the layout does not have to.
+    const next = toggleRail({
+      preferenceCollapsed,
+      inConversation,
+      pinnedOpen,
+    });
+    setPreferenceCollapsed(next.preferenceCollapsed);
+    setPinnedOpen(next.pinnedOpen);
+  }, [isMobile, preferenceCollapsed, inConversation, pinnedOpen]);
 
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
@@ -610,8 +647,6 @@ export function ChatLayout() {
       attentionConversationIds={attentionConversationIds}
       onSelectConversation={handleSelectConversation}
       onStartNewConversation={startNewConversation}
-      isIntelligenceActive={isIntelligenceActive}
-      onOpenIntelligence={handleOpenIdentity}
       isLibraryActive={isLibraryActive}
       onOpenLibrary={handleOpenLibrary}
       isContactsActive={isContactsActive}

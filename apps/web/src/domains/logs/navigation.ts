@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BarChart3, Mail, MonitorCog, ScrollText } from "lucide-react";
+import { Mail, MonitorCog, ScrollText } from "lucide-react";
 
 import { routes } from "@/utils/routes";
 
@@ -11,7 +11,10 @@ export interface LogsSidebarItem {
 }
 
 export const LOGS_SIDEBAR: LogsSidebarItem[] = [
-  { id: "usage", label: "Usage", href: routes.logs.usage, icon: BarChart3 },
+  // "Usage" was here. It is now part of Your Cue → Usage & spend, which holds
+  // the caps and the kill switch alongside the breakdown that explains them —
+  // `/assistant/logs/usage` redirects there. Leaving the row would have been a
+  // second nav path to a page that is no longer here.
   { id: "logs", label: "Trace", href: routes.logs.trace, icon: ScrollText },
   {
     id: "system-events",
