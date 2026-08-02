@@ -36,7 +36,7 @@ import { buildDiagnosticsSnapshot } from "@/lib/diagnostics";
 import { buildDebugFlagSnapshot } from "@/lib/feature-flags/debug-flag-snapshot";
 import { isElectron } from "@/runtime/is-electron";
 import { useAuthStore } from "@/stores/auth-store";
-import { VELLUM_COMMUNITY_URL } from "@/utils/external-urls";
+import { CUE_SUPPORT_EMAIL, CUE_SUPPORT_URL } from "@/utils/external-urls";
 import { Button } from "@vellumai/design-library/components/button";
 import {
   Dropdown,
@@ -227,15 +227,41 @@ async function fetchPlatformLogs(
   }
 }
 
-async function buildClientLogsFile(
+/**
+ * Assemble the diagnostics bundle.
+ *
+ * The two toggles attach DISJOINT things, and each attaches exactly what its
+ * label says:
+ *
+ *   · `includeDiagnostics` — environment only. Browser/device context, debug
+ *     flag values, SSE client + event liveness, Electron main-process logs.
+ *     No message text, no per-conversation server logs.
+ *   · `includeConversation` — the conversation. The in-memory transcript
+ *     (`getClientMessages` / `getTranscriptItems`, which carry message
+ *     `content` verbatim) AND the server-side export scoped to that
+ *     conversation id (messages, LLM request logs, usage, tool invocations).
+ *
+ * They used to be entangled: the transcript capture rode along with
+ * diagnostics on every platform, and the conversation id was forwarded to the
+ * server export on web regardless of the toggle — which wasn't even rendered
+ * outside Electron. So a web user ticking "Include diagnostics" shipped their
+ * conversation without being asked. Keep these two paths separate.
+ *
+ * Exported so a test can assert the bundle's contents directly — what leaves
+ * the user's machine is worth pinning at the byte level, not by proxy.
+ */
+export async function buildClientLogsFile(
   timeRange: TimeRange,
   assistantId: string | null,
   activeConversationId: string | null,
+  attach: { diagnostics: boolean; conversation: boolean },
   diagnosticsProvider?: FeedbackDiagnosticsProvider,
 ): Promise<File | null> {
   if (typeof CompressionStream === "undefined") {
     return null;
   }
+  const includeConversation = attach.conversation;
+  const includeDiagnostics = attach.diagnostics;
   const now = new Date();
   const range = TIME_RANGES.find((t) => t.value === timeRange);
   const endTime = now.getTime();
@@ -257,7 +283,10 @@ async function buildClientLogsFile(
       end_time_ms: endTime,
     },
     assistant_id: assistantId,
-    active_conversation_id: activeConversationId,
+    // Only disclosed when the user opted the conversation in — the id is a
+    // handle to their content, so it travels with the content, not without it.
+    active_conversation_id: includeConversation ? activeConversationId : null,
+    conversation_included: includeConversation,
     user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "",
     language: typeof navigator !== "undefined" ? navigator.language : "",
     platform: typeof navigator !== "undefined" ? navigator.platform : "",
@@ -286,55 +315,80 @@ async function buildClientLogsFile(
     hardwareConcurrency:
       typeof navigator !== "undefined" ? navigator.hardwareConcurrency : null,
   };
-  const contextBytes = new TextEncoder().encode(
-    JSON.stringify(payload, null, 2),
-  );
-  const diagnosticsBytes = new TextEncoder().encode(
-    JSON.stringify(chatDiagnostics, null, 2),
-  );
+  // A manifest of what the user actually consented to, so the bundle can be
+  // audited without unpacking it and so support never has to guess.
   const tarParts: Uint8Array[] = [
-    buildTarEntry("web-client-context.json", contextBytes),
-    buildTarEntry("web-chat-diagnostics.json", diagnosticsBytes),
+    buildTarEntry(
+      "bundle-manifest.json",
+      new TextEncoder().encode(
+        JSON.stringify(
+          {
+            collected_at: now.toISOString(),
+            includes_environment_diagnostics: includeDiagnostics,
+            includes_conversation: includeConversation,
+          },
+          null,
+          2,
+        ),
+      ),
+    ),
   ];
 
-  // Capture client debug-flag state so flag values are unambiguous during
-  // analysis. The flags are localStorage-only overrides with no server
-  // targeting, so they can't be reconstructed after the fact — a report has
-  // to carry them or the resolved value is lost.
-  const debugFlagBytes = new TextEncoder().encode(
-    JSON.stringify(buildDebugFlagSnapshot(), null, 2),
-  );
-  tarParts.push(buildTarEntry("web-debug-flags.json", debugFlagBytes));
+  if (includeDiagnostics) {
+    const contextBytes = new TextEncoder().encode(
+      JSON.stringify(payload, null, 2),
+    );
+    const diagnosticsBytes = new TextEncoder().encode(
+      JSON.stringify(chatDiagnostics, null, 2),
+    );
+    tarParts.push(buildTarEntry("web-client-context.json", contextBytes));
+    tarParts.push(buildTarEntry("web-chat-diagnostics.json", diagnosticsBytes));
+
+    // Capture client debug-flag state so flag values are unambiguous during
+    // analysis. The flags are localStorage-only overrides with no server
+    // targeting, so they can't be reconstructed after the fact — a report has
+    // to carry them or the resolved value is lost.
+    const debugFlagBytes = new TextEncoder().encode(
+      JSON.stringify(buildDebugFlagSnapshot(), null, 2),
+    );
+    tarParts.push(buildTarEntry("web-debug-flags.json", debugFlagBytes));
+  }
 
   // Capture the live chat debug API state for indicator-stuck reports.
   // This is a separate file so support can diff it against the main diagnostics
   // snapshot without cross-contamination.
-  try {
-    const debugApi =
-      typeof window !== "undefined"
-        ? (window as unknown as { _vellumDebug?: { chat?: ChatDebugApi } })
-            ._vellumDebug?.chat
-        : null;
-    if (debugApi) {
-      const triagePayload = {
-        clientMessages: debugApi.getClientMessages?.() ?? null,
-        transcriptItems: debugApi.getTranscriptItems?.() ?? null,
-        thinkingIndicator: debugApi.thinkingIndicator?.() ?? null,
-        streamingRing: debugApi.streamingRing?.() ?? null,
-        reconciliationDiagnostics:
-          debugApi.getReconciliationDiagnostics?.() ?? null,
-      };
-      const triageBytes = new TextEncoder().encode(
-        JSON.stringify(triagePayload, null, 2),
-      );
-      tarParts.push(
-        buildTarEntry("web-chat-debug-api-triage.json", triageBytes),
-      );
+  //
+  // `getClientMessages()` returns `DisplayMessage[]` with `content` verbatim,
+  // so this IS the conversation — it belongs to the conversation toggle, not
+  // the diagnostics one.
+  if (includeConversation) {
+    try {
+      const debugApi =
+        typeof window !== "undefined"
+          ? (window as unknown as { _vellumDebug?: { chat?: ChatDebugApi } })
+              ._vellumDebug?.chat
+          : null;
+      if (debugApi) {
+        const triagePayload = {
+          clientMessages: debugApi.getClientMessages?.() ?? null,
+          transcriptItems: debugApi.getTranscriptItems?.() ?? null,
+          thinkingIndicator: debugApi.thinkingIndicator?.() ?? null,
+          streamingRing: debugApi.streamingRing?.() ?? null,
+          reconciliationDiagnostics:
+            debugApi.getReconciliationDiagnostics?.() ?? null,
+        };
+        const triageBytes = new TextEncoder().encode(
+          JSON.stringify(triagePayload, null, 2),
+        );
+        tarParts.push(
+          buildTarEntry("web-chat-debug-api-triage.json", triageBytes),
+        );
+      }
+    } catch {
+      // Debug API is best-effort; if it's missing or throws, don't block the
+      // feedback submission. This can happen during SSR, in tests, or if the
+      // chat page hasn't mounted the API yet.
     }
-  } catch {
-    // Debug API is best-effort; if it's missing or throws, don't block the
-    // feedback submission. This can happen during SSR, in tests, or if the
-    // chat page hasn't mounted the API yet.
   }
 
   // SSE clients/events + focus/visibility, read through the same live debug
@@ -343,47 +397,54 @@ async function buildClientLogsFile(
   // fingerprint of the "stale after refocus" report — `visibilitychange`
   // only fires on tab-switch / minimize / full occlusion, not when the
   // browser window merely loses focus to another app.
-  try {
-    const eventsApi =
-      typeof window !== "undefined"
-        ? (
-            window as unknown as {
-              _vellumDebug?: { events?: ChatDebugEventsApi };
-            }
-          )._vellumDebug?.events
-        : null;
-    if (eventsApi) {
-      const triagePayload = {
-        focus:
-          typeof document !== "undefined"
-            ? {
-                hasFocus:
-                  typeof document.hasFocus === "function"
-                    ? document.hasFocus()
-                    : null,
-                visibilityState: document.visibilityState,
+  //
+  // Connection metadata only — no message text — so this rides with
+  // diagnostics.
+  if (includeDiagnostics) {
+    try {
+      const eventsApi =
+        typeof window !== "undefined"
+          ? (
+              window as unknown as {
+                _vellumDebug?: { events?: ChatDebugEventsApi };
               }
-            : null,
-        // `AbortSignal` isn't JSON-serializable, so project it to an
-        // `aborted` flag and keep the rest of each client verbatim.
-        clients: eventsApi.getClients().map(({ abortSignal, ...rest }) => ({
-          ...rest,
-          aborted: abortSignal.aborted,
-        })),
-        events: eventsApi.getEvents(),
-      };
-      const triageBytes = new TextEncoder().encode(
-        JSON.stringify(triagePayload, null, 2),
-      );
-      tarParts.push(buildTarEntry("web-sse-liveness-triage.json", triageBytes));
+            )._vellumDebug?.events
+          : null;
+      if (eventsApi) {
+        const triagePayload = {
+          focus:
+            typeof document !== "undefined"
+              ? {
+                  hasFocus:
+                    typeof document.hasFocus === "function"
+                      ? document.hasFocus()
+                      : null,
+                  visibilityState: document.visibilityState,
+                }
+              : null,
+          // `AbortSignal` isn't JSON-serializable, so project it to an
+          // `aborted` flag and keep the rest of each client verbatim.
+          clients: eventsApi.getClients().map(({ abortSignal, ...rest }) => ({
+            ...rest,
+            aborted: abortSignal.aborted,
+          })),
+          events: eventsApi.getEvents(),
+        };
+        const triageBytes = new TextEncoder().encode(
+          JSON.stringify(triagePayload, null, 2),
+        );
+        tarParts.push(
+          buildTarEntry("web-sse-liveness-triage.json", triageBytes),
+        );
+      }
+    } catch {
+      // Debug API is best-effort; if it's missing or throws, don't block the
+      // feedback submission. This can happen during SSR, in tests, or if the
+      // chat page hasn't mounted the API yet.
     }
-  } catch {
-    // Debug API is best-effort; if it's missing or throws, don't block the
-    // feedback submission. This can happen during SSR, in tests, or if the
-    // chat page hasn't mounted the API yet.
   }
 
-  if (isElectron() && window.vellum?.feedback) {
+  if (includeDiagnostics && isElectron() && window.vellum?.feedback) {
     try {
       const electronDiagnostics = await window.vellum.feedback.diagnostics();
       const diagBytes = new TextEncoder().encode(
@@ -406,9 +467,12 @@ async function buildClientLogsFile(
   }
 
   if (assistantId) {
+    // The conversation id is what widens the server-side export from daemon
+    // logs to this conversation's messages / LLM request logs / usage events /
+    // tool invocations. Send it only when the conversation was opted in.
     const platformLogsData = await fetchPlatformLogs(assistantId, {
       window: { startTime, endTime },
-      activeConversationId,
+      activeConversationId: includeConversation ? activeConversationId : null,
     });
     if (platformLogsData) {
       tarParts.push(buildTarEntry("platform-logs.tar.gz", platformLogsData));
@@ -607,19 +671,21 @@ export function ShareFeedbackModal({
     setSubmitError(null);
     setIsBuildingLogs(true);
     try {
-      const logsFile =
-        includeLogs && selectedReason !== "feature_request"
-          ? await buildClientLogsFile(
-              logTimeRange,
-              assistantId ?? null,
-              isElectron()
-                ? includeConversation
-                  ? (activeConversationId ?? null)
-                  : null
-                : (activeConversationId ?? null),
-              getDiagnosticsSnapshot,
-            )
-          : null;
+      // The conversation can be attached on its own — a "here's what it did
+      // wrong" report is useless without the transcript, even with diagnostics
+      // off — so the bundle is built whenever either toggle is on.
+      const wantsBundle =
+        (includeLogs || includeConversation) &&
+        selectedReason !== "feature_request";
+      const logsFile = wantsBundle
+        ? await buildClientLogsFile(
+            logTimeRange,
+            assistantId ?? null,
+            activeConversationId ?? null,
+            { diagnostics: includeLogs, conversation: includeConversation },
+            getDiagnosticsSnapshot,
+          )
+        : null;
       await mutation.mutateAsync({
         headers: { "Content-Type": null },
         body: {
@@ -744,30 +810,17 @@ export function ShareFeedbackModal({
 
           <hr className="border-[var(--border-subtle)]" />
 
-          {selectedReason === "bug_report" && (
+          {/* These pointed at vellum.ai's Discord and public roadmap — the
+              upstream fork's properties, not Cue's. Cue has neither, so the
+              tip names the address we actually read. */}
+          {selectedReason !== "other" && (
             <Notice tone="info">
-              Tip: Get faster support by posting in our{" "}
+              Urgent? Reach us directly at{" "}
               <a
-                href={VELLUM_COMMUNITY_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={CUE_SUPPORT_URL}
                 className="underline text-[var(--content-default)]"
               >
-                Discord community
-              </a>
-            </Notice>
-          )}
-
-          {selectedReason === "feature_request" && (
-            <Notice tone="info">
-              Tip: Vote on features on our{" "}
-              <a
-                href="https://vellum.ai/roadmap"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline text-[var(--content-default)]"
-              >
-                public roadmap
+                {CUE_SUPPORT_EMAIL}
               </a>
             </Notice>
           )}
@@ -808,7 +861,7 @@ export function ShareFeedbackModal({
                     Include diagnostics
                   </span>
                 </label>
-                <Tooltip content="Diagnostics include browser context, assistant logs, and timestamps — never passwords or credentials.">
+                <Tooltip content="Diagnostics attach your browser and device details, the page URL, connection state, debug-flag values, and assistant logs for the window you pick — never passwords or credentials, and not your messages. To send messages, use the conversation toggle below.">
                   <button
                     type="button"
                     aria-label="About diagnostics"
@@ -829,9 +882,13 @@ export function ShareFeedbackModal({
             </div>
           )}
 
-          {isElectron() &&
-            activeConversationId &&
-            selectedReason !== "feature_request" && (
+          {/* Shown on EVERY platform. This was Electron-only while the web
+              build forwarded the conversation id to the server-side export
+              unconditionally — so web users had their conversation attached
+              with no control and no disclosure. The control now exists
+              wherever the attachment can happen. */}
+          {activeConversationId && selectedReason !== "feature_request" && (
+            <div className="flex items-center gap-2.5">
               <label className="flex cursor-pointer items-center gap-2.5">
                 <Toggle
                   checked={includeConversation}
@@ -842,7 +899,17 @@ export function ShareFeedbackModal({
                   Include the most recent conversation
                 </span>
               </label>
-            )}
+              <Tooltip content="Attaches this conversation's messages — the text on screen, plus the server-side record of that conversation: its messages, model requests, and tool calls. Off by default.">
+                <button
+                  type="button"
+                  aria-label="About attaching the conversation"
+                  className="inline-flex items-center justify-center text-[var(--content-tertiary)]"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
