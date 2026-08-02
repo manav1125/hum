@@ -245,6 +245,41 @@ describe("the safety floor", () => {
     expect(hit?.ruleId).toBe("direct_human");
   });
 
+  test("a robot addressing you directly is still a robot", () => {
+    // Measured on live data: SIX of eight consecutive decisions surfaced on
+    // `direct_human`, including a bank's marketing promo. It sends from
+    // `notification@`, carries a display name, addresses the owner directly,
+    // and sets NO List-Unsubscribe, Precedence or Auto-Submitted — so every
+    // header test said "not bulk" and the floor surfaced it. This one leg was
+    // the dominant reason the lane stayed full after filtering shipped.
+    const hit = applySafetyFloor(
+      signals(
+        { from: "ZA Bank <notification@example.com>", toMe: true },
+        "Got a 'PowerDraw' chance!",
+      ),
+      emptyFloor,
+    );
+    expect(hit).toBeNull();
+  });
+
+  test("...unless the robot has something for you to act on", () => {
+    // The carve-out that keeps the above safe. Approvals, expiring credentials
+    // and payment failures arrive from exactly these addresses — that is what
+    // they are FOR — so an automated sender with something actionable still
+    // counts as direct-to-a-human and still gets the floor.
+    for (const subject of [
+      "New request AR-5258 awaits your approval",
+      "Your personal access token has expired",
+      "Direct debit authorisation payment advice",
+    ]) {
+      const hit = applySafetyFloor(
+        signals({ from: "Robot <no-reply@example.com>", toMe: true }, subject),
+        emptyFloor,
+      );
+      expect(hit?.ruleId).toBe("direct_human");
+    }
+  });
+
   test("being on the To: line of a mailing list is not a direct human", () => {
     // Lists and machine mail routinely address the owner directly, so the
     // direct-recipient rule only counts once bulk headers are ruled out.

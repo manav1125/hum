@@ -38,6 +38,10 @@ import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
 import { getLogger } from "../util/logger.js";
 import { listProjects } from "../work-items/project-store.js";
+import {
+  isBulkSenderAddress,
+  looksTransactional,
+} from "./arrival-sender-shape.js";
 import type { ArrivalSignals } from "./arrival-signals.js";
 import type { ArrivalDecidedBy, ArrivalDisposition } from "./arrival-store.js";
 
@@ -231,10 +235,33 @@ export function applySafetyFloor(
   //    bulk/automated headers — mailing lists and machine mail routinely put
   //    the owner on the To: line, so the direct-recipient signal only counts
   //    once those are ruled out.
+  //
+  //    Headers alone were not enough. Measured on the owner's live instance,
+  //    SIX of eight consecutive decisions surfaced on `direct_human`, including
+  //    a bank's marketing promo: it sends from `notification@` with no
+  //    List-Unsubscribe, no Precedence and no Auto-Submitted, addresses the
+  //    owner directly, and carries a display name. Every header test said
+  //    "not bulk" and the floor dutifully surfaced it. This one leg was the
+  //    dominant reason the lane stayed full after filtering shipped.
+  //
+  //    So the sender's ADDRESS counts as evidence too: a robot addressing you
+  //    directly is still a robot, and `notification@` is a structural fact
+  //    rather than a judgement about the message.
+  //
+  //    The transactional carve-out is what keeps this safe. Approvals, expiring
+  //    credentials, payment failures and security notices arrive from exactly
+  //    these addresses — that is what they are FOR — so an automated sender
+  //    with something to act on still counts as direct-to-a-human and still
+  //    gets the floor. Only automated senders with nothing to act on lose it.
+  const automatedSender =
+    isBulkSenderAddress(signals.senderAddress) &&
+    !looksTransactional(signals.title) &&
+    !looksTransactional(signals.snippet);
   const looksBulk =
     signals.hasListHeaders ||
     (signals.precedence != null && BULK_PRECEDENCE.has(signals.precedence)) ||
-    signals.autoSubmitted != null;
+    signals.autoSubmitted != null ||
+    automatedSender;
   if (signals.directToUser && !looksBulk) {
     return {
       ruleId: "direct_human",
