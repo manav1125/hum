@@ -35,6 +35,10 @@ import {
 } from "../../arrivals/arrival-store.js";
 import { createWorkItemForArrival } from "../../arrivals/arrival-surface.js";
 import type { ServerMessage } from "../../daemon/message-protocol.js";
+import {
+  getWorkItem,
+  updateWorkItem,
+} from "../../work-items/work-item-store.js";
 import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
 import { buildAssistantEvent } from "../assistant-event.js";
 import { assistantEventHub } from "../assistant-event-hub.js";
@@ -308,7 +312,11 @@ export const ROUTES: RouteDefinition[] = [
       "decision is preserved on the row (reason, ruleId, decidedBy) and the " +
       "reversal is stamped alongside it — that record is the correction " +
       "signal, so it is never overwritten. Already-surfaced arrivals return " +
-      "409 rather than minting a duplicate work item.",
+      "409 rather than minting a duplicate work item. When the arrival " +
+      "already points at a work item that still exists — a retro-filed row, " +
+      "where an existing item was archived rather than never minted — that " +
+      "original row is restored instead of a copy being made, so the " +
+      "reversal returns the owner's item with its own history intact.",
     tags: ["arrivals"],
     pathParams: [{ name: "id", type: "uuid", description: "The arrival id" }],
     additionalResponses: {
@@ -330,10 +338,28 @@ export const ROUTES: RouteDefinition[] = [
         );
       }
 
-      const workItem = createWorkItemForArrival(arrival, {
-        notes: `You said this mattered · originally filed as "${arrival.reason ?? "no reason recorded"}"`,
-        actor: "user",
-      });
+      // A filed arrival normally has no work item — nothing was ever minted,
+      // which is the whole point of filing at the boundary. The exception is
+      // the retro run over the pre-gate backlog: those items already existed,
+      // so they were archived and linked rather than created. Restoring the
+      // original is what makes that filing genuinely reversible; minting a
+      // copy would leave the owner with a duplicate and an archived original.
+      const existing = arrival.workItemId
+        ? getWorkItem(arrival.workItemId)
+        : undefined;
+      const workItem = existing
+        ? (updateWorkItem(
+            existing.id,
+            {
+              status: "queued",
+              lastProgressNote: `You said this mattered · originally filed as "${arrival.reason ?? "no reason recorded"}"`,
+            },
+            { actor: "user" },
+          ) ?? existing)
+        : createWorkItemForArrival(arrival, {
+            notes: `You said this mattered · originally filed as "${arrival.reason ?? "no reason recorded"}"`,
+            actor: "user",
+          });
       const updated = markArrivalReversed(id, workItem.id, "user");
       // Same enrichment the item would have got had the gate surfaced it, so
       // a reversed item is indistinguishable from a normally-kept one.

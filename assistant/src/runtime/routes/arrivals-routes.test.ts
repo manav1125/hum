@@ -13,7 +13,12 @@ import {
 } from "../../arrivals/arrival-store.js";
 import { getDb, getSqliteFrom } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
-import { listWorkItems } from "../../work-items/work-item-store.js";
+import { createTask } from "../../tasks/task-store.js";
+import {
+  createWorkItem,
+  listWorkItems,
+  updateWorkItem,
+} from "../../work-items/work-item-store.js";
 import { ROUTES } from "./arrivals-routes.js";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.js";
 
@@ -213,6 +218,32 @@ describe("POST arrivals/:id/reverse", () => {
 
   test("404s on an unknown id", async () => {
     await expect(reverse("nope")).rejects.toThrow(NotFoundError);
+  });
+
+  test("restores the owner's original item when the filing archived one", async () => {
+    // The retro run over the pre-gate backlog files items that already
+    // existed: it archives them and links them, rather than never minting
+    // them. Reversing must give the owner that row back — same id, same
+    // history — not a fresh copy alongside an archived original.
+    const task = createTask({ title: "This week's reads", template: "x" });
+    const original = createWorkItem({
+      taskId: task.id,
+      title: "This week's reads",
+      sourceType: "watcher:gmail",
+      sourceId: "msg-retro",
+    });
+    updateWorkItem(original.id, { status: "archived" }, { actor: "test" });
+    const arrival = seed({ externalId: "msg-retro", workItemId: original.id });
+
+    const out = await reverse(arrival.id);
+
+    expect(out.workItem.id).toBe(original.id);
+    const items = listWorkItems();
+    // One item, not two. Nothing was duplicated and nothing was lost.
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe(original.id);
+    expect(items[0].status).toBe("queued");
+    expect(out.arrival.disposition).toBe("surfaced");
   });
 });
 
