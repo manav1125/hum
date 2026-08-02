@@ -21,7 +21,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { useCallback, type ReactNode } from "react";
+import { Fragment, useCallback, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
@@ -621,7 +621,11 @@ export function AssistantSideMenu({
           const active = destination.match(location.pathname);
           const isWork = destination.key === "work";
           return (
-            <div key={destination.key}>
+            // A Fragment, not a wrapper div: `SideMenu.Header` is the flex
+            // column that supplies the rail's row spacing, so a wrapper would
+            // make Work's nested views sit flush while every sibling keeps its
+            // gap.
+            <Fragment key={destination.key}>
               <SideMenu.Item
                 icon={PRIMARY_ICON[destination.key]}
                 label={destination.label}
@@ -662,7 +666,7 @@ export function AssistantSideMenu({
                     />
                   ))
                 : null}
-            </div>
+            </Fragment>
           );
         })}
 
