@@ -18,12 +18,12 @@ import { describe, expect, test } from "bun:test";
 import {
   YOUR_CUE_GROUPS,
   YOUR_CUE_LEAVES,
-  YOUR_CUE_MEMORY_TABS,
   YOUR_CUE_SUBLEAVES,
   activeYourCueLeaf,
-  isMemoryPath,
   isPreferencesPath,
+  SUB_LEAF_UNAVAILABLE_REASON,
   panelsForPath,
+  subLeafUnavailableReason,
 } from "./your-cue-model";
 import { routes } from "@/utils/routes";
 
@@ -282,44 +282,109 @@ describe("the Preferences sub-row", () => {
   });
 });
 
-describe("People's interim home under Memory", () => {
-  // Design's sequencing, verbatim: "ship it inside `Your Cue → Memory` as an
-  // interim tab. Promote it to the sidebar when contact memories are non-zero
-  // and growing." Only the sidebar-gate half shipped, so People existed
-  // nowhere you could reach it.
-  test("Memory carries exactly one tab, and it is People", () => {
-    expect(YOUR_CUE_MEMORY_TABS.map((t) => t.key)).toEqual(["people"]);
-    expect(YOUR_CUE_MEMORY_TABS[0]?.to).toBe("/assistant/memory/people");
+describe("Memory no longer has a People tab", () => {
+  // Design sequenced People as an interim tab under Memory while the sidebar
+  // row was gated. The owner ungated the sidebar row, at which point the tab
+  // was a SECOND nav path to a SECOND page called People. This codebase has
+  // cleaned up duplicate nav twice; these tests are the third one staying gone.
+
+  test("the Memory tab array is gone from the module", async () => {
+    const model = await import("./your-cue-model");
+    expect("YOUR_CUE_MEMORY_TABS" in model).toBe(false);
+    expect("isMemoryPath" in model).toBe(false);
   });
 
-  test("the tab is a CHILD of the leaf, so Memory stays lit", () => {
-    const memory = YOUR_CUE_LEAVES.find((leaf) => leaf.key === "memory");
-    expect(memory?.match("/assistant/memory/people")).toBe(true);
-    expect(activeYourCueLeaf("/assistant/memory/people")?.key).toBe("memory");
+  test("Memory pages get no sub-rows at all", () => {
+    expect(panelsForPath("/assistant/memory")).toEqual([]);
   });
 
-  test("Memory itself is not listed as a tab — the leaf IS the first tab", () => {
-    // The same rule that keeps General out of YOUR_CUE_SUBLEAVES. Two rows one
-    // line apart pointing at the same page is the duplication this round
-    // exists to remove.
-    expect(YOUR_CUE_MEMORY_TABS.some((t) => t.to === "/assistant/memory")).toBe(
-      false,
-    );
-  });
-
-  test("the tab is not a nineteenth leaf", () => {
-    expect(
-      YOUR_CUE_LEAVES.some((l) => l.to === "/assistant/memory/people"),
-    ).toBe(false);
-  });
-
-  test("no tab collides with a leaf or a Preferences panel", () => {
-    const taken = new Set([
-      ...YOUR_CUE_LEAVES.map((l) => l.to).filter(Boolean),
+  test("no leaf or panel points at the retired tab URL", () => {
+    const targets = [
+      ...YOUR_CUE_LEAVES.map((l) => l.to),
       ...YOUR_CUE_SUBLEAVES.map((s) => s.to),
-    ]);
-    for (const tab of YOUR_CUE_MEMORY_TABS) {
-      expect(taken.has(tab.to)).toBe(false);
+    ];
+    expect(targets).not.toContain("/assistant/memory/people");
+  });
+
+  test("Memory is still a leaf, and still lit by its own path", () => {
+    // The tab went; the surface behind the leaf did not.
+    expect(activeYourCueLeaf("/assistant/memory")?.key).toBe("memory");
+  });
+});
+
+describe("a Preferences panel that cannot work says so", () => {
+  // The owner: "under preferences some things are not working like keyboard
+  // and billing & self hosted point no where."
+  //
+  // The gates for these existed — in `settings-layout.tsx`, which stopped
+  // being rendered on desktop when Settings was absorbed into Your Cue. The
+  // rule now rides on the row so it cannot be orphaned by another move.
+
+  const ALL_MET = {
+    "desktop-app": true,
+    "platform-hosted-assistant": true,
+    "platform-billing": true,
+    "platform-notifications": true,
+  } as const;
+
+  const NONE_MET = {
+    "desktop-app": false,
+    "platform-hosted-assistant": false,
+    "platform-billing": false,
+    "platform-notifications": false,
+  } as const;
+
+  test("the four rows the owner found dead each declare what they need", () => {
+    const requirements = Object.fromEntries(
+      YOUR_CUE_SUBLEAVES.map((s) => [s.key, s.requires]),
+    );
+    expect(requirements.keyboard).toBe("desktop-app");
+    expect(requirements.devices).toBe("platform-hosted-assistant");
+    expect(requirements.billing).toBe("platform-billing");
+    expect(requirements.notifications).toBe("platform-notifications");
+  });
+
+  test("panels with no requirement always work", () => {
+    for (const key of ["sounds", "voice", "archive"]) {
+      const panel = YOUR_CUE_SUBLEAVES.find((s) => s.key === key)!;
+      expect(panel.requires).toBeUndefined();
+      expect(subLeafUnavailableReason(panel, NONE_MET)).toBeNull();
+    }
+  });
+
+  test("every panel is live when every condition holds", () => {
+    for (const panel of YOUR_CUE_SUBLEAVES) {
+      expect(subLeafUnavailableReason(panel, ALL_MET)).toBeNull();
+    }
+  });
+
+  test("an unmet requirement yields a REASON, not silence", () => {
+    // A row that vanishes and a row that never existed look identical, and the
+    // owner had already been hunting for settings he thought were removed.
+    for (const key of ["keyboard", "devices", "billing", "notifications"]) {
+      const panel = YOUR_CUE_SUBLEAVES.find((s) => s.key === key)!;
+      const reason = subLeafUnavailableReason(panel, NONE_MET);
+      expect(typeof reason).toBe("string");
+      expect(reason!.length).toBeGreaterThan(20);
+    }
+  });
+
+  test("each requirement is independent — one unmet does not disable the rest", () => {
+    const onlyDesktopMissing = { ...ALL_MET, "desktop-app": false };
+    const keyboard = YOUR_CUE_SUBLEAVES.find((s) => s.key === "keyboard")!;
+    const billing = YOUR_CUE_SUBLEAVES.find((s) => s.key === "billing")!;
+    expect(
+      subLeafUnavailableReason(keyboard, onlyDesktopMissing),
+    ).not.toBeNull();
+    expect(subLeafUnavailableReason(billing, onlyDesktopMissing)).toBeNull();
+  });
+
+  test("every declared requirement has copy — no blank disabled rows", () => {
+    for (const [requirement, copy] of Object.entries(
+      SUB_LEAF_UNAVAILABLE_REASON,
+    )) {
+      expect(copy.length).toBeGreaterThan(20);
+      expect(copy).not.toContain(requirement);
     }
   });
 });
@@ -330,14 +395,6 @@ describe("one mechanism decides a leaf's sub-rows", () => {
       YOUR_CUE_SUBLEAVES,
     );
     expect(isPreferencesPath("/assistant/settings/notifications")).toBe(true);
-  });
-
-  test("Memory pages get the Memory tabs", () => {
-    expect(panelsForPath("/assistant/memory")).toBe(YOUR_CUE_MEMORY_TABS);
-    expect(panelsForPath("/assistant/memory/people")).toBe(
-      YOUR_CUE_MEMORY_TABS,
-    );
-    expect(isMemoryPath("/assistant/memory/people")).toBe(true);
   });
 
   test("every other leaf gets none", () => {

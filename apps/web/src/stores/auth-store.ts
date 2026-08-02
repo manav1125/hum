@@ -148,13 +148,30 @@ let previousUserId: string | null = null;
 let broadcastChannel: BroadcastChannel | null = null;
 let suppressPlatformProbe = false;
 
+/**
+ * The synthetic user a gateway/self-hosted session runs as.
+ *
+ * There is no platform account behind this one — it exists so the app has a
+ * settled `authenticated` state when auth comes from the local gateway rather
+ * than from allauth. It is a **session placeholder, not a person**.
+ *
+ * `firstName`/`lastName` are deliberately EMPTY. They used to read
+ * `"Local" / "User"`, and the sidebar's account line — which renders the
+ * owner's name — dutifully printed **"Local"**, so the one row whose entire job
+ * is to say whose workspace this is was showing a placeholder that looks
+ * exactly like a name. Anything wanting a display name must fall back to a real
+ * source (see `use-owner-line.ts`, which reads the guardian contact) or to
+ * something that plainly is not a name.
+ */
+export const GATEWAY_LOCAL_USER_ID = "gateway-local";
+
 const GATEWAY_LOCAL_USER: AuthUser = {
-  id: "gateway-local",
+  id: GATEWAY_LOCAL_USER_ID,
   username: "local",
   email: null,
   isStaff: false,
-  firstName: "Local",
-  lastName: "User",
+  firstName: "",
+  lastName: "",
 };
 
 /**

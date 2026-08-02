@@ -333,6 +333,75 @@ export interface YourCueSubLeaf {
   to: string;
   /** Hidden unless developer mode is unlocked. */
   developerOnly?: boolean;
+  /**
+   * What must be true for this panel to do anything. `undefined` means it
+   * always works. See {@link SubLeafRequirement}.
+   */
+  requires?: SubLeafRequirement;
+}
+
+/**
+ * The conditions a Preferences panel can depend on.
+ *
+ * ## Why this is in the model
+ *
+ * Every one of these gates already existed — in `settings-layout.tsx`, which
+ * filtered them out of the settings sidebar. Then Settings was absorbed into
+ * Your Cue, that sidebar stopped being rendered on desktop, and its filter was
+ * left feeding only the phone's index. The desktop sub-row list
+ * ({@link YOUR_CUE_SUBLEAVES}) inherited no gating at all.
+ *
+ * The result was four rows that rendered, navigated, and landed on a page that
+ * immediately `<Navigate>`d back to where you came from — Keyboard shortcuts,
+ * Billing, Self-hosted and Notifications. The owner's words: *"under
+ * preferences some things are not working like keyboard and billing & self
+ * hosted point no where."* Each page even carries a comment saying "the sidebar
+ * entry is already gated in settings-layout.tsx", which had quietly stopped
+ * being true.
+ *
+ * So the policy moves **onto the row itself**, where both surfaces read one
+ * declaration. A gate that lives next to the thing it gates cannot be orphaned
+ * by moving the thing somewhere else.
+ */
+export type SubLeafRequirement =
+  | "desktop-app"
+  | "platform-hosted-assistant"
+  | "platform-billing"
+  | "platform-notifications";
+
+/**
+ * Why a panel is unavailable, in the second person, naming the actual cause.
+ *
+ * A disabled row that does not say why is a dead row that also wastes a
+ * glance. These are rendered on the row and read out to screen readers.
+ */
+export const SUB_LEAF_UNAVAILABLE_REASON: Record<SubLeafRequirement, string> = {
+  "desktop-app":
+    "Shortcuts are registered by the desktop app — there's nothing to rebind in a browser tab.",
+  "platform-hosted-assistant":
+    "This assistant is self-hosted, so there's no Cue-hosted infrastructure to manage here.",
+  "platform-billing":
+    "Billing is handled on the Cue platform, and this assistant isn't signed in to one.",
+  "platform-notifications":
+    "Platform alerts are a Cue-hosted feature and aren't switched on for this assistant.",
+};
+
+/**
+ * `null` when the panel works, otherwise the sentence explaining why not.
+ *
+ * `met` is supplied by the shell, which owns the live reads (Electron, platform
+ * gates, feature flags). Keeping this a pure function over a boolean record is
+ * what makes the whole rule testable without standing up a router or a query
+ * client — and every one of these rows now has a click-through test.
+ */
+export function subLeafUnavailableReason(
+  subLeaf: YourCueSubLeaf,
+  met: Readonly<Partial<Record<SubLeafRequirement, boolean>>>,
+): string | null {
+  if (!subLeaf.requires) return null;
+  return met[subLeaf.requires]
+    ? null
+    : SUB_LEAF_UNAVAILABLE_REASON[subLeaf.requires];
 }
 
 export const YOUR_CUE_SUBLEAVES: readonly YourCueSubLeaf[] = [
@@ -344,12 +413,28 @@ export const YOUR_CUE_SUBLEAVES: readonly YourCueSubLeaf[] = [
     key: "notifications",
     label: "Notifications",
     to: routes.settings.notifications,
+    requires: "platform-notifications",
   },
   { key: "sounds", label: "Sounds", to: routes.settings.sounds },
   { key: "voice", label: "Voice", to: routes.settings.voice },
-  { key: "keyboard", label: "Keyboard", to: routes.settings.keyboardShortcuts },
-  { key: "devices", label: "Self-hosted", to: routes.settings.devices },
-  { key: "billing", label: "Billing", to: routes.settings.billing },
+  {
+    key: "keyboard",
+    label: "Keyboard",
+    to: routes.settings.keyboardShortcuts,
+    requires: "desktop-app",
+  },
+  {
+    key: "devices",
+    label: "Self-hosted",
+    to: routes.settings.devices,
+    requires: "platform-hosted-assistant",
+  },
+  {
+    key: "billing",
+    label: "Billing",
+    to: routes.settings.billing,
+    requires: "platform-billing",
+  },
   {
     // Archived CONVERSATIONS. Design's fourth duplication assumed this
     // overlapped Workspace's file tree; it does not — see the report. It stays
@@ -379,42 +464,25 @@ export const YOUR_CUE_SUBLEAVES: readonly YourCueSubLeaf[] = [
   },
 ] as const;
 
-/**
- * The tabs under **Memory**.
- *
- * Design's sequencing for People: *"ship it inside `Your Cue → Memory` as an
- * interim tab. Promote it to the sidebar when contact memories are non-zero
- * and growing week-over-week."* The sidebar gate shipped; this half did not,
- * so People had no door at all.
- *
- * Modelled exactly like {@link YOUR_CUE_SUBLEAVES}, and for the same reason:
- * the **leaf itself is the first tab** (Memory → the memories list), so it is
- * deliberately absent from this array. Listing it would put two rows one line
- * apart pointing at the same page, which is the duplication this round exists
- * to remove.
- */
-export const YOUR_CUE_MEMORY_TABS: readonly YourCueSubLeaf[] = [
-  { key: "people", label: "People", to: routes.memoryPeople },
-] as const;
-
 const NO_PANELS: readonly YourCueSubLeaf[] = [];
-
-/** True while Memory or one of its tabs is open, so the tab row renders. */
-export function isMemoryPath(pathname: string): boolean {
-  const memory = YOUR_CUE_LEAVES.find((leaf) => leaf.key === "memory");
-  return memory?.match(pathname) ?? false;
-}
 
 /**
  * The second-level rows to render beneath the active leaf, or an empty list.
  *
  * One function rather than a branch per leaf, so the shell renders sub-rows by
- * ONE mechanism: today Preferences (nine panels) and Memory (People), and the
- * next one costs an array rather than another special case in the layout.
+ * ONE mechanism, and the next leaf that grows a second level costs an array
+ * rather than another special case in the layout.
+ *
+ * **Memory used to have one too**: a `People` tab at `/assistant/memory/people`,
+ * design's interim home for the relationship surface while the sidebar row was
+ * gated. The owner ungated the sidebar row (see `nav-model.ts`), which made the
+ * tab a *second* nav path to a *second* People page — the exact duplication
+ * this round exists to remove, and the third time this codebase has had it. The
+ * tab is gone, its page is deleted, and `/assistant/memory/people` redirects to
+ * `/assistant/people` so every bookmark still resolves.
  */
 export function panelsForPath(pathname: string): readonly YourCueSubLeaf[] {
   if (isPreferencesPath(pathname)) return YOUR_CUE_SUBLEAVES;
-  if (isMemoryPath(pathname)) return YOUR_CUE_MEMORY_TABS;
   return NO_PANELS;
 }
 

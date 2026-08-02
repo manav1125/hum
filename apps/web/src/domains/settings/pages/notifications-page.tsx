@@ -8,7 +8,6 @@ import {
   Moon,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Navigate } from "react-router";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -35,7 +34,6 @@ import {
   useActiveAssistantLifecycleIsLoading,
   usePlatformGate,
 } from "@/hooks/use-platform-gate";
-import { routes } from "@/utils/routes";
 import { BottomSheet } from "@vellumai/design-library/components/bottom-sheet";
 import { Input } from "@vellumai/design-library/components/input";
 import { Menu } from "@vellumai/design-library/components/menu";
@@ -561,16 +559,35 @@ export function NotificationsPage() {
   );
 
   // The page is fully platform-routed (organization-scoped notifications and
-  // pause-rule APIs). On a self-hosted assistant the page is meaningless,
-  // so redirect to the settings INDEX instead of rendering null — a bookmark
-  // or shared link should land somewhere reasonable, and the index (not a
-  // sibling leaf) is the honest destination on both desktop and mobile.
-  // (Sidebar entry is already filtered out in `settings-layout.tsx`; the
-  // mobile layout renders its own honest Notifications leaf before this
-  // page is reached.) Render the page chrome with a login notice when
-  // logged out.
+  // pause-rule APIs), so on a self-hosted assistant there is nothing to show.
+  //
+  // This used to `<Navigate>` to the settings index. That comment claimed "the
+  // sidebar entry is already filtered out in settings-layout.tsx" — which
+  // stopped being true when Settings moved into the Your Cue shell, leaving a
+  // row that navigated straight back to where you came from. The row is
+  // disabled with a reason now; this branch is what a bookmark gets.
   if (platformGate === "gated") {
-    return <Navigate replace to={routes.settings.root} />;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Bell className="h-5 w-5 text-[var(--content-secondary)]" />
+          <div className="flex-1">
+            <h2 className="text-title-medium text-[var(--content-default)]">
+              Notifications
+            </h2>
+            <p className="text-body-medium-lighter text-[var(--content-secondary)]">
+              Platform alerts and status notifications
+            </p>
+          </div>
+        </div>
+        <Notice tone="info">
+          <span aria-hidden>⊘ </span>
+          Platform alerts come from Cue-hosted infrastructure, and this
+          assistant is self-hosted — so there are no notifications or pause
+          rules to configure here.
+        </Notice>
+      </div>
+    );
   }
 
   if (platformGate === "disabled") {

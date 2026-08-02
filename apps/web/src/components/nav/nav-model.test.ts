@@ -13,7 +13,6 @@ import { describe, expect, test } from "bun:test";
 import {
   CUE_NAV,
   MOBILE_TAB_ORDER,
-  PEOPLE_ROW_MIN_MEMORIES,
   PRIMARY_NAV,
   SIDEBAR_DESTINATIONS,
   WORK_VIEWS,
@@ -21,7 +20,6 @@ import {
   activePrimaryKey,
   primaryDestination,
   readWorkView,
-  shouldShowPeopleRow,
   type PrimaryNavKey,
   type WorkView,
 } from "./nav-model";
@@ -182,50 +180,43 @@ describe("the sidebar's Tier-2 rows are one column", () => {
   });
 });
 
-describe("the People gate", () => {
-  // Design would not promote People on the strength of the code existing:
-  // "A prominent destination with 2 rows teaches people the slot is
-  // worthless." The live instance has 2 contacts and 0 memories.
+describe("People is ungated — the owner overruled design", () => {
+  // Design's ruling was: promote People only when contact memories are
+  // non-zero and growing week-over-week. The owner overruled it directly —
+  // *"people is still buried and should be out near library as we want to
+  // surface that ... it's nice for people to think this is a crm / people
+  // system that will learn and grow."*
+  //
+  // These tests exist so the gate cannot come back by accident. It was
+  // DELETED, not stubbed: a predicate that exists but never closes is worse
+  // than none, because the next reader assumes it works.
 
-  test("the live instance's numbers — 2 contacts, 0 memories — keep it hidden", () => {
-    expect(shouldShowPeopleRow({ contactCount: 2, memoryCount: 0 })).toBe(
-      false,
-    );
+  test("the module exports no People gate at all", async () => {
+    const model = await import("./nav-model");
+    expect("shouldShowPeopleRow" in model).toBe(false);
+    expect("PEOPLE_ROW_MIN_MEMORIES" in model).toBe(false);
+    expect("PeopleSignal" in model).toBe(false);
   });
 
-  test("contacts without memories are not enough — that is the 697 no-op case", () => {
-    // Contact extraction ran 697 times, completed every time, and wrote
-    // nothing. Gating on contact count alone would have shown the row through
-    // all of it.
-    expect(shouldShowPeopleRow({ contactCount: 214, memoryCount: 0 })).toBe(
-      false,
-    );
+  test("People sits beside Library, People first, per the final brief", () => {
+    // The brief's block is `👤 People / ▦ Library`.
+    expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
+      "people",
+      "library",
+    ]);
   });
 
-  test("memories without contacts are not enough either", () => {
-    expect(shouldShowPeopleRow({ contactCount: 0, memoryCount: 9 })).toBe(
-      false,
-    );
+  test("People lands on the standalone surface, not the old Memory tab", () => {
+    const people = SIDEBAR_DESTINATIONS.find((d) => d.key === "people");
+    expect(people?.to).toBe(routes.people);
+    expect(people?.to).not.toBe(routes.memoryPeople);
   });
 
-  test("one real memory against a real contact promotes the row", () => {
-    expect(
-      shouldShowPeopleRow({
-        contactCount: 2,
-        memoryCount: PEOPLE_ROW_MIN_MEMORIES,
-      }),
-    ).toBe(true);
-  });
-
-  test("no signal is not evidence — a failed or pending read hides the row", () => {
-    // Withholding the row costs a click. Showing an empty one costs trust in
-    // every other row beside it.
-    expect(shouldShowPeopleRow(null)).toBe(false);
-    expect(shouldShowPeopleRow(undefined)).toBe(false);
-  });
-
-  test("the bar is one memory — the failure guarded against is silence, not scale", () => {
-    expect(PEOPLE_ROW_MIN_MEMORIES).toBe(1);
+  test("the People row lights on its own surface and its children", () => {
+    const people = SIDEBAR_DESTINATIONS.find((d) => d.key === "people");
+    expect(people?.match(routes.people)).toBe(true);
+    expect(people?.match(`${routes.people}/abc`)).toBe(true);
+    expect(people?.match(routes.library.root)).toBe(false);
   });
 });
 

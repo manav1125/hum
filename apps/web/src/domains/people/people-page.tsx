@@ -41,6 +41,7 @@ import {
   contactsByIdMemoryByMidDeleteMutation,
   contactsByIdMemoryPostMutation,
   contactsGetOptions,
+  peopleMemoryHealthGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ContactsByIdDossierGetResponse } from "@/generated/daemon/types.gen";
 import { postChatMessage } from "@/domains/chat/api/messages";
@@ -178,6 +179,52 @@ const KIND_TINT: Record<string, string> = {
   context: C.amber,
 };
 
+/**
+ * The no-op card — extraction completing and extraction *learning something*
+ * are different outcomes, and for a month they looked identical: 697 contact
+ * extractions ran, every one reported success, and not one wrote a memory.
+ *
+ * This lived on the interim `Your Cue → Memory → People` tab, which was deleted
+ * when People was promoted to the sidebar (two pages titled "People" at two
+ * URLs is the duplicate nav this codebase has cleaned up twice). The tab went;
+ * the instrumentation did not, because it is the only thing in the app that can
+ * tell you the pipeline behind this page is idling.
+ *
+ * Silent when the daemon reports healthy, and silent when the health read
+ * itself fails — an unread health check is not evidence of a problem.
+ */
+function ExtractionHealthNotice({ assistantId }: { assistantId: string }) {
+  const health = useQuery({
+    ...peopleMemoryHealthGetOptions({ path: { assistant_id: assistantId } }),
+    enabled: Boolean(assistantId),
+    retry: false,
+  });
+
+  if (health.data?.degraded !== true) return null;
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        border: `1px solid ${C.line2}`,
+        borderLeft: `3px solid ${C.amber}`,
+        borderRadius: 8,
+        padding: "10px 12px",
+        fontSize: 12.5,
+        lineHeight: 1.5,
+        color: C.t2,
+      }}
+    >
+      {/* A glyph, not a tint — nothing on this surface is colour-only. */}
+      <span aria-hidden>⚠ </span>
+      Cue is reading your channels but learning nothing about the people in
+      them. {health.data?.degradedReason ?? "The daemon did not say why."} Until
+      that changes, what Cue remembers about each person below stays empty — it
+      is not hiding anything.
+    </div>
+  );
+}
+
 export function PeoplePage() {
   const assistantId = useActiveAssistantId();
   const isMobile = useIsMobile();
@@ -288,6 +335,8 @@ export function PeoplePage() {
             </h1>
           </div>
         </div>
+
+        <ExtractionHealthNotice assistantId={assistantId} />
 
         {contactsQuery.isLoading ? (
           <div

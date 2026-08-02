@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   formatSpend,
+  OWNER_NAME_FALLBACK,
   ownerLineText,
   resolveOwnerName,
   WORKSPACE_MODE_LABEL,
@@ -57,6 +58,59 @@ describe("the name comes from real state, or admits it does not", () => {
     expect(
       resolveOwnerName({ firstName: "", username: null, email: null }),
     ).toBe("You");
+  });
+
+  test("the fallback must not look like a name", () => {
+    // The bug this whole source order exists for: the row read **"Local"**,
+    // and "Local" reads as a name. `OWNER_NAME_FALLBACK` is the guard — if
+    // someone makes it friendlier they have to get past this test.
+    expect(OWNER_NAME_FALLBACK).toBe("You");
+    expect(resolveOwnerName(null)).toBe(OWNER_NAME_FALLBACK);
+  });
+});
+
+describe("the guardian contact is the self-hosted owner's real name", () => {
+  // A gateway/self-hosted session has no platform account — `auth-store` signs
+  // in as a synthetic user, and that placeholder used to carry
+  // `firstName: "Local"`, which is why the footer said "Local · Autonomous".
+  // The daemon knows the answer: there is exactly one `role: "guardian"`
+  // contact, by construction, and it is the human who owns the assistant.
+
+  test("with no platform user, the guardian names the row", () => {
+    expect(resolveOwnerName(null, "Manav")).toBe("Manav");
+  });
+
+  test("a real platform first name still outranks it", () => {
+    expect(resolveOwnerName({ firstName: "Ada" }, "Manav")).toBe("Ada");
+  });
+
+  test("the guardian outranks a username — a handle is not a name", () => {
+    expect(resolveOwnerName({ firstName: "", username: "mg" }, "Manav")).toBe(
+      "Manav",
+    );
+  });
+
+  test("the guardian outranks an email local part", () => {
+    expect(
+      resolveOwnerName(
+        { firstName: "", username: null, email: "mg@example.com" },
+        "Manav",
+      ),
+    ).toBe("Manav");
+  });
+
+  test("an absent or blank guardian falls through, it does not blank the row", () => {
+    expect(resolveOwnerName({ firstName: "", username: "mg" }, null)).toBe(
+      "mg",
+    );
+    expect(resolveOwnerName({ firstName: "", username: "mg" }, "  ")).toBe(
+      "mg",
+    );
+    expect(resolveOwnerName(null, null)).toBe(OWNER_NAME_FALLBACK);
+  });
+
+  test("no source at all still never invents one", () => {
+    expect(resolveOwnerName(null, "")).toBe(OWNER_NAME_FALLBACK);
   });
 });
 

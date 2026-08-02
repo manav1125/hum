@@ -1283,19 +1283,14 @@ export const routeTree = [
                             },
                           },
                           {
-                            // People, as design's interim tab under Memory.
-                            // A CHILD of `/assistant/memory` so the Memory
-                            // leaf keeps lighting while you are here — a tab
-                            // under a leaf, not a nineteenth leaf. The
-                            // standalone `/assistant/people` surface is
-                            // unchanged and still resolves.
+                            // Was design's interim People tab under Memory,
+                            // with its own second People page. People is now a
+                            // sidebar destination in its own right, so this URL
+                            // is a redirect rather than a second door: one
+                            // People page, reached one way, and every bookmark
+                            // to the old tab still resolves.
                             path: "memory/people",
-                            lazy: {
-                              Component: () =>
-                                import("@/domains/intelligence/memory-people-page").then(
-                                  (m) => m.MemoryPeoplePage,
-                                ),
-                            },
+                            element: <Navigate to={routes.people} replace />,
                           },
                           {
                             path: "workspace",

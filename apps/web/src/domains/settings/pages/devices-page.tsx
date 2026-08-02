@@ -1,5 +1,4 @@
 import { Loader2 } from "lucide-react";
-import { Navigate } from "react-router";
 
 import { useQuery } from "@tanstack/react-query";
 
@@ -12,7 +11,6 @@ import {
   useActiveAssistantLifecycleIsLoading,
   usePlatformGate,
 } from "@/hooks/use-platform-gate";
-import { routes } from "@/utils/routes";
 import { Notice } from "@vellumai/design-library/components/notice";
 
 export function DevicesPage() {
@@ -27,11 +25,30 @@ export function DevicesPage() {
 
   const devices = (data?.results ?? []) as Assistant[];
 
+  // The active assistant is self-hosted, so there is no Cue-hosted device
+  // registry to show.
+  //
+  // This used to `<Navigate>` to the settings index — the owner's "self hosted
+  // points no where": you clicked the row and landed back where you started,
+  // with nothing said. The row is disabled in the Your Cue shell now, and a
+  // direct hit lands here and is told why.
   if (platformGate === "gated") {
-    // Land on the settings INDEX, not a sibling leaf — on mobile the general
-    // route renders the Appearance leaf, which read as a silent mis-route
-    // (UAT P1). Desktop's index route renders General anyway.
-    return <Navigate replace to={routes.settings.root} />;
+    return (
+      <div className="space-y-4">
+        <DetailCard
+          title="Self-Hosted Assistants"
+          subtitle="Self-hosted assistants registered with your Cue account."
+        >
+          <Notice tone="info">
+            <span aria-hidden>⊘ </span>
+            This assistant is self-hosted and isn&apos;t registered with a Cue
+            account, so there are no devices to manage here. Registration is
+            what lets a self-hosted assistant use Cue managed services —
+            inference, web search, integrations — without your own API keys.
+          </Notice>
+        </DetailCard>
+      </div>
+    );
   }
 
   if (platformGate === "disabled") {

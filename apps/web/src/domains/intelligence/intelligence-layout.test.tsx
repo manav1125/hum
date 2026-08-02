@@ -57,6 +57,47 @@ mock.module("@/stores/assistant-feature-flag-store", () => ({
   },
 }));
 
+// The four Preferences panels that only work under certain conditions read
+// these. Defaults mirror the OWNER'S live instance — a self-hosted assistant
+// driven from a browser tab — which is the configuration in which he found
+// Keyboard, Billing and Self-hosted dead.
+const envRef = {
+  isElectron: false,
+  platformHostedGate: "gated" as "gated" | "disabled" | "full",
+  billingGate: "gated" as "gated" | "disabled" | "full",
+  isPlatformHosted: false,
+  platformNotifications: false,
+};
+
+mock.module("@/hooks/use-platform-gate", () => ({
+  usePlatformGate: (options?: { platformHostedOnly?: boolean }) =>
+    options?.platformHostedOnly
+      ? envRef.platformHostedGate
+      : envRef.billingGate,
+  useActiveAssistantIsPlatformHosted: () => envRef.isPlatformHosted,
+}));
+
+mock.module("@/runtime/is-electron", () => ({
+  isElectron: () => envRef.isElectron,
+}));
+
+mock.module("@/stores/client-feature-flag-store", () => ({
+  useClientFeatureFlagStore: {
+    use: {
+      platformNotifications: () => envRef.platformNotifications,
+    },
+  },
+}));
+
+/** Everything available — the fully platform-hosted desktop app. */
+function everythingAvailable(): void {
+  envRef.isElectron = true;
+  envRef.platformHostedGate = "full";
+  envRef.billingGate = "full";
+  envRef.isPlatformHosted = true;
+  envRef.platformNotifications = true;
+}
+
 const { IntelligenceLayout } =
   await import("@/domains/intelligence/intelligence-layout");
 
@@ -72,6 +113,11 @@ beforeEach(() => {
   flagsRef.externalPlugins = false;
   flagsRef.marketplace = false;
   flagsRef.settingsDeveloperNav = false;
+  envRef.isElectron = false;
+  envRef.platformHostedGate = "gated";
+  envRef.billingGate = "gated";
+  envRef.isPlatformHosted = false;
+  envRef.platformNotifications = false;
   setTopBarCenterMock.mockClear();
 });
 
@@ -230,35 +276,152 @@ describe("sub-rows", () => {
     );
   });
 
-  test("Memory carries People — design's interim home for the relationship surface", () => {
-    // The sidebar gate says People has not earned a rail row yet. Design's
-    // sequencing says ship it HERE meanwhile; only the gate half shipped, so
-    // People existed nowhere.
-    const { getByLabelText } = renderLayout("/assistant/memory");
-    expect(getByLabelText("Memory panels").textContent).toContain("People");
+  test("Memory no longer carries a People tab", () => {
+    // People is a sidebar destination now. Leaving the tab here would be a
+    // second nav path to a second page with the same name — the duplication
+    // this codebase has cleaned up twice already.
+    const { queryByLabelText } = renderLayout("/assistant/memory");
+    expect(queryByLabelText("Memory panels")).toBeNull();
   });
+});
 
-  test("Memory's People tab keeps the Memory leaf lit", () => {
-    // A tab under a leaf, not a nineteenth leaf: the column must not lose its
-    // place when you switch to it. The leaf stays marked; only the deepest
-    // match claims `aria-current="page"`.
-    const { container, getByRole } = renderLayout("/assistant/memory/people");
-    expect(
-      container.querySelector('[data-active="true"]')?.textContent,
-    ).toContain("Memory");
-    expect(getByRole("link", { current: "page" }).textContent).toContain(
-      "People",
+/**
+ * **The Preferences audit.** One test per row, clicked rather than read.
+ *
+ * The owner: *"under preferences some things are not working like keyboard and
+ * billing & self hosted point no where."* Each of those rows rendered, was
+ * clickable, navigated — and landed on a page that immediately `<Navigate>`d
+ * back to where it came from. Indistinguishable from a broken link.
+ *
+ * The gates existed the whole time, in `settings-layout.tsx`, which stopped
+ * being rendered on desktop when Settings was absorbed into Your Cue. So the
+ * rule now rides on the row itself, and every row is verified by CLICKING it —
+ * the same discipline that caught "All conversations".
+ */
+describe("every Preferences row: click it, and check where you land", () => {
+  const PREFERENCES = "/assistant/settings/general";
+
+  /** The panel row's anchors, by label. */
+  function panelLink(label: string): HTMLAnchorElement | null {
+    const row = document.querySelector('[aria-label="Preferences panels"]');
+    return (
+      Array.from(row?.querySelectorAll("a") ?? []).find((a) =>
+        a.textContent?.includes(label),
+      ) ?? null
     );
+  }
+
+  /** The disabled `⊘` form of a row, by label. */
+  function disabledPanel(label: string): HTMLElement | null {
+    const row = document.querySelector('[aria-label="Preferences panels"]');
+    return (
+      (Array.from(row?.querySelectorAll("[aria-disabled='true']") ?? []).find(
+        (n) => n.textContent?.includes(label),
+      ) as HTMLElement | undefined) ?? null
+    );
+  }
+
+  // --- The rows that always work -------------------------------------------
+
+  test.each([
+    ["Sounds", "/assistant/settings/sounds"],
+    ["Voice", "/assistant/settings/voice"],
+    ["Archive", "/assistant/settings/archive"],
+  ])("%s is a live link to %s", (label, href) => {
+    renderLayout(PREFERENCES);
+    const link = panelLink(label);
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toBe(href);
+    fireEvent.click(link!);
+    expect(panelLink(label)?.getAttribute("aria-current")).toBe("page");
   });
 
-  test("a Memory tab navigates when clicked", () => {
-    const { getByText, getByLabelText } = renderLayout("/assistant/memory");
-    fireEvent.click(getByLabelText("Memory panels").querySelector("a")!);
-    expect(getByText("People").getAttribute("class")).toBeTruthy();
-    expect(
-      getByLabelText("Memory panels").querySelector('[aria-current="page"]')
-        ?.textContent,
-    ).toContain("People");
+  // --- The four the owner found dead ---------------------------------------
+
+  test.each([
+    ["Keyboard", "/assistant/settings/keyboard-shortcuts"],
+    ["Self-hosted", "/assistant/settings/devices"],
+    ["Billing", "/assistant/settings/billing"],
+    ["Notifications", "/assistant/settings/notifications"],
+  ])("%s becomes a live link to %s once its condition holds", (label, href) => {
+    everythingAvailable();
+    renderLayout(PREFERENCES);
+    const link = panelLink(label);
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toBe(href);
+  });
+
+  test.each(["Keyboard", "Self-hosted", "Billing", "Notifications"])(
+    "%s is DISABLED, not a dead link, on the owner's own instance",
+    (label) => {
+      // Defaults are his: self-hosted assistant, browser tab, no platform.
+      renderLayout(PREFERENCES);
+      expect(panelLink(label)).toBeNull();
+      const disabled = disabledPanel(label);
+      expect(disabled).not.toBeNull();
+      expect(disabled!.tagName).not.toBe("A");
+    },
+  );
+
+  test.each(["Keyboard", "Self-hosted", "Billing", "Notifications"])(
+    "%s states WHY it is disabled, in text and on hover",
+    (label) => {
+      renderLayout(PREFERENCES);
+      const disabled = disabledPanel(label)!;
+      // Not just a tooltip: the reason is in the accessible name too.
+      expect(disabled.getAttribute("title")!.length).toBeGreaterThan(20);
+      expect(disabled.textContent).toContain(
+        disabled.getAttribute("title")!.slice(0, 20),
+      );
+    },
+  );
+
+  test.each(["Keyboard", "Self-hosted", "Billing", "Notifications"])(
+    "%s carries a ⊘ glyph — no state here is colour-only",
+    (label) => {
+      renderLayout(PREFERENCES);
+      expect(disabledPanel(label)!.textContent).toContain("⊘");
+    },
+  );
+
+  test("a disabled row is still VISIBLE — vanishing is its own bug", () => {
+    // The owner had already read missing settings as deleted settings once.
+    renderLayout(PREFERENCES);
+    const row = document.querySelector('[aria-label="Preferences panels"]')!;
+    for (const label of [
+      "Notifications",
+      "Sounds",
+      "Voice",
+      "Keyboard",
+      "Self-hosted",
+      "Billing",
+      "Archive",
+    ]) {
+      expect(row.textContent).toContain(label);
+    }
+  });
+
+  test("each condition is independent — the desktop app alone unlocks Keyboard", () => {
+    envRef.isElectron = true;
+    renderLayout(PREFERENCES);
+    expect(panelLink("Keyboard")).not.toBeNull();
+    // ...and leaves the platform-only three exactly where they were.
+    expect(panelLink("Billing")).toBeNull();
+    expect(panelLink("Self-hosted")).toBeNull();
+  });
+
+  test("no row is both a link and disabled", () => {
+    everythingAvailable();
+    renderLayout(PREFERENCES);
+    for (const label of [
+      "Keyboard",
+      "Billing",
+      "Self-hosted",
+      "Notifications",
+    ]) {
+      expect(disabledPanel(label)).toBeNull();
+      expect(panelLink(label)).not.toBeNull();
+    }
   });
 });
 

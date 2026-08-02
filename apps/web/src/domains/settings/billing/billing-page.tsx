@@ -1,7 +1,7 @@
 import { ExternalLink, Loader2 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
-import { Navigate, useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -150,10 +150,31 @@ export function BillingPage() {
     );
   }, [setSearchParams]);
 
+  // No platform behind this install, so there is no plan, no invoice and no
+  // payment method to render.
+  //
+  // This used to `<Navigate>` to the settings index — the owner's "billing
+  // points no where": the row navigated and dumped you back on the page you
+  // came from. The row is disabled in the Your Cue shell now; a direct hit
+  // lands here and is told why rather than being bounced.
   if (billingGate === "gated") {
-    // Settings INDEX, not the general leaf — mobile renders Appearance at
-    // /general, which read as a silent mis-route (UAT P1).
-    return <Navigate replace to={routes.settings.root} />;
+    return (
+      <div className="space-y-4">
+        <Notice tone="info">
+          <span aria-hidden>⊘ </span>
+          Billing is handled on the Cue platform, and this assistant is running
+          without a platform account — so there is no plan or invoice to show
+          here. Spend for this assistant is on{" "}
+          <Link
+            to={routes.settings.budget}
+            className="text-[var(--content-link)] underline hover:text-[var(--content-link-hover)]"
+          >
+            Usage &amp; spend
+          </Link>
+          .
+        </Notice>
+      </div>
+    );
   }
 
   if (billingGate === "disabled") {

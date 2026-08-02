@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { matchRoutes } from "react-router";
 
 import { routeTree } from "@/routes";
+import { SIDEBAR_DESTINATIONS } from "@/components/nav/nav-model";
 
 // Walk the matched route chain for `path` and report whether `AccountLayout`
 // is one of its layout components. Matching runs against the raw `routeTree`
@@ -288,6 +289,24 @@ describe("the four duplications each resolve to one page", () => {
   test("trust: the old console URL still lands on Guardrails", () => {
     expect(redirectTarget("/assistant/trust")).toBe("/assistant/guardrails");
   });
+
+  test("people: the retired Memory tab redirects to the one People page", () => {
+    // People was promoted to the sidebar, so its interim tab under Memory was
+    // a second nav path to a second page with the same name. The tab and its
+    // page are gone; the URL still resolves, which is what stops a bookmark
+    // 404ing. Fifth duplication, same rule.
+    expect(redirectTarget("/assistant/memory/people")).toBe(
+      "/assistant/people",
+    );
+  });
+
+  test("people: the sidebar and the redirect agree on the destination", () => {
+    // The brief's requirement in one assertion: "the sidebar row and any
+    // existing link must land on the same page."
+    const row = SIDEBAR_DESTINATIONS.find((d) => d.key === "people");
+    expect(row).toBeDefined();
+    expect(redirectTarget("/assistant/memory/people")).toBe(row!.to);
+  });
 });
 
 /**
@@ -332,7 +351,8 @@ describe("every leaf renders in the same shell", () => {
     "/assistant/agent-network",
     "/assistant/cue-live",
     "/assistant/memory",
-    // People's interim home. A CHILD of memory so the Memory leaf stays lit.
+    // The retired People tab. Still mounted (as a redirect) so a bookmark
+    // resolves rather than 404ing.
     "/assistant/memory/people",
     "/assistant/settings/schedules",
     "/assistant/automations",

@@ -29,9 +29,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import {
   companyprofileGetOptions,
+  contactsGetOptions,
   usageTotalsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
-import { useAuthStore } from "@/stores/auth-store";
+import { GATEWAY_LOCAL_USER_ID, useAuthStore } from "@/stores/auth-store";
 import { usageRangeNow } from "@/utils/usage-window";
 
 /** The three workspace postures, in the words design uses for them. */
@@ -50,16 +51,55 @@ export interface OwnerLine {
   spend: string | null;
 }
 
-/** What the user is called, from real state, with honest fallbacks. */
+/**
+ * What the row says when no source knows the owner's name.
+ *
+ * "You" and not a name-shaped placeholder — that distinction is the whole bug
+ * this constant exists to prevent. See {@link resolveOwnerName}.
+ */
+export const OWNER_NAME_FALLBACK = "You";
+
+/**
+ * What the user is called, from real state, with honest fallbacks.
+ *
+ * ## Why this grew a second source
+ *
+ * The owner reported the row reading **"Local · Autonomous"**. The read was
+ * resolving fine — it was resolving to a lie. A gateway/self-hosted session has
+ * no platform account, so `auth-store` signs in as a synthetic
+ * `gateway-local` user, and that placeholder carried `firstName: "Local"`.
+ * The name half of the line was a hardcoded string all along; it just happened
+ * to be one that looks like a name, which is why nobody noticed it was not one.
+ *
+ * The placeholder is now empty (`auth-store.ts`), and the real fallback is the
+ * **guardian contact** — the daemon's own record of the human who owns this
+ * assistant, of which there is exactly one by construction
+ * (`assistant/src/contacts/contact-store.ts`: *"There must only ever be ONE
+ * guardian — the human owner of the assistant."*). On a self-hosted instance
+ * that is the only place the owner's actual name is written down.
+ *
+ * Order, most to least authoritative, and every step is a string the user or
+ * their assistant actually stored:
+ *
+ *   1. the platform account's first name
+ *   2. the guardian contact's display name
+ *   3. the platform username
+ *   4. the local part of the email — an identity, not a mailto
+ *   5. `"You"` — plainly not a name, so a failed read cannot be mistaken for a
+ *      successful one
+ */
 export function resolveOwnerName(
   user: {
     firstName?: string | null;
     username?: string | null;
     email?: string | null;
   } | null,
+  guardianName?: string | null,
 ): string {
   const first = user?.firstName?.trim();
   if (first) return first;
+  const guardian = guardianName?.trim();
+  if (guardian) return guardian;
   const username = user?.username?.trim();
   if (username) return username;
   const email = user?.email?.trim();
@@ -69,7 +109,7 @@ export function resolveOwnerName(
     const local = email.split("@")[0]?.trim();
     if (local) return local;
   }
-  return "You";
+  return OWNER_NAME_FALLBACK;
 }
 
 /** `$4.10`. Two decimals always, so the row's width does not jitter. */
@@ -90,7 +130,12 @@ function monthWindow(): { from: number; to: number } {
 }
 
 export function useOwnerLine(assistantId?: string | null): OwnerLine {
-  const user = useAuthStore.use.user();
+  const rawUser = useAuthStore.use.user();
+  // The gateway/self-hosted session is a placeholder, not a person: its
+  // `username` is the literal string `"local"`, which would sail through
+  // `resolveOwnerName` and put "local" where a name goes. Discard it whole and
+  // let the guardian contact answer instead.
+  const user = rawUser?.id === GATEWAY_LOCAL_USER_ID ? null : rawUser;
   const enabled = Boolean(assistantId);
   const path = { assistant_id: assistantId ?? "" };
 
@@ -100,6 +145,19 @@ export function useOwnerLine(assistantId?: string | null): OwnerLine {
     retry: false,
     staleTime: 5 * 60_000,
   });
+
+  // The daemon's own record of who owns this assistant. Shares a query key with
+  // the rail's People count, so on the rail this costs no extra request.
+  const contacts = useQuery({
+    ...contactsGetOptions({ path }),
+    enabled,
+    retry: false,
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const guardianName =
+    contacts.data?.contacts?.find((c) => c.role === "guardian")?.displayName ??
+    null;
 
   const month = monthWindow();
   const usage = useQuery({
@@ -113,7 +171,7 @@ export function useOwnerLine(assistantId?: string | null): OwnerLine {
   const usd = usage.data?.totalEstimatedCostUsd;
 
   return {
-    name: resolveOwnerName(user),
+    name: resolveOwnerName(user, guardianName),
     // An unrecognised mode is dropped rather than printed raw — "no raw enums"
     // (v21 §8) — and an unread one is dropped rather than defaulted.
     tier: mode ? (WORKSPACE_MODE_LABEL[mode] ?? null) : null,

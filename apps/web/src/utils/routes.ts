@@ -206,17 +206,16 @@ export const routes = {
   marketplace: r("/assistant/marketplace"),
   memory: r("/assistant/memory"),
   /**
-   * People, as an interim tab under Memory.
+   * The old interim People tab under Memory. **Now a redirect to
+   * {@link routes.people}**, which is the one People page.
    *
-   * Design's sequencing, verbatim: *"ship it inside `Your Cue → Memory` as an
-   * interim tab. Promote it to the sidebar when contact memories are non-zero
-   * and growing."* The sidebar gate (`shouldShowPeopleRow`) was built and this
-   * half was not, so People existed nowhere you could reach.
+   * Design sequenced People as a tab here while the sidebar row was gated on
+   * relationship extraction. The owner ungated the row, at which point this was
+   * a second nav path to a second page with the same name — so the tab and its
+   * page are gone and the URL redirects.
    *
-   * A CHILD of `/assistant/memory` on purpose: the Memory leaf's `match` is a
-   * prefix test, so the left column keeps lighting Memory while you are here —
-   * a tab under a leaf, not a nineteenth leaf. The standalone relationship
-   * surface at {@link routes.people} is unchanged and still resolves.
+   * Kept as a constant rather than deleted so the redirect has a single spelling
+   * and any captured link keeps resolving. Nothing should navigate *to* this.
    */
   memoryPeople: r("/assistant/memory/people"),
   workspace: r("/assistant/workspace"),

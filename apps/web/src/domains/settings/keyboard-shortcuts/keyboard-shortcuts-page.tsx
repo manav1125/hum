@@ -1,6 +1,5 @@
 import { RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Navigate } from "react-router";
 
 import {
   getHotkeys,
@@ -9,7 +8,6 @@ import {
   type ResolvedHotkey,
 } from "@/runtime/hotkeys";
 import { isElectron } from "@/runtime/is-electron";
-import { routes } from "@/utils/routes";
 import { Button } from "@vellumai/design-library/components/button";
 import { Card } from "@vellumai/design-library/components/card";
 import { Notice } from "@vellumai/design-library/components/notice";
@@ -133,8 +131,8 @@ function ShortcutRow({
  * parity with the native app's Keyboard Shortcuts card. Reads the resolved
  * catalog over the typed `hotkeys` bridge, records new bindings from live
  * keypresses, blocks conflicting saves, and stays in sync with changes made
- * in other windows. Off Electron the route redirects, so the bridge calls
- * here always have a host.
+ * in other windows. Off Electron the page renders an explanation instead of the
+ * catalog, so the bridge calls below always have a host.
  */
 export function KeyboardShortcutsPage() {
   const [catalog, setCatalog] = useState<ResolvedHotkey[]>([]);
@@ -233,13 +231,33 @@ export function KeyboardShortcutsPage() {
     [catalog],
   );
 
-  // Off Electron the bridge yields an empty catalog; hotkeys are a desktop-only
-  // concern, so redirect rather than render an empty page (defense in depth —
-  // the sidebar entry is already gated in settings-layout.tsx).
+  // Off Electron the bridge yields an empty catalog: hotkeys drive Electron's
+  // globalShortcut + menu accelerators and have no web analogue.
+  //
+  // This used to `<Navigate>` to the settings index, which is why the owner
+  // reported Keyboard "points no where" — clicking it in a browser bounced you
+  // silently back to the page you left. The row is now disabled in the Your Cue
+  // shell, and a direct hit (bookmark, typed URL, the mobile index) lands here
+  // and gets told why instead of being redirected out from under itself.
   if (!isElectron()) {
-    // Settings INDEX, not the general leaf — mobile renders Appearance at
-    // /general, which read as a silent mis-route (UAT P1).
-    return <Navigate replace to={routes.settings.root} />;
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-title-medium text-[var(--content-default)]">
+            Keyboard Shortcuts
+          </h2>
+          <p className="text-body-medium-lighter text-[var(--content-secondary)]">
+            Customize the shortcuts for Cue&apos;s commands.
+          </p>
+        </div>
+        <Notice tone="info">
+          <span aria-hidden>⊘ </span>
+          Shortcuts are registered by the Cue desktop app, so there&apos;s
+          nothing to rebind in a browser tab. Open Cue on your Mac to change
+          them.
+        </Notice>
+      </div>
+    );
   }
 
   return (

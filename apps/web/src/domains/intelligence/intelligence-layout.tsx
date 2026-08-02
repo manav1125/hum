@@ -8,12 +8,21 @@ import {
   YOUR_CUE_GROUPS,
   activeYourCueLeaf,
   panelsForPath,
+  subLeafUnavailableReason,
+  type SubLeafRequirement,
   type YourCueGroup,
   type YourCueLeaf,
+  type YourCueSubLeaf,
 } from "@/components/nav/your-cue-model";
 import { PageShell } from "@/components/page-shell";
 import { useMobileLayout } from "@/hooks/use-is-mobile";
+import {
+  useActiveAssistantIsPlatformHosted,
+  usePlatformGate,
+} from "@/hooks/use-platform-gate";
+import { isElectron } from "@/runtime/is-electron";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
+import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { routes } from "@/utils/routes";
 
 /**
@@ -50,15 +59,24 @@ import { routes } from "@/utils/routes";
  *
  * ## Sub-rows
  *
- * Two leaves have a second level, rendered indented beneath them and only while
- * you are inside them (`panelsForPath`):
+ * **Preferences** has a second level, rendered indented beneath it and only
+ * while you are inside it (`panelsForPath`): the "set once" panels —
+ * Notifications, Sounds, Voice, Keyboard, Self-hosted, Billing, Archive, and
+ * the developer trio. It is not a second nav path: the leaf itself is the first
+ * panel (General), and no sub-row is reachable from anywhere else.
  *
- *   · **Preferences** — the nine "set once" panels (Notifications, Sounds,
- *     Voice, Keyboard, Self-hosted, Billing, Archive, developer).
- *   · **Memory** — People, design's interim home for the relationship surface.
+ * Four of those panels only work under conditions this shell has to check —
+ * Keyboard needs the desktop app; Self-hosted, Billing and Notifications need a
+ * Cue-hosted assistant. Those rows render **disabled with the reason stated**
+ * rather than navigating into a page that redirects back, which is what they
+ * did before and what the owner reported as "point no where". The rule itself
+ * lives on the row (`YOUR_CUE_SUBLEAVES.requires`) so it cannot be orphaned by
+ * a future move — which is precisely how it broke: the gates lived in
+ * `settings-layout.tsx`, Settings moved in here, and the filter was left
+ * feeding only the phone.
  *
- * Neither is a second nav path: in both cases the leaf itself is the first tab,
- * and no sub-row is reachable from anywhere else.
+ * **Memory** used to have one too (a People tab). People is a sidebar
+ * destination now, so the tab is gone rather than being a second door to it.
  *
  * ## Every leaf, same shell
  *
@@ -115,13 +133,40 @@ export function IntelligenceLayout() {
 
   const activeLeaf = activeYourCueLeaf(pathname);
 
-  // The sub-rows for whichever leaf owns this path — Preferences' nine panels
-  // or Memory's People tab — filtered by developer mode. One mechanism for
-  // both, so the next leaf that grows a second level costs an array rather
-  // than another branch here.
-  const panels = panelsForPath(pathname).filter(
-    (sub) => !sub.developerOnly || settingsDeveloperNav,
-  );
+  // Whether each condition a Preferences panel can depend on currently holds.
+  //
+  // These are the SAME reads `settings-layout.tsx` does for the phone's
+  // settings index — deliberately, because the two lists disagreeing is exactly
+  // how four rows ended up rendering on desktop while the phone correctly hid
+  // them. Both now resolve one declaration (`YOUR_CUE_SUBLEAVES.requires`).
+  const notificationsHostedGate = usePlatformGate({ platformHostedOnly: true });
+  const billingGate = usePlatformGate();
+  const isPlatformHosted = useActiveAssistantIsPlatformHosted();
+  const platformNotifications =
+    useClientFeatureFlagStore.use.platformNotifications();
+  const requirementsMet: Record<SubLeafRequirement, boolean> = {
+    "desktop-app": isElectron(),
+    "platform-hosted-assistant":
+      notificationsHostedGate !== "gated" && isPlatformHosted,
+    "platform-billing": billingGate === "full",
+    "platform-notifications":
+      platformNotifications && notificationsHostedGate !== "gated",
+  };
+
+  // The sub-rows for whichever leaf owns this path — today only Preferences'
+  // nine panels. Developer-only rows stay hidden until developer mode is
+  // unlocked; rows whose requirement is unmet still RENDER, disabled and
+  // carrying the reason, rather than being dropped. A row that vanishes and a
+  // row that never existed look identical, and the owner had already been
+  // hunting for settings he thought had been removed.
+  const panels: readonly (YourCueSubLeaf & {
+    unavailableReason: string | null;
+  })[] = panelsForPath(pathname)
+    .filter((sub) => !sub.developerOnly || settingsDeveloperNav)
+    .map((sub) => ({
+      ...sub,
+      unavailableReason: subLeafUnavailableReason(sub, requirementsMet),
+    }));
 
   // Tabs whose mobile rendering is a full-bleed designed surface that paints
   // its own background + padding (the mobile-v3 You cluster). For those the
@@ -275,7 +320,13 @@ function LeafRow({
   leaf: YourCueLeaf;
   pathname: string;
   /** The leaf's second level, when this is the leaf you are inside. */
-  panels?: readonly { key: string; label: string; to: string }[];
+  panels?: readonly {
+    key: string;
+    label: string;
+    to: string;
+    /** Set when the panel cannot do anything here — the row says so. */
+    unavailableReason?: string | null;
+  }[];
 }) {
   const base =
     "flex w-full items-center gap-1.5 rounded-[6px] px-2 py-[6px] text-left text-body-medium-default transition-colors outline-none";
@@ -330,7 +381,31 @@ function LeafRow({
           aria-label={`${leaf.label} panels`}
           className="mb-1 flex flex-col gap-[1px]"
         >
-          {panels.map(({ key, label, to }) => {
+          {panels.map(({ key, label, to, unavailableReason }) => {
+            // Unavailable panels render disabled and say why — the same shape a
+            // `to: null` leaf uses one level up, and for the same reason. These
+            // four used to navigate into a page that redirected straight back,
+            // which is indistinguishable from a broken link.
+            if (unavailableReason) {
+              return (
+                <span
+                  key={key}
+                  aria-disabled="true"
+                  title={unavailableReason}
+                  className={cn(
+                    "flex cursor-default items-center gap-1.5 rounded-[6px] py-[4px] pl-[26px] pr-2",
+                    "text-body-small-default text-[var(--content-secondary)]",
+                  )}
+                >
+                  <span aria-hidden className="shrink-0">
+                    ⊘
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  <span className="sr-only"> — {unavailableReason}</span>
+                </span>
+              );
+            }
+
             const subActive = pathname === to || pathname.startsWith(to + "/");
             return (
               <NavLink

@@ -3,12 +3,10 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  CreditCard,
   Gift,
   MessageSquareText,
   Settings as SettingsIcon,
   Shield,
-  ShieldCheck,
   SunMoon,
   User,
 } from "lucide-react";
@@ -92,7 +90,7 @@ export function PreferencesMenu({
       label={line}
       // Collapsed, the rail suppresses the label and the icon is aria-hidden,
       // so the row had no accessible name at all.
-      aria-label={`${line} — account, trust and preferences`}
+      aria-label={`${line} — your account and Your Cue`}
       tooltip={line}
       trailingIcon={isOpen ? ChevronDown : ChevronUp}
       active={isOpen}
@@ -163,6 +161,14 @@ interface PreferencesMenuContentProps {
   onEarnCredits: () => void;
 }
 
+/**
+ * Why the Profile row is disabled when it is. Stated once, shown on the row and
+ * read out to screen readers — a disabled control that does not say why is just
+ * a dead control with extra steps.
+ */
+export const NO_PROFILE_REASON =
+  "Cue has no profile page. Your handle lives on the Cue platform, and this assistant isn't signed in to one.";
+
 export function PreferencesMenuContent({
   onClose,
   onShareFeedback,
@@ -174,12 +180,17 @@ export function PreferencesMenuContent({
   // theme control mid-interaction.
   const coarsePointer = useState(() => isPointerCoarse())[0];
   const user = useAuthStore.use.user();
+  const isAuthenticated = useIsAuthenticated();
   const platformGate = usePlatformGate();
   const billingPlatformGate = usePlatformGate({ platformHostedOnly: true });
   const isPlatformHosted = useActiveAssistantIsPlatformHosted();
   const isOrgReady = useIsOrgReady();
   const showBillingRows =
     billingPlatformGate === "full" && isPlatformHosted && isOrgReady;
+  // The EXACT condition `general-page.tsx` renders the Profile card under. Both
+  // read the same two values, so the row cannot offer a card that is not there
+  // — the "row that renders but goes nowhere" failure, one layer up.
+  const hasProfileSurface = isAuthenticated && platformGate === "full";
   const { data: billingSummary } = useQuery({
     ...organizationsBillingSummaryRetrieveOptions(),
     enabled: showBillingRows,
@@ -239,45 +250,59 @@ export function PreferencesMenuContent({
       ) : null}
 
       {/*
-        Trust · Preferences · Billing.
+        Profile — and the straight answer about it.
 
-        An earlier round removed these on "no second nav path to the same
-        destination". Design's ruling for the account row overrides that
-        specifically: the footer line IS the door to Trust, Preferences and
-        Billing, and it is the only door that reads as belonging to the person
-        rather than to the machine. The general rule still stands for the rail
-        itself — these three live behind a click on your own name, not as three
-        more permanent rows.
+        The owner asked for the footer to "go right into my profile (do we have
+        that?)". **We do not have a profile page.** The search was for a surface
+        about the OWNER's own identity, which is a different thing from
+        `/assistant/identity` — that one is the ASSISTANT's identity (its name,
+        voice and persona) and it is easy to mistake for this.
+
+        What exists is a `Profile` card on Preferences → General
+        (`components/profile-card.tsx`): it edits the user handle against
+        `/v1/user/me/`, so it is genuinely the owner's own record — but it is a
+        card with no door of its own, it holds only handles (no name, no email,
+        no avatar), and it renders ONLY when there is a live Vellum platform
+        session. On a self-hosted assistant it never appears at all.
+
+        So this row does not pretend. When the card is actually there, the row
+        deep-links to it. When it is not, the row is disabled and says why,
+        rather than navigating somewhere that does not contain your profile —
+        which is the same failure as a row that renders and does nothing.
       */}
-      <PanelItem
-        icon={ShieldCheck}
-        label="Trust"
-        onSelect={() => {
-          onClose();
-          navigate(routes.guardrails);
-        }}
-      />
-
-      <PanelItem
-        icon={SettingsIcon}
-        label="Preferences"
-        onSelect={() => {
-          onClose();
-          navigate(routes.settings.general);
-        }}
-      />
-
-      {showBillingRows ? (
+      {hasProfileSurface ? (
         <PanelItem
-          icon={CreditCard}
-          label="Billing"
+          icon={User}
+          label="Profile"
           onSelect={() => {
             onClose();
-            navigate(routes.settings.billing);
+            navigate(`${routes.settings.general}#profile`);
           }}
         />
-      ) : null}
+      ) : (
+        <div
+          aria-disabled="true"
+          title={NO_PROFILE_REASON}
+          className="flex cursor-default items-center gap-2 px-2 py-1.5 text-body-medium-default text-[var(--content-secondary)]"
+        >
+          {/* A glyph, not a dimmed tint — no state here is colour-only. */}
+          <span aria-hidden>⊘</span>
+          <span>Profile</span>
+          <span className="sr-only"> — {NO_PROFILE_REASON}</span>
+        </div>
+      )}
 
+      {/*
+        Trust · Preferences · Billing collapsed into Your Cue.
+
+        These were three rows here, on design's ruling that the footer line is
+        the door to all three. The owner has since consolidated: *"the rest is
+        my cue since we've consolidated everything under there now."* All three
+        are leaves under Your Cue (Guardrails · Preferences · Preferences →
+        Billing), so every one of them is still reachable and every route still
+        resolves — they are one click further from a row you open by clicking
+        your own name, which is where configuration belongs.
+      */}
       {(platformGate === "full" || isElectron()) && (
         <PanelItem
           icon={MessageSquareText}

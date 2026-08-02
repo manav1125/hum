@@ -52,12 +52,11 @@ import {
   PRIMARY_NAV,
   SIDEBAR_DESTINATIONS,
   YOUR_CUE_DOOR,
-  shouldShowPeopleRow,
   takePeek,
   type PeekSectionKey,
   type PrimaryNavKey,
 } from "@/components/nav/nav-model";
-import { usePeopleSignal } from "@/components/nav/use-people-signal";
+import { usePeopleCount } from "@/components/nav/use-people-count";
 import { railToggleLabel } from "@/components/nav/rail-collapse";
 import { isElectron } from "@/runtime/is-electron";
 import { useNavCounts } from "@/components/nav/use-nav-counts";
@@ -100,9 +99,9 @@ export interface AssistantSideMenuProps extends UseSidebarStateParams {
   isLibraryActive?: boolean;
   onOpenLibrary?: () => void;
   /**
-   * @deprecated The People row now decides for itself whether it exists
-   * (`shouldShowPeopleRow`) and whether it is active (its own `match`). These
-   * two are accepted so `chat-layout` keeps compiling and are not read.
+   * @deprecated The People row reads its own active state off the pathname
+   * (its `match` in `SIDEBAR_DESTINATIONS`) and navigates itself. These two
+   * are accepted so `chat-layout` keeps compiling and are not read.
    */
   isContactsActive?: boolean;
   /** @deprecated See {@link AssistantSideMenuProps.isContactsActive}. */
@@ -171,7 +170,7 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
  *   ▤ Work                    5 ▸   ← three with something live
  *   PINNED / RECENT / All conversations ›
  *   ──────────────
- *   👤 People               214     ← gated; see `shouldShowPeopleRow`
+ *   👤 People                49     ← ungated by owner decision (nav-model)
  *   ▦ Library                48
  *   ──────────────
  *   ⚙ Your Cue
@@ -351,11 +350,9 @@ export function AssistantSideMenu({
   // The peek. Reads the same two badge sources above, so the three titles and
   // the "N more" under them can never disagree with the number beside HQ.
   const peek = useRailPeek(assistantId);
-  // The People row's gate. Real numbers, one predicate — see
-  // `shouldShowPeopleRow`. Extraction starting to work is what promotes the
-  // row; nobody has to come back and edit this file.
-  const peopleSignal = usePeopleSignal(assistantId);
-  const showPeopleRow = shouldShowPeopleRow(peopleSignal);
+  // The number beside `👤 People`. Queried, never guessed — `null` while
+  // unread, which renders no badge rather than a `0`.
+  const peopleCount = usePeopleCount(assistantId);
   const openSection = useRailPeekStore.use.openSection();
   const togglePeek = useRailPeekStore.use.toggle();
   const peekPanelId = useId();
@@ -1078,14 +1075,12 @@ export function AssistantSideMenu({
           )}
         >
           {SIDEBAR_DESTINATIONS.map((destination) => {
-            // People is deliberately absent until relationship extraction is
-            // actually writing memories. One predicate, over live data —
-            // `shouldShowPeopleRow`. Nothing here to uncomment.
-            if (destination.key === "people" && !showPeopleRow) return null;
-
+            // Both rows always render. People used to be gated on relationship
+            // extraction having written something; the owner overruled that and
+            // the predicate was deleted rather than stubbed — see
+            // `SIDEBAR_DESTINATIONS` in `nav-model.ts` for the decision.
             const isLibrary = destination.key === "library";
-            const count =
-              destination.key === "people" ? peopleSignal?.contactCount : null;
+            const count = destination.key === "people" ? peopleCount : null;
 
             return (
               <SideMenu.Item

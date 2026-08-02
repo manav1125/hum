@@ -104,8 +104,13 @@ mock.module("react-router", () => ({
 // PreferencesMenuContent (rendered directly below) reaches through the
 // platform-gate / org-readiness hooks; stub them at the hook boundary so
 // the SSR render doesn't need the full store graph.
+const platformGateRef = { value: "gated" as "gated" | "disabled" | "full" };
+
 mock.module("@/hooks/use-platform-gate", () => ({
-  usePlatformGate: () => "gated",
+  // `platformHostedOnly` callers (billing rows) stay gated regardless; the
+  // plain gate is what decides whether a Profile surface exists.
+  usePlatformGate: (options?: { platformHostedOnly?: boolean }) =>
+    options?.platformHostedOnly ? "gated" : platformGateRef.value,
   useActiveAssistantIsPlatformHosted: () => false,
 }));
 
@@ -155,6 +160,7 @@ beforeEach(() => {
     lastName: "",
   };
   billingRef.data = undefined;
+  platformGateRef.value = "gated";
   navigations.length = 0;
 });
 
@@ -182,9 +188,7 @@ describe("PreferencesMenu", () => {
     // Collapsed, SideMenu.Item suppresses the label and the icon is
     // aria-hidden — the row had no accessible name at all.
     const html = renderToStaticMarkup(createElement(PreferencesMenu));
-    expect(html).toContain(
-      'aria-label="user — account, trust and preferences"',
-    );
+    expect(html).toContain('aria-label="user — your account and Your Cue"');
   });
 
   test("desktop renders trigger (Popover surface)", () => {
@@ -256,29 +260,65 @@ describe("PreferencesMenuContent", () => {
   });
 
   /**
-   * Design's account row is *"the door to Trust/Preferences/Billing"*, and
-   * these three rows are that door. An earlier round removed them on "no
-   * second nav path"; this ruling is specifically about the row behind your own
-   * name, and it wins for these three only.
+   * Trust · Preferences · Billing were three rows here, on design's ruling
+   * that the account line is the door to all three. The owner has since
+   * consolidated: *"the rest is my cue since we've consolidated everything
+   * under there now."* All three are leaves under Your Cue, so nothing became
+   * unreachable — they are one click further from a row you open by clicking
+   * your own name.
    */
-  test("Trust is reachable from the owner's own row", () => {
+  test("Trust · Preferences · Billing collapsed into Your Cue", () => {
     render(createElement(PreferencesMenuContent, contentProps));
-    fireEvent.click(screen.getByText("Trust"));
-    expect(navigations).toContain("/assistant/guardrails");
-  });
-
-  test("Preferences is reachable, and lands on the leaf itself", () => {
-    // The leaf IS General — not `/assistant/settings`, which is a redirect.
-    render(createElement(PreferencesMenuContent, contentProps));
-    fireEvent.click(screen.getByText("Preferences"));
-    expect(navigations).toContain("/assistant/settings/general");
-  });
-
-  test("Billing stays out when the workspace is not platform-hosted", () => {
-    // A row that leads to a billing page this install does not have is worse
-    // than no row: `usePlatformGate` is mocked "gated" here.
-    render(createElement(PreferencesMenuContent, contentProps));
+    expect(screen.queryByText("Trust")).toBeNull();
+    expect(screen.queryByText("Preferences")).toBeNull();
     expect(screen.queryByText("Billing")).toBeNull();
+    expect(screen.getByText("Your Cue")).toBeDefined();
+  });
+
+  /**
+   * The Profile row, and the honest answer behind it.
+   *
+   * The owner asked the footer to "go right into my profile (do we have
+   * that?)". There is no profile PAGE. The nearest real thing is a `Profile`
+   * card on Preferences → General, which edits the user handle against
+   * `/v1/user/me/` — and which only renders when there is a live platform
+   * session. So the row deep-links to it when it exists, and admits it does
+   * not when it does not, rather than navigating somewhere that has no
+   * profile on it.
+   */
+  test("CLICK-THROUGH: with a platform session, Profile lands on the card", () => {
+    platformGateRef.value = "full";
+    render(createElement(PreferencesMenuContent, contentProps));
+    fireEvent.click(screen.getByText("Profile"));
+    expect(navigations).toContain("/assistant/settings/general#profile");
+  });
+
+  test("without one, Profile is DISABLED and says why — it does not navigate", () => {
+    // `usePlatformGate` is mocked "gated" by default: this is the owner's own
+    // self-hosted instance, where the Profile card never renders at all.
+    platformGateRef.value = "gated";
+    render(createElement(PreferencesMenuContent, contentProps));
+    const row = screen.getByText("Profile").closest("[aria-disabled]");
+    expect(row).not.toBeNull();
+    expect(row?.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(screen.getByText("Profile"));
+    expect(navigations).toHaveLength(0);
+  });
+
+  test("the disabled Profile row carries a glyph, not just a tint", () => {
+    // No state in this app is distinguished by colour alone.
+    platformGateRef.value = "gated";
+    render(createElement(PreferencesMenuContent, contentProps));
+    const row = screen.getByText("Profile").closest("[aria-disabled]");
+    expect(row?.textContent).toContain("⊘");
+  });
+
+  test("the reason is reachable by a screen reader, not only on hover", () => {
+    platformGateRef.value = "gated";
+    render(createElement(PreferencesMenuContent, contentProps));
+    const row = screen.getByText("Profile").closest("[aria-disabled]");
+    expect(row?.textContent).toContain("Cue has no profile page");
+    expect(row?.getAttribute("title")).toContain("Cue has no profile page");
   });
 
   test("a narrow MOUSE window keeps the segment", () => {

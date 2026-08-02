@@ -203,8 +203,30 @@ export interface SidebarDestination {
 
 export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
   {
-    // Gated — see `shouldShowPeopleRow`. The row is built and wired; whether
-    // it renders is a question about the data, asked at runtime.
+    /**
+     * **Ungated, by an explicit owner decision that overrules design.**
+     *
+     * There used to be a `shouldShowPeopleRow` predicate here, and a
+     * `usePeopleSignal` hook feeding it, implementing design's ruling:
+     * *"Promote it when contact memories are non-zero and growing
+     * week-over-week — not when the code ships. A prominent destination with 2
+     * rows teaches people the slot is worthless."*
+     *
+     * The owner overruled that directly: *"people is still buried and should
+     * be out near library as we want to surface that. i know its showing more
+     * domains vs people now but i believe over time that will clutter out and
+     * it's nice for people to think this is a crm / people system that will
+     * learn and grow."* A People surface that visibly fills in over time is
+     * worth more to him than a hidden one, and that is his call to make.
+     *
+     * **The gate and its hook were DELETED, not left returning true.** A
+     * predicate that exists but never closes is worse than no predicate: the
+     * next reader assumes it works, and the round after that someone "fixes"
+     * it back into a gate. If this ever needs gating again it should be
+     * rewritten deliberately, against whatever the rule is then — not
+     * resurrected from a stub. The count beside the row (a real contact count,
+     * queried) is what tells the truth about how full the surface is.
+     */
     key: "people",
     label: "People",
     to: routes.people,
@@ -279,59 +301,6 @@ export const CUE_NAV: readonly CueDestination[] = [
     match: () => false,
   },
 ] as const;
-
-// --- The People gate --------------------------------------------------------
-
-/**
- * Whether the People row has earned its slot.
- *
- * Design's ruling, verbatim: *"Promote it when contact memories are non-zero
- * and growing week-over-week — not when the code ships. A prominent
- * destination with 2 rows teaches people the slot is worthless."* The live
- * instance has 2 contacts and 0 memories, because contact extraction ran 697
- * times and wrote nothing.
- *
- * So this is **one predicate over real, fetched numbers** — not a commented-out
- * block and not a hardcoded `false`. When extraction starts working, the row
- * appears on its own; nobody has to remember to come back here. And if someone
- * wants it sooner, there is exactly one function to change.
- *
- * **What this can and cannot see.** "Non-zero" is checkable from the client and
- * is what this enforces. "Growing week-over-week" is not — no endpoint reports
- * a contact-memory time series — so it is deliberately NOT approximated here.
- * Treat this as the necessary half of design's condition: it will not promote
- * People while the slot is worthless, but a human still owns the judgement
- * that the trend is real.
- */
-export interface PeopleSignal {
-  /** Contacts that are neither the assistant nor the guardian. */
-  contactCount: number;
-  /**
-   * Relationship memories observed across the sampled contacts. See
-   * `use-people-signal.ts` for why this is a sample rather than a total.
-   */
-  memoryCount: number;
-}
-
-/**
- * Memories required before People is a destination rather than an empty room.
- *
- * One. The bar is deliberately "extraction has ever written anything", because
- * the failure this guards against is a *silent* pipeline, not a small one.
- */
-export const PEOPLE_ROW_MIN_MEMORIES = 1;
-
-export function shouldShowPeopleRow(
-  signal: PeopleSignal | null | undefined,
-): boolean {
-  // No signal yet (no assistant, first paint, a failed read) is not evidence
-  // of data. Withholding the row costs a click; showing an empty one costs
-  // trust in every other row beside it.
-  if (!signal) return false;
-  return (
-    signal.contactCount > 0 && signal.memoryCount >= PEOPLE_ROW_MIN_MEMORIES
-  );
-}
 
 // --- The door ---------------------------------------------------------------
 

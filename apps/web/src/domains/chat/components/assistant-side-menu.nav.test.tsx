@@ -21,7 +21,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { createElement } from "react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 
 const ASSISTANT_ID = "asst-1";
 const okResponse = { response: new Response(), error: undefined };
@@ -47,9 +47,8 @@ let interactions: { requestId: string; toolName?: string }[] = [];
 let projectsFail = false;
 
 /**
- * The People row's gate reads live data — contacts, and the relationship
- * memories extraction has written against them. These two refs are the whole
- * input; `shouldShowPeopleRow` is the whole rule.
+ * The People row renders unconditionally now (the gate was removed by owner
+ * decision); what the contacts read still decides is the BADGE beside it.
  */
 interface FakeContact {
   id: string;
@@ -60,7 +59,7 @@ interface FakeContact {
   channels: unknown[];
 }
 let contacts: FakeContact[] = [];
-let contactMemories: Record<string, { id: string }[]> = {};
+let contactsFail = false;
 
 const sdkActual = await import("@/generated/daemon/sdk.gen");
 mock.module("@/generated/daemon/sdk.gen", () => ({
@@ -87,15 +86,15 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
     data: { interactions },
     ...okResponse,
   })),
-  contactsGet: mock(async () => ({ data: { contacts }, ...okResponse })),
-  contactsByIdMemoryGet: mock(async (options?: { path?: { id?: string } }) => ({
-    data: { memory: contactMemories[options?.path?.id ?? ""] ?? [] },
-    ...okResponse,
-  })),
+  contactsGet: mock(async () => {
+    if (contactsFail) throw new Error("daemon unreachable");
+    return { data: { contacts }, ...okResponse };
+  }),
 }));
 
 const { AssistantSideMenu } = await import("./assistant-side-menu");
 const { useRailPeekStore } = await import("@/components/nav/rail-peek-store");
+const { routes } = await import("@/utils/routes");
 
 function renderRail(pathname = "/assistant/hq") {
   return render(
@@ -121,6 +120,45 @@ function renderRail(pathname = "/assistant/hq") {
   );
 }
 
+/**
+ * Render the rail and hand back a reader for the router's CURRENT pathname.
+ *
+ * This is the difference between "the row is on screen" and "the row works".
+ * The rail already shipped a row that rendered and navigated in a circle
+ * ("All conversations"), and the fix that caught it was exactly this: click the
+ * row, then assert where you ended up.
+ */
+function renderRailWithLocation(pathname = "/assistant/hq"): () => string {
+  let current = pathname;
+  function LocationProbe() {
+    current = useLocation().pathname;
+    return null;
+  }
+  render(
+    createElement(
+      QueryClientProvider,
+      {
+        client: new QueryClient({
+          defaultOptions: { queries: { retry: false } },
+        }),
+      },
+      createElement(
+        MemoryRouter,
+        { initialEntries: [pathname] },
+        createElement(LocationProbe),
+        createElement(AssistantSideMenu, {
+          assistantId: ASSISTANT_ID,
+          collapsed: false,
+          variant: "rail" as const,
+          conversations: [],
+          onSelectConversation: () => undefined,
+        }),
+      ),
+    ),
+  );
+  return () => current;
+}
+
 /** Open a section by clicking its disclosure, then wait for the lane to load. */
 async function expand(label: "HQ" | "Work") {
   fireEvent.click(screen.getByLabelText(`Show what's in ${label}`));
@@ -139,13 +177,13 @@ afterEach(() => {
   interactions = [];
   projectsFail = false;
   contacts = [];
-  contactMemories = {};
+  contactsFail = false;
   globalThis.localStorage?.clear();
   cleanup();
 });
 
-/** A contact with `memories` relationship memories written against it. */
-function seedContact(id: string, memories: number): void {
+/** One person Cue knows. The rail's People badge counts these. */
+function seedContact(id: string): void {
   contacts.push({
     id,
     displayName: id,
@@ -154,9 +192,6 @@ function seedContact(id: string, memories: number): void {
     lastInteraction: 1,
     channels: [],
   });
-  contactMemories[id] = Array.from({ length: memories }, (_, i) => ({
-    id: `${id}-m${i}`,
-  }));
 }
 
 describe("the rail's top three match the phone's three tabs", () => {
@@ -271,50 +306,97 @@ describe("one column, five rows, a door", () => {
   });
 });
 
-describe("the People row is gated on real data", () => {
-  test("absent while extraction has written nothing", async () => {
-    // The live instance: 2 contacts, 0 memories. Contact extraction ran 697
-    // times, completed every time, and wrote nothing — this is that state.
-    seedContact("ada", 0);
-    seedContact("grace", 0);
+describe("People is a permanent row, and it navigates", () => {
+  // The gate is gone by explicit owner decision — see `SIDEBAR_DESTINATIONS`
+  // in `nav-model.ts`. These tests are what stops it coming back: the row must
+  // render with no contacts, with unreadable contacts, and with a full book.
+
+  test("renders with zero contacts — an empty CRM is still a CRM", async () => {
     renderRail();
     await waitFor(() => {
       expect(screen.getByText("Library")).toBeDefined();
     });
-    expect(screen.queryByText("People")).toBeNull();
+    expect(screen.getByText("People")).toBeDefined();
   });
 
-  test("absent with no contacts at all", async () => {
+  test("renders even when the contact read fails outright", async () => {
+    contactsFail = true;
     renderRail();
     await waitFor(() => {
       expect(screen.getByText("Library")).toBeDefined();
     });
-    expect(screen.queryByText("People")).toBeNull();
+    expect(screen.getByText("People")).toBeDefined();
   });
 
-  test("present once a real memory exists against a real contact", async () => {
-    seedContact("ada", 3);
-    seedContact("grace", 0);
+  test("sits beside Library, People first", async () => {
+    renderRail();
+    await waitFor(() => {
+      expect(screen.getByText("Library")).toBeDefined();
+    });
+    const rows = screen.getAllByText(/^(People|Library)$/);
+    expect(rows.map((n) => n.textContent)).toEqual(["People", "Library"]);
+  });
+
+  test("CLICK-THROUGH: the row lands on the People surface", async () => {
+    // The failure this guards against is the one that shipped "All
+    // conversations" dead: a row that renders is not a row that navigates.
+    const at = renderRailWithLocation();
+    await waitFor(() => {
+      expect(screen.getByText("People")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("People"));
+    await waitFor(() => {
+      expect(at()).toBe(routes.people);
+    });
+  });
+
+  test("CLICK-THROUGH: it does NOT land on the retired Memory tab", async () => {
+    // Two pages called People at two URLs was the duplicate nav this round
+    // removed. `/assistant/memory/people` is a redirect now, not a door.
+    const at = renderRailWithLocation();
+    await waitFor(() => {
+      expect(screen.getByText("People")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("People"));
+    await waitFor(() => {
+      expect(at()).not.toBe("/assistant/memory/people");
+    });
+  });
+
+  test("CLICK-THROUGH: Library still lands on Library", async () => {
+    const at = renderRailWithLocation();
+    await waitFor(() => {
+      expect(screen.getByText("Library")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("Library"));
+    await waitFor(() => {
+      expect(at()).toBe(routes.library.root);
+    });
+  });
+
+  test("the badge is the contact count, and never renders a zero", async () => {
+    seedContact("ada");
+    seedContact("grace");
+    renderRail();
+    await waitFor(() => {
+      expect(screen.getByText("2")).toBeDefined();
+    });
+  });
+
+  test("no badge at all while the count is unreadable", async () => {
+    // "Nobody yet" and "I could not ask" are different answers, and a `0`
+    // beside the row would assert the first while meaning the second.
+    contactsFail = true;
     renderRail();
     await waitFor(() => {
       expect(screen.getByText("People")).toBeDefined();
     });
+    const row = screen.getByText("People").closest("button");
+    expect(row?.textContent).toBe("People");
   });
 
-  test("the badge counts contacts, and never renders a zero", async () => {
-    seedContact("ada", 1);
-    seedContact("grace", 1);
-    renderRail();
-    await waitFor(() => {
-      expect(screen.getByText("People")).toBeDefined();
-    });
-    expect(screen.getByText("2")).toBeDefined();
-  });
-
-  test("the assistant and the guardian are not contacts for this purpose", async () => {
-    // Otherwise a fresh install clears the gate with two rows that are both
-    // you — which is precisely the "prominent destination with 2 rows" design
-    // refused to ship.
+  test("the assistant and the guardian are not counted as people", async () => {
+    // Otherwise a fresh install claims two people, both of whom are you.
     contacts.push(
       {
         id: "self",
@@ -333,13 +415,12 @@ describe("the People row is gated on real data", () => {
         channels: [],
       },
     );
-    contactMemories.self = [{ id: "x" }];
-    contactMemories.me = [{ id: "y" }];
     renderRail();
     await waitFor(() => {
-      expect(screen.getByText("Library")).toBeDefined();
+      expect(screen.getByText("People")).toBeDefined();
     });
-    expect(screen.queryByText("People")).toBeNull();
+    const row = screen.getByText("People").closest("button");
+    expect(row?.textContent).toBe("People");
   });
 });
 

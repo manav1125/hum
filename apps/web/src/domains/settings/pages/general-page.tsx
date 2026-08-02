@@ -258,6 +258,18 @@ export function GeneralPage() {
     });
   }, [assistant]);
 
+  // `#profile` — the account line in the sidebar footer sends you here when it
+  // is asked for "your profile". There is no profile PAGE in this app (see
+  // `preferences-menu.tsx`); the closest honest thing is this card, so the link
+  // scrolls to it rather than dropping you at the top of Appearance settings
+  // and leaving you to find it.
+  useEffect(() => {
+    if (window.location.hash !== "#profile") return;
+    requestAnimationFrame(() => {
+      document.getElementById("profile")?.scrollIntoView({ block: "start" });
+    });
+  }, []);
+
   return (
     <div className="space-y-4">
       {diskPressure.status && diskPressure.mode !== "inactive" && (
@@ -288,7 +300,14 @@ export function GeneralPage() {
 
       {isAuthenticated && platformGate === "full" && (
         // Handles are platform-only — withhold the prop for self-hosted assistants.
-        <ProfileCard assistant={isPlatformHosted ? platformAssistant : null} />
+        // The `#profile` anchor is the sidebar account line's landing target;
+        // this card is the nearest thing the app has to an owner profile, and it
+        // only exists when there is a platform account behind it.
+        <div id="profile">
+          <ProfileCard
+            assistant={isPlatformHosted ? platformAssistant : null}
+          />
+        </div>
       )}
 
       {infraGate === "full" && assistant && (
