@@ -538,10 +538,14 @@ export function deliverySentence(
       : `${n} ${n === 1 ? "thing needs" : "things need"} you.`;
   }
   if (d === 0) {
-    if (n == null) return "Nothing has finished yet.";
+    // First person, and the obligation is not the headline. "Nothing has
+    // finished yet — 13 need you" opens the product on an accusation, which is
+    // the inbox feeling the delivered-first rule exists to remove. Owning the
+    // empty result is honest; leading with the reader's debt is not.
+    if (n == null) return "I haven't finished anything yet.";
     return n === 0
       ? "Nothing needs you. I'll bring you something when it lands."
-      : `Nothing has finished yet — ${n} ${n === 1 ? "needs" : "need"} you.`;
+      : `I haven't finished anything yet — ${n} still ${n === 1 ? "needs" : "need"} you.`;
   }
   const done = `${lead}: ${d} done`;
   if (n == null) return `${done}.`;

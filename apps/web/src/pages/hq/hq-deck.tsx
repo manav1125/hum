@@ -274,10 +274,19 @@ export function arrivalsSentence(summary: ArrivalsSummary): string {
     // when the truth is that observation is switched off.
     return "Nothing has arrived — because nothing is watching, not because it's quiet.";
   }
-  const did = `${total} arrived — Cue filed ${filed}${kept > 0 ? `, kept ${kept} for you` : ""}`;
+  // First person for Cue's own actions (§6.2) — "Cue filed" is the passive
+  // voice products hide in, and this is a claim about what Cue did.
+  //
+  // "kept for you" deliberately no longer says "need a decision". That set is
+  // NOT the needs-you set, and the deck was showing both on one screen: a
+  // headline of "13 need you" above a line reading "180 need a decision". Both
+  // numbers were true and measuring different things, which to a reader is
+  // simply a contradiction. Only the needs-you set gets the word "need"
+  // (invariant 2 — one definition, shared by badge, headline and rows).
+  const did = `${total} arrived — I filed ${filed}${kept > 0 ? `, kept ${kept} for you` : ""}`;
   return kept > 0
-    ? `${did}. ${kept} ${kept === 1 ? "needs" : "need"} a decision · nothing lost.`
-    : `${did}. Nothing needs you · nothing lost.`;
+    ? `${did}. ${kept === 1 ? "It's" : "They're"} in the lane, nothing lost.`
+    : `${did} · nothing lost.`;
 }
 
 // ---------------------------------------------------------------------------

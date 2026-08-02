@@ -190,18 +190,35 @@ describe("arrivalsSentence — 40 arrivals must not become 40 cards", () => {
     expect(text).toContain("kept 14");
   });
 
-  test("only the uncertain count is framed as needing the user", () => {
-    // The whole point: 119 arrived but 14 need a decision. Presenting all 119
-    // as things to look at is an inbox with extra steps.
-    expect(arrivalsSentence({ total: 119, filed: 46, kept: 14 })).toContain(
-      "14 need a decision",
-    );
+  test("NEVER says 'need' — that word belongs to the needs-you set", () => {
+    // Seen on the real deck: a headline reading "13 need you" above this line
+    // reading "180 need a decision". Both numbers were true and measuring
+    // different things, which to a reader is just a contradiction. Invariant 2
+    // gives "needs you" exactly one definition shared by badge, headline and
+    // rows — so nothing else may borrow the word.
+    for (const summary of [
+      { total: 119, filed: 46, kept: 14 },
+      { total: 27, filed: 27, kept: 0 },
+      { total: 256, filed: 76, kept: 180 },
+    ]) {
+      expect(arrivalsSentence(summary)).not.toMatch(/\bneeds?\b/i);
+    }
   });
 
-  test("nothing uncertain reads as nothing needing you", () => {
-    const text = arrivalsSentence({ total: 27, filed: 27, kept: 0 });
-    expect(text).toContain("Nothing needs you");
-    expect(text).not.toContain("kept");
+  test("speaks in the first person about its own filing", () => {
+    // "Cue filed 46" is the passive voice products hide in. §6.2: first person
+    // for its own actions, always.
+    const text = arrivalsSentence({ total: 119, filed: 46, kept: 14 });
+    expect(text).toContain("I filed 46");
+    expect(text).not.toContain("Cue filed");
+  });
+
+  test("still accounts for the kept pile rather than dropping it", () => {
+    const text = arrivalsSentence({ total: 119, filed: 46, kept: 14 });
+    expect(text).toContain("kept 14");
+    expect(arrivalsSentence({ total: 27, filed: 27, kept: 0 })).not.toContain(
+      "kept",
+    );
   });
 
   test("always promises nothing was lost", () => {
