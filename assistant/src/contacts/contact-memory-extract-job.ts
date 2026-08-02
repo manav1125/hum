@@ -78,8 +78,23 @@ const log = getLogger("contact-memory-extract");
  */
 const ENQUEUE_DEBOUNCE_MS = 1_000;
 
-/** Flash extraction must not dawdle. */
-const EXTRACTION_TIMEOUT_MS = 12_000;
+/**
+ * Wall-clock budget for the flash extraction call.
+ *
+ * This was 12 seconds, on the note "flash extraction must not dawdle". The
+ * configured flash model is a reasoning model: measured against the same call
+ * site on the owner's production data, a batch of real material spends most of
+ * its completion on reasoning tokens and answers in 8–61 seconds. Twelve
+ * seconds does not ask it to hurry — it guarantees it is cut off, and a cut-off
+ * call returns no text, which this job reads as "no durable facts found" and
+ * records as a completed extraction.
+ *
+ * That is the shape behind 697 completed extraction jobs that wrote zero
+ * memories. The budget must sit above what the model actually costs, or the
+ * job is a no-op that reports success. Kept in step with the auto-filer's
+ * budget in `work-items/work-item-auto-file.ts`, which had the identical bug.
+ */
+const EXTRACTION_TIMEOUT_MS = 90_000;
 
 /** Max messages of transcript to feed the extractor (recent tail). */
 const MAX_TRANSCRIPT_MESSAGES = 40;
@@ -431,7 +446,16 @@ function recordConversationRun(outcome: ContactMemoryExtractOutcome): void {
   evaluateDegraded();
 
   // The line that was missing for 697 jobs.
-  if (health.consecutiveUnidentified === UNIDENTIFIED_CONVERSATION_WARN_AT) {
+  //
+  // `%`, not `===`. The counter only ever climbs, so an equality test fires on
+  // exactly one job and then goes quiet for every job after it — which is
+  // close enough to silent for a run of hundreds, and silence is the failure
+  // this block was added to end. Repeating on the interval keeps the log
+  // proportional to how long the problem has lasted.
+  if (
+    health.consecutiveUnidentified >= UNIDENTIFIED_CONVERSATION_WARN_AT &&
+    health.consecutiveUnidentified % UNIDENTIFIED_CONVERSATION_WARN_AT === 0
+  ) {
     log.warn(
       {
         consecutiveUnidentified: health.consecutiveUnidentified,
@@ -503,6 +527,8 @@ export type ContactMemoryExtractOutcome =
   | { kind: "not_identified" }
   | { kind: "no_transcript" }
   | { kind: "no_provider" }
+  /** The model was reached and returned no text at all. Never a result. */
+  | { kind: "empty_reply" }
   | { kind: "extracted"; contactId: string; savedCount: number };
 
 /**
@@ -518,7 +544,7 @@ async function extractAndPersist(args: {
   transcript: string;
   /** What `contact_memory.source_ref` records, for provenance. */
   sourceRef: string;
-}): Promise<{ saved: number } | { noProvider: true }> {
+}): Promise<{ saved: number } | { noProvider: true } | { emptyReply: true }> {
   const existing = listContactMemory(args.contactId).map((m) => m.statement);
 
   const provider = await getConfiguredProvider("conversationTitle");
@@ -541,6 +567,25 @@ async function extractAndPersist(args: {
     maxTokens: resolved.maxTokens,
     timeoutMs: EXTRACTION_TIMEOUT_MS,
   });
+
+  // "The model said there is nothing durable here" and "the model said
+  // nothing" are different answers, and only the first one is a result. An
+  // empty reply is what a cut-off call looks like, so folding it into
+  // `saved: 0` is what let a broken budget read as 697 quiet weeks.
+  if (result.text.trim().length === 0) {
+    log.warn(
+      {
+        contactId: args.contactId,
+        stopReason: result.response?.stopReason ?? null,
+        outputTokens: result.response?.usage?.outputTokens ?? null,
+        reasoningTokens: result.response?.usage?.reasoningTokens ?? null,
+        budgetMs: EXTRACTION_TIMEOUT_MS,
+        transcriptChars: args.transcript.length,
+      },
+      "contact-memory extraction got an empty reply — nothing was learned, and this is not the same as finding nothing",
+    );
+    return { emptyReply: true };
+  }
 
   const facts = dedupeFacts(parseExtractionResponse(result.text), existing);
   if (facts.length === 0) return { saved: 0 };
@@ -622,6 +667,7 @@ async function runContactMemoryExtractionInner(
     );
     return { kind: "no_provider" };
   }
+  if ("emptyReply" in result) return { kind: "empty_reply" };
 
   return {
     kind: "extracted",
@@ -640,6 +686,8 @@ export type ContactCorrespondenceOutcome =
   | { kind: "no_correspondence" }
   | { kind: "already_read" }
   | { kind: "no_provider" }
+  /** The model was reached and returned no text at all. Never a result. */
+  | { kind: "empty_reply" }
   | { kind: "extracted"; contactId: string; savedCount: number };
 
 /**
@@ -687,6 +735,11 @@ export async function runContactCorrespondenceExtraction(
     sourceRef: `correspondence:${contactId}`,
   });
   if ("noProvider" in result) return { kind: "no_provider" };
+  // An empty reply is not a pass. Advancing here would mark this contact's
+  // mail as read on the strength of a call that produced nothing, and the
+  // cursor only moves forward — every message it skipped would be
+  // unreachable for good.
+  if ("emptyReply" in result) return { kind: "empty_reply" };
 
   // Advance the cursor on a completed pass whatever it yielded: "their mail
   // holds nothing durable" is a real answer, and re-asking it every sweep

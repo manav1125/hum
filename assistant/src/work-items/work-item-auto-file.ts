@@ -35,6 +35,11 @@
  *   - One batched LLM call per sweep, capped at {@link MAX_ITEMS_PER_SWEEP}
  *     items; the sweep is skipped outright when there are no unfiled items or
  *     no active projects. One summary log line per productive sweep.
+ *   - THE POOL ALWAYS MOVES. The slice is oldest-first, and a scorer miss
+ *     stamps nothing, so a batch that cannot be scored would otherwise be
+ *     re-offered forever with the whole pool queued behind it. Repeated
+ *     misses shrink the batch and then rotate the window — see
+ *     {@link sweepWindow}.
  *   - Never throws: per-item and sweep-level failures log and degrade to
  *     "item stays unfiled" (daemon startup philosophy).
  *
@@ -69,11 +74,34 @@ export const AUTO_FILED_BY_CUE = "cue";
  */
 export const AUTO_FILE_USER_UNFILED = "user_unfiled";
 
-/** At most this many unfiled items are scored per sweep (one LLM call). */
-export const MAX_ITEMS_PER_SWEEP = 20;
+/**
+ * At most this many unfiled items are scored per sweep (one LLM call).
+ *
+ * Measured on the owner's production batch against the configured flash model
+ * (DeepSeek V4 Flash): 20 real items cost 3,147 completion tokens — 2,242 of
+ * them REASONING tokens — and 61 seconds. Real captured work is ambiguous, so
+ * the model deliberates; the synthetic batches this was sized against were
+ * not, and answered in eight. Eight items keeps a sweep inside its deadline
+ * with margin, and a batch that does fail costs eight items of progress
+ * instead of twenty.
+ */
+export const MAX_ITEMS_PER_SWEEP = 8;
 
-/** The batched flash call must not dawdle — a missed sweep just waits 5 min. */
-const AUTO_FILE_TIMEOUT_MS = 20_000;
+/**
+ * Wall-clock budget for the batched flash call.
+ *
+ * This was 20 seconds, on the reasoning that "a missed sweep just waits 5
+ * min". That reasoning has a hole in it: the sweep always re-offers the SAME
+ * oldest-first slice, so a batch that cannot finish in the budget does not
+ * wait five minutes — it never completes, and every item behind it is
+ * blocked forever. On production it aborted 12 sweeps out of 12, at a dead
+ * constant 20.000s after each tick, for as long as anyone cared to look.
+ *
+ * Sized off the measured 61s worst case with room over it, and kept strictly
+ * below {@link SCORER_DEADLINE_MS} so the inner budget is what fires first and
+ * the outer one stays a genuine backstop.
+ */
+const AUTO_FILE_TIMEOUT_MS = 90_000;
 
 /**
  * Hard deadline on the whole scorer (provider resolution + the LLM call).
@@ -81,8 +109,12 @@ const AUTO_FILE_TIMEOUT_MS = 20_000;
  * stall for minutes on a key-less daemon while platform auth times out. A
  * sweep must always terminate — on deadline it degrades to "file nothing"
  * exactly like a scorer failure.
+ *
+ * Must stay above {@link AUTO_FILE_TIMEOUT_MS}: this one exists to catch the
+ * stalls the send budget cannot see, so if it fired first every slow call
+ * would be reported as a resolution stall.
  */
-const SCORER_DEADLINE_MS = 90_000;
+const SCORER_DEADLINE_MS = 120_000;
 
 /** Cap on how much of a project brief is quoted into the prompt. */
 const BRIEF_SNIPPET_CHARS = 300;
@@ -223,6 +255,7 @@ async function scoreWithFlashLlm(
   items: ScorableItem[],
   projects: Project[],
 ): Promise<AutoFileAssignment[] | null> {
+  const startedAt = Date.now();
   try {
     const provider = await getConfiguredProvider("conversationTitle");
     if (!provider) {
@@ -254,8 +287,27 @@ async function scoreWithFlashLlm(
       // The model answered and we could not use a word of it. Distinct from a
       // thrown call and from "no provider", and it was previously silent —
       // an empty parse looked exactly like a scorer that judged nothing.
+      //
+      // The fields matter as much as the line. This warning fired every five
+      // minutes for half a day saying only "replyChars: 0", which reads as
+      // "the model returned nothing" and sent the investigation at the model.
+      // The model was fine: the call was being cut off at the send budget
+      // before it emitted its first content token, and a truncated reply and
+      // an aborted one are not the same defect. `stopReason` separates them,
+      // `elapsedMs` shows the budget, and `reasoningTokens` shows where the
+      // completion went — this model spends most of its output reasoning, so a
+      // maxTokens that looks generous can still leave no room for an answer.
       log.warn(
-        { items: items.length, replyChars: result.text?.length ?? 0 },
+        {
+          items: items.length,
+          replyChars: result.text?.length ?? 0,
+          stopReason: result.response?.stopReason ?? null,
+          elapsedMs: Date.now() - startedAt,
+          budgetMs: AUTO_FILE_TIMEOUT_MS,
+          maxTokens: resolved.maxTokens,
+          outputTokens: result.response?.usage?.outputTokens ?? null,
+          reasoningTokens: result.response?.usage?.reasoningTokens ?? null,
+        },
         "auto-file scored nothing usable from the model's reply",
       );
     }
@@ -268,7 +320,12 @@ async function scoreWithFlashLlm(
     // same as making its cause observable, and this file is where that lesson
     // was supposed to have landed.
     log.warn(
-      { err: String(err), items: items.length },
+      {
+        err: String(err),
+        items: items.length,
+        elapsedMs: Date.now() - startedAt,
+        budgetMs: AUTO_FILE_TIMEOUT_MS,
+      },
       "auto-file flash scoring failed",
     );
     return null;
@@ -445,6 +502,57 @@ function isSweepCandidate(item: WorkItem): boolean {
 }
 
 /**
+ * Consecutive sweeps that reached the scorer and got nothing back.
+ *
+ * The sweep takes the oldest slice of the waiting pool, and a scorer miss
+ * stamps nothing — so without this counter the next sweep offers the SAME
+ * slice, and the one after that, forever. One unscoreable batch does not cost
+ * five minutes; it costs every item behind it, permanently. That is how a
+ * too-tight send budget turned into half a day of a filer that ran 12 times,
+ * logged 12 successes' worth of activity, and filed nothing.
+ *
+ * Reset by any scorer answer at all, including "no project fits" — the counter
+ * tracks whether the scorer is REACHABLE, not whether it liked the items.
+ */
+let consecutiveScorerMisses = 0;
+
+/** After this many misses running, stop re-offering the same head slice. */
+export const MISSES_BEFORE_ROTATE = 3;
+
+/**
+ * Which slice of the waiting pool this sweep should try.
+ *
+ * Two escapes, in order, because the two failure shapes need different ones:
+ *
+ * 1. **Shrink.** A batch can be unscoreable because it is too big — more items
+ *    means more deliberation, and the model's answer has to land inside the
+ *    send budget. Halving per miss (8 → 4 → 2 → 1) walks down to a size that
+ *    fits, and incidentally isolates a single bad item if that is the cause.
+ * 2. **Rotate.** If even one item at a time will not score, the item itself is
+ *    the problem, and the rest of the pool must not wait behind it. Past
+ *    {@link MISSES_BEFORE_ROTATE} the window walks forward so every item gets
+ *    a turn; the skipped head comes back round on a later sweep.
+ *
+ * Both are pure functions of the miss count, so a healthy filer always runs
+ * the plain oldest-first full batch.
+ */
+export function sweepWindow(
+  candidateCount: number,
+  misses: number,
+): { offset: number; size: number } {
+  const shrink = Math.min(Math.max(misses, 0), 3);
+  const size = Math.max(1, MAX_ITEMS_PER_SWEEP >> shrink);
+  if (misses <= MISSES_BEFORE_ROTATE || candidateCount === 0) {
+    return { offset: 0, size };
+  }
+  // Walk forward a slice per extra miss, wrapping so the window stays inside
+  // the pool. `% candidateCount` (not `% (count - size)`) keeps the last
+  // partial window reachable rather than skipping the tail.
+  const step = misses - MISSES_BEFORE_ROTATE;
+  return { offset: (step * size) % candidateCount, size };
+}
+
+/**
  * One sweep over the unfiled queued lane. Exported for tests and never
  * rejects — all failures degrade to "item stays unfiled".
  *
@@ -469,10 +577,27 @@ export async function sweepUnfiledWorkItems(
       .filter(isSweepCandidate)
       .sort((a, b) => a.createdAt - b.createdAt);
     result.candidates = candidates.length;
-    const unfiled = candidates.slice(0, MAX_ITEMS_PER_SWEEP);
+    const { offset, size } = sweepWindow(
+      candidates.length,
+      consecutiveScorerMisses,
+    );
+    const unfiled = candidates.slice(offset, offset + size);
     if (unfiled.length === 0) {
       result.outcome = "no_candidates";
       return result;
+    }
+    if (offset > 0 || size < MAX_ITEMS_PER_SWEEP) {
+      // Say it out loud. A filer quietly working a 1-item window 40 rows into
+      // the pool looks identical, from its own INFO lines, to a healthy one.
+      log.warn(
+        {
+          offset,
+          size,
+          candidates: candidates.length,
+          consecutiveScorerMisses,
+        },
+        "auto-file is working a reduced window after repeated scorer misses",
+      );
     }
 
     const projects = listProjects();
@@ -488,10 +613,15 @@ export async function sweepUnfiledWorkItems(
     // Deadline-raced: a stalled provider resolution must not wedge the sweep.
     const assignments = await raceScorerDeadline(scorer(unfiled, projects));
     if (!assignments) {
+      consecutiveScorerMisses++;
       result.skipped = unfiled.length;
       result.outcome = "scorer_miss";
       return result;
     }
+    // The scorer answered. "No project fits" is an answer, so this resets even
+    // when nothing moves — the counter exists to unstick an unreachable
+    // scorer, not to punish a batch the model declined to file.
+    consecutiveScorerMisses = 0;
 
     const byId = new Map(assignments.map((a) => [a.id, a]));
     for (const item of unfiled) {
@@ -709,6 +839,10 @@ export function resetAutoFilerForTests(): void {
   health = freshHealth();
   sweepInFlight = false;
   sweepGeneration++;
+  // The miss counter is module state too, and it changes which slice the next
+  // sweep takes — a test that leaves it set silently moves the window for the
+  // next test's fixture.
+  consecutiveScorerMisses = 0;
 }
 
 /**

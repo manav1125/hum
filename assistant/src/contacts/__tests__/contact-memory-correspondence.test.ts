@@ -408,6 +408,64 @@ describe("contact_memory_sweep, driven through the job worker", () => {
     expect(contactMemoryRows()).toHaveLength(2);
   });
 
+  test("an empty model reply does not burn the cursor", async () => {
+    // The defect this guards: the send budget was 12s against a reasoning
+    // model that needs tens of seconds, so the call was cut off and returned
+    // no text. The job read that as "their mail holds nothing durable",
+    // advanced the per-contact cursor, and reported a completed extraction.
+    //
+    // The cursor only moves forward. So every message it skipped on the
+    // strength of a call that never answered became unreachable — the pass
+    // could not learn from that mail again even once the budget was fixed.
+    // "The model said nothing" is not "there was nothing to say".
+    seedArrival({
+      address: "ada@example.com",
+      senderName: "Ada Byron",
+      title: "Something worth remembering",
+      snippet: "I only take meetings before ten.",
+    });
+
+    mockSidechainText = ""; // what a cut-off call returns
+    const first = await runContactMemorySweep();
+    expect(sidechainCalls).toBe(1);
+    expect(contactMemoryRows()).toHaveLength(0);
+    // Not counted as a contact successfully read.
+    expect(first.saved).toBe(0);
+
+    // The same mail must still be on offer once the model can answer.
+    mockSidechainText = JSON.stringify([
+      {
+        statement: "Only takes meetings before ten",
+        kind: "preference",
+        confidence: 0.9,
+      },
+    ]);
+    await runContactMemorySweep();
+    expect(sidechainCalls).toBe(2);
+    expect(contactMemoryRows()).toHaveLength(1);
+  });
+
+  test("a genuinely empty ARRAY is a real answer and does advance the cursor", async () => {
+    // The other half of the distinction. A model that reads the mail and
+    // reports nothing durable has done its job; re-asking every sweep would
+    // spend a flash call forever to learn the same thing. Only a reply with
+    // no text at all is treated as a non-answer.
+    seedArrival({
+      address: "grace@example.com",
+      senderName: "Grace Hopper",
+      title: "Lunch",
+      snippet: "See you at one.",
+    });
+
+    mockSidechainText = "[]";
+    await runContactMemorySweep();
+    expect(sidechainCalls).toBe(1);
+
+    const second = await runContactMemorySweep();
+    expect(sidechainCalls).toBe(1);
+    expect(second.alreadyRead).toBe(1);
+  });
+
   test("a fact is bound to the sender it came from, never to somebody else", async () => {
     seedArrival({
       address: "ada@example.com",
