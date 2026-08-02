@@ -10,8 +10,9 @@
  *      send/stop button, disabled attribute).
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createRef } from "react";
+import { createRef, type ReactNode } from "react";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 
 import type { ChatAttachment } from "@/domains/chat/composer-store";
 import type { VoiceInputButtonHandle } from "@/domains/chat/components/voice-input-button";
@@ -432,28 +433,40 @@ describe("computeGhostSuffix", () => {
 afterEach(cleanup);
 beforeEach(resetLiveVoiceMocks);
 
+/**
+ * The composer's Create chip is a react-router `Link` — a real href, so
+ * cmd-click works — which throws outside a router. The provider contributes no
+ * markup of its own, so the `toContain` assertions below still see exactly the
+ * composer's output.
+ */
+function withRouter(node: ReactNode) {
+  return <MemoryRouter>{node}</MemoryRouter>;
+}
+
 function renderComposer(
   props: Partial<Parameters<typeof ChatComposer>[0]> = {},
 ) {
   const { container } = render(
-    <ChatComposer
-      input=""
-      setInput={() => {}}
-      placeholder="Custom placeholder"
-      onSubmit={() => {}}
-      inputRef={createRef<HTMLTextAreaElement>()}
-      typingDisabled={false}
-      sendDisabled={false}
-      attachmentsUploadingCount={0}
-      canSendAttachments={false}
-      chatAttachments={[]}
-      onAddAttachmentFiles={() => {}}
-      onRemoveAttachment={() => {}}
-      onStopGenerating={() => {}}
-      canStopGenerating={false}
-      assistantId="asst_test"
-      {...props}
-    />,
+    withRouter(
+      <ChatComposer
+        input=""
+        setInput={() => {}}
+        placeholder="Custom placeholder"
+        onSubmit={() => {}}
+        inputRef={createRef<HTMLTextAreaElement>()}
+        typingDisabled={false}
+        sendDisabled={false}
+        attachmentsUploadingCount={0}
+        canSendAttachments={false}
+        chatAttachments={[]}
+        onAddAttachmentFiles={() => {}}
+        onRemoveAttachment={() => {}}
+        onStopGenerating={() => {}}
+        canStopGenerating={false}
+        assistantId="asst_test"
+        {...props}
+      />,
+    ),
   );
   return container.innerHTML;
 }
@@ -683,27 +696,29 @@ function renderVoiceComposer(
   props: Partial<Parameters<typeof ChatComposer>[0]> = {},
 ) {
   return render(
-    <ChatComposer
-      input=""
-      setInput={() => {}}
-      onSubmit={() => {}}
-      inputRef={createRef<HTMLTextAreaElement>()}
-      typingDisabled={false}
-      sendDisabled={false}
-      attachmentsUploadingCount={0}
-      canSendAttachments={false}
-      chatAttachments={[]}
-      onAddAttachmentFiles={() => {}}
-      onRemoveAttachment={() => {}}
-      onStopGenerating={() => {}}
-      canStopGenerating={false}
-      assistantId="asst_test"
-      conversationId="conv_test"
-      voiceInputRef={createRef<VoiceInputButtonHandle>()}
-      onVoiceTranscript={() => {}}
-      onEnterVoiceMode={enterVoiceModeSpy}
-      {...props}
-    />,
+    withRouter(
+      <ChatComposer
+        input=""
+        setInput={() => {}}
+        onSubmit={() => {}}
+        inputRef={createRef<HTMLTextAreaElement>()}
+        typingDisabled={false}
+        sendDisabled={false}
+        attachmentsUploadingCount={0}
+        canSendAttachments={false}
+        chatAttachments={[]}
+        onAddAttachmentFiles={() => {}}
+        onRemoveAttachment={() => {}}
+        onStopGenerating={() => {}}
+        canStopGenerating={false}
+        assistantId="asst_test"
+        conversationId="conv_test"
+        voiceInputRef={createRef<VoiceInputButtonHandle>()}
+        onVoiceTranscript={() => {}}
+        onEnterVoiceMode={enterVoiceModeSpy}
+        {...props}
+      />,
+    ),
   );
 }
 
@@ -879,5 +894,119 @@ describe("ChatComposer — voice-mode entry + transcript", () => {
     expect(dictation.disabled).toBe(false);
     // ...and the transcript surface is unmounted rather than left hanging
     expect(queryByLabelText("Live voice transcript")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Create + Voice — the two labelled composer chips
+//
+// v15 `README.md` l.64: "Create and Voice stay composer chips." They have no
+// rail row on purpose (§9.3 — a thing you *ask for* is a composer chip, not a
+// page), which makes the composer the only place they exist. The previous
+// implementation put Voice in as an unlabelled mic beside the dictation mic:
+// two microphones in a row of four glyphs, and the affordance disappeared.
+// These tests pin the three properties that make them findable — a visible
+// label, a mark that is not the dictation mic's, and the left group.
+// ---------------------------------------------------------------------------
+
+describe("ChatComposer — Create and Voice are findable chips", () => {
+  test("Create is present, labelled, and links to the Create surface", () => {
+    useTurnStore.setState(INITIAL_TURN_STATE);
+    mockVoiceMode = true;
+
+    const { getByRole } = renderVoiceComposer();
+    const create = getByRole("link", { name: "Create" });
+
+    // A visible word, not a glyph to be decoded.
+    expect(create.textContent).toContain("Create");
+    // A real href: cmd-click and middle-click work, which a button would break.
+    expect(create.getAttribute("href")).toBe("/assistant/create");
+  });
+
+  test("Voice is present, labelled, and enters voice mode on click", () => {
+    useTurnStore.setState(INITIAL_TURN_STATE);
+    mockVoiceMode = true;
+    mockLiveVoiceState = "idle";
+
+    const { getByLabelText } = renderVoiceComposer();
+    const voice = getByLabelText("Start voice mode") as HTMLButtonElement;
+
+    // The accessible name was never the problem; the visible one was.
+    expect(voice.textContent).toContain("Voice");
+    fireEvent.click(voice);
+    expect(enterVoiceModeSpy).toHaveBeenCalledTimes(1);
+    // Still an entry point, not an inline session.
+    expect(liveStartSpy).not.toHaveBeenCalled();
+  });
+
+  test("Voice and dictation are two different affordances, not two mics", () => {
+    useTurnStore.setState(INITIAL_TURN_STATE);
+    mockVoiceMode = true;
+
+    const { getByLabelText } = renderVoiceComposer();
+    const voice = getByLabelText("Start voice mode");
+    const dictation = getByLabelText("Start voice input");
+
+    expect(voice).not.toBe(dictation);
+    // The chip carries a word; the dictation button is the bare mic it always
+    // was. That difference is the whole fix.
+    expect(voice.textContent).toContain("Voice");
+    expect(dictation.textContent).not.toContain("Voice");
+  });
+
+  test("the chips sit in the action bar's LEFT group, away from the icon cluster", () => {
+    useTurnStore.setState(INITIAL_TURN_STATE);
+    mockVoiceMode = true;
+
+    const { container, getByLabelText } = renderVoiceComposer();
+    const html = container.innerHTML;
+
+    // Distance from the send/attach cluster is what stops the chips reading as
+    // "one more small round button": Create appears before Send in DOM order.
+    const createIdx = html.indexOf(">Create<");
+    const sendIdx = html.indexOf('aria-label="Send message"');
+    expect(createIdx).toBeGreaterThan(-1);
+    expect(sendIdx).toBeGreaterThan(-1);
+    expect(createIdx).toBeLessThan(sendIdx);
+
+    // ...and they share one parent, so they read as a pair.
+    const voice = getByLabelText("Start voice mode");
+    expect(voice.parentElement?.querySelector("a")?.textContent).toContain(
+      "Create",
+    );
+  });
+
+  test("mid-turn the Voice chip stays put but is inert", () => {
+    // The icon this replaced was *absent* while a turn ran. Keeping the chip
+    // visible holds the composer's geometry still (§8 — fixed furniture)
+    // without granting an entry point that did not exist before.
+    useTurnStore.setState(INITIAL_TURN_STATE);
+    mockVoiceMode = true;
+
+    const { getByLabelText } = renderVoiceComposer({
+      canStopGenerating: true,
+    });
+    const voice = getByLabelText("Start voice mode") as HTMLButtonElement;
+    expect(voice.disabled).toBe(true);
+  });
+
+  test("flag OFF: Create still stands, Voice does not appear", () => {
+    useTurnStore.setState(INITIAL_TURN_STATE);
+    mockVoiceMode = false;
+
+    const { getByRole, queryByLabelText } = renderVoiceComposer();
+    expect(getByRole("link", { name: "Create" })).toBeTruthy();
+    expect(queryByLabelText("Start voice mode")).toBeNull();
+  });
+
+  test("the app-editing variant is unchanged — no chips at all", () => {
+    // That variant passes no voice props, and its layout is documented as
+    // byte-identical when the optional props are omitted.
+    useTurnStore.setState(INITIAL_TURN_STATE);
+    mockVoiceMode = true;
+
+    const html = renderComposer();
+    expect(html).not.toContain(">Create<");
+    expect(html).not.toContain("Start voice mode");
   });
 });

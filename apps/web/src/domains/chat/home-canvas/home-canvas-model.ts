@@ -51,6 +51,23 @@
  * Positions 5 and 6 are in the manifest as `renders: false`. They are not
  * spare slots: they are the two elements design deliberately spent on nothing,
  * and holding them keeps "six" literal instead of "four, for now".
+ *
+ * ## Where later additions went, and why none of them is a seventh element
+ *
+ * Three affordances arrived after the ruling. Each belongs *to* an element
+ * already in the six, not beside them — which is the only way to add anything
+ * to this canvas:
+ *
+ * - **Create** and **Voice** are chips on the composer (position 2).
+ *   v15's `README.md` line 64 — *"Create and Voice stay composer chips"* — is
+ *   why they have no rail row, and §9.3 is why they are not pages: a thing you
+ *   *ask for* (create, voice, research) is a composer chip. Position 2 is
+ *   `childCap: null` because the composer is one object with its own
+ *   internals; the audit does not count the buttons inside it and never did.
+ * - **The reveal control** for context-rich suggestions is a child of position
+ *   3, and it spends one of that element's five slots
+ *   ({@link PROMPT_CHIP_ROW_CAP}). It is not free — four chips plus a control
+ *   is the trade, and the cap is what forced the trade to be made.
  */
 
 // ---------------------------------------------------------------------------
@@ -126,7 +143,7 @@ const MANIFEST = [
     renders: true,
     alreadyVisibleOnThisScreen: false,
     notADuplicateBecause:
-      "Fixed furniture. §8 lists it as an invariant because it has been accidentally dropped twice.",
+      "Fixed furniture. §8 lists it as an invariant because it has been accidentally dropped twice. Create and Voice are labelled chips ON it (v15 README l.64) rather than elements beside it — §9.3: a thing you ask for is a composer chip, not a page.",
     childCap: null,
   },
   {
@@ -137,7 +154,7 @@ const MANIFEST = [
     renders: true,
     alreadyVisibleOnThisScreen: false,
     notADuplicateBecause:
-      "The chips name real state (a needs-you item, the free block, an active mission) but they are not a *listing* of it — they are the sentence you would have typed. The listing is HQ's job.",
+      "Two kinds under one cap. The generic chips are an offer, and nothing else on this screen offers a cold start. The context-rich ones name real state (a needs-you item, the free block, an active mission) but they are not a *listing* of it — they are the sentence you would have typed, and they sit behind a control so the canvas at rest is still four chips. The listing is HQ's job.",
     childCap: 5,
   },
   {
@@ -260,6 +277,20 @@ export function canvasElementSpec(
  */
 export const PROMPT_CHIP_CAP: number =
   canvasElementSpec("prompts").childCap ?? 0;
+
+/**
+ * How many *chips* fit in position 3 — the cap, minus the reveal control.
+ *
+ * The control that hides the context-rich suggestions is a child of position 3
+ * like any chip, so it costs one of the five. Derived rather than typed as `4`
+ * for the same reason {@link PROMPT_CHIP_CAP} is derived: the moment two
+ * numbers mean one rule, they disagree.
+ *
+ * This is the shape of the trade the cap forces. It is **not** a reason to
+ * raise the cap — if a sixth thing ever wants to be here, something in the
+ * five has to leave.
+ */
+export const PROMPT_CHIP_ROW_CAP: number = Math.max(0, PROMPT_CHIP_CAP - 1);
 
 // ---------------------------------------------------------------------------
 // The DOM marker

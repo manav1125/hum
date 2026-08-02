@@ -12,23 +12,35 @@
  *   rendered canvas and the assertion that it fails is itself asserted. If
  *   someone weakens `auditHomeCanvas`, *that* test goes red too.
  * - **The render** — the real component, with the daemon mocked at the query
- *   seam rather than at the hook, so "prompts derive from real state" is
+ *   seam rather than at the hook, so "suggestions derive from real state" is
  *   verified through the actual derivation code and not around it.
+ * - **The two kinds of prompt** — generic chips must render with the daemon
+ *   returning *nothing*, which is the case an earlier pass broke; context-rich
+ *   ones must stay hidden until asked for, and must say so honestly rather
+ *   than inventing anything when there is nothing behind the control.
  *
  * Mocking note: the generated query-options module is spread and only the four
  * endpoint factories this canvas reads are overridden. An exhaustive
  * hand-written factory is what broke `chat-body.test.tsx` once — the tree
  * below later imported a symbol the mock did not have and the whole file
- * errored before a test ran.
+ * errored before a test ran. The four overrides read **mutable** fixtures so a
+ * cold account (every store empty) and an unreadable one (every store
+ * throwing) are both reachable without a second mock layer.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 // ---------------------------------------------------------------------------
-// Fixtures — the "real state" the chips must be derived from
+// Fixtures — the "real state" the context suggestions must be derived from
 // ---------------------------------------------------------------------------
 
 const REVIEW_ITEM = {
@@ -57,6 +69,56 @@ const MISSION = {
 
 const FREE_BLOCK_MINUTES = 150;
 
+const FREE_BLOCK = {
+  start: "2026-08-02T14:00:00.000Z",
+  end: "2026-08-02T16:30:00.000Z",
+  minutes: FREE_BLOCK_MINUTES,
+};
+
+/**
+ * Mutable state behind the mocked endpoints.
+ *
+ * A brand-new account is not a variant of the fixture above — it is the
+ * fixture *absent*, which is exactly the condition the generic prompts exist
+ * to survive. Flipping these is how that gets tested through the real
+ * derivation code.
+ */
+let reviewItems: unknown[] = [];
+let doneItems: unknown[] = [];
+let missionRows: unknown[] = [];
+let freeBlock: typeof FREE_BLOCK | null = null;
+let pendingInteractions: unknown[] = [];
+let everyStoreFails = false;
+
+/** The returning user: something in every store. */
+function withState() {
+  reviewItems = [REVIEW_ITEM];
+  doneItems = DONE_ITEMS;
+  missionRows = [MISSION];
+  freeBlock = FREE_BLOCK;
+  pendingInteractions = [{ requestId: "pi-1" }];
+  everyStoreFails = false;
+}
+
+/** The brand-new account: every store answers, and answers empty. */
+function withNoState() {
+  reviewItems = [];
+  doneItems = [];
+  missionRows = [];
+  freeBlock = null;
+  pendingInteractions = [];
+  everyStoreFails = false;
+}
+
+function failEveryStore() {
+  withNoState();
+  everyStoreFails = true;
+}
+
+function refuseIfFailing() {
+  if (everyStoreFails) throw new Error("daemon unreachable");
+}
+
 const generated = await import("@/generated/daemon/@tanstack/react-query.gen");
 
 mock.module("@/generated/daemon/@tanstack/react-query.gen", () => ({
@@ -65,29 +127,37 @@ mock.module("@/generated/daemon/@tanstack/react-query.gen", () => ({
     const status = opts.query?.status ?? "all";
     return {
       queryKey: ["test:workitems", status],
-      queryFn: async () => ({
-        items: status === "awaiting_review" ? [REVIEW_ITEM] : DONE_ITEMS,
-      }),
+      queryFn: async () => {
+        refuseIfFailing();
+        return {
+          items: status === "awaiting_review" ? reviewItems : doneItems,
+        };
+      },
     };
   },
   pendinginteractionsGetOptions: () => ({
     queryKey: ["test:pending"],
-    queryFn: async () => ({ interactions: [{ requestId: "pi-1" }] }),
+    queryFn: async () => {
+      refuseIfFailing();
+      return { interactions: pendingInteractions };
+    },
   }),
   calendarDayGetOptions: () => ({
     queryKey: ["test:calendar"],
-    queryFn: async () => ({
-      connection: { state: "connected", detail: null },
-      largestFreeBlock: {
-        start: "2026-08-02T14:00:00.000Z",
-        end: "2026-08-02T16:30:00.000Z",
-        minutes: FREE_BLOCK_MINUTES,
-      },
-    }),
+    queryFn: async () => {
+      refuseIfFailing();
+      return {
+        connection: { state: "connected", detail: null },
+        largestFreeBlock: freeBlock,
+      };
+    },
   }),
   missionsGetOptions: () => ({
     queryKey: ["test:missions"],
-    queryFn: async () => ({ missions: [MISSION] }),
+    queryFn: async () => {
+      refuseIfFailing();
+      return { missions: missionRows };
+    },
   }),
 }));
 
@@ -98,16 +168,21 @@ const {
   HOME_CANVAS_REGION_ATTR,
   HOME_CANVAS_SIZE,
   PROMPT_CHIP_CAP,
+  PROMPT_CHIP_ROW_CAP,
   REGION_ELEMENTS,
   RENDERED_ELEMENTS,
 } = await import("@/domains/chat/home-canvas/home-canvas-model");
 
-const { HomeCanvasRegion } =
+const { HomeCanvasRegion, emptyContextNotice } =
   await import("@/domains/chat/home-canvas/home-canvas");
+
+const { GENERIC_PROMPTS } =
+  await import("@/domains/chat/home-canvas/use-canvas-prompts");
 
 const { doorSentence, startOfToday } =
   await import("@/domains/chat/home-canvas/use-canvas-door");
 
+beforeEach(withState);
 afterEach(cleanup);
 
 function renderCanvas(
@@ -138,6 +213,16 @@ async function settledRegion(): Promise<HTMLElement> {
     return region as HTMLElement;
   });
 }
+
+/** Open the disclosure that hides the context-rich suggestions. */
+function revealContext() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show suggestions from your day" }),
+  );
+}
+
+const chipsRow = (region: HTMLElement) =>
+  region.querySelector(`[${HOME_CANVAS_ATTR}="prompts"]`) as HTMLElement;
 
 // ---------------------------------------------------------------------------
 // The manifest
@@ -189,6 +274,16 @@ describe("home canvas — the six-element manifest", () => {
     expect(HOME_CANVAS[2].childCap).toBe(5);
   });
 
+  /**
+   * Create/Voice and the reveal control did not raise the cap — they were fitted
+   * under it. The control costs a chip slot, and that price is derived from the
+   * cap rather than typed beside it.
+   */
+  test("the reveal control is paid for out of position 3's five, not added to it", () => {
+    expect(PROMPT_CHIP_ROW_CAP).toBe(PROMPT_CHIP_CAP - 1);
+    expect(GENERIC_PROMPTS.length).toBe(PROMPT_CHIP_ROW_CAP);
+  });
+
   test("the region owns exactly positions 3 and 4", () => {
     expect(REGION_ELEMENTS.map((el) => el.id)).toEqual(["prompts", "door"]);
   });
@@ -215,12 +310,26 @@ describe("home canvas — what renders", () => {
     expect(region.children.length).toBe(2);
   });
 
+  test("position 3 is four chips and the control — the cap exactly, not over it", async () => {
+    renderCanvas();
+    const region = await settledRegion();
+    const chips = chipsRow(region);
+    expect(chips.children.length).toBe(PROMPT_CHIP_CAP);
+    expect(auditHomeCanvas(region).overCap).toEqual([]);
+  });
+
   test("the chips never exceed the cap, however much state there is", async () => {
     renderCanvas();
     const region = await settledRegion();
-    const chips = region.querySelector(`[${HOME_CANVAS_ATTR}="prompts"]`);
-    expect(chips).not.toBeNull();
-    expect(chips!.children.length).toBeLessThanOrEqual(PROMPT_CHIP_CAP);
+    const chips = chipsRow(region);
+    expect(chips.children.length).toBeLessThanOrEqual(PROMPT_CHIP_CAP);
+
+    // ...and revealing the context set does not grow the row either.
+    revealContext();
+    expect(chipsRow(region).children.length).toBeLessThanOrEqual(
+      PROMPT_CHIP_CAP,
+    );
+    expect(auditHomeCanvas(region).ok).toBe(true);
   });
 });
 
@@ -274,31 +383,122 @@ describe("home canvas — a seventh element cannot arrive quietly", () => {
     expect(audit.unknown).toEqual(["needs_you_cards"]);
   });
 
-  test("a sixth chip breaks the cap", async () => {
+  /**
+   * The mutation check for the cap, re-run after the row was rebuilt.
+   *
+   * The row now renders *at* the cap rather than under it, so this is the
+   * assertion that matters most: one more child — a fifth chip that forgot the
+   * control's slot, or a second control — is a failure, not a squeeze.
+   */
+  test("one child past the cap breaks it, in both states of the disclosure", async () => {
     renderCanvas();
     const region = await settledRegion();
-    const chips = region.querySelector(
-      `[${HOME_CANVAS_ATTR}="prompts"]`,
-    ) as HTMLElement;
 
-    for (let i = chips.children.length; i <= PROMPT_CHIP_CAP; i += 1) {
-      chips.appendChild(document.createElement("button"));
+    const collapsed = chipsRow(region);
+    collapsed.appendChild(document.createElement("button"));
+    let audit = auditHomeCanvas(region);
+    expect(audit.ok).toBe(false);
+    expect(audit.overCap[0]?.id).toBe("prompts");
+    expect(audit.overCap[0]?.cap).toBe(PROMPT_CHIP_CAP);
+    expect(audit.overCap[0]?.actual).toBe(PROMPT_CHIP_CAP + 1);
+
+    // React owns this subtree; drop the smuggled node before re-rendering.
+    collapsed.removeChild(collapsed.lastChild!);
+    revealContext();
+
+    // Revealed, the row is under the cap (three real rows plus the control),
+    // so the check has to still bite when it is filled past five.
+    const expanded = chipsRow(region);
+    expect(auditHomeCanvas(region).ok).toBe(true);
+    while (expanded.children.length <= PROMPT_CHIP_CAP) {
+      expanded.appendChild(document.createElement("button"));
     }
-
-    const audit = auditHomeCanvas(region);
+    audit = auditHomeCanvas(region);
     expect(audit.ok).toBe(false);
     expect(audit.overCap[0]?.id).toBe("prompts");
   });
 });
 
 // ---------------------------------------------------------------------------
-// Position 3 — prompts derive from real state
+// Position 3a — the generic prompts, which must survive a cold account
 // ---------------------------------------------------------------------------
 
-describe("home canvas — prompts come from real state", () => {
-  test("a needs-you item, the free block and an active mission each mint a chip", async () => {
+describe("home canvas — generic prompts are the visible default", () => {
+  test("render on an account with NO state at all", async () => {
+    withNoState();
+    renderCanvas();
+    const region = await settledRegion();
+
+    // The whole point: a brand-new account has nothing to derive from, and the
+    // canvas is still four real things you can start from.
+    for (const p of GENERIC_PROMPTS) {
+      expect(
+        screen.getByRole("button", { name: `Ask Cue: ${p.label}` }),
+      ).toBeDefined();
+    }
+    expect(chipsRow(region).children.length).toBe(PROMPT_CHIP_CAP);
+    expect(auditHomeCanvas(region).ok).toBe(true);
+  });
+
+  test("are still what shows first when there IS state to derive from", async () => {
     renderCanvas();
     await settledRegion();
+
+    expect(
+      screen.getByRole("button", { name: "Ask Cue: Brief me" }),
+    ).toBeDefined();
+    // The derived ones are behind the control, not beside the generic ones.
+    expect(
+      screen.queryByRole("button", { name: `Ask Cue: ${MISSION.title}` }),
+    ).toBeNull();
+  });
+
+  test("claim no provenance — a generic prompt carries no source row", () => {
+    for (const p of GENERIC_PROMPTS) {
+      expect(p.kind).toBe("generic");
+      expect(p.sourceId).toBeNull();
+      // Selecting a chip sends immediately, so a trailing fragment would ship
+      // half a sentence to the daemon.
+      expect(p.prompt.trim().endsWith(".")).toBe(true);
+    }
+  });
+
+  test("wear the generic glyph, so an offer is never mistaken for a reading", async () => {
+    withNoState();
+    renderCanvas();
+    const region = await settledRegion();
+    const chips = Array.from(chipsRow(region).children);
+    // Four chips wearing `✨`, plus the control.
+    const marked = chips.filter((c) => c.textContent?.includes("✨"));
+    expect(marked.length).toBe(GENERIC_PROMPTS.length);
+  });
+
+  test("sending one sends the whole sentence", async () => {
+    withNoState();
+    const sent: string[] = [];
+    renderCanvas((p) => sent.push(p.prompt));
+    await settledRegion();
+
+    screen
+      .getByRole("button", { name: "Ask Cue: Plan my day" })
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    await waitFor(() => {
+      if (sent.length === 0) throw new Error("no prompt sent");
+    });
+    expect(sent[0]).toBe("Plan my day from my calendar and inbox.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Position 3b — the context-rich suggestions, hidden behind the control
+// ---------------------------------------------------------------------------
+
+describe("home canvas — context suggestions are hidden until asked for", () => {
+  test("a needs-you item, the free block and an active mission each mint one", async () => {
+    renderCanvas();
+    await settledRegion();
+    revealContext();
 
     // ① the needs-you work item, by its real title
     expect(
@@ -318,20 +518,52 @@ describe("home canvas — prompts come from real state", () => {
     ).toBeDefined();
   });
 
-  test("every chip carries the glyph for its source — no colour-only state", async () => {
+  test("the control is a real disclosure — it says which way it is pointing", async () => {
+    renderCanvas();
+    await settledRegion();
+
+    const closed = screen.getByRole("button", {
+      name: "Show suggestions from your day",
+    });
+    expect(closed.getAttribute("aria-expanded")).toBe("false");
+    // A glyph, not a tint (§8).
+    expect(closed.textContent).toContain("▾");
+
+    fireEvent.click(closed);
+    const open = screen.getByRole("button", {
+      name: "Hide suggestions from your day",
+    });
+    expect(open.getAttribute("aria-expanded")).toBe("true");
+    expect(open.textContent).toContain("▴");
+
+    // ...and it goes back.
+    fireEvent.click(open);
+    expect(
+      screen.getByRole("button", { name: "Ask Cue: Brief me" }),
+    ).toBeDefined();
+  });
+
+  test("every revealed chip carries the glyph for its source — no colour-only state", async () => {
     renderCanvas();
     const region = await settledRegion();
-    const chips = region.querySelector(`[${HOME_CANVAS_ATTR}="prompts"]`)!;
+    revealContext();
+
     const glyphs = ["‖", "◱", "◎"];
-    for (const child of Array.from(chips.children)) {
+    const chips = Array.from(chipsRow(region).children).slice(
+      0,
+      PROMPT_CHIP_ROW_CAP,
+    );
+    for (const child of chips) {
+      if (child.getAttribute("aria-expanded") !== null) continue; // the control
       expect(glyphs.some((g) => child.textContent?.includes(g))).toBe(true);
     }
   });
 
-  test("selecting a chip sends the prompt built from that row", async () => {
+  test("selecting one sends the prompt built from that row", async () => {
     const sent: string[] = [];
     renderCanvas((p) => sent.push(p.prompt));
     await settledRegion();
+    revealContext();
 
     screen
       .getByRole("button", { name: `Ask Cue: ${MISSION.title}` })
@@ -341,6 +573,71 @@ describe("home canvas — prompts come from real state", () => {
       if (sent.length === 0) throw new Error("no prompt sent");
     });
     expect(sent[0]).toContain(MISSION.title);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The rule that outranks all of it: nothing is ever fabricated
+// ---------------------------------------------------------------------------
+
+describe("home canvas — no state means no context suggestions", () => {
+  test("asking with nothing behind the control says so, and shows nothing", async () => {
+    withNoState();
+    renderCanvas();
+    const region = await settledRegion();
+    revealContext();
+
+    const row = chipsRow(region);
+    expect(row.textContent).toContain(
+      "Nothing's waiting on you and nothing's running.",
+    );
+    // The row is the sentence and the control. No invented chips.
+    expect(row.children.length).toBe(2);
+    expect(screen.queryByRole("button", { name: /^Ask Cue:/ })).toBeNull();
+    expect(auditHomeCanvas(region).ok).toBe(true);
+  });
+
+  test("a store that could not be read is never reported as 'nothing'", async () => {
+    failEveryStore();
+    renderCanvas();
+    const region = await settledRegion();
+    revealContext();
+
+    const row = chipsRow(region);
+    expect(row.textContent).toContain("I couldn't read your work just now.");
+    expect(row.textContent).not.toContain("Nothing's waiting on you");
+  });
+
+  test("the three notices are three different sentences, each with a glyph", () => {
+    const pending = emptyContextNotice({
+      isPending: true,
+      couldNotRead: false,
+    });
+    const failed = emptyContextNotice({ isPending: false, couldNotRead: true });
+    const empty = emptyContextNotice({ isPending: false, couldNotRead: false });
+
+    expect(pending.text).toBe("Still reading your day…");
+    expect(failed.text).toBe("I couldn't read your work just now.");
+    expect(empty.text).toBe("Nothing's waiting on you and nothing's running.");
+
+    // "still reading" and "couldn't read" are not "nothing" — collapsing them
+    // is the lie this branch exists to prevent.
+    for (const n of [pending, failed]) {
+      expect(n.text).not.toContain("Nothing's waiting");
+    }
+    for (const n of [pending, failed, empty]) {
+      expect(n.glyph.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("generic prompts still render when every store is unreadable", async () => {
+    failEveryStore();
+    renderCanvas();
+    await settledRegion();
+
+    expect(
+      screen.getByRole("button", { name: "Ask Cue: Brief me" }),
+    ).toBeDefined();
   });
 });
 

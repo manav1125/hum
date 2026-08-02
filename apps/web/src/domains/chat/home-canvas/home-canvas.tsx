@@ -25,7 +25,7 @@ import {
   auditHomeCanvas,
   canvasElement,
   canvasRegion,
-  PROMPT_CHIP_CAP,
+  PROMPT_CHIP_ROW_CAP,
   REGION_ELEMENTS,
   type RegionElementId,
 } from "@/domains/chat/home-canvas/home-canvas-model";
@@ -33,6 +33,7 @@ import {
   PROMPT_SOURCE_GLYPH,
   useCanvasPrompts,
   type CanvasPrompt,
+  type CanvasPromptsResult,
 } from "@/domains/chat/home-canvas/use-canvas-prompts";
 import { useCanvasDoor } from "@/domains/chat/home-canvas/use-canvas-door";
 import { routes } from "@/utils/routes";
@@ -58,31 +59,103 @@ const C = {
 // Position 3 — up to five prompt chips
 // ---------------------------------------------------------------------------
 
-function CanvasPrompts({
-  prompts,
-  onSelect,
+/**
+ * What the reveal says when it has nothing to reveal.
+ *
+ * Three different sentences for three different truths, because collapsing
+ * them is how a surface starts lying. "Still reading" is not "nothing";
+ * "I couldn't read" is not "nothing"; and none of them is a reason to
+ * backfill the row with invented suggestions.
+ *
+ * Every branch carries a glyph — §8's no-colour-only rule — and they are HQ's
+ * glyphs, so the same state wears the same mark on both surfaces.
+ */
+export function emptyContextNotice({
+  isPending,
+  couldNotRead,
 }: {
-  prompts: readonly CanvasPrompt[];
+  isPending: boolean;
+  couldNotRead: boolean;
+}): { glyph: string; text: string } {
+  if (isPending) return { glyph: "◱", text: "Still reading your day…" };
+  if (couldNotRead)
+    return { glyph: "○", text: "I couldn't read your work just now." };
+  return {
+    glyph: "○",
+    text: "Nothing's waiting on you and nothing's running.",
+  };
+}
+
+/**
+ * Position 3 — the generic chips, and the door to the context-rich ones.
+ *
+ * The reveal **swaps** the row rather than growing it. That is not a styling
+ * preference: position 3's cap is five children and the control spends one, so
+ * showing both sets at once would need nine. The cap is load-bearing — the
+ * canvas at rest is what §4 ruled on — so the trade is made here instead of
+ * raising it.
+ */
+function CanvasPrompts({
+  generic,
+  context,
+  isPending,
+  couldNotRead,
+  onSelect,
+}: CanvasPromptsResult & {
   onSelect: (prompt: CanvasPrompt) => void;
 }) {
+  const [showContext, setShowContext] = useState(false);
+
   // Sliced against the manifest's own cap, not a local number. §4 says "up to
-  // 5" in exactly one place and this reads it.
-  const visible = prompts.slice(0, PROMPT_CHIP_CAP);
-  if (visible.length === 0) return null;
+  // 5" in exactly one place and this reads it (less the control's slot).
+  const chips = (showContext ? context : generic).slice(0, PROMPT_CHIP_ROW_CAP);
+  const notice = emptyContextNotice({ isPending, couldNotRead });
 
   return (
     <div
       {...canvasElement("prompts")}
       className="flex flex-wrap items-center justify-center gap-2"
     >
-      {visible.map((p) => (
-        <ConversationStarterChip
-          key={p.id}
-          label={`${PROMPT_SOURCE_GLYPH[p.source]} ${p.label}`}
-          onSelect={() => onSelect(p)}
-          aria-label={`Ask Cue: ${p.label}`}
-        />
-      ))}
+      {showContext && chips.length === 0 ? (
+        // The honest answer, in the row where the suggestions would have been.
+        <p
+          className="m-0 px-1 py-2"
+          style={{ color: C.body, fontSize: 13 }}
+          role="status"
+        >
+          <span aria-hidden>{notice.glyph} </span>
+          {notice.text}
+        </p>
+      ) : (
+        chips.map((p) => (
+          <ConversationStarterChip
+            key={p.id}
+            label={`${PROMPT_SOURCE_GLYPH[p.source]} ${p.label}`}
+            onSelect={() => onSelect(p)}
+            aria-label={`Ask Cue: ${p.label}`}
+          />
+        ))
+      )}
+      {/* The control. Deliberately carries no count: the needs-you number is
+          already on the rail badge, and §4's test says a second rendering of
+          it does not belong on the canvas. */}
+      <button
+        type="button"
+        onClick={() => setShowContext((v) => !v)}
+        aria-expanded={showContext}
+        aria-label={
+          showContext
+            ? "Hide suggestions from your day"
+            : "Show suggestions from your day"
+        }
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border bg-transparent px-3 py-2 transition-colors"
+        style={{ borderColor: C.line, color: C.body, fontSize: 13 }}
+      >
+        <span>{showContext ? "Back to starters" : "What's on today"}</span>
+        <span aria-hidden style={{ color: C.ink }}>
+          {showContext ? "▴" : "▾"}
+        </span>
+      </button>
     </div>
   );
 }
@@ -165,7 +238,7 @@ export function HomeCanvasRegion({
   // Stamped once per mount. The sentence's "While you slept" / "Today so far"
   // must not flip because an unrelated re-render crossed noon.
   const [nowMs] = useState(() => Date.now());
-  const { prompts } = useCanvasPrompts(assistantId);
+  const prompts = useCanvasPrompts(assistantId);
   const rootRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -185,7 +258,7 @@ export function HomeCanvasRegion({
   });
 
   const RENDERERS: Record<RegionElementId, ReactNode> = {
-    prompts: <CanvasPrompts prompts={prompts} onSelect={onSelectPrompt} />,
+    prompts: <CanvasPrompts {...prompts} onSelect={onSelectPrompt} />,
     door: <CanvasDoorPill assistantId={assistantId} nowMs={nowMs} />,
   };
 

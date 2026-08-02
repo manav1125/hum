@@ -23,7 +23,7 @@ import {
   useComposerStore,
 } from "@/domains/chat/composer-store";
 import { StreamingWaveform } from "@/domains/chat/components/chat-composer/streaming-waveform";
-import { EnterVoiceModeButton } from "@/domains/chat/components/enter-voice-mode-button";
+import { ComposerModeChips } from "@/domains/chat/components/chat-composer/composer-mode-chips";
 import {
   VoiceInputButton,
   type VoiceInputButtonHandle,
@@ -240,9 +240,19 @@ export function ChatComposer({
   const showVoiceInput =
     voiceInputRef !== undefined && onVoiceTranscript !== undefined;
 
+  /**
+   * Whether this is the main composer rather than the app-editing side panel.
+   *
+   * The same signal the voice mic already used: the app-editing variant passes
+   * no `voiceInputRef`/`onVoiceTranscript`, and its layout is documented as
+   * byte-identical when the optional props are omitted. Create rides that gate
+   * too — a split editing pane is not where "make me something new" belongs.
+   */
+  const showModeChips = showVoiceInput && Boolean(assistantId);
+
   // ---- Live voice (full-duplex conversation) ----------------------------
-  // The composer's `EnterVoiceModeButton` self-gates on the `voice-mode` flag
-  // and merely *enters* in-chat voice mode (it asks ChatBody to open the orb
+  // The composer's Voice chip (`ComposerModeChips`) self-gates on the
+  // `voice-mode` flag and merely *enters* in-chat voice mode (it asks ChatBody to open the orb
   // overlay, whose `VoiceModeSurface` is the single `useLiveVoice` owner). The
   // composer itself never mounts a `useLiveVoice()` controller — it only *reads*
   // the projected session state from the store for its inline transcript strip
@@ -746,7 +756,28 @@ export function ChatComposer({
               </div>
             )}
             <div className="flex items-center justify-between px-2 pb-2">
-              <div className="flex items-center gap-1">
+              <div className="flex min-w-0 items-center gap-1">
+                {/* Create + Voice — v15 README l.64, "Create and Voice stay
+                composer chips". Left group, away from the icon cluster on the
+                right, because the previous version put an unlabelled mic
+                beside the dictation mic and the affordance disappeared into
+                the row. Rendered on the main composer only: the app-editing
+                side panel passes no voice props (`showVoiceInput` false) and
+                stays byte-identical, which is the invariant that variant has
+                had since the composer was extracted. */}
+                {showModeChips && (
+                  <ComposerModeChips
+                    onEnterVoiceMode={onEnterVoiceMode}
+                    // `canStopGenerating` is included so the chip is present
+                    // but inert mid-turn. The icon it replaced was *absent*
+                    // mid-turn; keeping it visible holds the composer's
+                    // geometry still (§8 — the composer is fixed furniture)
+                    // without granting an entry point that did not exist.
+                    voiceDisabled={
+                      typingDisabled || isVoiceActive || canStopGenerating
+                    }
+                  />
+                )}
                 {thresholdPickerSlot}
                 {contextWindowIndicatorSlot}
               </div>
@@ -814,19 +845,6 @@ export function ChatComposer({
                           voiceStreamRef.current = stream;
                           setVoiceStream(stream);
                         }}
-                      />
-                    )}
-                    {showVoiceInput && assistantId && onEnterVoiceMode && (
-                      // In-chat voice entry. Self-gates on the `voice-mode` flag
-                      // (renders null when off — no layout shift). Tapping it
-                      // opens the orb overlay on the CURRENT conversation (it
-                      // does NOT start a session inline — the overlay's
-                      // `VoiceModeSurface` is the single `useLiveVoice` owner and
-                      // auto-starts there). Disabled while dictation is active
-                      // (`isVoiceActive`) so the two capture flows never overlap.
-                      <EnterVoiceModeButton
-                        onClick={onEnterVoiceMode}
-                        disabled={typingDisabled || isVoiceActive}
                       />
                     )}
                     {/* Split half of the send button — "run this in the
