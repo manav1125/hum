@@ -57,6 +57,16 @@ import {
 import { mediaProcessingJob } from "./job-handlers/media-processing.js";
 import { buildConversationSummaryJob } from "./job-handlers/summarization.js";
 import {
+  JOB_OUTCOME_UNREPORTED,
+  jobEmpty,
+  type JobOutcome,
+  jobOutcomeFromDetail,
+  jobProduced,
+  jobProducedOrEmpty,
+  jobSkipped,
+} from "./job-outcome.js";
+import { recordJobOutcome } from "./job-outcome-health.js";
+import {
   BackendUnavailableError,
   classifyError,
   RETRY_MAX_ATTEMPTS,
@@ -320,8 +330,19 @@ export async function runMemoryJobsOnce(
     let groupProcessed = 0;
     for (const job of group) {
       try {
-        await processJob(job, config);
-        completeMemoryJob(job.id);
+        const outcome = await processJob(job, config);
+        completeMemoryJob(job.id, outcome);
+        // Observation only. A bookkeeping failure must never turn a job that
+        // succeeded into one that failed, so the streak counter is kept out
+        // of the path that decides the job's status.
+        try {
+          recordJobOutcome(job.type, outcome);
+        } catch (healthErr) {
+          log.debug(
+            { err: healthErr, jobId: job.id, type: job.type },
+            "Recording job outcome health failed; job completion unaffected",
+          );
+        }
         groupProcessed += 1;
       } catch (err) {
         try {
@@ -499,16 +520,25 @@ async function runLanePool(
 
 // ── Graph lifecycle job handlers ──────────────────────────────────
 
-function graphDecayJob(job: MemoryJob): void {
+function graphDecayJob(job: MemoryJob): JobOutcome {
   const scopeId = (job.payload as { scopeId?: string })?.scopeId ?? "default";
   const result = runDecayTick(scopeId);
   log.info({ jobId: job.id, ...result }, "Graph decay tick complete");
+  // `nodesProcessed` is what it read; the decays and downgrades are what it
+  // wrote. A tick over a graph nobody touched legitimately changes nothing.
+  return jobOutcomeFromDetail(
+    {
+      emotionalDecays: result.emotionalDecays,
+      fidelityDowngrades: result.fidelityDowngrades,
+    },
+    `decay tick examined ${result.nodesProcessed} nodes and changed none of them`,
+  );
 }
 
 async function graphConsolidateJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<void> {
+): Promise<JobOutcome> {
   const scopeId = (job.payload as { scopeId?: string })?.scopeId ?? "default";
   const result = await runConsolidation(scopeId, config);
   log.info(
@@ -520,12 +550,20 @@ async function graphConsolidateJob(
     },
     "Graph consolidation complete",
   );
+  return jobOutcomeFromDetail(
+    {
+      nodesUpdated: result.totalUpdated,
+      nodesDeleted: result.totalDeleted,
+      mergeEdges: result.totalMergeEdges,
+    },
+    "consolidation found nothing to merge, retire or rewrite",
+  );
 }
 
 async function graphPatternScanJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<void> {
+): Promise<JobOutcome> {
   const scopeId = (job.payload as { scopeId?: string })?.scopeId ?? "default";
   const result = await runPatternScan(scopeId, config);
   log.info(
@@ -536,12 +574,19 @@ async function graphPatternScanJob(
     },
     "Graph pattern scan complete",
   );
+  return jobOutcomeFromDetail(
+    {
+      patternsDetected: result.patternsDetected,
+      edgesCreated: result.edgesCreated,
+    },
+    "pattern scan found no recurring shape worth recording",
+  );
 }
 
 async function graphNarrativeRefineJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<void> {
+): Promise<JobOutcome> {
   const scopeId = (job.payload as { scopeId?: string })?.scopeId ?? "default";
   const result = await runNarrativeRefinement(scopeId, config);
   log.info(
@@ -552,32 +597,87 @@ async function graphNarrativeRefineJob(
     },
     "Graph narrative refinement complete",
   );
+  // Counts `nodesUpdated` only. `arcsIdentified` is what the model claimed it
+  // saw, not what reached the store — counting it would let a talkative model
+  // report progress on a pass that wrote nothing.
+  return jobProducedOrEmpty(
+    result.nodesUpdated,
+    `narrative pass named ${result.arcsIdentified} arcs and updated no nodes`,
+    {
+      nodesUpdated: result.nodesUpdated,
+      arcsIdentified: result.arcsIdentified,
+    },
+  );
 }
 
 async function contactMemoryExtractJob(
   job: MemoryJob<{ conversationId?: string }>,
-): Promise<void> {
+): Promise<JobOutcome> {
   const { conversationId } = job.payload;
   if (!conversationId) {
     log.warn(
       { jobId: job.id },
       "contact_memory_extract: missing conversationId",
     );
-    return;
+    return jobSkipped("no conversationId in the payload");
   }
   const outcome = await runContactMemoryExtraction(conversationId);
   log.debug(
     { jobId: job.id, conversationId, outcome: outcome.kind },
     "contact-memory extraction complete",
   );
+  switch (outcome.kind) {
+    case "extracted":
+      // `savedCount: 0` is a real empty: the model was reached and read the
+      // transcript. This is the 697-runs case, and it is the reason
+      // `jobProducedOrEmpty` exists rather than a bare count.
+      return jobProducedOrEmpty(
+        outcome.savedCount,
+        "read the conversation and found nothing worth remembering about anyone",
+      );
+    case "empty_reply":
+      return jobEmpty("the model was reached and returned nothing at all");
+    case "not_identified":
+      return jobSkipped("the conversation is not bound to a known person");
+    case "no_transcript":
+      return jobSkipped("the conversation has no readable transcript");
+    case "no_provider":
+      return jobSkipped("no inference provider is configured for extraction");
+    case "disabled":
+      return jobSkipped("contact-memory extraction is switched off");
+  }
 }
 
-async function contactMemorySweepJob(job: MemoryJob): Promise<void> {
+async function contactMemorySweepJob(job: MemoryJob): Promise<JobOutcome> {
   const result = await runContactMemorySweep();
   // Logged at info with the counts, not at debug with a bare "complete": a
   // sweep that examined people and saved nothing must be legible in the log
   // without anyone having to already suspect it.
   log.info({ jobId: job.id, ...result }, "contact-memory sweep complete");
+  switch (result.outcome) {
+    case "progress":
+      return jobProduced(result.saved, {
+        saved: result.saved,
+        examined: result.examined,
+        provisioned: result.provisioned,
+      });
+    case "barren":
+      // The sweep's own word for "we looked at people and wrote nothing".
+      return jobEmpty(
+        `read ${result.examined} people's correspondence and remembered nothing from any of it`,
+        { examined: result.examined, candidates: result.candidates },
+      );
+    case "nothing_new":
+      return jobSkipped(
+        `nobody's mail had changed since the last sweep (${result.alreadyRead} already read)`,
+      );
+    case "no_candidates":
+      return jobSkipped("nobody has readable correspondence to sweep");
+    case "no_provider":
+      return jobSkipped("no inference provider is configured for the sweep");
+    case "disabled":
+      return jobSkipped("the correspondence sweep is switched off");
+  }
 }
 
 // ── Job error handling ─────────────────────────────────────────────
@@ -634,136 +734,205 @@ function handleJobError(job: MemoryJob, err: unknown): void {
 
 // ── Job dispatch ───────────────────────────────────────────────────
 
+/**
+ * Run one job and say what it did.
+ *
+ * The return type is the point of this function. It used to be `void`, which
+ * meant the worker's only vocabulary was "threw" versus "did not throw" — and
+ * "did not throw" covered both a full extraction and a run that read nothing,
+ * wrote nothing and advanced its checkpoint anyway. Handlers that cannot yet
+ * answer return {@link JOB_OUTCOME_UNREPORTED}: an honest gap that gets
+ * counted, rather than a silent promotion to success.
+ */
 async function processJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<void> {
+): Promise<JobOutcome> {
   if (config.memory.v2.enabled && V1_QDRANT_JOB_TYPES.has(job.type)) {
-    return;
+    // On the owner's instance this is 13,000 `embed_segment` rows a week that
+    // reach `completed` without touching a store. Correct behaviour — v2 does
+    // not read the v1 collection — but it must not read as work.
+    return jobSkipped(
+      "memory.v2 is active; the v1 embedding path this job writes is not read",
+    );
   }
   switch (job.type) {
     case "embed_segment":
       await embedSegmentJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "embed_summary":
       await embedSummaryJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "prune_old_conversations":
-      pruneOldConversationsJob(job, config);
-      return;
+      return pruneOldConversationsJob(job, config);
     case "prune_old_background_conversations":
-      pruneOldBackgroundConversationsJob(job, config);
-      return;
+      return pruneOldBackgroundConversationsJob(job, config);
     case "prune_old_llm_request_logs":
-      await pruneOldLlmRequestLogsJob(job, config);
-      return;
+      return await pruneOldLlmRequestLogsJob(job, config);
     case "prune_old_trace_events":
-      await pruneOldTraceEventsJob(job, config);
-      return;
+      return await pruneOldTraceEventsJob(job, config);
     case "prune_old_activation_logs":
-      await pruneOldActivationLogsJob(job, config);
-      return;
+      return await pruneOldActivationLogsJob(job, config);
     case "build_conversation_summary":
       // Stale rows enqueued before v2 was enabled must not consume the
       // `conversationSummarization` LLM budget — v2 readers do not consume
       // `memorySummaries`, mirroring the `graph_extract` gate below.
       if (config.memory.v2.enabled) {
-        return;
+        return jobSkipped(
+          "memory.v2 is active; nothing reads the summaries this job writes",
+        );
       }
       await buildConversationSummaryJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "backfill":
       await backfillJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "rebuild_index":
       await rebuildIndexJob();
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "delete_qdrant_vectors":
       await deleteQdrantVectorsJob(job);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "media_processing":
       await mediaProcessingJob(job);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "embed_media":
       await embedMediaJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "embed_attachment":
       await embedAttachmentJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "embed_graph_node":
       await embedGraphNodeJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "embed_pkb_file":
       await embedPkbFileJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "graph_trigger_embed":
       await embedGraphTriggerJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "graph_extract":
       // Runs under BOTH v1 and v2. The graph store this job writes is the
       // source the Memory page reads for its episodic / semantic / etc.
       // counts; v2's concept-page store never classifies into those typed
       // buckets, so suppressing extraction under v2 leaves the Memory page
       // frozen. The indexer enqueues this under both modes to match.
-      await graphExtractJob(job, config);
-      return;
+      return await graphExtractJob(job, config);
     case "conversation_analyze":
       await conversationAnalyzeJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "graph_decay":
-      graphDecayJob(job);
-      return;
+      return graphDecayJob(job);
     case "graph_consolidate":
-      await graphConsolidateJob(job, config);
-      return;
+      return await graphConsolidateJob(job, config);
     case "graph_pattern_scan":
-      await graphPatternScanJob(job, config);
-      return;
+      return await graphPatternScanJob(job, config);
     case "graph_narrative_refine":
-      await graphNarrativeRefineJob(job, config);
-      return;
+      return await graphNarrativeRefineJob(job, config);
     case "generate_conversation_starters":
-      await generateConversationStartersJob(job);
-      return;
-    case "graph_bootstrap":
-      await bootstrapFromHistory();
-      return;
+      return await generateConversationStartersJob(job);
+    case "graph_bootstrap": {
+      const result = await bootstrapFromHistory();
+      return jobOutcomeFromDetail(
+        {
+          nodesCreated: result.totalNodesCreated,
+          nodesUpdated: result.totalNodesUpdated,
+          nodesReinforced: result.totalNodesReinforced,
+          edgesCreated: result.totalEdgesCreated,
+          triggersCreated: result.totalTriggersCreated,
+        },
+        `bootstrap read ${result.conversationsProcessed} conversations and built nothing from any of them`,
+      );
+    }
     case "embed_concept_page":
       await embedConceptPageJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
     case "memory_v2_sweep":
-      await memoryV2SweepJob(job, config);
-      return;
-    case "memory_v2_consolidate":
-      await memoryV2ConsolidateJob(job, config);
-      return;
+      return await memoryV2SweepJob(job, config);
+    case "memory_v2_consolidate": {
+      const result = await memoryV2ConsolidateJob(job, config);
+      switch (result.kind) {
+        case "invoked":
+          // The pages are written by an agent inside the forked conversation,
+          // so this job cannot count them. What it CAN say is that it handed
+          // the work off, which is a different claim from having done it.
+          return jobProduced(1, {
+            deferredEntries: result.deferredEntries,
+            followUpJobs: result.followUpJobIds.length,
+          });
+        case "empty_buffer":
+          return jobEmpty("the buffer had nothing left to consolidate");
+        case "run_failed":
+          return jobEmpty(
+            `the consolidation run did not complete${result.reason ? ` — ${result.reason}` : ""}`,
+          );
+        case "locked":
+          return jobSkipped("another consolidation run holds the lock");
+        case "disabled":
+          return jobSkipped("memory-v2 consolidation is switched off");
+      }
+      return JOB_OUTCOME_UNREPORTED;
+    }
     case "memory_v2_migrate":
       await memoryV2MigrateJob(job, config);
-      return;
-    case "memory_v2_reembed":
-      await memoryV2ReembedJob(job, config);
-      return;
-    case "memory_v2_activation_recompute":
-      await memoryV2ActivationRecomputeJob(job, config);
-      return;
-    case "memory_v3_maintain":
-      await memoryV3MaintainJob(job, config);
-      return;
-    case "memory_retrospective":
-      await memoryRetrospectiveJob(job, config);
-      return;
+      return JOB_OUTCOME_UNREPORTED;
+    case "memory_v2_reembed": {
+      const enqueued = await memoryV2ReembedJob(job, config);
+      return jobProducedOrEmpty(
+        enqueued,
+        "no concept pages exist to re-embed",
+        { embedJobsEnqueued: enqueued },
+      );
+    }
+    case "memory_v2_activation_recompute": {
+      const updated = await memoryV2ActivationRecomputeJob(job, config);
+      return jobProducedOrEmpty(
+        updated,
+        "every stored activation state was already up to date",
+        { conversationsUpdated: updated },
+      );
+    }
+    case "memory_v3_maintain": {
+      const result = await memoryV3MaintainJob(job, config);
+      if (result.disabled) return jobSkipped("memory-v3 is switched off");
+      return jobOutcomeFromDetail(
+        { reembedded: result.reembedded, pruned: result.pruned },
+        "the v3 section store needed no repair",
+      );
+    }
+    case "memory_retrospective": {
+      const result = await memoryRetrospectiveJob(job, config);
+      switch (result.kind) {
+        case "invoked":
+          // Same shape as v2 consolidation: the `remember()` calls happen in
+          // the woken conversation. Handing off is the write this job makes.
+          return jobProduced(1, {
+            newMessages: result.newMessageCount,
+            followUpJobs: result.followUpJobIds.length,
+          });
+        case "no_new_messages":
+          return jobSkipped("nothing has been said since the last pass");
+        case "source_processing":
+          return jobSkipped("the source conversation is still being processed");
+        case "wake_failed":
+          return jobEmpty(
+            `the retrospective conversation could not be woken${result.reason ? ` — ${result.reason}` : ""}`,
+          );
+        case "disabled":
+          return jobSkipped("memory retrospectives are switched off");
+      }
+      return JOB_OUTCOME_UNREPORTED;
+    }
     case "contact_memory_extract":
-      await contactMemoryExtractJob(job);
-      return;
+      return await contactMemoryExtractJob(job);
     case "contact_memory_sweep":
-      await contactMemorySweepJob(job);
-      return;
+      return await contactMemorySweepJob(job);
 
     default: {
       const rawType = (job as { type: string }).type;
       if (LEGACY_JOB_TYPES.has(rawType)) {
         log.debug({ jobId: job.id, type: rawType }, "Dropping legacy job");
-        return;
+        return jobSkipped("this job type no longer has a handler");
       }
       throw new Error(`Unknown memory job type: ${rawType}`);
     }

@@ -2,6 +2,12 @@ import type { AssistantConfig } from "../../config/types.js";
 import { getLogger } from "../../util/logger.js";
 import { runAsyncSqlite } from "../db-async-query.js";
 import { getDb } from "../db-connection.js";
+import {
+  jobEmpty,
+  type JobOutcome,
+  jobProducedOrEmpty,
+  jobSkipped,
+} from "../job-outcome.js";
 import { enqueueMemoryJob, type MemoryJob } from "../jobs-store.js";
 import { rawAll, rawRun } from "../raw-query.js";
 
@@ -25,7 +31,7 @@ const PRUNE_LOG_BATCH_LIMIT = 1000;
 export async function pruneOldLlmRequestLogsJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<void> {
+): Promise<JobOutcome> {
   const rawRetention = job.payload.retentionMs;
   const retentionMs =
     rawRetention === null
@@ -37,10 +43,14 @@ export async function pruneOldLlmRequestLogsJob(
         : config.memory.cleanup.llmRequestLogRetentionMs;
 
   // null means "keep forever" — skip pruning entirely
-  if (retentionMs === null || retentionMs === undefined) return;
+  if (retentionMs === null || retentionMs === undefined) {
+    return jobSkipped("LLM request logs are set to be kept forever");
+  }
 
   const cutoffMs = Math.floor(Date.now() - retentionMs);
-  if (!Number.isFinite(cutoffMs)) return;
+  if (!Number.isFinite(cutoffMs)) {
+    return jobSkipped("the configured retention did not resolve to a cutoff");
+  }
 
   // Inline the cutoff and batch limit (both integers, both validated)
   // and chain `SELECT changes()` so we can read the row count from the
@@ -58,12 +68,12 @@ SELECT changes();`,
       { error: result.error, backend: result.backend },
       "pruneOldLlmRequestLogsJob: DELETE failed",
     );
-    return;
+    return jobEmpty(`the delete did not run — ${result.error ?? "unknown"}`);
   }
 
   const deleted = parseDeletedCount(result.stdout);
 
-  if (deleted >= PRUNE_LOG_BATCH_LIMIT) {
+  if ((deleted ?? 0) >= PRUNE_LOG_BATCH_LIMIT) {
     enqueueMemoryJob("prune_old_llm_request_logs", { retentionMs });
   }
 
@@ -75,6 +85,8 @@ SELECT changes();`,
     },
     "Pruned old LLM request logs",
   );
+
+  return prunedOutcome(deleted, "LLM request logs");
 }
 
 /**
@@ -88,7 +100,7 @@ SELECT changes();`,
 export async function pruneOldTraceEventsJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<void> {
+): Promise<JobOutcome> {
   const rawRetention = job.payload.retentionDays;
   const retentionDays =
     typeof rawRetention === "number" &&
@@ -98,10 +110,14 @@ export async function pruneOldTraceEventsJob(
       : config.memory.cleanup.traceEventRetentionDays;
 
   // 0 means disabled
-  if (retentionDays === 0) return;
+  if (retentionDays === 0) {
+    return jobSkipped("trace-event pruning is switched off");
+  }
 
   const cutoffMs = Math.floor(Date.now() - retentionDays * 86_400_000);
-  if (!Number.isFinite(cutoffMs)) return;
+  if (!Number.isFinite(cutoffMs)) {
+    return jobSkipped("the configured retention did not resolve to a cutoff");
+  }
 
   const result = await runAsyncSqlite(
     `DELETE FROM trace_events WHERE rowid IN (SELECT rowid FROM trace_events WHERE created_at < ${cutoffMs} LIMIT ${PRUNE_LOG_BATCH_LIMIT});
@@ -112,12 +128,12 @@ SELECT changes();`,
       { error: result.error, backend: result.backend },
       "pruneOldTraceEventsJob: DELETE failed",
     );
-    return;
+    return jobEmpty(`the delete did not run — ${result.error ?? "unknown"}`);
   }
 
   const deleted = parseDeletedCount(result.stdout);
 
-  if (deleted >= PRUNE_LOG_BATCH_LIMIT) {
+  if ((deleted ?? 0) >= PRUNE_LOG_BATCH_LIMIT) {
     enqueueMemoryJob("prune_old_trace_events", { retentionDays });
   }
 
@@ -128,6 +144,28 @@ SELECT changes();`,
       cutoffMs,
     },
     "Pruned old trace events",
+  );
+
+  return prunedOutcome(deleted, "trace events");
+}
+
+/**
+ * Shared reading of a prune's row count. Deleting nothing is the normal state
+ * of a healthy retention window, so it is `empty` and not a fault — but a
+ * count that could not be read at all says so in its own words, because a
+ * prune whose output stopped parsing looks identical to a tidy database while
+ * the table grows.
+ */
+function prunedOutcome(deleted: number | null, what: string): JobOutcome {
+  if (deleted === null) {
+    return jobEmpty(
+      `the delete ran but its ${what} row count could not be read`,
+    );
+  }
+  return jobProducedOrEmpty(
+    deleted,
+    `nothing in ${what} was older than the retention window`,
+    { deleted },
   );
 }
 
@@ -142,17 +180,24 @@ SELECT changes();`,
  * doesn't throw the parse off.
  */
 export function _parseDeletedCount(stdout: string | undefined): number {
-  return parseDeletedCount(stdout);
+  return parseDeletedCount(stdout) ?? 0;
 }
 
-function parseDeletedCount(stdout: string | undefined): number {
-  if (!stdout) return 0;
+/**
+ * `null` means the count could not be read at all, which is NOT the same fact
+ * as zero rows deleted: a prune whose output stopped parsing would otherwise
+ * report a clean, empty sweep forever while the table grew without bound.
+ * The re-enqueue decision still treats both as "do not continue"; only the
+ * reported outcome distinguishes them.
+ */
+function parseDeletedCount(stdout: string | undefined): number | null {
+  if (!stdout) return null;
   const lines = stdout.split(/\r?\n/).filter((s) => s.trim().length > 0);
   for (let i = lines.length - 1; i >= 0; i--) {
     const n = parseInt(lines[i].trim(), 10);
     if (Number.isFinite(n) && n >= 0) return n;
   }
-  return 0;
+  return null;
 }
 
 /**
@@ -170,7 +215,7 @@ function parseDeletedCount(stdout: string | undefined): number {
 export function pruneOldConversationsJob(
   job: MemoryJob,
   config: AssistantConfig,
-): void {
+): JobOutcome {
   const retentionDays =
     typeof job.payload.retentionDays === "number" &&
     Number.isFinite(job.payload.retentionDays) &&
@@ -178,7 +223,7 @@ export function pruneOldConversationsJob(
       ? job.payload.retentionDays
       : config.memory.cleanup.conversationRetentionDays;
 
-  pruneConversationsCore({
+  return pruneConversationsCore({
     retentionDays,
     backgroundOnly: false,
     reEnqueueType: "prune_old_conversations",
@@ -201,7 +246,7 @@ export function pruneOldConversationsJob(
 export function pruneOldBackgroundConversationsJob(
   job: MemoryJob,
   config: AssistantConfig,
-): void {
+): JobOutcome {
   const retentionDays =
     typeof job.payload.retentionDays === "number" &&
     Number.isFinite(job.payload.retentionDays) &&
@@ -209,7 +254,7 @@ export function pruneOldBackgroundConversationsJob(
       ? job.payload.retentionDays
       : config.memory.cleanup.backgroundConversationRetentionDays;
 
-  pruneConversationsCore({
+  return pruneConversationsCore({
     retentionDays,
     backgroundOnly: true,
     reEnqueueType: "prune_old_background_conversations",
@@ -224,11 +269,13 @@ function pruneConversationsCore(args: {
     | "prune_old_conversations"
     | "prune_old_background_conversations";
   logLabel: string;
-}): void {
+}): JobOutcome {
   const { retentionDays, backgroundOnly, reEnqueueType, logLabel } = args;
 
   // 0 means disabled
-  if (retentionDays === 0) return;
+  if (retentionDays === 0) {
+    return jobSkipped("this conversation prune is switched off");
+  }
 
   const cutoffMs = Date.now() - retentionDays * 86_400_000;
   const typeFilter = backgroundOnly
@@ -240,7 +287,9 @@ function pruneConversationsCore(args: {
     cutoffMs,
     PRUNE_BATCH_LIMIT,
   );
-  if (stale.length === 0) return;
+  if (stale.length === 0) {
+    return jobEmpty("no conversation was older than the retention window");
+  }
 
   const db = getDb();
   let pruned = 0;
@@ -284,6 +333,15 @@ function pruneConversationsCore(args: {
     },
     logLabel,
   );
+
+  // Distinct from the `stale.length === 0` case above: here the prune found
+  // candidates and deleted none of them, which means every one became active
+  // again inside the transaction. Rare once; a run of it is a stuck cursor.
+  return jobProducedOrEmpty(
+    pruned,
+    `all ${stale.length} candidate conversations became active again before they could be pruned`,
+    { pruned, candidates: stale.length },
+  );
 }
 
 /**
@@ -303,7 +361,7 @@ function pruneConversationsCore(args: {
 export async function pruneOldActivationLogsJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<void> {
+): Promise<JobOutcome> {
   const rawRetention = job.payload.retentionDays;
   const retentionDays =
     typeof rawRetention === "number" &&
@@ -313,13 +371,20 @@ export async function pruneOldActivationLogsJob(
       : config.memory.cleanup.activationLogRetentionDays;
 
   // 0 means disabled
-  if (retentionDays === 0) return;
+  if (retentionDays === 0) {
+    return jobSkipped("activation/recall telemetry pruning is switched off");
+  }
 
   const cutoffMs = Math.floor(Date.now() - retentionDays * 86_400_000);
-  if (!Number.isFinite(cutoffMs)) return;
+  if (!Number.isFinite(cutoffMs)) {
+    return jobSkipped("the configured retention did not resolve to a cutoff");
+  }
 
   let deletedTotal = 0;
   let saturated = false;
+  // A table whose count could not be read must not be folded into the total —
+  // otherwise a broken parse and a clean sweep produce the same zero.
+  let unreadableTables = 0;
   for (const table of ["memory_v2_activation_logs", "memory_recall_logs"]) {
     const result = await runAsyncSqlite(
       `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE created_at < ${cutoffMs} LIMIT ${PRUNE_LOG_BATCH_LIMIT});
@@ -330,9 +395,14 @@ SELECT changes();`,
         { error: result.error, backend: result.backend, table },
         "pruneOldActivationLogsJob: DELETE failed",
       );
+      unreadableTables++;
       continue;
     }
     const deleted = parseDeletedCount(result.stdout);
+    if (deleted === null) {
+      unreadableTables++;
+      continue;
+    }
     deletedTotal += deleted;
     if (deleted >= PRUNE_LOG_BATCH_LIMIT) saturated = true;
   }
@@ -344,9 +414,21 @@ SELECT changes();`,
   log.info(
     {
       deleted: deletedTotal,
+      unreadableTables,
       retentionDays,
       cutoffMs,
     },
     "Pruned old memory-v2 activation/recall telemetry",
+  );
+
+  if (deletedTotal === 0 && unreadableTables > 0) {
+    return jobEmpty(
+      `${unreadableTables} of 2 telemetry tables could not report what they deleted`,
+    );
+  }
+  return jobProducedOrEmpty(
+    deletedTotal,
+    "no activation or recall telemetry was older than the retention window",
+    { deleted: deletedTotal },
   );
 }

@@ -5,6 +5,7 @@ import { getConfig } from "../config/loader.js";
 import { getLogger } from "../util/logger.js";
 import { truncate } from "../util/truncate.js";
 import { getDb } from "./db-connection.js";
+import type { JobOutcome } from "./job-outcome.js";
 import {
   isQdrantBreakerOpen,
   shouldAllowQdrantProbe,
@@ -699,12 +700,113 @@ export function claimMemoryJobs(limits: LaneBudgets): MemoryJob[] {
   return claimed;
 }
 
-export function completeMemoryJob(id: string): void {
+/**
+ * Mark a job finished, and record what it actually did.
+ *
+ * `status` answers only "did the handler return without throwing" — it cannot
+ * tell forty facts extracted from nothing extracted, which is how contact
+ * memory completed 697 times having learned nobody. The `outcome` argument
+ * carries the other half; omitting it leaves the columns NULL, which reads as
+ * "this row never said" and is deliberately not the same claim as
+ * `{ kind: "empty" }`. See `job-outcome.ts`.
+ */
+export function completeMemoryJob(id: string, outcome?: JobOutcome): void {
   const db = getDb();
   db.update(memoryJobs)
-    .set({ status: "completed", updatedAt: Date.now(), lastError: null })
+    .set({
+      status: "completed",
+      updatedAt: Date.now(),
+      lastError: null,
+      outcome: outcome?.kind ?? null,
+      producedCount: outcome?.produced ?? null,
+      outcomeReason: outcome ? truncate(outcome.reason ?? "", 500, "") : null,
+    })
     .where(eq(memoryJobs.id, id))
     .run();
+}
+
+/** One job type's durable record of what its runs produced. */
+export interface JobOutcomeSummaryRow {
+  type: string;
+  /** Terminal rows still retained for this type (7-day window; see prune). */
+  runs: number;
+  produced: number;
+  empty: number;
+  skipped: number;
+  unreported: number;
+  /** Rows that predate the outcome columns, or never reached a terminal run. */
+  unrecorded: number;
+  /** Records written across all retained runs of this type. */
+  totalProduced: number;
+  lastProducedAt: number | null;
+  lastEmptyAt: number | null;
+  lastEmptyReason: string | null;
+}
+
+/**
+ * The query that catches the 697/0 shape, packaged so nobody has to think of
+ * it first: per job type, how many runs produced something against how many
+ * ran and produced nothing.
+ *
+ * Durable in a way the in-process health record is not — it survives a daemon
+ * restart — but bounded by the terminal-row retention window
+ * ({@link MEMORY_JOBS_RETENTION_MS}), so it describes recent behaviour rather
+ * than all of history.
+ */
+export function summarizeJobOutcomes(sinceMs?: number): JobOutcomeSummaryRow[] {
+  const rows = rawAll<{
+    type: string;
+    runs: number;
+    produced: number;
+    empty: number;
+    skipped: number;
+    unreported: number;
+    unrecorded: number;
+    total_produced: number | null;
+    last_produced_at: number | null;
+    last_empty_at: number | null;
+    last_empty_reason: string | null;
+  }>(
+    /*sql*/ `
+    SELECT
+      type,
+      COUNT(*)                                                    AS runs,
+      SUM(outcome = 'produced')                                   AS produced,
+      SUM(outcome = 'empty')                                      AS empty,
+      SUM(outcome = 'skipped')                                    AS skipped,
+      SUM(outcome = 'unreported')                                 AS unreported,
+      SUM(outcome IS NULL)                                        AS unrecorded,
+      SUM(COALESCE(produced_count, 0))                            AS total_produced,
+      MAX(CASE WHEN outcome = 'produced' THEN updated_at END)     AS last_produced_at,
+      MAX(CASE WHEN outcome = 'empty'    THEN updated_at END)     AS last_empty_at,
+      (SELECT inner.outcome_reason
+         FROM memory_jobs AS inner
+        WHERE inner.type = memory_jobs.type
+          AND inner.outcome = 'empty'
+        ORDER BY inner.updated_at DESC
+        LIMIT 1)                                                  AS last_empty_reason
+    FROM memory_jobs
+    WHERE status = 'completed'
+      AND updated_at >= ?
+    GROUP BY type
+    ORDER BY empty DESC, type ASC
+  `,
+    sinceMs ?? 0,
+  );
+
+  return rows.map((row) => ({
+    type: row.type,
+    runs: row.runs,
+    produced: row.produced,
+    empty: row.empty,
+    skipped: row.skipped,
+    unreported: row.unreported,
+    unrecorded: row.unrecorded,
+    totalProduced: row.total_produced ?? 0,
+    lastProducedAt: row.last_produced_at,
+    lastEmptyAt: row.last_empty_at,
+    lastEmptyReason: row.last_empty_reason,
+  }));
 }
 
 /** Max times a job can be deferred before it is marked as failed. */
@@ -870,9 +972,10 @@ const MEMORY_JOBS_PRUNE_BATCH_LIMIT = 5_000;
 
 /**
  * Reaper for terminal `memory_jobs` rows: delete `completed` / `failed`
- * rows whose `updated_at` is older than `retentionMs`. Terminal rows are
- * pure history — nothing reads them back except the status-count gauge —
- * yet high-frequency job types (embed_segment, memory_retrospective, …)
+ * rows whose `updated_at` is older than `retentionMs`. Terminal rows are read
+ * back only by the status-count gauge and {@link summarizeJobOutcomes} — so
+ * this window is also how far back the "ran and produced nothing" evidence
+ * reaches — yet high-frequency job types (embed_segment, memory_retrospective, …)
  * accumulate them without bound (115k completed rows piled up before this
  * existed). `pending` and `running` rows are never touched.
  *

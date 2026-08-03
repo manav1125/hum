@@ -158,6 +158,7 @@ import {
   migrateLlmUsageEventsAddAssistantVersion,
   migrateMemoryGraphImageRefs,
   migrateMemoryItemSupersession,
+  migrateMemoryJobOutcome,
   migrateMemoryRecallLogsQueryContext,
   migrateMemoryRetrospectiveRememberedLog,
   migrateMemoryRetrospectiveState,
@@ -576,6 +577,7 @@ export function initializeDb(): void {
     migrateArrivalComprehension,
     migrateArrivalOccurredAt,
     migratePushBudgetLedger,
+    migrateMemoryJobOutcome,
   ];
 
   // Run each migration step, catching and logging individual failures so one

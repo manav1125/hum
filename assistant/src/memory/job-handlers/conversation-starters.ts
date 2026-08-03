@@ -34,6 +34,7 @@ import {
   isValidConversationStarterText,
 } from "../conversation-starter-validation.js";
 import { getDb } from "../db-connection.js";
+import { jobEmpty, type JobOutcome, jobProduced } from "../job-outcome.js";
 import { asString } from "../job-utils.js";
 import type { MemoryJob } from "../jobs-store.js";
 import { rawAll } from "../raw-query.js";
@@ -392,7 +393,7 @@ Bad → Good (incomplete phrase → complete):
 
 export async function generateConversationStartersJob(
   job: MemoryJob,
-): Promise<void> {
+): Promise<JobOutcome> {
   const scopeId = asString(job.payload.scopeId) ?? "default";
   const db = getDb();
   const now = Date.now();
@@ -418,7 +419,14 @@ export async function generateConversationStartersJob(
       String(totalActive),
       now,
     );
-    return;
+    // The checkpoint advances here even though nothing was written. That is
+    // deliberate (the TTL, not the count, drives the retry) — and it is also
+    // exactly the shape that hid the graph-extraction bug, so the run must be
+    // countable rather than merely logged.
+    return jobEmpty(
+      `generation produced no usable starters from ${totalActive} active memory nodes`,
+      { activeMemoryNodes: totalActive },
+    );
   }
 
   // Determine next batch number
@@ -478,4 +486,6 @@ export async function generateConversationStartersJob(
     { scopeId, batch: nextBatch, count: starters.length },
     "Generated conversation starters",
   );
+
+  return jobProduced(starters.length, { starters: starters.length });
 }

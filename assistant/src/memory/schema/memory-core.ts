@@ -90,6 +90,14 @@ export const memoryJobs = sqliteTable("memory_jobs", {
   runAfter: integer("run_after").notNull(),
   lastError: text("last_error"),
   startedAt: integer("started_at"),
+  // What the job DID, as distinct from whether it finished. `status` alone
+  // cannot tell a run that wrote 40 rows from one that wrote none, which is
+  // how contact extraction completed 697 times having learned nobody. NULL
+  // means the row predates the column or never reached a terminal outcome —
+  // it is not the same claim as "produced nothing". See `job-outcome.ts`.
+  outcome: text("outcome"),
+  producedCount: integer("produced_count"),
+  outcomeReason: text("outcome_reason"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

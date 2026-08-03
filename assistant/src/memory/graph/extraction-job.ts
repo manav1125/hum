@@ -9,6 +9,11 @@
 import type { AssistantConfig } from "../../config/types.js";
 import { getLogger } from "../../util/logger.js";
 import { getMemoryCheckpoint, setMemoryCheckpoint } from "../checkpoints.js";
+import {
+  type JobOutcome,
+  jobOutcomeFromDetail,
+  jobSkipped,
+} from "../job-outcome.js";
 import { asString } from "../job-utils.js";
 import type { MemoryJob } from "../jobs-store.js";
 import { runGraphExtraction } from "./extraction.js";
@@ -30,10 +35,10 @@ const log = getLogger("graph-extraction-job");
 export async function graphExtractJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<void> {
+): Promise<JobOutcome> {
   const conversationId = asString(job.payload.conversationId);
   const scopeId = asString(job.payload.scopeId) || "default";
-  if (!conversationId) return;
+  if (!conversationId) return jobSkipped("no conversationId in the payload");
 
   // Read checkpoint for incremental extraction
   const checkpointKey = `graph_extract:${conversationId}:last_ts`;
@@ -63,6 +68,24 @@ export async function graphExtractJob(
         ...result,
       },
       "Graph extraction job complete",
+    );
+
+    // This log line already carried the answer. Roughly 190 of 237 runs in a
+    // single day said `nodesCreated: 0` next to the word "complete", and the
+    // job still reported ordinary success because nothing above it could tell
+    // the two apart. The outcome is that difference, made returnable.
+    //
+    // A single quiet conversation genuinely yields nothing, so one empty run
+    // is not a fault — see `job-outcome-health.ts` for the run that is.
+    return jobOutcomeFromDetail(
+      {
+        nodesCreated: result.nodesCreated,
+        nodesUpdated: result.nodesUpdated,
+        nodesReinforced: result.nodesReinforced,
+        edgesCreated: result.edgesCreated,
+        triggersCreated: result.triggersCreated,
+      },
+      "read the conversation and found nothing worth adding to the graph",
     );
   } catch (err) {
     log.error(

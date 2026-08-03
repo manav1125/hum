@@ -44,6 +44,12 @@ import {
   appendBufferAndArchive,
   formatRememberEntry,
 } from "../graph/tool-handlers.js";
+import {
+  jobEmpty,
+  type JobOutcome,
+  jobProducedOrEmpty,
+  jobSkipped,
+} from "../job-outcome.js";
 import type { MemoryJob } from "../jobs-store.js";
 import { stringifyMessageContent } from "../message-content.js";
 import { conversations, messages } from "../schema.js";
@@ -104,21 +110,26 @@ const SweepResultSchema = z.object({
  * `memory/buffer.md` + `memory/archive/<today>.md` via the same helper
  * `remember()` uses.
  *
- * Returns the number of entries written so callers (and tests) can assert
- * progress without inspecting the filesystem.
+ * Returns a {@link JobOutcome} rather than a bare count. The count alone could
+ * not be read: a `0` meant "v2 is off", "the sweep is off", "no messages in
+ * the window", "no provider", "the model returned no tool call", "the tool
+ * input did not parse", "the run threw" — and also the one case that is
+ * genuinely fine, a quiet week with nothing to remember. Seven causes sharing
+ * one number is how a sweep goes wrong in silence, so each now names itself
+ * and only the last is `empty`.
  */
 export async function memoryV2SweepJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<number> {
+): Promise<JobOutcome> {
   if (!config.memory?.v2?.enabled) {
     log.debug("memory.v2.enabled is false; sweep skipped");
-    return 0;
+    return jobSkipped("memory-v2 is switched off");
   }
 
   if (!config.memory.v2.sweep_enabled) {
     log.debug("memory.v2.sweep_enabled is false; sweep skipped");
-    return 0;
+    return jobSkipped("the memory sweep is switched off");
   }
 
   const workspaceDir = getWorkspaceDir();
@@ -128,14 +139,12 @@ export async function memoryV2SweepJob(
   // unexpected error is surfaced via an `activity.failed` notification —
   // mirrors v1 filing's post-migration treatment, but hand-rolled because
   // the sweep makes a single forced-tool `provider.sendMessage` call rather
-  // than driving a conversation through `runBackgroundJob`. The function
-  // continues to return 0 on caught failures (preserving the existing
-  // silent-failure contract); only the notification side-effect is new.
+  // than driving a conversation through `runBackgroundJob`.
   try {
     const recentText = loadRecentMessagesText(Date.now());
     if (!recentText) {
       log.debug("No recent messages in window; sweep skipped");
-      return 0;
+      return jobSkipped("nothing was said in the window this sweep covers");
     }
 
     const existingBuffer = readBufferText(memoryDir);
@@ -143,7 +152,7 @@ export async function memoryV2SweepJob(
     const provider = await getConfiguredProvider("memoryV2Sweep");
     if (!provider) {
       log.warn("memoryV2Sweep provider unavailable; sweep skipped");
-      return 0;
+      return jobSkipped("no inference provider is configured for the sweep");
     }
 
     const systemPrompt = renderSweepPrompt({
@@ -166,7 +175,10 @@ export async function memoryV2SweepJob(
     const toolBlock = extractToolUse(response);
     if (!toolBlock || toolBlock.name !== SWEEP_TOOL_NAME) {
       log.debug("Sweep model returned no tool_use block");
-      return 0;
+      // The model was reached and declined to answer in the required shape.
+      // That is a sweep that ran and produced nothing, not a sweep that was
+      // skipped — the distinction is what makes a run of these visible.
+      return jobEmpty("the model was reached and returned no tool call");
     }
     const parsed = SweepResultSchema.safeParse(toolBlock.input);
     if (!parsed.success) {
@@ -174,14 +186,20 @@ export async function memoryV2SweepJob(
         { error: parsed.error.message },
         "Sweep tool input did not match schema",
       );
-      return 0;
+      return jobEmpty("the model's answer did not match the expected shape");
     }
 
     const written = appendEntries(memoryDir, parsed.data.entries);
     if (written > 0) {
       log.info({ written }, "Memory v2 sweep wrote new buffer entries");
     }
-    return written;
+    return jobProducedOrEmpty(
+      written,
+      parsed.data.entries.length > 0
+        ? "everything the sweep found was already in the buffer"
+        : "read the window and found nothing worth remembering",
+      { proposed: parsed.data.entries.length, written },
+    );
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     log.error({ err }, "memory v2 sweep failed");
@@ -189,7 +207,11 @@ export async function memoryV2SweepJob(
       jobId: job.id,
       errorMessage,
     });
-    return 0;
+    // Caught rather than rethrown, preserving the existing contract that a
+    // sweep failure does not fail the job — but reported as `empty`, so a
+    // sweep that throws every time accumulates a visible run instead of a
+    // silent one.
+    return jobEmpty(`the sweep did not complete — ${errorMessage}`);
   }
 }
 

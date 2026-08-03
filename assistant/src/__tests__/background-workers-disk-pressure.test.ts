@@ -168,7 +168,14 @@ mock.module("../memory/conversation-title-service.js", () => ({
 
 const mockFailStalledJobs = mock(() => 0);
 const mockClaimMemoryJobs = mock(() => []);
+// Spread the real module and override only the seams this file drives. The
+// hand-written list below used to stand alone, which deleted every export it
+// did not name — `upsertContactMemoryExtractJob` among them — and the whole
+// file failed at import with "Export named ... not found". See the
+// `mock.module` rule in `assistant/AGENTS.md`.
+const jobsStoreActual = await import("../memory/jobs-store.js");
 mock.module("../memory/jobs-store.js", () => ({
+  ...jobsStoreActual,
   claimMemoryJobs: mockClaimMemoryJobs,
   completeMemoryJob: mock(() => {}),
   deferMemoryJob: mock(() => "deferred"),

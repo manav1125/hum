@@ -229,51 +229,51 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("memoryV2SweepJob — v2 disabled", () => {
-  test("returns 0 without invoking the provider when memory.v2.enabled is false", async () => {
+  test("reports `skipped` without invoking the provider when memory.v2.enabled is false", async () => {
     providerStub = makeEntriesProvider(["should-not-be-written"]);
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG_V2_OFF);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG_V2_OFF);
 
-    expect(written).toBe(0);
+    expect(outcome.kind).toBe("skipped");
     expect(providerCalls).toHaveLength(0);
     expect(existsSync(join(tmpWorkspace, "memory", "buffer.md"))).toBe(false);
   });
 });
 
 describe("memoryV2SweepJob — sweep_enabled off", () => {
-  test("returns 0 without invoking the provider when sweep_enabled is false", async () => {
+  test("reports `skipped` without invoking the provider when sweep_enabled is false", async () => {
     // No message seeding required — the sweep_enabled bail short-circuits
     // before any DB or workspace reads.
     providerStub = makeEntriesProvider(["should-not-be-written"]);
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG_SWEEP_OFF);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG_SWEEP_OFF);
 
-    expect(written).toBe(0);
+    expect(outcome.kind).toBe("skipped");
     expect(providerCalls).toHaveLength(0);
     expect(existsSync(join(tmpWorkspace, "memory", "buffer.md"))).toBe(false);
   });
 });
 
 describe("memoryV2SweepJob — no recent messages", () => {
-  test("returns 0 when no messages exist in the recent window", async () => {
+  test("reports `skipped` when no messages exist in the recent window", async () => {
     providerStub = makeEntriesProvider(["should-not-be-written"]);
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(0);
+    expect(outcome.kind).toBe("skipped");
     expect(providerCalls).toHaveLength(0);
   });
 
-  test("returns 0 when messages exist but are all outside the 30m window", async () => {
+  test("reports `skipped` when messages exist but are all outside the 30m window", async () => {
     seedMessages("conv-old", [
       { role: "user", content: "Hello.", offsetMs: -60 * 60 * 1000 }, // 1h ago
       { role: "assistant", content: "Hi!", offsetMs: -59 * 60 * 1000 },
     ]);
     providerStub = makeEntriesProvider(["should-not-be-written"]);
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(0);
+    expect(outcome.kind).toBe("skipped");
     expect(providerCalls).toHaveLength(0);
   });
 });
@@ -306,9 +306,9 @@ describe("memoryV2SweepJob — recent messages", () => {
       "Alice ships at end of day.",
     ]);
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(2);
+    expect(outcome).toMatchObject({ kind: "produced", produced: 2 });
     expect(providerCalls).toHaveLength(1);
 
     const buffer = readFileSync(
@@ -380,9 +380,9 @@ describe("memoryV2SweepJob — recent messages", () => {
       "Alice ships at end of day.",
     ]);
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(2);
+    expect(outcome).toMatchObject({ kind: "produced", produced: 2 });
     const buffer = readFileSync(
       join(tmpWorkspace, "memory", "buffer.md"),
       "utf-8",
@@ -392,7 +392,7 @@ describe("memoryV2SweepJob — recent messages", () => {
     expect(bullets).toHaveLength(2);
   });
 
-  test("returns 0 when the model returns no tool_use block", async () => {
+  test("reports `empty`, not `skipped`, when the model returns no tool_use block", async () => {
     providerStub = {
       name: "no-tool",
       sendMessage: async () => ({
@@ -403,13 +403,13 @@ describe("memoryV2SweepJob — recent messages", () => {
       }),
     };
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(0);
+    expect(outcome.kind).toBe("empty");
     expect(existsSync(join(tmpWorkspace, "memory", "buffer.md"))).toBe(false);
   });
 
-  test("returns 0 when the tool input is malformed", async () => {
+  test("reports `empty`, not `skipped`, when the tool input is malformed", async () => {
     providerStub = {
       name: "bad-shape",
       sendMessage: async () => ({
@@ -428,18 +428,18 @@ describe("memoryV2SweepJob — recent messages", () => {
       }),
     };
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(0);
+    expect(outcome.kind).toBe("empty");
     expect(existsSync(join(tmpWorkspace, "memory", "buffer.md"))).toBe(false);
   });
 
-  test("returns 0 when no provider is configured", async () => {
+  test("reports `skipped` when no provider is configured", async () => {
     providerStub = null;
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(0);
+    expect(outcome.kind).toBe("skipped");
   });
 
   test("emits an activity.failed notification when provider.sendMessage throws", async () => {
@@ -455,9 +455,9 @@ describe("memoryV2SweepJob — recent messages", () => {
       },
     };
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(0);
+    expect(outcome.kind).toBe("empty");
     expect(emitCalls).toHaveLength(1);
     const emitted = emitCalls[0]!;
     expect(emitted.sourceEventName).toBe("activity.failed");
@@ -507,9 +507,9 @@ describe("memoryV2SweepJob — background/scheduled conversation filter", () => 
 
     providerStub = makeEntriesProvider(["Bob prefers dark mode."]);
 
-    const written = await memoryV2SweepJob(makeJob(), CONFIG);
+    const outcome = await memoryV2SweepJob(makeJob(), CONFIG);
 
-    expect(written).toBe(1);
+    expect(outcome).toMatchObject({ kind: "produced", produced: 1 });
     expect(providerCalls).toHaveLength(1);
     const [{ userText }] = providerCalls;
     expect(userText).toContain("Bob mentioned he prefers dark mode.");
