@@ -42,8 +42,7 @@ import { getLogger } from "../util/logger.js";
 import { isApnsConfigured } from "./apns-sender.js";
 import { emitNotificationSignal } from "./emit-signal.js";
 import { localClock } from "./local-clock.js";
-import { sendAlertToAllDevices } from "./push-dispatch.js";
-import { checkPushGate } from "./push-prefs.js";
+import { sendBudgetedAlert } from "./push-dispatch.js";
 
 export { localClock } from "./local-clock.js";
 
@@ -222,26 +221,27 @@ export async function sendMorningBriefPush(
   // (no platform credentials on self-host) but daemon-local APNs is
   // configured, page registered devices directly. Skipped when the platform
   // channel delivered, so platform-hosted phones never get a double push.
-  // The mirror is additionally category/quiet-hours gated (notifications.push)
-  // — suppression only mutes the device push; the in-app brief above already
-  // went through the pipeline.
+  //
+  // The mirror goes through `sendBudgetedAlert`, so the same category and
+  // quiet-hours gates apply as before and the brief now also counts against —
+  // and can be held back by — design's three-a-day ceiling. It is the ambient
+  // tier: the brief is exactly what the ceiling is for. Suppression only mutes
+  // the device push; the in-app brief above already went through the pipeline.
   const platformDelivered = result.deliveryResults.some(
     (r) => r.channel === "platform" && r.status === "sent",
   );
-  const gate = checkPushGate("morningBrief");
-  if (!gate.allowed) {
-    log.info(
-      { dateKey, reason: gate.reason },
-      "Morning brief APNs mirror suppressed by push preferences",
-    );
-  }
-  if (!platformDelivered && isApnsConfigured() && gate.allowed) {
-    await sendAlertToAllDevices({
-      title: copy.title,
-      body: copy.body,
-      collapseId: `brief-${dateKey}`.slice(0, 64),
-      threadId: "cue-morning-brief",
-      data: deepLinkMetadata,
+  if (!platformDelivered && isApnsConfigured()) {
+    await sendBudgetedAlert({
+      intent: { sourceEventName: "brief.morning_ready" },
+      category: "morningBrief",
+      subjectKey: `brief:${dateKey}`,
+      alert: {
+        title: copy.title,
+        body: copy.body,
+        collapseId: `brief-${dateKey}`.slice(0, 64),
+        threadId: "cue-morning-brief",
+        data: deepLinkMetadata,
+      },
     });
   }
 

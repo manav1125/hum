@@ -22,6 +22,12 @@
  *     `notifications.push` config are enforced at send time (push-prefs.ts);
  *     work-item completions ride the `reviewReady` category and approval
  *     requests ride `needsYou`. Suppressed sends are logged, not deferred.
+ *   - Budgeted: design's three-a-day ceiling and its three tiers
+ *     (`push-budget.ts`) are enforced here, because this is the only layer
+ *     that can see a remote push. Every send below — and the morning brief's,
+ *     which routes through `sendBudgetedAlert` too — is decided and recorded
+ *     before it leaves. Corrections and time-critical approvals are counted
+ *     but never capped.
  *   - Throttled: at most one push per work item per minute, one push per
  *     confirmation requestId ever, and one confirmation push per
  *     conversation per minute (an agent turn can emit several approvals
@@ -36,8 +42,15 @@ import {
   isApnsConfigured,
   sendApnsAlert,
 } from "./apns-sender.js";
+import {
+  decidePush,
+  type PushDecision,
+  type PushIntent,
+  tierFor,
+} from "./push-budget.js";
+import { readPushLedger, recordPushDecision } from "./push-budget-store.js";
 import { listPushDevices, removePushDevice } from "./push-device-store.js";
-import { checkPushGate, type PushCategory } from "./push-prefs.js";
+import { type PushCategory, resolvePushGateInputs } from "./push-prefs.js";
 
 const log = getLogger("push-dispatch");
 
@@ -63,35 +76,113 @@ function pruneTracking(): void {
   }
 }
 
-/** True when the key is inside its throttle window; records the send otherwise. */
-function shouldThrottle(key: string, now: number): boolean {
+/** True when the key is inside its throttle window. Records nothing. */
+function isThrottled(key: string, now: number): boolean {
   const last = lastSentAt.get(key);
-  if (last !== undefined && now - last < THROTTLE_WINDOW_MS) return true;
+  return last !== undefined && now - last < THROTTLE_WINDOW_MS;
+}
+
+/** Mark the key as just sent. Called only when a push actually goes out. */
+function recordThrottle(key: string, now: number): void {
   lastSentAt.set(key, now);
   pruneTracking();
-  return false;
 }
 
 /**
- * Category/quiet-hours gate (notifications.push config). Checked before any
- * throttle state is recorded so a suppressed push does not consume the
- * item's one-shot/throttle budget. Suppressions are logged (event metadata
- * only — never notification content beyond the category).
+ * Decide, record and (if allowed) send. The single call every remote push in
+ * this daemon makes — the work-item and approval mirrors below, and the
+ * morning brief in `morning-brief-push.ts`.
+ *
+ * The order matters and is load-bearing:
+ *
+ *   1. The budget decision runs BEFORE any throttle or one-shot state is
+ *      recorded, so a push held back by a preference, by quiet hours or by the
+ *      ceiling does not burn the item's one chance to page later.
+ *   2. The ledger row is written BEFORE the alert leaves, because a
+ *      notification that fires and is not counted is how a ceiling of three
+ *      becomes a floor of three.
+ *   3. A suppressed push is still written to the ledger — with its tier and
+ *      its reason. Suppression mutes a phone; the work item, the approval and
+ *      the brief it mirrors are already persisted and already on the SSE
+ *      stream, so nothing is lost by not ringing.
+ *
+ * Logs carry event metadata only — never a token, an address or a body.
  */
-function passesPushPrefs(category: PushCategory, itemId: string): boolean {
-  const gate = checkPushGate(category);
-  if (gate.allowed) return true;
-  log.info(
-    { category, itemId, reason: gate.reason },
-    "APNs push suppressed by push preferences",
+export async function sendBudgetedAlert(opts: {
+  intent: PushIntent;
+  category: PushCategory;
+  /** Throttle/collapse key, e.g. `wi:<id>`. Never message content. */
+  subjectKey: string;
+  alert: ApnsAlert;
+}): Promise<PushDecision> {
+  const now = new Date();
+
+  // Nothing to page: settle it before the budget is consulted, so a
+  // deployment with no phone attached cannot fill the ledger with deliveries
+  // that never left the building. A count of what Cue sent has to be a count
+  // of what Cue sent.
+  if (listPushDevices("ios").length === 0) {
+    return {
+      tier: tierFor(opts.intent),
+      deliver: false,
+      breaksQuietHours: false,
+      reason: "No device is registered for push.",
+      suppressedBecause: "no_devices",
+      countToday: readPushLedger(now).delivered,
+    };
+  }
+
+  const { categoryEnabled, quietNow } = resolvePushGateInputs(
+    opts.category,
+    now,
   );
-  return false;
+  const ledger = readPushLedger(now);
+  const decision = decidePush(opts.intent, ledger, {
+    quietNow,
+    categoryEnabled,
+  });
+
+  if (!decision.deliver) {
+    recordPushDecision({
+      dayKey: ledger.dayKey,
+      decision,
+      sourceEventName: opts.intent.sourceEventName,
+      subjectKey: opts.subjectKey,
+      now,
+    });
+    log.info(
+      {
+        category: opts.category,
+        subjectKey: opts.subjectKey,
+        tier: decision.tier,
+        suppressedBecause: decision.suppressedBecause,
+        deliveredToday: ledger.delivered,
+      },
+      "APNs push suppressed",
+    );
+    return decision;
+  }
+
+  recordPushDecision({
+    dayKey: ledger.dayKey,
+    decision,
+    sourceEventName: opts.intent.sourceEventName,
+    subjectKey: opts.subjectKey,
+    now,
+  });
+  await sendAlertToAllDevices(opts.alert);
+  return decision;
 }
 
 /**
- * Fan an APNs alert out to every registered iOS device, pruning tokens
- * Apple reports invalid. Shared by the hub-event mirrors below and the
- * morning-brief push job (`morning-brief-push.ts`). Never throws.
+ * Raw transport: fan an APNs alert out to every registered iOS device,
+ * pruning tokens Apple reports invalid. Never throws.
+ *
+ * Not the entry point. Production senders go through `sendBudgetedAlert`
+ * above, which is what applies design's tiers and the daily ceiling; a call
+ * that reaches this function directly is a push nobody counted. Exported for
+ * `sendBudgetedAlert` and for the delivery tests, and guarded by
+ * `__tests__/push-budget-chokepoint.test.ts`.
  */
 export async function sendAlertToAllDevices(alert: ApnsAlert): Promise<void> {
   const devices = listPushDevices("ios");
@@ -144,55 +235,79 @@ export async function dispatchPushForServerMessage(
       // auto-completed and `failed` runs surface in-app.
       if (msg.status !== "awaiting_review") return;
       if (!isApnsConfigured()) return;
-      if (!passesPushPrefs("reviewReady", msg.workItemId)) return;
 
       const now = Date.now();
-      if (shouldThrottle(`wi:${msg.workItemId}`, now)) return;
+      const throttleKey = `wi:${msg.workItemId}`;
+      // Peeked, not recorded: a duplicate is dropped here without reaching the
+      // budget, so repeats never inflate the day's suppressed count either.
+      if (isThrottled(throttleKey, now)) return;
 
       // Lazy import: keeps this module import-light for the hub's dynamic
       // load and avoids a static hub → work-items edge.
       const { getWorkItem } = await import("../work-items/work-item-store.js");
       const title = getWorkItem(msg.workItemId)?.title ?? "a background task";
 
-      await sendAlertToAllDevices({
-        title: "Cue finished a task",
-        body: `Cue finished: ${title} — ready for your review`,
-        collapseId: `wi-${msg.workItemId}`.slice(0, 64),
-        threadId: "cue-work-items",
-        data: {
-          kind: "work_item_completed",
-          workItemId: msg.workItemId,
-          ...(msg.result.conversationId
-            ? { conversationId: msg.result.conversationId }
-            : {}),
+      const decision = await sendBudgetedAlert({
+        // A completion, which design groups with the brief rather than with
+        // the approval that has a clock on it — so it is ambient, and capped.
+        intent: { sourceEventName: "work_item_completed" },
+        category: "reviewReady",
+        subjectKey: throttleKey,
+        alert: {
+          title: "Cue finished a task",
+          body: `Cue finished: ${title} — ready for your review`,
+          collapseId: `wi-${msg.workItemId}`.slice(0, 64),
+          threadId: "cue-work-items",
+          data: {
+            kind: "work_item_completed",
+            workItemId: msg.workItemId,
+            ...(msg.result.conversationId
+              ? { conversationId: msg.result.conversationId }
+              : {}),
+          },
         },
       });
+      if (decision.deliver) recordThrottle(throttleKey, now);
       return;
     }
 
     if (msg.type === "confirmation_request") {
       if (!isApnsConfigured()) return;
-      if (!passesPushPrefs("needsYou", msg.requestId)) return;
 
       if (sentConfirmationRequestIds.has(msg.requestId)) return;
-      sentConfirmationRequestIds.add(msg.requestId);
 
       const now = Date.now();
       const conversationKey = `conf-conv:${msg.conversationId ?? "unknown"}`;
-      if (shouldThrottle(conversationKey, now)) return;
+      if (isThrottled(conversationKey, now)) return;
 
-      await sendAlertToAllDevices({
-        title: "Cue needs your approval",
-        body: `Cue needs a decision: ${msg.toolName}`,
-        collapseId: `conf-${msg.requestId}`.slice(0, 64),
-        threadId: "cue-approvals",
-        data: {
-          kind: "confirmation_request",
-          requestId: msg.requestId,
-          toolName: msg.toolName,
-          ...(msg.conversationId ? { conversationId: msg.conversationId } : {}),
+      const decision = await sendBudgetedAlert({
+        // A tool call is blocked on this answer: design's tier 2. Counted
+        // against the day, never capped by it.
+        intent: { sourceEventName: "confirmation_request" },
+        category: "needsYou",
+        subjectKey: `conf:${msg.requestId}`,
+        alert: {
+          title: "Cue needs your approval",
+          body: `Cue needs a decision: ${msg.toolName}`,
+          collapseId: `conf-${msg.requestId}`.slice(0, 64),
+          threadId: "cue-approvals",
+          data: {
+            kind: "confirmation_request",
+            requestId: msg.requestId,
+            toolName: msg.toolName,
+            ...(msg.conversationId
+              ? { conversationId: msg.conversationId }
+              : {}),
+          },
         },
       });
+      if (decision.deliver) {
+        // The one-shot and the throttle are spent only by a push that
+        // actually went out, so a suppressed approval can still page once the
+        // preference, the quiet window or the day changes.
+        sentConfirmationRequestIds.add(msg.requestId);
+        recordThrottle(conversationKey, now);
+      }
     }
   } catch (err) {
     log.warn({ err: String(err) }, "push dispatch failed");

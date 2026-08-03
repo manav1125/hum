@@ -199,3 +199,42 @@ export const pushDevices = sqliteTable(
     index("push_devices_platform_idx").on(table.platform),
   ],
 );
+
+/**
+ * One row per remote-push decision — delivered or suppressed — so the daily
+ * interruption ceiling (`notifications/push-budget.ts`) is enforced against a
+ * count that survives a daemon restart, and so "how noisy was I today" is
+ * answerable from real rows rather than a guess.
+ *
+ * Deliberately content-free: the event name, the tier and a throttle key, and
+ * nothing a device token, an address or a message body could be read out of.
+ * Rows older than the retention window are pruned on write.
+ */
+export const pushBudgetLedger = sqliteTable(
+  "push_budget_ledger",
+  {
+    id: text("id").primaryKey(),
+    /** Local calendar day `YYYY-MM-DD` in the effective push timezone. */
+    dayKey: text("day_key").notNull(),
+    /** "correction" | "time_critical" | "ambient" */
+    tier: text("tier").notNull(),
+    sourceEventName: text("source_event_name").notNull(),
+    /** Throttle/collapse key, e.g. `wi:<id>`. Never message content. */
+    subjectKey: text("subject_key"),
+    /** 1 = delivered to at least one device, 0 = suppressed. */
+    delivered: integer("delivered").notNull(),
+    /** One line, from the decision. Null for delivered rows is not allowed. */
+    reason: text("reason").notNull(),
+    /** Set only when a correction was delivered inside quiet hours. */
+    brokeQuietHours: integer("broke_quiet_hours").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("idx_push_budget_ledger_day").on(table.dayKey),
+    index("idx_push_budget_ledger_day_delivered").on(
+      table.dayKey,
+      table.delivered,
+    ),
+    index("idx_push_budget_ledger_created").on(table.createdAt),
+  ],
+);

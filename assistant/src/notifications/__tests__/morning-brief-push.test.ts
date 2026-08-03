@@ -34,12 +34,25 @@ mock.module("../apns-sender.js", () => ({
   sendApnsAlert: async () => ({ ok: true }),
 }));
 
+// The brief's device mirror goes through the interruption budget. Only that
+// seam is overridden — the rest of the real module is spread through, and it
+// is copied into a plain object first because `mock.module` rebinds the live
+// namespace (see assistant/CLAUDE.md). The budget's own decisions are covered
+// in push-budget.test.ts and push-dispatch.test.ts; here we only care that the
+// brief asks it, and asks it as the ambient tier.
+const realDispatch = { ...(await import("../push-dispatch.js")) };
 const apnsAlerts: Array<Record<string, unknown>> = [];
+const budgetedIntents: Array<Record<string, unknown>> = [];
 mock.module("../push-dispatch.js", () => ({
-  sendAlertToAllDevices: async (alert: Record<string, unknown>) => {
-    apnsAlerts.push(alert);
+  ...realDispatch,
+  sendBudgetedAlert: async (opts: {
+    intent: Record<string, unknown>;
+    alert: Record<string, unknown>;
+  }) => {
+    budgetedIntents.push(opts.intent);
+    apnsAlerts.push(opts.alert);
+    return { deliver: true, tier: "ambient" };
   },
-  dispatchPushForServerMessage: async () => {},
 }));
 
 import { initializeDb } from "../../memory/db-init.js";
@@ -117,6 +130,7 @@ function dispatchedResult(
 beforeEach(() => {
   emitted.length = 0;
   apnsAlerts.length = 0;
+  budgetedIntents.length = 0;
   apnsConfigured = false;
   emitResult = dispatchedResult();
   for (const i of listWorkItems()) removeWorkItemFromQueue(i.id);
@@ -324,6 +338,11 @@ describe("sendMorningBriefPush", () => {
       collapseId: "brief-2026-07-18",
       threadId: "cue-morning-brief",
       data: { kind: "morning_brief", path: MORNING_BRIEF_PATH },
+    });
+    // The brief is the ambient tier — exactly what the three-a-day ceiling is
+    // for, and the one tier it is allowed to hold back.
+    expect(budgetedIntents[0]).toEqual({
+      sourceEventName: "brief.morning_ready",
     });
   });
 

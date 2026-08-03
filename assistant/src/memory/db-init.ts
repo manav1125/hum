@@ -195,6 +195,7 @@ import {
   migrateProjectsCoworkColumns,
   migrateProviderConnectionBaseUrlAndModels,
   migrateProviderConnectionStatusLabel,
+  migratePushBudgetLedger,
   migrateReconcileDuplicateGuardians,
   migrateReminderRoutingIntent,
   migrateRemindersToSchedules,
@@ -574,6 +575,7 @@ export function initializeDb(): void {
     migrateArrivals,
     migrateArrivalComprehension,
     migrateArrivalOccurredAt,
+    migratePushBudgetLedger,
   ];
 
   // Run each migration step, catching and logging individual failures so one

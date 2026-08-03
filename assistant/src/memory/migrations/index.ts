@@ -313,6 +313,7 @@ export { migrateWorkItemLifeLensAndWaiting } from "./317-work-item-life-lens-and
 export { migrateArrivals } from "./318-arrivals.js";
 export { migrateArrivalComprehension } from "./319-arrival-comprehension.js";
 export { migrateArrivalOccurredAt } from "./320-arrival-occurred-at.js";
+export { migratePushBudgetLedger } from "./321-push-budget-ledger.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

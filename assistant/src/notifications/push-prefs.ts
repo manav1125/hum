@@ -94,3 +94,25 @@ export function checkPushGate(
     return { allowed: true };
   }
 }
+
+/**
+ * The same two config facts, kept apart rather than collapsed into one
+ * verdict, because the interruption budget (`push-budget.ts`) treats them
+ * differently: a disabled category outranks every tier, while quiet hours are
+ * broken by the correction tier alone. Never throws — a config failure reports
+ * "category on, not quiet", matching `checkPushGate`'s fail-open.
+ */
+export function resolvePushGateInputs(
+  category: PushCategory,
+  now: Date = new Date(),
+): { categoryEnabled: boolean; quietNow: boolean } {
+  try {
+    const push = getConfig().notifications.push;
+    return {
+      categoryEnabled: push.categories[category] !== false,
+      quietNow: isWithinQuietHours(now, push.quietHours),
+    };
+  } catch {
+    return { categoryEnabled: true, quietNow: false };
+  }
+}
