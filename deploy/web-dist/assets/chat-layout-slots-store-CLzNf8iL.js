@@ -1,0 +1,1 @@
+import{n as e,t}from"./create-selectors-DQQBXmKZ.js";var n=t(e(e=>({topBarCenter:null,topBarRightSlot:null,headerSupplements:null,setTopBarCenter:t=>e({topBarCenter:t}),setTopBarRightSlot:t=>e({topBarRightSlot:t}),setHeaderSupplements:t=>e({headerSupplements:t})})));export{n as t};

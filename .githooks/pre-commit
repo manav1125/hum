@@ -853,6 +853,18 @@ for P in "${PATTERNS[@]}"; do
     fi
 done
 
+# Credential shapes that are self-evident without surrounding context, for
+# scanning generated bundles (see the deploy/web-dist branch below). Each of
+# these identifies a provider's key format or a URL carrying inline
+# credentials — none of them can be satisfied by a field name alone.
+BUILT_ARTIFACT_PATTERN='AKIA[0-9A-Z]{16}'
+BUILT_ARTIFACT_PATTERN="${BUILT_ARTIFACT_PATTERN}|gh[pousr]_[0-9a-zA-Z]{36,}"
+BUILT_ARTIFACT_PATTERN="${BUILT_ARTIFACT_PATTERN}|xox[baprs]-[0-9a-zA-Z]{10,}"
+BUILT_ARTIFACT_PATTERN="${BUILT_ARTIFACT_PATTERN}|-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"
+BUILT_ARTIFACT_PATTERN="${BUILT_ARTIFACT_PATTERN}|sk-ant-[a-zA-Z0-9_-]{20,}"
+BUILT_ARTIFACT_PATTERN="${BUILT_ARTIFACT_PATTERN}|sk_live_[a-zA-Z0-9]{20,}"
+BUILT_ARTIFACT_PATTERN="${BUILT_ARTIFACT_PATTERN}|://[a-zA-Z0-9_.-]+:[a-zA-Z0-9_.-]+@[a-zA-Z0-9.-]+"
+
 # Use NUL-delimited list to safely handle filenames with spaces
 while IFS= read -r -d '' FILE; do
     # Skip hook files themselves (they contain patterns to detect secrets)
@@ -875,6 +887,29 @@ while IFS= read -r -d '' FILE; do
     # Skip release scripts — they reference password variables for SSH auth
     # via shell parameter expansions, not hardcoded secrets.
     if [[ "$FILE" =~ ^scripts/.*-release\.sh$ ]]; then
+        continue
+    fi
+
+    # Generated bundles are still scanned, but only for patterns that match a
+    # credential VALUE — never for a bare field name.
+    #
+    # Every guard below this loop works by reading the line a match sits on.
+    # A minified bundle is one line of 500 kB, so those guards cannot fire by
+    # construction: `client_secret:` as an object key in a request body reads
+    # identically to a hardcoded one, and a vendor bignum table reads like an
+    # AWS key. Whitelisting per-line here would mean whitelisting whole files.
+    #
+    # This is not a hole, because the source these are built from is scanned on
+    # its own commits, and what minification adds is baked env vars — so the
+    # value patterns are exactly the residual risk worth checking.
+    if [[ "$FILE" =~ ^deploy/web-dist/ ]] || [[ "$FILE" =~ ^apps/macos/resources/web-dist/ ]]; then
+        BUILT_MATCHES=$(git show ":$FILE" 2>/dev/null | grep -aoE -- "$BUILT_ARTIFACT_PATTERN" 2>/dev/null | head -3)
+        if [ -n "$BUILT_MATCHES" ]; then
+            echo -e "${RED}❌ Credential value found in generated bundle:${NC}"
+            echo -e "${YELLOW}File: ${FILE}${NC}"
+            echo "$BUILT_MATCHES"
+            FOUND_SECRETS=1
+        fi
         continue
     fi
 

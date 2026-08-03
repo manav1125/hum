@@ -140,6 +140,13 @@ const SKIP_FILE_PATTERNS: RegExp[] = [
   /^CHANGELOG/,
   /\.snap$/,
   /node_modules\//,
+  // Generated bundles. The rule is about what a human wrote — a minified
+  // chunk is one line of machine output, so the per-line suppression comment
+  // this check offers as its escape hatch cannot be placed in it at all. The
+  // sources these are built from are checked on their own commits, which is
+  // where an actual placeholder address would be introduced and caught.
+  /^deploy\/web-dist\//,
+  /^apps\/macos\/resources\/web-dist\//,
 ];
 
 function shouldSkipFile(file: string): boolean {
