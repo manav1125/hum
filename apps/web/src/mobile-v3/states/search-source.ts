@@ -20,12 +20,19 @@
  * out of a semantic memory would make the demo match the frame and make the
  * product a liar — the exact thing "never a fake number" is about.
  *
- * The other correction is the error path. `domains/chat/api/global-search.ts`
- * returns EMPTY_RESULTS on failure, which turns a 500 into "nothing found".
- * A failed fetch is an error state, not an empty one, so this module returns a
- * discriminated result and lets the surface tell the truth.
+ * The other correction is the error path, and it now lives one level down.
+ * `domains/chat/api/global-search.ts` used to return EMPTY_RESULTS on failure,
+ * turning a 500 into "nothing found"; it returns a discriminated
+ * `GlobalSearchOutcome` instead, so BOTH search surfaces — the desktop palette
+ * and this one — get the same honest answer from the same fetch. This module no
+ * longer talks to the generated client itself; it maps that outcome's four
+ * categories into one flat typed list.
  */
-import { searchGlobalGet } from "@/generated/daemon/sdk.gen";
+import {
+  searchGlobal,
+  SEARCH_CATEGORIES,
+  type GlobalSearchResponse,
+} from "@/domains/chat/api/global-search";
 
 export type SearchResultKind =
   | "conversation"
@@ -50,15 +57,17 @@ export type SearchOutcome =
   | { status: "error"; query: string; message: string }
   /** No assistant resolved yet; searching is not possible, and that is not a
    *  failure to report as one. */
-  | { status: "unavailable"; query: string; message: string };
+  | { status: "unavailable"; query: string; message: string }
+  /** A superseded keystroke. Nothing was searched, so it is not `ok` with an
+   *  empty list — the surface keeps what it had. */
+  | { status: "cancelled"; query: string };
 
-/** The categories the daemon can actually search. */
-export const SEARCHABLE_CATEGORIES = [
-  "conversations",
-  "memories",
-  "schedules",
-  "contacts",
-] as const;
+/**
+ * The categories the daemon can actually search. Re-exported from the API
+ * module so there is exactly one list; the test below pins its contents, and
+ * pinning a copy would let the copy drift.
+ */
+export const SEARCHABLE_CATEGORIES = SEARCH_CATEGORIES;
 
 /**
  * Decision records are not in the index. Exported so the surface's honest line
@@ -82,75 +91,40 @@ export async function searchFromPhone(
   query: string,
   options?: { limit?: number; signal?: AbortSignal },
 ): Promise<SearchOutcome> {
-  const trimmed = query.trim();
-  if (!assistantId) {
-    return {
-      status: "unavailable",
-      query: trimmed,
-      message: "I'm not connected to your Cue yet, so I can't search.",
-    };
-  }
+  const outcome = await searchGlobal(assistantId, query, {
+    ...(options?.limit === undefined ? {} : { limit: options.limit }),
+    ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    categories: SEARCHABLE_CATEGORIES,
+  });
 
-  try {
-    const { data, response } = await searchGlobalGet({
-      path: { assistant_id: assistantId },
-      query: {
-        q: trimmed,
-        limit: options?.limit ?? 20,
-        categories: SEARCHABLE_CATEGORIES.join(","),
-      },
-      throwOnError: false,
-      signal: options?.signal,
-    });
-
-    // A superseded debounce is not a failure and must not paint one. Checked
-    // on the SIGNAL rather than on the error's shape: the generated client
-    // swallows the abort into its `{ error }` channel, so `instanceof
-    // DOMException` alone would let a cancelled keystroke render as an outage.
-    if (aborted(options?.signal)) {
-      return { status: "ok", query: trimmed, results: [] };
-    }
-
-    if (!response?.ok || !data) {
+  // Every status is carried through. Nothing collapses into an empty list on
+  // the way — the whole point of the shared outcome is that this mapping has
+  // no branch where a failure quietly becomes zero rows.
+  switch (outcome.status) {
+    case "ok":
+      return {
+        status: "ok",
+        query: outcome.query,
+        results: flatten(outcome.results),
+      };
+    case "error":
       return {
         status: "error",
-        query: trimmed,
-        message: `I couldn't reach my search index${response?.status ? ` (${response.status})` : ""}. Nothing was searched.`,
+        query: outcome.query,
+        message: outcome.message,
       };
-    }
-
-    return { status: "ok", query: trimmed, results: flatten(data.results) };
-  } catch (err) {
-    if (aborted(options?.signal) || isAbortError(err)) {
-      return { status: "ok", query: trimmed, results: [] };
-    }
-    return {
-      status: "error",
-      query: trimmed,
-      message: "I couldn't reach my search index. Nothing was searched.",
-    };
+    case "unavailable":
+      return {
+        status: "unavailable",
+        query: outcome.query,
+        message: outcome.message,
+      };
+    case "cancelled":
+      return { status: "cancelled", query: outcome.query };
   }
 }
 
-function aborted(signal: AbortSignal | undefined): boolean {
-  return signal?.aborted === true;
-}
-
-function isAbortError(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === "object" &&
-    (err as { name?: unknown }).name === "AbortError"
-  );
-}
-
-type RawResults = Awaited<
-  ReturnType<typeof searchGlobalGet>
->["data"] extends { results: infer R } | undefined
-  ? R
-  : never;
-
-function flatten(results: RawResults): SearchResult[] {
+function flatten(results: GlobalSearchResponse): SearchResult[] {
   const out: SearchResult[] = [];
 
   for (const c of results.conversations ?? []) {

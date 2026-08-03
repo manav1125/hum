@@ -159,6 +159,7 @@ export function CommandPaletteWindowPage() {
         selectedIndex={commandPalette.selectedIndex}
         sections={mergedSections}
         isSearching={commandPalette.isSearching}
+        searchOutcome={commandPalette.searchOutcome}
         onItemSelect={selectItem}
         onKeyDown={commandPalette.handleKeyDown}
       />

@@ -319,17 +319,20 @@ export function useCommandPaletteSections({
   }, [localSections, commandPalette.query]);
 
   // Merge local filtered sections with server search results.
+  //
+  // Only an `ok` outcome contributes rows. An `error` contributes none — and
+  // the palette says so out loud instead of letting the shortened list read as
+  // "this is everything you have".
   const mergedSections = useMemo((): CommandPaletteSection[] => {
-    const serverSections = commandPalette.searchResults
-      ? buildServerResultSections(
-          commandPalette.searchResults,
-          recentConversationIds,
-        )
-      : [];
+    const outcome = commandPalette.searchOutcome;
+    const serverSections =
+      outcome?.status === "ok"
+        ? buildServerResultSections(outcome.results, recentConversationIds)
+        : [];
     return [...filteredLocalSections, ...serverSections];
   }, [
     filteredLocalSections,
-    commandPalette.searchResults,
+    commandPalette.searchOutcome,
     recentConversationIds,
   ]);
 

@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import type { GlobalSearchResponse } from "@/domains/chat/api/global-search";
 
-import { buildServerResultSections } from "@/domains/chat/hooks/command-palette-utils";
+import {
+  buildServerResultSections,
+  emptyResultsMessage,
+  PALETTE_SEARCH_CATEGORIES,
+  searchNoticeFor,
+} from "@/domains/chat/hooks/command-palette-utils";
 
 const searchResults: GlobalSearchResponse = {
   conversations: [
@@ -124,5 +129,124 @@ describe("buildServerResultSections", () => {
       sections.find((s) => s.id === "search-conversations"),
     ).toBeUndefined();
     expect(sections).toHaveLength(2);
+  });
+});
+
+describe("searchNoticeFor — red is reserved for Cue's own failure", () => {
+  test("an error is the loud one, verbatim", () => {
+    expect(
+      searchNoticeFor({
+        status: "error",
+        query: "acme",
+        message: "I couldn't reach my search index (500). Nothing was searched.",
+        httpStatus: 500,
+      }),
+    ).toEqual({
+      tone: "error",
+      message: "I couldn't reach my search index (500). Nothing was searched.",
+    });
+  });
+
+  test("not-connected-yet explains without alarming", () => {
+    const notice = searchNoticeFor({
+      status: "unavailable",
+      query: "acme",
+      message: "I'm not connected to your Cue yet, so I can't search.",
+    });
+    expect(notice?.tone).toBe("muted");
+  });
+
+  test("a real answer and a superseded keystroke say nothing", () => {
+    expect(
+      searchNoticeFor({
+        status: "ok",
+        query: "acme",
+        results: {
+          conversations: [],
+          memories: [],
+          schedules: [],
+          contacts: [],
+        },
+      }),
+    ).toBeNull();
+    expect(searchNoticeFor({ status: "cancelled", query: "acme" })).toBeNull();
+    expect(searchNoticeFor(null)).toBeNull();
+  });
+});
+
+describe("emptyResultsMessage — an empty list still says why", () => {
+  const base = { isSearching: false, minQueryLength: 2 };
+
+  test("a genuine no-match names what was actually searched", () => {
+    const msg = emptyResultsMessage({
+      ...base,
+      query: "zzz",
+      outcome: {
+        status: "ok",
+        query: "zzz",
+        results: {
+          conversations: [],
+          memories: [],
+          schedules: [],
+          contacts: [],
+        },
+      },
+    });
+    expect(msg).toBe(
+      "Nothing matched “zzz”. I searched your conversations, schedules and people.",
+    );
+  });
+
+  test("a failure gets NO empty-state line — the alert speaks for it", () => {
+    // This is the regression guard: "nothing matched" underneath "I couldn't
+    // reach my search index" would put the lie back on the screen.
+    expect(
+      emptyResultsMessage({
+        ...base,
+        query: "acme",
+        outcome: {
+          status: "error",
+          query: "acme",
+          message: "I couldn't reach my search index. Nothing was searched.",
+        },
+      }),
+    ).toBeNull();
+    expect(
+      emptyResultsMessage({
+        ...base,
+        query: "acme",
+        outcome: {
+          status: "unavailable",
+          query: "acme",
+          message: "I'm not connected to your Cue yet, so I can't search.",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  test("a query too short to reach the server says that, not 'no results'", () => {
+    const msg = emptyResultsMessage({ ...base, query: "a", outcome: null });
+    expect(msg).toContain("Type 2 characters");
+  });
+
+  test("an in-flight search says it is in flight", () => {
+    expect(
+      emptyResultsMessage({
+        ...base,
+        isSearching: true,
+        query: "acme",
+        outcome: null,
+      }),
+    ).toBe("Searching…");
+  });
+
+  test("the palette asks for exactly the categories it can render", () => {
+    // No memory row exists in buildServerResultSections, so memories are not
+    // requested — and the sentence above must not claim they were searched.
+    expect([...PALETTE_SEARCH_CATEGORIES]).toEqual([
+      "conversations",
+      "schedules",
+      "contacts",
+    ]);
   });
 });

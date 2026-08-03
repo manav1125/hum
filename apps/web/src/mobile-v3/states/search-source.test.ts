@@ -100,7 +100,7 @@ describe("a failed fetch is an error, never an empty result", () => {
     );
   });
 
-  test("a superseded debounce is not painted as a failure", async () => {
+  test("a superseded debounce is neither a failure nor an empty result", async () => {
     const { searchFromPhone } = await import("./search-source");
     const controller = new AbortController();
     await withStubbedSearch(
@@ -112,7 +112,10 @@ describe("a failed fetch is an error, never an empty result", () => {
         const outcome = await searchFromPhone("a1", "acme", {
           signal: controller.signal,
         });
-        expect(outcome.status).toBe("ok");
+        // Not "error" (it isn't an outage) and deliberately not "ok" with zero
+        // rows either — a cancelled request never searched, and folding it into
+        // `ok` is the same lie in miniature.
+        expect(outcome.status).toBe("cancelled");
       },
     );
   });

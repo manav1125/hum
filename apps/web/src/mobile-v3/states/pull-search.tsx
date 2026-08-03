@@ -172,6 +172,10 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
         signal: controller.signal,
       }).then((next) => {
         if (controller.signal.aborted) return;
+        // A superseded keystroke never searched. Painting it would either blank
+        // the list or claim nothing matched — both are lies about a request
+        // that never asked. Leave the last real outcome where it is.
+        if (next.status === "cancelled") return;
         setOutcome(next);
         setSearching(false);
       });
@@ -400,6 +404,10 @@ function Body({
   }
 
   if (outcome.status === "unavailable") return <Note>{outcome.message}</Note>;
+
+  // Never stored (see the `.then` guard) — narrowed here so the union stays
+  // exhaustive and a future status can't slip through as "no results".
+  if (outcome.status === "cancelled") return <Note>Searching…</Note>;
 
   if (outcome.results.length === 0) {
     return (

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Loader2, Search, X } from "lucide-react";
+import { AlertTriangle, Loader2, Search, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -15,6 +15,12 @@ import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { Button, Typography } from "@vellumai/design-library";
 
 import { CommandPaletteItem } from "@/components/command-palette/command-palette-item";
+import { MIN_QUERY_LENGTH } from "@/components/command-palette/use-command-palette";
+import type { GlobalSearchOutcome } from "@/domains/chat/api/global-search";
+import {
+  emptyResultsMessage,
+  searchNoticeFor,
+} from "@/domains/chat/hooks/command-palette-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +55,13 @@ export interface CommandPaletteProps {
   sections: CommandPaletteSection[];
   /** Whether a server search is currently in-flight. */
   isSearching?: boolean;
+  /**
+   * What the last server search produced. Passed whole rather than pre-reduced
+   * to a boolean so this component renders WHICH outcome it got: a failure gets
+   * Cue's own words in red, an empty result gets a sentence saying why it is
+   * empty, and the two can never collapse into the same "No results".
+   */
+  searchOutcome?: GlobalSearchOutcome | null;
   /** Called when an item is selected (clicked or Enter pressed). */
   onItemSelect?: (item: CommandPaletteItemData, index: number) => void;
   /** Key-down handler from useCommandPalette for keyboard navigation. */
@@ -79,6 +92,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
   selectedIndex,
   sections,
   isSearching = false,
+  searchOutcome = null,
   onItemSelect,
   onKeyDown,
   surface = "overlay",
@@ -213,6 +227,52 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
     </div>
   );
 
+  // Cue reports its own errors first, verbatim, first person — above the list,
+  // before anything the user might otherwise read as a complete answer.
+  const notice = searchNoticeFor(searchOutcome);
+  const emptyMessage =
+    sections.length === 0
+      ? emptyResultsMessage({
+          query,
+          isSearching,
+          outcome: searchOutcome,
+          minQueryLength: MIN_QUERY_LENGTH,
+        })
+      : null;
+
+  // Red is reserved for Cue reporting its own failure, and it never carries the
+  // meaning alone — the glyph and the sentence do too (see the design library's
+  // note on `--state-failure`). `--state-failure-text` rather than the fill leg
+  // because this copy sits below 16px.
+  const noticeRow = notice ? (
+    <div
+      role={notice.tone === "error" ? "alert" : "status"}
+      className={
+        notice.tone === "error"
+          ? "mx-2 mt-2 flex shrink-0 items-start gap-2 rounded-lg border border-[var(--state-failure)] bg-[var(--state-failure-weak)] px-3 py-2"
+          : "mx-2 mt-2 flex shrink-0 items-start gap-2 rounded-lg px-3 py-2"
+      }
+    >
+      {notice.tone === "error" ? (
+        <AlertTriangle
+          size={14}
+          aria-hidden
+          className="mt-0.5 shrink-0 text-[var(--state-failure-text)]"
+        />
+      ) : null}
+      <Typography
+        variant="body-medium-lighter"
+        className={
+          notice.tone === "error"
+            ? "text-[var(--state-failure-text)]"
+            : "text-[var(--content-tertiary)]"
+        }
+      >
+        {notice.message}
+      </Typography>
+    </div>
+  ) : null;
+
   const resultsList = (
     <div
       ref={listRef}
@@ -224,14 +284,16 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
       role="listbox"
     >
       {sections.length === 0 ? (
-        <div className="px-3 py-6 text-center">
-          <Typography
-            variant="body-medium-lighter"
-            className="text-[var(--content-tertiary)]"
-          >
-            {isSearching ? "Searching…" : "No results"}
-          </Typography>
-        </div>
+        emptyMessage ? (
+          <div className="px-3 py-6 text-center">
+            <Typography
+              variant="body-medium-lighter"
+              className="text-[var(--content-tertiary)]"
+            >
+              {emptyMessage}
+            </Typography>
+          </div>
+        ) : null
       ) : (
         sections.map((section) => (
           <div key={section.id} role="group" aria-label={section.label}>
@@ -287,6 +349,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
         }}
       >
         {searchInputRow}
+        {noticeRow}
         {resultsList}
       </div>
     );
@@ -308,6 +371,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
     >
       <div className="flex w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-[var(--border-base)] bg-[var(--surface-base)] shadow-xl">
         {searchInputRow}
+        {noticeRow}
         {resultsList}
       </div>
     </div>

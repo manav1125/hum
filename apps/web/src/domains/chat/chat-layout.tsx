@@ -787,6 +787,7 @@ export function ChatLayout() {
             selectedIndex={commandPalette.selectedIndex}
             sections={mergedSections}
             isSearching={commandPalette.isSearching}
+            searchOutcome={commandPalette.searchOutcome}
             onItemSelect={handleItemSelect}
             onKeyDown={commandPalette.handleKeyDown}
           />

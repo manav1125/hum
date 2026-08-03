@@ -7,8 +7,13 @@ import {
   type KeyboardEvent,
 } from "react";
 
-import type { GlobalSearchResponse } from "@/domains/chat/api/global-search";
-import { searchGlobal } from "@/domains/chat/api/global-search";
+import type { GlobalSearchOutcome } from "@/domains/chat/api/global-search";
+import {
+  searchFailureMessage,
+  searchGlobal,
+  SEARCH_UNAVAILABLE_MESSAGE,
+} from "@/domains/chat/api/global-search";
+import { PALETTE_SEARCH_CATEGORIES } from "@/domains/chat/hooks/command-palette-utils";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 
 export interface UseCommandPaletteOptions {
@@ -30,8 +35,15 @@ export interface UseCommandPaletteReturn {
   selectedIndex: number;
   /** Whether a server search is currently in-flight. */
   isSearching: boolean;
-  /** Server search results, grouped by category. */
-  searchResults: GlobalSearchResponse | null;
+  /**
+   * What the last server search actually produced — results, a failure, or a
+   * reason it could not run. `null` before the first search of a session.
+   *
+   * This replaced a bare `GlobalSearchResponse | null`, under which a 500 and a
+   * genuine no-match were the same value and the palette rendered both as
+   * "No results". Consumers must narrow on `status`.
+   */
+  searchOutcome: GlobalSearchOutcome | null;
   open: () => void;
   close: () => void;
   toggle: () => void;
@@ -41,7 +53,8 @@ export interface UseCommandPaletteReturn {
 }
 
 const DEBOUNCE_MS = 150;
-const MIN_QUERY_LENGTH = 2;
+/** Exported so the empty-state sentence can name the same threshold. */
+export const MIN_QUERY_LENGTH = 2;
 
 /**
  * Hook managing the command palette state: open/close toggle, search query,
@@ -63,8 +76,8 @@ export function useCommandPalette({
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] =
-    useState<GlobalSearchResponse | null>(null);
+  const [searchOutcome, setSearchOutcome] =
+    useState<GlobalSearchOutcome | null>(null);
 
   const itemCountGetterRef = useRef<() => number>(() => 0);
   useLayoutEffect(() => {
@@ -95,7 +108,7 @@ export function useCommandPalette({
     setQuery("");
     setSelectedIndex(0);
     setIsSearching(false);
-    setSearchResults(null);
+    setSearchOutcome(null);
     cancelSearch();
     onClose?.();
   }, [storeClose, cancelSearch, onClose]);
@@ -115,7 +128,7 @@ export function useCommandPalette({
       setQuery("");
       setSelectedIndex(0);
       setIsSearching(false);
-      setSearchResults(null);
+      setSearchOutcome(null);
       cancelSearch();
     }
   }, [isOpen, cancelSearch]);
@@ -129,34 +142,54 @@ export function useCommandPalette({
       cancelSearch();
 
       const trimmed = q.trim();
-      if (trimmed.length < MIN_QUERY_LENGTH || !assistantId) {
+      if (trimmed.length < MIN_QUERY_LENGTH) {
         setIsSearching(false);
-        setSearchResults(null);
+        setSearchOutcome(null);
+        return;
+      }
+
+      // No assistant resolved yet: say so rather than showing a short local
+      // list and letting it read as "that's everything you have".
+      if (!assistantId) {
+        setIsSearching(false);
+        setSearchOutcome({
+          status: "unavailable",
+          query: trimmed,
+          message: SEARCH_UNAVAILABLE_MESSAGE,
+        });
         return;
       }
 
       setIsSearching(true);
 
       debounceTimerRef.current = setTimeout(() => {
-        if (!assistantId) {
-          setIsSearching(false);
-          return;
-        }
-
         const controller = new AbortController();
         abortControllerRef.current = controller;
 
-        searchGlobal(assistantId, trimmed, { signal: controller.signal })
-          .then((results) => {
-            if (abortControllerRef.current === controller) {
-              setSearchResults(results);
-              setIsSearching(false);
-            }
+        searchGlobal(assistantId, trimmed, {
+          signal: controller.signal,
+          categories: PALETTE_SEARCH_CATEGORIES,
+        })
+          .then((outcome) => {
+            if (abortControllerRef.current !== controller) return;
+            // A superseded keystroke never searched — leave the previous
+            // outcome alone rather than replacing it with a blank.
+            if (outcome.status === "cancelled") return;
+            setSearchOutcome(outcome);
+            setIsSearching(false);
           })
-          .catch(() => {
-            if (abortControllerRef.current === controller) {
-              setIsSearching(false);
-            }
+          .catch((err: unknown) => {
+            // `searchGlobal` does not reject; a throw here would be a bug in
+            // this hook's own callback, and swallowing it silently is how a
+            // broken palette looks like an empty one.
+            if (abortControllerRef.current !== controller) return;
+            console.error("[command-palette] search callback threw", err);
+            setSearchOutcome({
+              status: "error",
+              query: trimmed,
+              message: searchFailureMessage(),
+            });
+            setIsSearching(false);
           });
       }, DEBOUNCE_MS);
     },
@@ -171,6 +204,23 @@ export function useCommandPalette({
     },
     [triggerSearch],
   );
+
+  // If the assistant resolves AFTER the user has already typed, search now.
+  // Without this, "I'm not connected to your Cue yet" would stay on screen
+  // after it stopped being true, waiting for a keystroke to disprove it — a
+  // stale explanation is only marginally better than a silent one.
+  const queryRef = useRef(query);
+  useLayoutEffect(() => {
+    queryRef.current = query;
+  });
+  const hadAssistantRef = useRef(assistantId);
+  useEffect(() => {
+    const had = hadAssistantRef.current;
+    hadAssistantRef.current = assistantId;
+    if (had || !assistantId || !isOpen) return;
+    if (queryRef.current.trim().length < MIN_QUERY_LENGTH) return;
+    triggerSearch(queryRef.current);
+  }, [assistantId, isOpen, triggerSearch]);
 
   // Cleanup on unmount — cancel in-flight searches.
   useEffect(() => {
@@ -237,7 +287,7 @@ export function useCommandPalette({
     query,
     selectedIndex,
     isSearching,
-    searchResults,
+    searchOutcome,
     open,
     close,
     toggle,
