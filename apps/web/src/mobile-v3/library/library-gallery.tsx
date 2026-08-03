@@ -10,6 +10,11 @@
  * Covers: an image-backed output shows its REAL bytes (the attachment content
  * route). Everything else gets a kind-typed cover carrying the kind glyph —
  * a drawn placeholder, never a fake preview of a document nobody rendered.
+ *
+ * Share: the ⇪ on a cover is C3's footer promise, and it appears ONLY on
+ * cards that have something behind it in the shell you are actually holding
+ * (see library-share.ts). No reach, or nothing to send, and there is no
+ * button — a ⇪ that opens an empty sheet is worse than one that isn't there.
  */
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -25,6 +30,13 @@ import {
   type LibraryEntry,
   type LibraryFilter,
 } from "./library-model";
+import {
+  detectShareReach,
+  entryShareMode,
+  shareFooterLine,
+  type ShareReach,
+} from "./library-share";
+import { useLibraryShare } from "./use-library-share";
 
 /* -------------------------------------------------------------------------- */
 /* Covers                                                                     */
@@ -94,6 +106,9 @@ export function LibraryCard({
   now,
   coverHeight = 88,
   onOpen,
+  reach = "none",
+  sharing = false,
+  onShare,
 }: {
   assistantId: string;
   entry: LibraryEntry;
@@ -103,8 +118,14 @@ export function LibraryCard({
   /** 88 in the destination (C3), 70 in the sheet (F1). */
   coverHeight?: number;
   onOpen: (entry: LibraryEntry) => void;
+  /** What the shell can do. "none" (the default) renders no ⇪ at all. */
+  reach?: ShareReach;
+  /** Mid-share, so the one tapped card dims rather than the whole wall. */
+  sharing?: boolean;
+  onShare?: (entry: LibraryEntry) => void;
 }) {
   const cover = useImageCover(assistantId, entry);
+  const shareMode = onShare ? entryShareMode(entry, reach) : null;
   const open = () => {
     haptic.light();
     onOpen(entry);
@@ -186,6 +207,54 @@ export function LibraryCard({
             ‖ REVIEW
           </span>
         ) : null}
+        {/* C3's ⇪. Rendered only where it leads somewhere: `entryShareMode`
+            is null for an output with no bytes and no URL, and for every
+            output when the shell has no share reach at all. */}
+        {shareMode ? (
+          <button
+            type="button"
+            aria-label={
+              shareMode === "file"
+                ? `Share ${entry.title}`
+                : `Share a link to ${entry.title}`
+            }
+            aria-busy={sharing}
+            disabled={sharing}
+            className="cue-pressable"
+            onClick={(e) => {
+              // The cover is inside the card's own open handler; sharing is
+              // not opening.
+              e.stopPropagation();
+              onShare?.(entry);
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              right: 5,
+              bottom: 5,
+              width: 30,
+              height: 30,
+              borderRadius: 9,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              // A translucent scrim over the cover art, which is always one of
+              // the dark COVER_ART gradients or a photo — white ink on it
+              // clears the floor in both themes.
+              background: "rgba(0,0,0,.55)",
+              border: "1px solid rgba(255,255,255,.16)",
+              color: "#FFFFFF",
+              fontSize: 13,
+              lineHeight: 1,
+              cursor: sharing ? "default" : "pointer",
+              fontFamily: "inherit",
+              opacity: sharing ? 0.55 : 1,
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            {sharing ? "…" : "⇪"}
+          </button>
+        ) : null}
       </div>
       <div style={{ padding: "8px 10px" }}>
         <div
@@ -217,7 +286,15 @@ export function LibraryCard({
   );
 }
 
-/** The 2-col wall. */
+/**
+ * The 2-col wall. It owns the share state itself — every surface that renders
+ * a grid gets the working ⇪ without wiring anything, and every card in one
+ * grid shares one busy id and one failure pill.
+ *
+ * `share={false}` opts a surface out entirely; there is no way to opt into a
+ * ⇪ that cannot do anything, because the reach probe is the only thing that
+ * decides whether one is drawn.
+ */
 export function LibraryGrid({
   assistantId,
   entries,
@@ -225,6 +302,7 @@ export function LibraryGrid({
   now,
   coverHeight,
   onOpen,
+  share = true,
 }: {
   assistantId: string;
   entries: LibraryEntry[];
@@ -232,7 +310,10 @@ export function LibraryGrid({
   now: number;
   coverHeight?: number;
   onOpen: (entry: LibraryEntry) => void;
+  share?: boolean;
 }) {
+  const { reach, sharingId, shareEntry, shareToast } =
+    useLibraryShare(assistantId);
   return (
     <div
       style={{
@@ -250,8 +331,43 @@ export function LibraryGrid({
           now={now}
           coverHeight={coverHeight}
           onOpen={onOpen}
+          reach={share ? reach : "none"}
+          sharing={sharingId === entry.id}
+          onShare={share ? shareEntry : undefined}
         />
       ))}
+      {share ? shareToast : null}
+    </div>
+  );
+}
+
+/**
+ * The gallery's footer note — C3's line, computed rather than written down.
+ *
+ * It takes the entries the wall is SHOWING, so it can never promise a share
+ * for outputs that are not there, and it reads the same reach the ⇪ reads, so
+ * the sentence and the button can never disagree. On a shell with no share at
+ * all it degrades to the one thing that is always true: tap opens it here.
+ */
+export function LibraryFooterNote({
+  entries,
+  style,
+}: {
+  entries: LibraryEntry[];
+  style?: React.CSSProperties;
+}) {
+  const [reach] = useState<ShareReach>(() => detectShareReach());
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        color: "var(--mv3-faint)",
+        textAlign: "center",
+        lineHeight: 1.5,
+        ...style,
+      }}
+    >
+      {shareFooterLine(reach, entries)}
     </div>
   );
 }

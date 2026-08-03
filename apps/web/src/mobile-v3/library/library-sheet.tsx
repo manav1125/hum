@@ -21,6 +21,7 @@ import { haptic } from "@/utils/haptics";
 
 import {
   LibraryFilterChips,
+  LibraryFooterNote,
   LibraryGrid,
   LibrarySectionLabel,
 } from "./library-gallery";
@@ -224,9 +225,16 @@ export function Mv3LibrarySheet({
           )}
         </div>
 
+        {/* The share line is computed from this shell's reach and the cards
+            actually on screen (LibraryFooterNote), so it can never promise a
+            sheet the phone cannot open. The sheet's own promise follows it. */}
+        {visible.length > 0 && !isError ? (
+          <LibraryFooterNote entries={visible} style={{ paddingTop: 13 }} />
+        ) : null}
         <div
           style={{
-            padding: "13px 0 4px",
+            padding:
+              visible.length > 0 && !isError ? "5px 0 4px" : "13px 0 4px",
             fontSize: 10.5,
             color: "var(--mv3-faint)",
             textAlign: "center",
