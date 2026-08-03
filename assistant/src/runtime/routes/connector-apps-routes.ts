@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { recordActiveComposioToolkits } from "../../capabilities/composio-connection-status.js";
+import { selectOwnedAccounts } from "../../oauth/composio-account-ownership.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import {
@@ -320,10 +321,18 @@ async function connectedAccounts(
         id?: string;
         toolkit?: { slug?: string };
         is_disabled?: boolean;
+        user_id?: unknown;
       }>;
     };
+    // Verify ownership rather than trusting the `user_ids=` filter: every id
+    // kept here is later used as `connected_account_id` on a Composio proxy
+    // call (the health probe), so a foreign row must never survive.
     const accounts = new Map<string, ConnectedAccountInfo>();
-    for (const item of data.items ?? []) {
+    for (const item of selectOwnedAccounts(
+      data.items ?? [],
+      creds.userId,
+      "connectorApps.connectedAccounts",
+    )) {
       const slug = item.toolkit?.slug;
       if (!slug || typeof item.id !== "string" || accounts.has(slug)) continue;
       accounts.set(slug, {

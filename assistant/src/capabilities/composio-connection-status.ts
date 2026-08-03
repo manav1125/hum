@@ -39,6 +39,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { selectOwnedAccounts } from "../oauth/composio-account-ownership.js";
 import { getLogger } from "../util/logger.js";
 
 const log = getLogger("composio-connection-status");
@@ -236,9 +237,16 @@ export function kickComposioStatusRefresh(
         );
         if (!res.ok) return;
         const data = (await res.json()) as {
-          items?: Array<{ toolkit?: { slug?: string } }>;
+          items?: Array<{ toolkit?: { slug?: string }; user_id?: unknown }>;
         };
-        const slugs = (data.items ?? [])
+        // Ownership is verified, not assumed — see `selectOwnedAccounts`. This
+        // snapshot drives "which accounts are linked", so a foreign row here
+        // would make the model believe it can act on someone else's account.
+        const slugs = selectOwnedAccounts(
+          data.items ?? [],
+          creds.userId,
+          "composioStatusRefresh",
+        )
           .map((c) => c.toolkit?.slug)
           .filter((s): s is string => typeof s === "string" && s.length > 0);
         recordActiveComposioToolkits(slugs);

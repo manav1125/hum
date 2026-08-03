@@ -24,6 +24,10 @@ import { join } from "node:path";
 
 import { recordActiveComposioToolkits } from "../capabilities/composio-connection-status.js";
 import { getLogger } from "../util/logger.js";
+import {
+  type ComposioAccountRow,
+  selectOwnedAccounts,
+} from "./composio-account-ownership.js";
 import type {
   OAuthConnection,
   OAuthConnectionRequest,
@@ -118,8 +122,16 @@ const connectionIdForToolkit = async (
       creds,
       `/connected_accounts?user_ids=${encodeURIComponent(creds.userId)}` +
         `&toolkit_slugs=${toolkit}&statuses=ACTIVE&limit=1`,
-    )) as { items?: Array<{ id: string }> };
-    const id = data.items?.[0]?.id;
+    )) as { items?: Array<{ id: string } & ComposioAccountRow> };
+    // Verify, don't assume: this id becomes `connected_account_id` on a proxy
+    // call that reads real user data, so a row we cannot prove is ours must
+    // never reach it. See `selectOwnedAccounts`.
+    const owned = selectOwnedAccounts(
+      data.items ?? [],
+      creds.userId,
+      `connectionIdForToolkit:${toolkit}`,
+    );
+    const id = owned[0]?.id;
     if (!id) return null;
     connIdCache.set(toolkit, { id, at: Date.now() });
     return id;
@@ -183,8 +195,14 @@ const activeToolkits = async (creds: ComposioCreds): Promise<Set<string>> => {
     const data = (await composioGet(
       creds,
       `/connected_accounts?user_ids=${encodeURIComponent(creds.userId)}&statuses=ACTIVE&limit=100`,
-    )) as { items?: Array<{ toolkit?: { slug?: string } }> };
-    const slugs = (data.items ?? [])
+    )) as {
+      items?: Array<{ toolkit?: { slug?: string } } & ComposioAccountRow>;
+    };
+    const slugs = selectOwnedAccounts(
+      data.items ?? [],
+      creds.userId,
+      "activeToolkits",
+    )
       .map((c) => c.toolkit?.slug ?? "")
       .filter(Boolean);
     // Feed the cheap cached ACTIVE-status snapshot the capability layer reads
