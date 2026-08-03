@@ -34,6 +34,7 @@ import {
   AudioLines,
   ChevronLeft,
   LibraryBig,
+  Menu as MenuIcon,
   MoreHorizontal,
   Plus,
   SlidersHorizontal,
@@ -68,6 +69,14 @@ import {
   type SlashCommand,
 } from "@/domains/chat/components/chat-composer/slash-command-catalog";
 import { useTextPopup } from "@/domains/chat/components/chat-composer/use-text-popup";
+import {
+  HEADER_CONTROL,
+  HEADER_GAP,
+  HEADER_GUTTER,
+  HEADER_LEADING_PULL,
+  HEADER_TRAILING_PULL,
+} from "@/components/nav/conversation-header-metrics";
+import { RecentThreadsSheet } from "@/components/nav/recent-threads-sheet";
 import { useComposerStore } from "@/domains/chat/composer-store";
 import { useConversationThing } from "@/domains/chat/partner/use-conversation-thing";
 import { goBackWithFallback } from "@/domains/chat/utils/conversation-navigation";
@@ -410,6 +419,11 @@ export function MobileChatView({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
 
+  // ☰ — the thread switcher. Same control, same glyph and same sheet as the
+  // corner chrome carries on HQ / Work / the chats index; here it is inline
+  // because on a conversation route that fixed chrome does not render.
+  const [threadsOpen, setThreadsOpen] = useState(false);
+
   // ▦ Library opens a sheet over this thread (G6). ✎ Create owns its own
   // open state inside ComposerCreateEntry — see that file for why the Create
   // sheet cannot be mounted from this domain.
@@ -425,17 +439,30 @@ export function MobileChatView({
   const voiceModeFlag = useAssistantFeatureFlagStore.use.voiceMode();
   const [threadVoiceOpen, setThreadVoiceOpen] = useState(false);
   const [threadVoiceKeyboard, setThreadVoiceKeyboard] = useState(false);
+  // ⤢ presents the SAME session full screen (MobileThreadVoice stays mounted
+  // and stays the controller), so expanding never restarts the call.
+  const [threadVoiceFullScreen, setThreadVoiceFullScreen] = useState(false);
   const canThreadVoice = Boolean(
     voiceModeFlag && assistantId && activeConversationId,
   );
   const handleStartThreadVoice = useCallback(() => {
     haptic.medium();
     setThreadVoiceKeyboard(false);
+    setThreadVoiceFullScreen(false);
     setThreadVoiceOpen(true);
   }, []);
   const handleThreadVoiceEnded = useCallback(() => {
     setThreadVoiceOpen(false);
     setThreadVoiceKeyboard(false);
+    setThreadVoiceFullScreen(false);
+  }, []);
+  const handleToggleThreadVoiceFullScreen = useCallback(() => {
+    setThreadVoiceFullScreen((open) => {
+      // Coming back down from full screen lands on the voice bar, never on the
+      // keyboard flip — the user was talking, not typing.
+      if (open) setThreadVoiceKeyboard(false);
+      return !open;
+    });
   }, []);
 
   // ── Live status line: "working on N things" (frame 8's header). Same
@@ -632,21 +659,31 @@ export function MobileChatView({
   // while the thread gets the room. It NEVER scrolls off, because it is not
   // inside a scroller — see PhoneChatFrame.
   //
-  // Three elements, not design's four. The frame draws ☰ · title · avatar;
-  // on this route the ☰ corner chrome does not render (`overflowVisible` is
-  // exact-match on the tab landings), so the leading slot is the ‹ back that
-  // is the screen's only chevron exit, and the trailing slot is ⋯ — the
-  // conversation's actions. An avatar here would be a fourth element whose
-  // destination (the ⓶ screen) is one back-swipe away.
+  // Four elements: ‹ back · ☰ your chats · title · ⋯ actions.
+  //
+  // The frame draws ☰ · title · avatar. On this route the ☰ CORNER chrome does
+  // not render (`overflowVisible` is exact-match on the tab landings), so for a
+  // release the leading slot held only the ‹ back — and the screen had no door
+  // to the thread list at all. The owner found that on his own phone: 151
+  // conversations, and nothing in this header that opened them.
+  //
+  // So ☰ joins ‹ rather than replacing it. They are different exits: ‹ pops to
+  // wherever this thread was opened FROM (Today, a project, a notification),
+  // and ☰ opens the other threads. Collapsing them would have quietly deleted
+  // one. The cost is 50px of title, budgeted and asserted in
+  // `conversation-header-metrics.ts` — the paddings below come from there so
+  // the test and the DOM cannot describe different headers. An avatar would be
+  // a FIFTH element whose destination is one back-swipe away; it still isn't
+  // here.
   const header = (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 6,
+        gap: HEADER_GAP,
         padding: keyboardOpen
-          ? "2px 20px 6px"
-          : "calc(4px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 20px 12px",
+          ? `2px ${HEADER_GUTTER}px 6px`
+          : `calc(4px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) ${HEADER_GUTTER}px 12px`,
         borderBottom: "1px solid var(--mv3-line)",
         background: "var(--mv3-bg)",
         transition: "padding 0.25s cubic-bezier(0.42, 0, 0.58, 1)",
@@ -660,19 +697,49 @@ export function MobileChatView({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          width: 44,
-          height: 44,
+          width: HEADER_CONTROL,
+          height: HEADER_CONTROL,
           border: "none",
           background: "transparent",
           color: "var(--mv3-micro)",
           cursor: "pointer",
           padding: 0,
-          marginLeft: -14,
+          marginLeft: -HEADER_LEADING_PULL,
           flexShrink: 0,
           WebkitTapHighlightColor: "transparent",
         }}
       >
         <ChevronLeft size={22} />
+      </button>
+      {/* ☰ — your chats. The one control the report asked for, in the corner
+          the report named. Opens over the thread instead of navigating: you
+          come back to a switcher, not to a screen. */}
+      <button
+        type="button"
+        data-slot="mv3-thread-switcher"
+        onClick={() => {
+          haptic.light();
+          setThreadsOpen(true);
+        }}
+        aria-label="Your chats"
+        aria-haspopup="dialog"
+        aria-expanded={threadsOpen}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: HEADER_CONTROL,
+          height: HEADER_CONTROL,
+          border: "none",
+          background: "transparent",
+          color: "var(--mv3-micro)",
+          cursor: "pointer",
+          padding: 0,
+          flexShrink: 0,
+          WebkitTapHighlightColor: "transparent",
+        }}
+      >
+        <MenuIcon size={19} aria-hidden />
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
@@ -731,14 +798,14 @@ export function MobileChatView({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            width: 44,
-            height: 44,
+            width: HEADER_CONTROL,
+            height: HEADER_CONTROL,
             border: "none",
             background: "transparent",
             color: "var(--mv3-micro)",
             cursor: "pointer",
             padding: 0,
-            marginRight: -12,
+            marginRight: -HEADER_TRAILING_PULL,
             flexShrink: 0,
             WebkitTapHighlightColor: "transparent",
           }}
@@ -876,6 +943,9 @@ export function MobileChatView({
             keyboardMode={threadVoiceKeyboard}
             onFlipToKeyboard={() => setThreadVoiceKeyboard(true)}
             onEnded={handleThreadVoiceEnded}
+            fullScreen={threadVoiceFullScreen}
+            onToggleFullScreen={handleToggleThreadVoiceFullScreen}
+            conversationTitle={conversationTitle}
           />
         </div>
       ) : null}
@@ -893,7 +963,13 @@ export function MobileChatView({
   const composer = (
     <div
       style={{
-        display: threadVoiceOpen && !threadVoiceKeyboard ? "none" : undefined,
+        // Full screen covers the whole screen, so the composer under it is
+        // hidden regardless of the ⌨ flip — a full-screen CALL must not have a
+        // typing surface's CTAs behind it.
+        display:
+          threadVoiceOpen && (threadVoiceFullScreen || !threadVoiceKeyboard)
+            ? "none"
+            : undefined,
         // No safe-area inset here. The app shell already pads its bottom by
         // it while the keyboard is down (root-layout), and the tab bar claws
         // that padding back and repaints it as its own ground when it is
@@ -1274,6 +1350,16 @@ export function MobileChatView({
         assistantId={assistantId}
         open={actionsOpen}
         onClose={() => setActionsOpen(false)}
+      />
+
+      {/* ☰ THREAD SWITCHER — the same sheet the corner chrome opens on the tab
+          landings, so "top-left is my chats" holds on every phone surface.
+          It portals itself (SheetShell), so mounting it here costs nothing
+          while closed. */}
+      <RecentThreadsSheet
+        open={threadsOpen}
+        onClose={() => setThreadsOpen(false)}
+        assistantId={assistantId}
       />
 
 

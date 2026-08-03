@@ -15,6 +15,16 @@
  * brief allows a top-side chevron as an escape; a menu of destinations is not
  * an escape. Both menus are bottom sheets now, and the test below asserts the
  * dialog rather than trusting the styling.
+ *
+ * **Findability**, added after the owner tested the build on his own phone.
+ * Two rows he went looking for were not there. His 151 conversations were one
+ * row deep in the RIGHT-hand sheet while every product he compares this to
+ * puts them top-left — so ☰ leads with them now. And Library, kept out of the
+ * ⓶ sheet because it is Work's third view, was invisible to someone reading
+ * that sheet for "everything I have". Both were argued for on grounds that
+ * were internally coherent and wrong in the hand, so the two tests that
+ * enforced their absence are inverted below rather than deleted: the record of
+ * why matters more than the assertion did.
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
@@ -29,6 +39,18 @@ const ASSISTANT_ID = "asst-1";
 
 let userName: string | null = "Manav";
 
+/** What the conversation list hands both sheets. Mutated per test. */
+let conversations: {
+  conversationId: string;
+  title?: string;
+  lastMessageAt?: number;
+  archivedAt?: number;
+}[] = [];
+
+/** What the Library's own fetch reports. `entries.length` is the only count. */
+let libraryOutputs: { entries: unknown[]; isLoading: boolean; isError: boolean } =
+  { entries: [], isLoading: false, isError: false };
+
 const homeQueryActual = await import(
   "@/domains/home/hooks/use-home-state-query"
 );
@@ -41,7 +63,7 @@ const conversationQueriesActual = await import("@/hooks/conversation-queries");
 mock.module("@/hooks/conversation-queries", () => ({
   ...conversationQueriesActual,
   useConversationListQuery: () => ({
-    conversations: [],
+    conversations,
     isLoading: false,
     isPending: false,
     isError: false,
@@ -50,13 +72,21 @@ mock.module("@/hooks/conversation-queries", () => ({
   }),
 }));
 
+const libraryOutputsActual = await import(
+  "@/mobile-v3/library/use-library-outputs"
+);
+mock.module("@/mobile-v3/library/use-library-outputs", () => ({
+  ...libraryOutputsActual,
+  useLibraryOutputs: () => ({ ...libraryOutputs, refetch: () => {} }),
+}));
+
 mock.module("@/stores/resolved-assistants-store", () => ({
   useResolvedAssistantsStore: {
     use: { activeAssistantId: () => ASSISTANT_ID },
   },
 }));
 
-const { Mv3OverflowMenu } = await import("./overflow-menu");
+const { Mv3OverflowMenu, LIBRARY_FETCH_LIMIT } = await import("./overflow-menu");
 
 /** Renders the chrome plus a location probe, so navigation is observable. */
 function renderMenu() {
@@ -89,6 +119,16 @@ function LocationProbe() {
 /** Opens the right-hand menu and returns its row keys, in render order. */
 function openAccountMenu(): string[] {
   fireEvent.click(screen.getByRole("button", { name: /People, conversations/i }));
+  return menuKeys();
+}
+
+/** Opens the left-hand ☰ menu and returns its row keys, in render order. */
+function openThreadSwitcher(): string[] {
+  fireEvent.click(screen.getByRole("button", { name: /Your chats/i }));
+  return menuKeys();
+}
+
+function menuKeys(): string[] {
   return screen
     .getAllByRole("menuitem")
     .map((el) => el.getAttribute("data-menu-key") ?? "");
@@ -102,6 +142,8 @@ function rowLabels(): string[] {
 
 afterEach(() => {
   userName = "Manav";
+  conversations = [];
+  libraryOutputs = { entries: [], isLoading: false, isError: false };
   cleanup();
 });
 
@@ -111,6 +153,7 @@ describe("the ⓶ menu's contents match the ruled model", () => {
     expect(openAccountMenu()).toEqual([
       "people",
       "conversations",
+      "library",
       "agents",
       "skills",
       "your-cue",
@@ -126,10 +169,87 @@ describe("the ⓶ menu's contents match the ruled model", () => {
     expect(openAccountMenu()[0]).toBe("people");
   });
 
-  test("Library is NOT a row here — it is Work's third view", () => {
+  test("Library IS a row here — the sheet is what people read for 'everything'", () => {
+    // This assertion used to run the other way round: Library was excluded
+    // because it is Work's third view and a second row would be a second nav
+    // path. The owner read this sheet looking for it — *"the swipe up is not
+    // showing library either"* — which settles it. Both rows point at the one
+    // `?view=library` url, so there is still one Library.
     renderMenu();
     openAccountMenu();
-    expect(rowLabels().some((l) => l.startsWith("Library"))).toBe(false);
+    expect(rowLabels().some((l) => l.startsWith("Library"))).toBe(true);
+  });
+
+  test("Library lands on Work's library view, not a second Library", () => {
+    renderMenu();
+    openAccountMenu();
+    const row = screen
+      .getAllByRole("menuitem")
+      .find((el) => el.getAttribute("data-menu-key") === "library");
+    fireEvent.click(row!);
+    // The path drops the query, so assert on the full href the row targets.
+    expect(routes.workView("library").startsWith(routes.projects)).toBe(true);
+    expect(screen.getByTestId("path").textContent).toBe(routes.projects);
+  });
+
+  describe("the Library row's count is real or absent", () => {
+    const librarySub = () =>
+      screen
+        .getAllByRole("menuitem")
+        .find((el) => el.getAttribute("data-menu-key") === "library")!
+        .textContent!.replace(/›/g, "")
+        .trim();
+
+    test("a settled read prints the number the gallery would show", () => {
+      libraryOutputs = {
+        entries: Array.from({ length: 12 }, (_, i) => ({ id: `o${i}` })),
+        isLoading: false,
+        isError: false,
+      };
+      renderMenu();
+      openAccountMenu();
+      expect(librarySub()).toBe("Library12 made");
+    });
+
+    test("a read in flight prints no number at all", () => {
+      // A `0` here is indistinguishable from "you have made nothing", and one
+      // of those two is a fabrication.
+      libraryOutputs = { entries: [], isLoading: true, isError: false };
+      renderMenu();
+      openAccountMenu();
+      expect(librarySub()).toBe("Library");
+    });
+
+    test("a FAILED read keeps the row and drops the number", () => {
+      // Fail-open: an outage may not remove a door, and it may not invent a
+      // count either.
+      libraryOutputs = { entries: [], isLoading: false, isError: true };
+      renderMenu();
+      openAccountMenu();
+      expect(librarySub()).toBe("Library");
+    });
+
+    test("at the fetch's ceiling the true total is unknown, so none is shown", () => {
+      libraryOutputs = {
+        entries: Array.from({ length: LIBRARY_FETCH_LIMIT }, (_, i) => ({
+          id: `o${i}`,
+        })),
+        isLoading: false,
+        isError: false,
+      };
+      renderMenu();
+      openAccountMenu();
+      expect(librarySub()).toBe("Library");
+    });
+
+    test("that ceiling is the one the Library hook actually asks for", async () => {
+      // The constant is a mirror of a file another workstream owns, so it is
+      // checked against the source rather than trusted.
+      const source = await Bun.file(
+        new URL("./library/use-library-outputs.ts", import.meta.url).pathname,
+      ).text();
+      expect(source).toContain(`LIMIT = ${LIBRARY_FETCH_LIMIT}`);
+    });
   });
 
   test("the retired CUE group is not back as destinations", () => {
@@ -195,16 +315,69 @@ describe("the ⓶ screen always has a door", () => {
   });
 });
 
-describe("the ☰ corner", () => {
-  test("does not duplicate conversations — that row lives in ⓶", () => {
-    // One destination, one nav path. This codebase has had to remove the same
-    // duplication three times.
+describe("the ☰ corner is where the chats are", () => {
+  // The inversion of "does not duplicate conversations — that row lives in ⓶".
+  // That rule optimised for one-destination-one-path and produced a phone on
+  // which 151 conversations had no top-left door at all.
+
+  test("the threads come first; search and capture ride below them", () => {
+    conversations = [
+      { conversationId: "c1", title: "Acme pricing", lastMessageAt: 3 },
+      { conversationId: "c2", title: "Board deck", lastMessageAt: 2 },
+    ];
     renderMenu();
-    fireEvent.click(screen.getByRole("button", { name: "Search and capture" }));
-    const keys = screen
-      .getAllByRole("menuitem")
-      .map((el) => el.getAttribute("data-menu-key"));
-    expect(keys).toEqual(["search", "add-tasks"]);
+    expect(openThreadSwitcher()).toEqual([
+      "thread:c1",
+      "thread:c2",
+      "all-conversations",
+      "new-chat",
+      "search",
+      "add-tasks",
+    ]);
+  });
+
+  test("a thread row opens THAT thread — one tap, no list in between", () => {
+    conversations = [
+      { conversationId: "c1", title: "Acme pricing", lastMessageAt: 3 },
+    ];
+    renderMenu();
+    openThreadSwitcher();
+    fireEvent.click(
+      screen.getAllByRole("menuitem").find(
+        (el) => el.getAttribute("data-menu-key") === "thread:c1",
+      )!,
+    );
+    expect(screen.getByTestId("path").textContent).toBe(
+      routes.conversation("c1"),
+    );
+  });
+
+  test("most recent first, archived left out", () => {
+    conversations = [
+      { conversationId: "old", title: "Old", lastMessageAt: 1 },
+      { conversationId: "new", title: "New", lastMessageAt: 9 },
+      { conversationId: "gone", title: "Gone", lastMessageAt: 10, archivedAt: 11 },
+    ];
+    renderMenu();
+    expect(openThreadSwitcher().slice(0, 2)).toEqual([
+      "thread:new",
+      "thread:old",
+    ]);
+  });
+
+  test("with no threads it still offers the list, and says why it is short", () => {
+    renderMenu();
+    const keys = openThreadSwitcher();
+    expect(keys).toEqual(["all-conversations", "new-chat", "search", "add-tasks"]);
+    expect(screen.getByText(/No chats yet/i)).toBeDefined();
+  });
+
+  test("the corner's accessible name says chats, not just search", () => {
+    // The button is the whole affordance for someone who cannot see the glyph.
+    renderMenu();
+    expect(
+      screen.getByRole("button", { name: "Your chats, search and capture" }),
+    ).toBeDefined();
   });
 });
 

@@ -11,7 +11,12 @@ import { describe, expect, test } from "bun:test";
 
 import type { DayPicture } from "@/pages/hq/hq-k1-modules";
 
-import { daySegments, daySentence, freeLabel } from "./mv3-day-strip";
+import {
+  activeFreeBlock,
+  daySegments,
+  daySentence,
+  freeLabel,
+} from "./mv3-day-strip";
 
 /** 2026-08-03, a Monday. The rail runs 08:00 → 19:00 local. */
 const NOW = new Date(2026, 7, 3, 9, 0, 0).getTime();
@@ -106,7 +111,7 @@ describe("the free label is a computed number or it is absent", () => {
   });
 });
 
-describe("the sentence the screen reader gets", () => {
+describe("the sentence the band shows", () => {
   test("says what the bars say", () => {
     expect(
       daySentence(
@@ -116,11 +121,61 @@ describe("the sentence the screen reader gets", () => {
           ],
           freeBlock: { startMs: at(13), endMs: at(16), minutes: 180 },
         }),
+        NOW,
       ),
     ).toBe("1 commitment today · 3h free");
   });
 
   test("an empty day says so rather than saying nothing", () => {
-    expect(daySentence(day())).toBe("Nothing is booked today");
+    expect(daySentence(day(), NOW)).toBe("Nothing is booked today");
+  });
+});
+
+/*
+ * The owner's real day, read off prod on 2026-08-03: 09:00–18:00 booked solid
+ * but for one fifteen-minute gap at 12:15. Opening the phone at 23:11 showed a
+ * teal "15m free" chip — a present-tense offer for time that had gone eleven
+ * hours earlier. The minutes were real; the claim was not.
+ */
+describe("a free block that has already ended is not free", () => {
+  const past = day({
+    commitments: [
+      { id: "a", title: "All morning", startMs: at(8), endMs: at(12, 15) },
+      { id: "b", title: "All afternoon", startMs: at(12, 30), endMs: at(19) },
+    ],
+    freeBlock: { startMs: at(12, 15), endMs: at(12, 30), minutes: 15 },
+  });
+  const evening = at(23, 11);
+
+  test("it is dropped once it has ended", () => {
+    expect(activeFreeBlock(past, at(12, 20))).not.toBeNull();
+    // Exactly at the end is over — the block is `endMs`-exclusive.
+    expect(activeFreeBlock(past, at(12, 30))).toBeNull();
+    expect(activeFreeBlock(past, evening)).toBeNull();
+  });
+
+  test("the band shows a passed gap as plain idle, never a teal offer", () => {
+    const live = daySegments(past, at(12, 20));
+    expect(live.filter((s) => s.kind === "free")).toHaveLength(1);
+
+    const stale = daySegments(past, evening);
+    expect(stale.filter((s) => s.kind === "free")).toHaveLength(0);
+    // The gap is still drawn — it is unbooked time, just not an offer.
+    expect(stale.filter((s) => s.kind === "idle").length).toBeGreaterThan(0);
+    expect(stale.every((s) => s.label === null)).toBe(true);
+  });
+
+  test("the sentence stops claiming it too", () => {
+    expect(daySentence(past, at(12, 20))).toBe("2 commitments today · 15m free");
+    expect(daySentence(past, evening)).toBe("2 commitments today");
+  });
+
+  test("a block still ahead of you is untouched", () => {
+    const ahead = day({
+      commitments: [{ id: "a", title: "Standup", startMs: at(9), endMs: at(10) }],
+      freeBlock: { startMs: at(13, 30), endMs: at(16, 30), minutes: 180 },
+    });
+    expect(activeFreeBlock(ahead, NOW)).not.toBeNull();
+    expect(daySentence(ahead, NOW)).toBe("1 commitment today · 3h free");
   });
 });

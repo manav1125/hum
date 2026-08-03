@@ -63,7 +63,7 @@ import {
 } from "@/pages/hq/use-missions";
 
 import { buildMv3Lanes, Mv3TierRail } from "./mv3-lanes";
-import { Mv3DayStrip } from "./mv3-day-strip";
+import { Mv3DayStrip, useDayClock } from "./mv3-day-strip";
 import { Mv3GoingQuietRows, Mv3UnreadableRows } from "./mv3-hq-rows";
 import {
   Mv3PausedRunLine,
@@ -706,12 +706,27 @@ function MissionsV3({
 }
 
 /**
- * The census, docked above the home indicator.
+ * The census — the last line of the page, in the flow.
  *
- * It never needs scrolling to — the one number that says how much Cue is
- * holding should not be the thing you have to hunt for at the bottom of a
- * card stack. Segments with nothing in them are omitted rather than shown as
- * zero: a zero here reads as "none", which is a claim.
+ * It used to be `position: absolute; bottom: 0` with a blur, pinned across the
+ * canvas so the one number saying how much Cue is holding never needed
+ * scrolling to. The cost of that was not visible from a simulator: on a real
+ * phone it sits permanently on top of the card stack, and the owner's Today
+ * screenshot has it cutting the REVIEW READY card in half mid-title. **A bar
+ * that hides the thing it is summarising has made the screen worse**, and the
+ * card stack is the whole surface — the census is a footer for it, not chrome
+ * over it. The 104px of bottom padding that existed only to hold it off the
+ * last row goes with it; the tab bar is a flex sibling of this screen, not an
+ * overlay, so nothing else needs clearing.
+ *
+ * The design's own rule for what may sit on the home canvas settles the rest:
+ * *"is this already visible somewhere else on this screen?"* Every segment
+ * here is — need-you is the headline AND the lane header, doing is the hero
+ * caption, done today is the Delivered card. So it earns a line at the bottom
+ * of the page and nothing more.
+ *
+ * Segments with nothing in them are omitted rather than shown as zero: a zero
+ * here reads as "none", which is a claim.
  *
  * **Except a segment that is answering for an absorbed lane.** In-motion no
  * longer takes a line in the rail because this bar states "N doing"
@@ -721,7 +736,7 @@ function MissionsV3({
  * exist to prevent. `keep` is how a segment declares it is carrying that
  * weight.
  */
-function Mv3Census({
+export function Mv3Census({
   segments,
 }: {
   segments: { label: string; value: number; keep?: boolean }[];
@@ -733,15 +748,8 @@ function Mv3Census({
     <div
       data-slot="mv3-census"
       style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 3,
-        padding: `9px 18px calc(10px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))`,
-        background: "color-mix(in srgb, var(--mv3-bg) 78%, transparent)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
+        marginTop: 4,
+        padding: "10px 2px 0",
         borderTop: "1px solid var(--mv3-line)",
         display: "flex",
         alignItems: "center",
@@ -1085,7 +1093,11 @@ export function Mv3Today({
   // Stamped once per mount — reading the clock during render is impure. The
   // day strip's segments would otherwise slide on every unrelated re-render.
   const [hour] = useState(() => new Date().getHours());
-  const [nowMs] = useState(() => Date.now());
+  // Ticks per minute, and feeds ONLY the day strip. The rail's bounds don't
+  // move, but "is that free block still ahead of me?" does, and a session left
+  // open across the gap would otherwise keep offering time that had gone.
+  const [mountedMs] = useState(() => Date.now());
+  const nowMs = useDayClock(mountedMs);
   /**
    * The delivered count, minted from the lane's own answer. `Queried` cannot be
    * built from a literal, so the sentence physically cannot claim a number the
@@ -1497,10 +1509,11 @@ export function Mv3Today({
         {/*
           Card stack — rides the same page scroll (frame 60).
 
-          Three Tier-1 cards, then the rail. The bottom padding clears the
-          docked census so the last line is never trapped under it.
+          Three Tier-1 cards, then the rail, then the census as the footer.
+          Nothing docks over this stack any more, so the bottom padding is a
+          margin rather than the clearance the census used to need.
         */}
-        <div style={{ padding: "4px 16px 104px" }}>
+        <div style={{ padding: "4px 16px 24px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             {/*
               C1's order, top to bottom: day strip · paused run · needs-you ·
@@ -1537,21 +1550,21 @@ export function Mv3Today({
             {/* The rail — four lines, always present, carrying the same
                 honest statements desktop shows, including "0 need you". */}
             <Mv3TierRail lanes={lanes} style={rise(0.55)} />
+            {/* The census closes the page rather than floating over it.
+                "Cue is doing" is `keep`: it carries the in-motion lane's
+                answer, which is why that lane takes no line in the rail — so
+                it still has to be on the screen, just not on top of it. */}
+            <Mv3Census
+              segments={[
+                { label: "need you", value: glanceCount },
+                { label: "Cue is doing", value: running.length, keep: true },
+                { label: "waiting", value: cameIn.length },
+                { label: "done today", value: done.length },
+              ]}
+            />
           </div>
         </div>
       </div>
-      {/* The census docks above the home indicator, so the one number that
-          says how much Cue is holding never needs scrolling to. "Cue is doing"
-          is `keep`: it now carries the in-motion lane's answer, which is why
-          that lane no longer takes a line in the rail. */}
-      <Mv3Census
-        segments={[
-          { label: "need you", value: glanceCount },
-          { label: "Cue is doing", value: running.length, keep: true },
-          { label: "waiting", value: cameIn.length },
-          { label: "done today", value: done.length },
-        ]}
-      />
       {toastNode}
     </div>
   );

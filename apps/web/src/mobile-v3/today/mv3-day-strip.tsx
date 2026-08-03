@@ -20,7 +20,22 @@
  * **The free block's label is a computed minute count or it is absent.** There
  * is no fallback phrasing, because the alternative to a real number here is a
  * fake one and this band's whole value is that "3h free" is true.
+ *
+ * **A free block that has already ended is not free.** The daemon computes the
+ * largest gap across the whole working window, so at 23:11 the block it returns
+ * may have closed eleven hours ago. Rendering it as a teal, present-tense offer
+ * is a fake number in the most load-bearing place on the screen — the minutes
+ * are real, but "you have 15m free" is not true any more. Past gaps fall back
+ * to plain idle and drop out of the sentence. See {@link activeFreeBlock}.
+ *
+ * **The band says its own sentence, out loud.** It used to carry the sentence
+ * as an `aria-label` and nothing else, which left sighted readers a run of
+ * unlabelled bars — indistinguishable from placeholder art, and reported as
+ * exactly that ("that calendar doesn't seem to be connected to anything").
+ * A picture of your day that cannot say whose day it is has not earned trust.
  */
+
+import { useEffect, useState } from "react";
 
 import type { DayPicture, Unavailable } from "@/pages/hq/hq-k1-modules";
 
@@ -45,6 +60,49 @@ export function freeLabel(minutes: number): string | null {
   if (hours === 0) return `${rest}m free`;
   if (rest === 0) return `${hours}h free`;
   return `${hours}h ${rest}m free`;
+}
+
+/**
+ * The free block, but only while it is still ahead of you.
+ *
+ * `largestFreeBlock` covers the whole 09:00–18:00 working window, so it keeps
+ * being returned long after it has passed. An offer you can no longer take is
+ * not an offer, so once the block has ended the band shows the gap as ordinary
+ * unbooked time and says nothing about it.
+ */
+export function activeFreeBlock(
+  day: DayPicture,
+  nowMs: number,
+): DayPicture["freeBlock"] {
+  const block = day.freeBlock;
+  if (!block) return null;
+  return block.endMs > nowMs ? block : null;
+}
+
+/**
+ * A per-minute clock for the band.
+ *
+ * The screen stamps `Date.now()` once per mount, which is right for the rail's
+ * bounds (they do not move) and wrong for the free block: a session left open
+ * across lunch would go on advertising a gap that closed while it sat there.
+ * Minute granularity is all the band can express, so that is all it ticks at.
+ */
+export function useDayClock(initialMs: number): number {
+  const [now, setNow] = useState(initialMs);
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const id = setInterval(tick, 60_000);
+    // WKWebView throttles or suspends timers on a backgrounded tab, which is
+    // precisely the case that matters here: the phone goes in a pocket at
+    // noon and comes out at eleven. Catching up on resume is what stops the
+    // band greeting him with a free block that ended hours ago.
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
+  return now;
 }
 
 function railBounds(nowMs: number): { start: number; end: number } {
@@ -84,11 +142,13 @@ export function daySegments(day: DayPicture, nowMs: number): Segment[] {
     else merged.push({ ...block });
   }
 
-  const free = day.freeBlock
+  // Only a block you can still take earns the teal treatment and the label.
+  const block = activeFreeBlock(day, nowMs);
+  const free = block
     ? {
-        from: Math.max(start, Math.min(end, day.freeBlock.startMs)),
-        to: Math.max(start, Math.min(end, day.freeBlock.endMs)),
-        minutes: day.freeBlock.minutes,
+        from: Math.max(start, Math.min(end, block.startMs)),
+        to: Math.max(start, Math.min(end, block.endMs)),
+        minutes: block.minutes,
       }
     : null;
 
@@ -127,10 +187,11 @@ export function daySegments(day: DayPicture, nowMs: number): Segment[] {
   return out;
 }
 
-/** The band's screen-reader sentence. Says the same thing the bars do. */
-export function daySentence(day: DayPicture): string {
+/** The band's sentence, shown and announced. Says what the bars say. */
+export function daySentence(day: DayPicture, nowMs: number): string {
   const count = day.commitments.length;
-  const free = day.freeBlock ? freeLabel(day.freeBlock.minutes) : null;
+  const block = activeFreeBlock(day, nowMs);
+  const free = block ? freeLabel(block.minutes) : null;
   const booked =
     count === 0
       ? "Nothing is booked today"
@@ -182,7 +243,7 @@ export function Mv3DayStrip({
   if (!day) return null;
 
   const segments = daySegments(day, nowMs);
-  const sentence = daySentence(day);
+  const sentence = daySentence(day, nowMs);
 
   if (segments.every((s) => s.kind !== "busy")) {
     // An empty day is a fact, and one worth the row. The band would be a
@@ -211,43 +272,61 @@ export function Mv3DayStrip({
   return (
     <div
       data-slot="mv3-day-strip"
-      role="img"
-      aria-label={sentence}
-      style={{ display: "flex", gap: 2, height: 16, ...style }}
+      style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}
     >
-      {segments.map((segment, i) => (
-        <div
-          key={i}
-          style={{
-            flex: Math.max(0.4, segment.minutes),
-            minWidth: segment.label ? 44 : 3,
-            borderRadius: 4,
-            background: FILL[segment.kind],
-            ...(segment.kind === "free"
-              ? {
-                  border:
-                    "1px dashed color-mix(in srgb, var(--mv3-teal) 50%, transparent)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }
-              : {}),
-          }}
-        >
-          {segment.label ? (
-            <span
-              style={{
-                fontSize: 8,
-                fontWeight: 600,
-                color: "var(--mv3-teal-text)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {segment.label}
-            </span>
-          ) : null}
-        </div>
-      ))}
+      {/* The bars are the picture; the sentence below is the accessible name,
+          so the band itself is decorative rather than a second announcement. */}
+      <div aria-hidden style={{ display: "flex", gap: 2, height: 16 }}>
+        {segments.map((segment, i) => (
+          <div
+            key={i}
+            style={{
+              flex: Math.max(0.4, segment.minutes),
+              minWidth: segment.label ? 44 : 3,
+              borderRadius: 4,
+              background: FILL[segment.kind],
+              ...(segment.kind === "free"
+                ? {
+                    border:
+                      "1px dashed color-mix(in srgb, var(--mv3-teal) 50%, transparent)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }
+                : {}),
+            }}
+          >
+            {segment.label ? (
+              <span
+                style={{
+                  fontSize: 8,
+                  fontWeight: 600,
+                  color: "var(--mv3-teal-text)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {segment.label}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div
+        data-slot="mv3-day-sentence"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontSize: 11.5,
+          color: "var(--mv3-muted)",
+          padding: "0 2px",
+        }}
+      >
+        <span aria-hidden style={{ fontFamily: mv3Mono, width: 13 }}>
+          ◱
+        </span>
+        <span>{sentence}</span>
+      </div>
     </div>
   );
 }

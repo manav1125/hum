@@ -26,7 +26,10 @@
  * Everything else moved by frequency of use, not by importance:
  *   · Voice — a mode, not a place. Long-press ◉ here; a mic in the composer
  *     is the primary affordance (that half lives in the chat composer).
- *   · Search and batch capture — ☰, top-left (`Mv3OverflowMenu`).
+ *   · Your chats, then search and batch capture — ☰, top-left
+ *     (`Mv3OverflowMenu`). The thread list leads it: the top-left control is
+ *     what every other assistant opens its conversations from, and this build
+ *     shipped without one.
  *   · People, conversations and Your Cue — the avatar, top-right, and that
  *     menu's `All of Your Cue` row is the ⓶ screen's door. It is NOT the
  *     mark's job any more, and it never depended on the mark.

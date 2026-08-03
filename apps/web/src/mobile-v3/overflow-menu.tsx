@@ -2,7 +2,7 @@
  * The phone's top chrome — two affordances, one on each side, and both of
  * them open **from the bottom**.
  *
- *   ☰ top-left    — search, and batch capture.
+ *   ☰ top-left    — your chats, then search and batch capture.
  *   ⓶ top-right   — the owner's initial: what accumulates, then Your Cue.
  *
  * ## Why a sheet and not a popover
@@ -23,13 +23,22 @@
  * — and `CUE_NAV` is now **deleted**, its own docstring having asked for that
  * once this menu was revisited. v23 C6 rules what replaces it:
  *
- *   ACCUMULATING   People · All conversations
+ *   ACCUMULATING   People · All conversations · Library
  *   YOUR CUE       Agents · Skills · All of Your Cue
  *
  * **People leads.** It lost its tab when the bar went to three, and design's
  * mitigation is that contextual entry (a name in a task, a search hit) is the
- * real path while this row is the fallback. **Library is not here**: it became
- * Work's third view, and it also has a card on the ⓶ screen.
+ * real path while this row is the fallback.
+ *
+ * **Library IS here now**, against C6's crop and against this file's own
+ * previous instruction. It became Work's third view, so the argument was that
+ * a row here would be a second nav path to one destination — but the owner
+ * read this exact sheet looking for it (*"the swipe up is not showing library
+ * either"*) and did not find it. A view buried one tab deep inside another
+ * surface is not discoverable from a menu that lists everything else that
+ * accumulates, and the duplication rule exists to stop two navs DISAGREEING,
+ * not to stop a thing being reachable. The row lands on `?view=library` — the
+ * same URL Work's own tab uses — so there is still exactly one Library.
  *
  * Create and Data & logs keep their rows below the hairline. C6 does not draw
  * them, but it does not withdraw them either, and this branch has already
@@ -49,7 +58,10 @@
 import { lazy, Suspense, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { MenuSheet, type MenuEntry } from "@/components/nav/menu-sheet";
+import { RecentThreadsSheet } from "@/components/nav/recent-threads-sheet";
 import { useConversationListQuery } from "@/hooks/conversation-queries";
+import { useLibraryOutputs } from "@/mobile-v3/library/use-library-outputs";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { Mv3AddTasksSheet } from "@/pages/projects/mv3-add-tasks-sheet";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
@@ -59,8 +71,6 @@ import { routes } from "@/utils/routes";
 
 import { openMv3Create } from "@/mobile-v3/create";
 
-import { microLabel } from "./mv3-kit";
-import { SheetShell } from "./sheet-shell";
 import { useCueCounts } from "./you/use-cue-counts";
 
 // The phone's Create sheet — v27's spine, lazy so the create catalogs don't
@@ -79,73 +89,16 @@ const Mv3CreateSheet = lazy(() =>
 
 const SAFE_TOP = "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))";
 
-interface MenuEntry {
-  key: string;
-  label: string;
-  /** The second line — a real count, or nothing. Never a guess. */
-  sub?: string | null;
-  /** Mono eyebrow printed above this row, starting a group. */
-  group?: string;
-  /** Hairline above this row without an eyebrow (the quiet actions group). */
-  rule?: boolean;
-  run: () => void;
-}
-
-/** One row of a menu sheet. */
-function MenuRow({ item, onDone }: { item: MenuEntry; onDone: () => void }) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className="cue-pressable"
-      data-slot="mv3-menu-row"
-      data-menu-key={item.key}
-      onClick={() => {
-        haptic.light();
-        onDone();
-        item.run();
-      }}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 11,
-        width: "100%",
-        textAlign: "left",
-        background: "transparent",
-        border: "none",
-        borderTop: item.rule ? "1px solid var(--mv3-sheet-border)" : "none",
-        borderRadius: 12,
-        padding: "12px 12px",
-        minHeight: 48,
-        fontFamily: "inherit",
-        cursor: "pointer",
-        WebkitTapHighlightColor: "transparent",
-        color: "var(--mv3-text)",
-      }}
-    >
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 600, display: "block" }}>
-          {item.label}
-        </span>
-        {item.sub ? (
-          <span
-            style={{
-              fontSize: 10,
-              color: "var(--mv3-muted)",
-              display: "block",
-              marginTop: 1,
-            }}
-          >
-            {item.sub}
-          </span>
-        ) : null}
-      </span>
-      <span aria-hidden style={{ color: "var(--mv3-muted)", flexShrink: 0 }}>
-        ›
-      </span>
-    </button>
-  );
-}
+/**
+ * The ceiling `useLibraryOutputs` asks the daemon for.
+ *
+ * A mirror, not a source — the hook lives under `mobile-v3/library/`, which
+ * another workstream owns, so this file states the number and
+ * `overflow-menu.test.tsx` reads that file and fails if the two ever disagree.
+ * It matters because at exactly the cap the count is ambiguous ("200" or "200
+ * and more"), and the Library row prints no number rather than the wrong one.
+ */
+export const LIBRARY_FETCH_LIMIT = 200;
 
 /** The corner button. The sheet it opens is rendered by the caller. */
 function CornerButton({
@@ -216,44 +169,6 @@ function CornerButton({
   );
 }
 
-/** A grouped sheet of menu rows. */
-function MenuSheet({
-  open,
-  onClose,
-  label,
-  items,
-}: {
-  open: boolean;
-  onClose: () => void;
-  label: string;
-  items: MenuEntry[];
-}) {
-  return (
-    <SheetShell open={open} onClose={onClose} label={label} maxHeight="72%">
-      <div role="menu" aria-label={label}>
-        {items.map((item) => (
-          <div key={item.key}>
-            {item.group ? (
-              <div
-                style={{
-                  ...microLabel,
-                  fontSize: 8.5,
-                  letterSpacing: ".12em",
-                  color: "var(--mv3-micro)",
-                  padding: "10px 4px 6px",
-                }}
-              >
-                {item.group}
-              </div>
-            ) : null}
-            <MenuRow item={item} onDone={onClose} />
-          </div>
-        ))}
-      </div>
-    </SheetShell>
-  );
-}
-
 /**
  * The ⓶ sheet's rows. A separate component so its queries only run once the
  * sheet is actually open — this chrome mounts on every primary route, and a
@@ -273,6 +188,12 @@ function AccountSheet({
   const navigate = useNavigate();
   const counts = useCueCounts(assistantId);
   const { conversations } = useConversationListQuery(assistantId);
+  // The Library's own fetch, not `counts.library`. `useCueCounts` counts
+  // DOCUMENTS; the Library gallery lists OUTPUTS, and they are different
+  // endpoints with different totals — printing one beside the other's door is
+  // the kind of number this product may not print. Sharing the gallery's hook
+  // also means the count follows the gallery if its source changes.
+  const library = useLibraryOutputs(open ? assistantId : null);
 
   const items: MenuEntry[] = [
     {
@@ -290,6 +211,24 @@ function AccountSheet({
       label: "All conversations",
       sub: conversations.length > 0 ? String(conversations.length) : null,
       run: () => navigate(routes.conversations),
+    },
+    {
+      // The row the owner went looking for and did not find. It lands on
+      // Work's `?view=library` — the SAME url Work's own tab uses, so this is
+      // a second door onto one Library, not a second Library.
+      key: "library",
+      label: "Library",
+      // Real or nothing: no number while it is loading, none if the read
+      // failed, and none at the fetch's 200-row ceiling, where the true total
+      // is "200 or more" and the list cannot tell which.
+      sub:
+        library.isLoading ||
+        library.isError ||
+        library.entries.length === 0 ||
+        library.entries.length >= LIBRARY_FETCH_LIMIT
+          ? null
+          : `${library.entries.length} made`,
+      run: () => navigate(routes.workView("library")),
     },
     {
       key: "agents",
@@ -363,9 +302,18 @@ export function Mv3OverflowMenu() {
     null;
   const ownerInitial = (ownerName ?? "").charAt(0).toUpperCase() || "☺";
 
-  // ☰ — finding and capturing. Conversations are NOT duplicated here: they
-  // live under Accumulating in the ⓶ sheet, and one destination with two nav
-  // paths is the duplication this codebase keeps having to remove.
+  // ☰ — YOUR CHATS first, then finding and capturing.
+  //
+  // This corner used to open Search and Add tasks alone, on the reasoning that
+  // conversations already had a row in the ⓶ sheet and one destination should
+  // not have two nav paths. The owner, on his own phone with 151 threads, could
+  // not find them: *"there is no easy way to navigate back to the live chat
+  // threads … the same way other llm's have it on the top left."* The top-left
+  // control IS the thread list in every product he was comparing against, and
+  // it is now the thread list here — the ⓶ row survives as the ledger entry
+  // beside People, while this one is the switcher that opens a thread in one
+  // tap. Search and capture ride below the hairline; they lost no reach, and
+  // they were never what the corner was for.
   const historyItems: MenuEntry[] = [
     {
       key: "search",
@@ -390,7 +338,7 @@ export function Mv3OverflowMenu() {
       <CornerButton
         side="left"
         glyph="☰"
-        ariaLabel="Search and capture"
+        ariaLabel="Your chats, search and capture"
         expanded={historyOpen}
         onPress={() => setHistoryOpen((v) => !v)}
       />
@@ -409,11 +357,11 @@ export function Mv3OverflowMenu() {
         onPress={() => setAccountOpen((v) => !v)}
       />
 
-      <MenuSheet
+      <RecentThreadsSheet
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        label="Search and capture"
-        items={historyItems}
+        assistantId={assistantId}
+        extras={historyItems}
       />
 
       {assistantId ? (
