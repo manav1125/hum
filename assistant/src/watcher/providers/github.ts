@@ -18,6 +18,7 @@ import type {
   FetchResult,
   WatcherItem,
   WatcherProvider,
+  WatcherScope,
 } from "../provider-types.js";
 
 const log = getLogger("watcher:github");
@@ -42,6 +43,21 @@ interface GitHubNotification {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * The notification reasons this watcher surfaces. Everything else GitHub sends
+ * (`subscribed`, `author`, `comment`, `state_change`, …) is dropped.
+ *
+ * Module-level rather than inline in the fetch loop because `describeScope`
+ * below promises the owner exactly this list. Two copies of it would drift, and
+ * the copy the owner reads is the one that must not be wrong.
+ */
+const RELEVANT_REASONS: ReadonlySet<string> = new Set([
+  "assign",
+  "mention",
+  "review_requested",
+  "team_mention",
+]);
 
 /** Map a GitHub notification reason to a watcher event type. */
 function reasonToEventType(reason: string, subjectType: string): string {
@@ -119,6 +135,23 @@ export const githubProvider: WatcherProvider = {
   displayName: "GitHub",
   requiredCredentialService: "github",
 
+  /**
+   * A GitHub watcher needs no repository and takes none.
+   *
+   * `GET /notifications` is scoped to the authenticated account, not to a repo,
+   * so the one-click create — which asks only for a name and a source — already
+   * produces a watcher that can poll: it watches every repository the account
+   * is subscribed to. The surface had no way to say that, which is why an
+   * account-wide watcher read as "pointing nowhere". It says it here.
+   */
+  describeScope(_config: Record<string, unknown>): WatcherScope {
+    return {
+      watching: true,
+      summary:
+        "Your GitHub account's unread notifications, across every repo you're subscribed to — issues and PRs where you were assigned, mentioned, @-mentioned as a team, or asked to review. There's no repo to pick; other GitHub activity is ignored on purpose.",
+    };
+  },
+
   async getInitialWatermark(_credentialService: string): Promise<string> {
     // Start from "now" so we don't replay all existing notifications
     return new Date().toISOString();
@@ -135,6 +168,16 @@ export const githubProvider: WatcherProvider = {
     const items: WatcherItem[] = [];
     let page = 1;
 
+    // Taken BEFORE the first request, not after the last one. The old code
+    // stamped the watermark at the end of the loop while its comment claimed
+    // "just before we fetched" — so everything whose `updated_at` fell inside
+    // the fetch itself (multi-page, network latency, a slow proxy hop) was
+    // skipped by the next poll and never looked at again. Nothing errored and
+    // nothing was logged; the events simply did not exist as far as Cue was
+    // concerned. Re-reading an overlap is free — `insertWatcherEvent` dedups
+    // on `externalId` — so the safe direction is unambiguous.
+    const fetchStartedAt = new Date().toISOString();
+
     while (true) {
       const { items: pageItems, hasMore } = await fetchNotificationsPage(
         connection,
@@ -144,13 +187,7 @@ export const githubProvider: WatcherProvider = {
 
       for (const n of pageItems) {
         // Only surface notifications for reasons that warrant attention
-        const relevantReasons = new Set([
-          "assign",
-          "mention",
-          "review_requested",
-          "team_mention",
-        ]);
-        if (!relevantReasons.has(n.reason)) continue;
+        if (!RELEVANT_REASONS.has(n.reason)) continue;
 
         items.push(notificationToItem(n));
       }
@@ -159,9 +196,7 @@ export const githubProvider: WatcherProvider = {
       page++;
     }
 
-    // New watermark: the time just before we fetched so we don't miss events
-    // that arrive between poll cycles.
-    const newWatermark = new Date().toISOString();
+    const newWatermark = fetchStartedAt;
 
     log.info(
       { count: items.length, watermark: newWatermark },

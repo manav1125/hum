@@ -98,6 +98,29 @@ export interface WatcherDecisionSet {
 }
 
 /**
+ * What a watcher is actually pointed at, in one sentence the owner can read.
+ *
+ * This exists because a watcher row records HOW to poll (provider, credential,
+ * interval) and nowhere records WHAT it polls, so the surface had nothing
+ * truthful to show and showed the poll clock instead — a watcher with nothing
+ * to watch is indistinguishable from a busy one. The provider is the only thing
+ * that knows whether its config is sufficient, so it is the thing that answers.
+ *
+ * `watching: false` is a hard claim: this watcher CANNOT produce, whatever the
+ * credential says. It must never be inferred from an empty result — a source
+ * can be correctly configured and quiet — only from config the provider knows
+ * it needs and does not have.
+ */
+export interface WatcherScope {
+  /** False when there is nothing to poll: the watcher can never produce. */
+  watching: boolean;
+  /** One sentence naming what it polls, or what is missing when it can't. */
+  summary: string;
+  /** When `watching` is false, the one thing that would fix it. */
+  fix?: string;
+}
+
+/**
  * A watcher provider adapts an external API into the watcher system.
  * Each provider knows how to poll for new events and track its position.
  */
@@ -124,6 +147,17 @@ export interface WatcherProvider {
    * data migration and no window in which the old behaviour can fire again.
    */
   pinnedIntakeMode?: WatcherIntakeMode;
+
+  /**
+   * Say what a watcher with this config is pointed at — see {@link WatcherScope}.
+   *
+   * Optional only so a provider that has not been taught to answer keeps
+   * working; the list route falls back to a sentence that claims nothing beyond
+   * the credential. A provider that requires configuration to poll anything
+   * SHOULD implement this, because it is the only place that can tell the owner
+   * their watcher is inert before they wait a week for a hit that cannot come.
+   */
+  describeScope?(config: Record<string, unknown>): WatcherScope;
 
   /**
    * Fetch new events since the given watermark.

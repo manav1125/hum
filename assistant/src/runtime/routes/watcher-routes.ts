@@ -14,10 +14,12 @@ import {
   getWatcherProvider,
   listWatcherProviders,
 } from "../../watcher/provider-registry.js";
+import type { WatcherScope } from "../../watcher/provider-types.js";
 import {
   createWatcher,
   deleteWatcher,
   getWatcher,
+  getWatcherHitStats,
   listWatcherEvents,
   listWatchers,
   updateWatcher,
@@ -121,6 +123,46 @@ function handleWatcherCreate({ body = {} }: RouteHandlerArgs) {
 }
 
 /**
+ * What this watcher is pointed at, in one sentence — see `WatcherScope`.
+ *
+ * The provider answers when it can. When it can't, we say only what the row
+ * actually proves (which account it authenticates as) and claim `watching:
+ * true`: a provider that has not been taught to describe itself is not evidence
+ * that the watcher is inert, and inventing `watching: false` here would grey out
+ * working watchers. Nothing may set `watching: false` except a provider saying
+ * so about config it knows it needs.
+ */
+function resolveWatcherScope(watcher: Watcher): WatcherScope {
+  const provider = getWatcherProvider(watcher.providerId);
+  if (!provider) {
+    return {
+      watching: false,
+      summary: `This watcher's source ("${watcher.providerId}") isn't available in this build, so it can't poll anything.`,
+      fix: "Remove it — every poll fails and nothing can arrive.",
+    };
+  }
+  if (!provider.describeScope) {
+    return {
+      watching: true,
+      summary: `Your connected ${provider.displayName} account.`,
+    };
+  }
+  try {
+    const config = watcher.configJson
+      ? (JSON.parse(watcher.configJson) as Record<string, unknown>)
+      : {};
+    return provider.describeScope(config);
+  } catch {
+    // Unreadable config is a real problem, but not proof the watcher is inert
+    // — the provider may not need the config at all. Say what we know.
+    return {
+      watching: true,
+      summary: `Your connected ${provider.displayName} account.`,
+    };
+  }
+}
+
+/**
  * Resolve a watcher's connector-health signal for the UI health dot: 'ok',
  * 'reauth' (a dead token the user must reconnect), 'not_connected' (no account
  * for this provider at all — a different sentence to the user, and the only
@@ -129,7 +171,13 @@ function handleWatcherCreate({ body = {} }: RouteHandlerArgs) {
  */
 async function resolveWatcherHealth(
   watcher: Watcher,
-): Promise<"ok" | "reauth" | "unknown" | "not_connected"> {
+  scope: WatcherScope,
+): Promise<"ok" | "reauth" | "unknown" | "not_connected" | "not_watching"> {
+  // A watcher with nothing to poll cannot produce, whatever its token says, so
+  // this outranks every credential answer below — including 'ok'. Reconnecting
+  // an account would not make it start working, and a green dot on a watcher
+  // that can never hit is the exact lie this state exists to stop.
+  if (!scope.watching) return "not_watching";
   try {
     // Ask this first: `checkCredentialForProvider` returns null both for
     // "healthy" and for "no connection exists", so without this a watcher on
@@ -175,19 +223,41 @@ async function handleWatcherList({ body = {} }: RouteHandlerArgs) {
   const { watcher_id: watcherId, enabled_only: enabledOnly } =
     WatcherListParams.parse(body);
 
+  // What each watcher has actually produced. Sent alongside `lastPollAt` so a
+  // surface never has to substitute the poll clock for it — the substitution
+  // that made an account-wide GitHub watcher with zero events read as "hit 2m
+  // ago" for a day and a half.
+  const hits = getWatcherHitStats();
+  const hitsFor = (id: string) => ({
+    hitCount: hits.get(id)?.hitCount ?? 0,
+    lastHitAt: hits.get(id)?.lastHitAt ?? null,
+  });
+
   if (watcherId) {
     const watcher = getWatcher(watcherId);
     if (!watcher) {
       throw new NotFoundError(`Watcher not found: ${watcherId}`);
     }
     const events = listWatcherEvents({ watcherId, limit: 10 });
-    const health = await resolveWatcherHealth(watcher);
-    return { watcher: { ...watcher, health }, events };
+    const scope = resolveWatcherScope(watcher);
+    const health = await resolveWatcherHealth(watcher, scope);
+    return {
+      watcher: { ...watcher, health, scope, ...hitsFor(watcher.id) },
+      events,
+    };
   }
 
   const list = listWatchers({ enabledOnly });
   return Promise.all(
-    list.map(async (w) => ({ ...w, health: await resolveWatcherHealth(w) })),
+    list.map(async (w) => {
+      const scope = resolveWatcherScope(w);
+      return {
+        ...w,
+        health: await resolveWatcherHealth(w, scope),
+        scope,
+        ...hitsFor(w.id),
+      };
+    }),
   );
 }
 

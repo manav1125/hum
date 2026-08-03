@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 import { getDb } from "../memory/db-connection.js";
@@ -480,6 +480,50 @@ export function listWatcherEvents(options?: {
     .limit(options?.limit ?? 50)
     .all()
     .map(parseEventRow);
+}
+
+/**
+ * How much each watcher has actually produced: one row per watcher that has
+ * ever recorded an event.
+ *
+ * The surface used to answer "is this thing working?" with `last_poll_at`,
+ * labelled "Last hit" — so a watcher that had polled 320 times and recorded
+ * nothing read as "hit 2m ago". A poll is not a hit. This is the number that
+ * makes the two distinguishable, and it is the one query shape that catches
+ * this whole class of bug: work done versus rows produced.
+ *
+ * Watchers with zero events are absent from the map; the caller reads a missing
+ * key as zero rather than as unknown, because "no rows" IS the answer.
+ */
+export function getWatcherHitStats(): Map<
+  string,
+  { hitCount: number; lastHitAt: number | null }
+> {
+  const db = getDb();
+  const rows = db
+    .select({
+      watcherId: watcherEvents.watcherId,
+      hitCount: sql<number>`count(*)`,
+      // The source's own clock when it gave one — this is read as "how long
+      // since something arrived", and `created_at` answers a question about
+      // our poll, not about the event. Rows written before migration 320 have
+      // no `occurred_at`, so they fall back rather than vanishing.
+      lastHitAt: sql<
+        number | null
+      >`max(coalesce(${watcherEvents.occurredAt}, ${watcherEvents.createdAt}))`,
+    })
+    .from(watcherEvents)
+    .groupBy(watcherEvents.watcherId)
+    .all();
+
+  const out = new Map<string, { hitCount: number; lastHitAt: number | null }>();
+  for (const row of rows) {
+    out.set(row.watcherId, {
+      hitCount: Number(row.hitCount),
+      lastHitAt: row.lastHitAt === null ? null : Number(row.lastHitAt),
+    });
+  }
+  return out;
 }
 
 // ── Row parsers ─────────────────────────────────────────────────────
