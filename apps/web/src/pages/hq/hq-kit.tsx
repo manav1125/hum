@@ -5,8 +5,10 @@
  * Faithful to the locked Cue-HQ-Build design doc: serif display headings,
  * DM Mono microlabels, status rings that NEVER fake a number (phase 1 is
  * status-only — a full ring tinted by the honest state: ✓ on track,
- * ! needs you, ◼ blocked), and the dark "rings hero" gradient card that stays
- * dark in both themes. Colors ride the theme-aware `--mv1-*` vars plus the
+ * ! needs you, ◼ blocked), and the dark hero gradient still used by Mission
+ * detail. The full-bleed concentric "rings hero" that lived here is gone: the
+ * v33 HQ draws mission health once, as four status rings inside the Deck rail's
+ * Missions tile, so the portfolio reads in a tile instead of a screen. Colors ride the theme-aware `--mv1-*` vars plus the
  * HQ-local `--hq-teal` accent injected by `<HqStyle/>`.
  */
 
@@ -212,88 +214,6 @@ export function StatusRing({
         }}
       >
         {meta.glyph}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The concentric rings hero visual — one full ring per mission (outer-in),
- * tinted mission-hue when on track and status-tinted otherwise, with the
- * serif "N/M — ON TRACK" stack in the middle. Renders on the dark hero card.
- */
-export function RingsHero({
-  rings,
-  onTrack,
-  total,
-  size = 176,
-}: {
-  rings: Array<{ status: RingStatus; hue: string }>;
-  onTrack: number;
-  total: number;
-  size?: number;
-}) {
-  const shown = rings.slice(0, 6);
-  const stroke = shown.length > 4 ? 9 : 12;
-  const gap = 4;
-  const outer = 100 - stroke / 2;
-  return (
-    <div
-      role="img"
-      aria-label={`${onTrack} of ${total} missions on track`}
-      style={{ position: "relative", width: size, height: size, flexShrink: 0 }}
-    >
-      <svg
-        viewBox="0 0 200 200"
-        width={size}
-        height={size}
-        style={{ transform: "rotate(-90deg)" }}
-      >
-        <g fill="none" strokeWidth={stroke} strokeLinecap="round">
-          {shown.map((ring, i) => {
-            const r = outer - i * (stroke + gap);
-            if (r <= 12) return null;
-            const color =
-              ring.status === "on_track"
-                ? ring.hue
-                : RING_META[ring.status].color;
-            return (
-              <g key={i}>
-                <circle cx={100} cy={100} r={r} stroke="rgba(255,255,255,.1)" />
-                <circle cx={100} cy={100} r={r} stroke={color} />
-              </g>
-            );
-          })}
-        </g>
-      </svg>
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#fff",
-        }}
-      >
-        <span
-          style={{ fontFamily: serif, fontSize: size * 0.16, lineHeight: 1 }}
-        >
-          {onTrack}/{total}
-        </span>
-        <span
-          style={{
-            fontFamily: mono,
-            fontSize: 9,
-            letterSpacing: "0.1em",
-            color: "rgba(255,255,255,.6)",
-            marginTop: 2,
-          }}
-        >
-          ON TRACK
-        </span>
       </div>
     </div>
   );
