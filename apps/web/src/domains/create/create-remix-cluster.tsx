@@ -13,14 +13,32 @@
  *   re-seeds with that kit's brand contract.
  * - **Make variations** hands off to the parent to open the 4e result grid.
  *
- * Desktop renders the inline cluster row; mobile renders the bottom action
- * sheet (SET 3b). The design uses the shipped HQ `--mv1-*` tokens.
+ * Desktop renders the inline cluster row; touch surfaces render the bottom dock
+ * (SET 3b). The design uses the shipped HQ `--mv1-*` tokens.
+ *
+ * **The dock rests CLOSED.** Remix is what you want after looking at the thing,
+ * not instead of looking at it — and the file is the reason you tapped. The
+ * first version rendered the whole action list inline and unconditionally, so
+ * opening an artefact on a phone handed roughly half the viewport to a panel
+ * with no handle, no low detent and no dismissal: the artefact's own caption
+ * sat behind it and rotating the phone did not help. What rides under the
+ * artefact now is a ~44pt bar you tap (or swipe up) to open and tap (or swipe
+ * down) to put away, and the opened list is capped against the viewport so a
+ * short landscape window scrolls it instead of being swallowed by it.
  */
 
-import { useState } from "react";
-import { Copy, Palette, RefreshCw, X } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Palette,
+  RefreshCw,
+  X,
+} from "lucide-react";
 
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, usePointerCoarse } from "@/hooks/use-is-mobile";
+import { haptic } from "@/utils/haptics";
 import {
   buildMergePrompt,
   buildRebrandPrompt,
@@ -69,6 +87,31 @@ const C = {
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
+/**
+ * A viewport too short to spend 250px on a panel — a phone held sideways is
+ * the case that matters. `useIsMobile` is a WIDTH question, and a phone in
+ * landscape is 852pt wide: wide enough to fail the mobile test and short
+ * enough that the desktop row plus a nav bar leaves the artefact a sliver.
+ */
+const SHORT_VIEWPORT_QUERY = "(max-height: 560px)";
+
+function subscribeShort(onChange: () => void): () => void {
+  const mql = window.matchMedia(SHORT_VIEWPORT_QUERY);
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+}
+
+function shortSnapshot(): boolean {
+  return window.matchMedia(SHORT_VIEWPORT_QUERY).matches;
+}
+
+function useShortViewport(): boolean {
+  return useSyncExternalStore(subscribeShort, shortSnapshot);
+}
+
+/** How far a drag on the dock handle must travel to count as open/close. */
+export const REMIX_DOCK_DRAG_PX = 24;
+
 /** A tiny swatch pair for a Brand Kit row (primary + accent). */
 function BrandSwatches({ brand }: { brand: ActiveBrand }) {
   const primary = brand.palette?.primary ?? "#3D6EE8";
@@ -112,7 +155,9 @@ function RebrandMenu({
       <div style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>
         Rebrand this {asset.noun ?? "asset"}
       </div>
-      <div style={{ fontSize: 12, color: C.t3, marginTop: 4, marginBottom: 12 }}>
+      <div
+        style={{ fontSize: 12, color: C.t3, marginTop: 4, marginBottom: 12 }}
+      >
         Re-render in a different Brand Kit — same content.
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -164,7 +209,9 @@ function RebrandMenu({
                   {kit.name ?? "Untitled kit"}
                 </span>
                 {isCurrent ? (
-                  <span style={{ fontSize: 11, color: C.blueS }}>Current ✓</span>
+                  <span style={{ fontSize: 11, color: C.blueS }}>
+                    Current ✓
+                  </span>
                 ) : (
                   <span style={{ fontSize: 12, color: C.t3 }}>›</span>
                 )}
@@ -188,7 +235,9 @@ function RebrandMenu({
             cursor: "pointer",
           }}
         >
-          <span style={{ fontSize: 14, width: 12, textAlign: "center" }}>+</span>
+          <span style={{ fontSize: 14, width: 12, textAlign: "center" }}>
+            +
+          </span>
           <span style={{ fontSize: 13 }}>New brand kit…</span>
         </button>
       </div>
@@ -256,12 +305,32 @@ export function RemixCluster({
   onNewBrandKit,
   enableFanout = false,
 }: RemixClusterProps) {
-  const isMobile = useIsMobile();
+  // The dock, not the inline row, whenever a thumb is driving a viewport that
+  // cannot spare the height: a narrow one, or a short one under a finger.
+  const narrow = useIsMobile();
+  const coarse = usePointerCoarse();
+  const short = useShortViewport();
+  const isMobile = narrow || (coarse && short);
   // Resolve the active brand ourselves when the host didn't pass one, so the
   // seeded make-variations / fan-out generations still carry the brand contract.
   const { brand: activeBrand } = useActiveBrand();
   const brand = brandProp ?? activeBrand;
   const [rebrandOpen, setRebrandOpen] = useState(false);
+  // The dock's resting state. Closed, always — including for the NEXT artefact,
+  // which is why this resets on the asset rather than only on mount.
+  const [dockOpen, setDockOpen] = useState(false);
+  useEffect(() => {
+    setDockOpen(false);
+    setRebrandOpen(false);
+  }, [asset.name]);
+  const toggleDock = () => {
+    // `.light` on selection. Nothing fires on appear — the dock arriving is
+    // not something the user did.
+    void haptic.light();
+    const next = !dockOpen;
+    setDockOpen(next);
+    if (!next) setRebrandOpen(false);
+  };
   const [panel, setPanel] = useState<RemixPanel>("none");
   // The launched fan-out kit — polled server-side for per-asset status.
   const kitLauncher = useKitLauncher();
@@ -436,6 +505,8 @@ export function RemixCluster({
       <>
         <RemixSheet
           asset={asset}
+          expanded={dockOpen}
+          onToggleExpanded={toggleDock}
           rebrandOpen={rebrandOpen}
           onToggleRebrand={() => setRebrandOpen((v) => !v)}
           onRestyle={onRestyle}
@@ -676,9 +747,23 @@ function RemixChip({
   );
 }
 
-/** SET 3b — the mobile remix bottom action sheet. */
+/**
+ * SET 3b — the touch remix dock.
+ *
+ * Closed it is a handle: a grabber, the word REMIX and a chevron, in one ~44pt
+ * row, so the artefact above it keeps the screen. Open it is the action list,
+ * capped at a share of the viewport and scrolled inside that cap — which is
+ * what keeps a phone held sideways usable, where an uncapped list is taller
+ * than the window it lives in.
+ *
+ * Both directions are reachable two ways: tap the handle, or drag it (up to
+ * open, down to put away). The drag is the one the thumb finds first, and the
+ * previous version drew this exact grabber while making it inert.
+ */
 function RemixSheet({
   asset,
+  expanded,
+  onToggleExpanded,
   rebrandOpen,
   onToggleRebrand,
   onRestyle,
@@ -688,6 +773,9 @@ function RemixSheet({
   onFanout,
 }: {
   asset: RemixAsset;
+  /** Open state — owned by the cluster so a new asset resets it. */
+  expanded: boolean;
+  onToggleExpanded: () => void;
   rebrandOpen: boolean;
   onToggleRebrand: () => void;
   onRestyle: () => void;
@@ -696,76 +784,160 @@ function RemixSheet({
   onNewBrandKit: () => void;
   onFanout?: () => void;
 }) {
+  const noun = asset.noun ?? "asset";
+  const dragStartY = useRef<number | null>(null);
+  // A drag that already toggled must not toggle again via the click the
+  // browser synthesises after touchend.
+  const dragHandled = useRef(false);
+
   return (
     <div
+      data-testid="remix-dock"
+      data-expanded={expanded ? "true" : "false"}
       style={{
+        flexShrink: 0,
         borderTop: `1px solid ${C.line}`,
         background: C.surface,
         borderRadius: "18px 18px 0 0",
-        padding: "10px 16px 16px",
+        padding: expanded ? "2px 16px 14px" : "2px 16px 6px",
       }}
     >
-      <div
-        aria-hidden
-        style={{
-          width: 36,
-          height: 4,
-          borderRadius: 999,
-          background: C.line,
-          margin: "0 auto 12px",
+      <button
+        type="button"
+        data-testid="remix-dock-toggle"
+        aria-expanded={expanded}
+        aria-controls="remix-dock-actions"
+        aria-label={
+          expanded
+            ? `Hide remix options`
+            : `Show remix options for this ${noun}`
+        }
+        onTouchStart={(e) => {
+          dragStartY.current = e.touches[0]?.clientY ?? null;
         }}
-      />
-      <div
+        onTouchEnd={(e) => {
+          const from = dragStartY.current;
+          dragStartY.current = null;
+          const to = e.changedTouches[0]?.clientY;
+          if (from == null || to == null) return;
+          const dy = to - from;
+          const opens = dy <= -REMIX_DOCK_DRAG_PX && !expanded;
+          const closes = dy >= REMIX_DOCK_DRAG_PX && expanded;
+          if (!opens && !closes) return;
+          dragHandled.current = true;
+          onToggleExpanded();
+        }}
+        onClick={() => {
+          if (dragHandled.current) {
+            dragHandled.current = false;
+            return;
+          }
+          onToggleExpanded();
+        }}
         style={{
-          fontFamily: mono,
-          fontSize: 10,
-          letterSpacing: "0.14em",
-          textTransform: "uppercase",
-          color: C.t3,
-          marginBottom: 10,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          width: "100%",
+          minHeight: 44,
+          padding: "8px 0 4px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          WebkitTapHighlightColor: "transparent",
         }}
       >
-        Remix this {asset.noun ?? "asset"}
-      </div>
-
-      {rebrandOpen ? (
-        <RebrandMenuMobile
-          asset={asset}
-          onPick={onPickBrand}
-          onNewKit={onNewBrandKit}
-          onBack={onToggleRebrand}
+        <span
+          aria-hidden
+          style={{
+            width: 36,
+            height: 4,
+            borderRadius: 999,
+            background: C.line,
+            margin: "0 auto",
+          }}
         />
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <SheetRow
-            icon={<RefreshCw size={16} />}
-            title="Restyle"
-            hint="Swap template"
-            onClick={onRestyle}
-          />
-          <SheetRow
-            icon={<Palette size={16} />}
-            title="Rebrand"
-            hint="Another Brand Kit"
-            emphasis
-            onClick={onToggleRebrand}
-          />
-          <SheetRow
-            icon={<Copy size={16} />}
-            title="Make variations"
-            hint="Compare alternates"
-            onClick={onMakeVariations}
-          />
-          {onFanout ? (
-            <SheetRow
-              icon={<Copy size={16} />}
-              title="Also make…"
-              hint="Multi-format kit · later phase"
-              onClick={onFanout}
+        <span
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
+          }}
+        >
+          <span
+            style={{
+              flex: 1,
+              textAlign: "left",
+              fontFamily: mono,
+              fontSize: 10,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: C.t3,
+            }}
+          >
+            {expanded ? `Remix this ${noun}` : "Remix"}
+          </span>
+          <span aria-hidden style={{ display: "flex", color: C.t3 }}>
+            {expanded ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+          </span>
+        </span>
+      </button>
+
+      {expanded ? (
+        <div
+          id="remix-dock-actions"
+          style={{
+            // Capped against the LIVE viewport, and scrolled inside the cap:
+            // in landscape the same list would otherwise be taller than the
+            // window. `dvh` so the browser's collapsing toolbars are counted.
+            maxHeight: "min(44dvh, 340px)",
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+            marginTop: 6,
+          }}
+        >
+          {rebrandOpen ? (
+            <RebrandMenuMobile
+              asset={asset}
+              onPick={onPickBrand}
+              onNewKit={onNewBrandKit}
+              onBack={onToggleRebrand}
             />
-          ) : null}
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <SheetRow
+                icon={<RefreshCw size={16} />}
+                title="Restyle"
+                hint="Swap template"
+                onClick={onRestyle}
+              />
+              <SheetRow
+                icon={<Palette size={16} />}
+                title="Rebrand"
+                hint="Another Brand Kit"
+                emphasis
+                onClick={onToggleRebrand}
+              />
+              <SheetRow
+                icon={<Copy size={16} />}
+                title="Make variations"
+                hint="Compare alternates"
+                onClick={onMakeVariations}
+              />
+              {onFanout ? (
+                <SheetRow
+                  icon={<Copy size={16} />}
+                  title="Also make…"
+                  hint="Multi-format kit · later phase"
+                  onClick={onFanout}
+                />
+              ) : null}
+            </div>
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

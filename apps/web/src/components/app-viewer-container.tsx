@@ -6,6 +6,7 @@ import { AppNavBar } from "@/components/app-nav-bar";
 import { RemixCluster } from "@/domains/create/create-remix-cluster";
 import type { RemixAsset } from "@/domains/create/create-remix";
 import type { BrandProfileLike } from "@/domains/create/create-intent";
+import { usePointerCoarse } from "@/hooks/use-is-mobile";
 import { useSandboxFetchProxy } from "@/hooks/use-sandbox-fetch-proxy";
 import { cn } from "@/utils/misc";
 import { injectBridge } from "@/utils/sandbox-bridge";
@@ -126,9 +127,24 @@ export function AppViewerContainer({
     return () => ro.disconnect();
   }, []);
 
-  // Fit-to-width only on narrow (phone) stages — desktop renders unscaled.
+  // Fit-to-width on narrow (phone) stages — desktop renders unscaled.
+  //
+  // Width alone was not the whole question. Turn the phone sideways and the
+  // stage becomes ~852×300: WIDE enough to clear the narrow test and far too
+  // SHORT to show a 720pt slide, so the deck rendered at its contract size
+  // inside a window a third of that height and the owner saw a clipped slide —
+  // which is why rotating to see the artefact better made it worse. On a
+  // touch viewport, fit whenever the stage cannot hold the slide at 1:1.
+  const coarsePointer = usePointerCoarse();
+  const stageTooSmall =
+    stageSize != null &&
+    (stageSize.w < DECK_VIRTUAL_W || stageSize.h < DECK_VIRTUAL_H);
   const deckFit =
-    isDeck && stageSize && stageSize.w > 0 && stageSize.w < DECK_FIT_MAX_W
+    isDeck &&
+    stageSize &&
+    stageSize.w > 0 &&
+    stageSize.h > 0 &&
+    (stageSize.w < DECK_FIT_MAX_W || (coarsePointer && stageTooSmall))
       ? {
           scale: Math.min(
             stageSize.w / DECK_VIRTUAL_W,
