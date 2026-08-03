@@ -74,6 +74,7 @@ import {
   useLiveVoiceStore,
   type LiveVoiceSessionState,
 } from "@/domains/chat/voice/live-voice/live-voice-store";
+import { resolveVoicePersona } from "@/domains/chat/voice/live-voice/voice-personas";
 
 // ---------------------------------------------------------------------------
 // Thresholds (mirror the macOS LiveVoiceChannelManager defaults)
@@ -183,6 +184,11 @@ export interface UseLiveVoiceOptions {
    * without changing the default experience.
    */
   engine?: "cascade" | "gemini-live";
+  /**
+   * Conversation persona/mode. Defaults to resolving
+   * `localStorage["cue.voicePersona"]`, falling back to companion.
+   */
+  persona?: string;
 }
 
 /**
@@ -419,6 +425,7 @@ export function useLiveVoice(
       // still force legacy push-to-talk by passing `fullDuplex: false`.
       const fullDuplex = opts.fullDuplex !== false;
       const engine = resolveVoiceEngine(opts.engine);
+      const persona = resolveVoicePersona(opts.persona);
       const client = (
         opts.createClient ?? (() => new LiveVoiceChannelClient())
       )();
@@ -573,7 +580,13 @@ export function useLiveVoice(
         }),
       );
 
-      await client.connect({ assistantId, conversationId, fullDuplex, engine });
+      await client.connect({
+        assistantId,
+        conversationId,
+        fullDuplex,
+        engine,
+        persona,
+      });
     },
     [teardown, attemptReconnect],
   );

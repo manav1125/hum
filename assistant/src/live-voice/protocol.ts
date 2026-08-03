@@ -1,3 +1,5 @@
+import { isVoicePersonaId } from "./voice-personas.js";
+
 const LIVE_VOICE_CLIENT_FRAME_TYPES = [
   "start",
   "audio",
@@ -89,6 +91,13 @@ export interface LiveVoiceClientStartFrame {
    * plus a prompt to ask the user's timezone rather than assume.
    */
   readonly timezone?: string;
+  /**
+   * Selectable conversation persona/mode (see voice-personas.ts):
+   * "companion" | "reflective" | "cofounder". Absent or unknown → the default
+   * companion, so old clients keep today's behaviour. Shapes tone only, not
+   * capabilities.
+   */
+  readonly persona?: string;
 }
 
 export interface LiveVoiceClientAudioFrame {
@@ -466,6 +475,9 @@ function validateStartFrame(
       ...(typeof value.timezone === "string" && value.timezone.trim()
         ? { timezone: value.timezone }
         : {}),
+      // Persona is cosmetic (tone only): accept a valid id, silently drop
+      // anything else to the default rather than rejecting the session.
+      ...(isVoicePersonaId(value.persona) ? { persona: value.persona } : {}),
       audio: audioConfig.frame,
     },
   };

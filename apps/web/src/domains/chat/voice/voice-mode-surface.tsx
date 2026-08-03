@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import { Keyboard, Mic, MicOff, Sparkles, X } from "lucide-react";
+import { Drama, Keyboard, Mic, MicOff, Sparkles, X } from "lucide-react";
 
 import {
   VoiceOrb,
@@ -41,6 +41,13 @@ import {
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import {
+  DEFAULT_VOICE_PERSONA,
+  resolveVoicePersona,
+  VOICE_PERSONA_IDS,
+  VOICE_PERSONA_OPTIONS,
+  type VoicePersonaId,
+} from "@/domains/chat/voice/live-voice/voice-personas";
 import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router";
 import type { Surface } from "@/domains/chat/types/types";
 import { CueRing } from "@/mobile-v3/cue-ring";
@@ -250,6 +257,35 @@ export function VoiceModeSurface({
     }
   }, [engine, active, connecting, stop, start, assistantId, conversationId]);
 
+  // --- Persona / mode picker (Companion / Reflective / Co-founder) -----------
+  // Persists to `cue.voicePersona` (the key `resolveVoicePersona()` reads), so
+  // the choice is applied at the next session start. Cycles through the modes on
+  // tap to match the minimal single-control aesthetic of the engine toggle.
+  const [persona, setPersonaState] = useState<VoicePersonaId>(() =>
+    resolveVoicePersona(),
+  );
+  const personaLabel =
+    VOICE_PERSONA_OPTIONS.find((p) => p.id === persona)?.label ??
+    DEFAULT_VOICE_PERSONA;
+  const cyclePersona = useCallback(() => {
+    const idx = VOICE_PERSONA_IDS.indexOf(persona);
+    const next = VOICE_PERSONA_IDS[(idx + 1) % VOICE_PERSONA_IDS.length];
+    setPersonaState(next);
+    try {
+      window.localStorage.setItem("cue.voicePersona", next);
+    } catch {
+      // ignore locked-down storage
+    }
+    // Persona is chosen at session start, so restart an in-flight session to
+    // apply it immediately.
+    if (active || connecting) {
+      void (async () => {
+        await stop();
+        await start(assistantId, conversationId ?? undefined);
+      })();
+    }
+  }, [persona, active, connecting, stop, start, assistantId, conversationId]);
+
   // Auto-start once on mount when requested (in-chat overlay). Guarded on the
   // flag + a non-empty assistant id; only fires from idle so a re-render can't
   // restart a live or failed session.
@@ -446,372 +482,402 @@ export function VoiceModeSurface({
         {engine === "gemini-live" ? "Realtime" : "Classic"}
       </button>
 
+      {/* Persona / mode picker — below the engine toggle, same pill style. Taps
+          cycle Companion → Reflective → Co-founder. Applied at session start. */}
+      <button
+        type="button"
+        onClick={cyclePersona}
+        aria-label={`Voice mode: ${personaLabel}. Tap to switch.`}
+        title={
+          VOICE_PERSONA_OPTIONS.find((p) => p.id === persona)?.description ??
+          "Conversation mode"
+        }
+        style={{
+          position: "absolute",
+          top: `calc(58px + ${safeInset("top")})`,
+          left: `calc(14px + ${safeInset("left")})`,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          fontFamily: mono,
+          fontSize: 12,
+          color: TEXT_2,
+          background: "rgba(255,255,255,.04)",
+          border: `1px solid ${LINE_2}`,
+          borderRadius: 999,
+          padding: "8px 14px",
+          minHeight: 36,
+          cursor: "pointer",
+          backdropFilter: "blur(8px)",
+          zIndex: 2,
+        }}
+      >
+        <Drama size={14} aria-hidden />
+        {personaLabel}
+      </button>
+
       {/* NOTE: the old "Voice mode isn't enabled" panel that used to live here
           was unreachable dead code — the `!voiceMode` early return above always
           routes to the dictation surface first — and has been removed. */}
       <>
-          {/* Status eyebrow (DM Mono) — the design's top-of-screen state line. */}
-          <div
-            style={{
-              fontFamily: mono,
-              fontSize: 10.5,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              color:
-                muted && active
-                  ? TEXT_2
-                  : listening
-                    ? BLUE
-                    : denied || sessionFailed
-                      ? DANGER
-                      : TEXT_2,
-            }}
-          >
-            {muted && active
-              ? "muted"
-              : denied
-                ? "microphone unavailable"
-                : sessionFailed
-                  ? "voice unavailable"
-                  : stateLabel(state)}
-          </div>
+        {/* Status eyebrow (DM Mono) — the design's top-of-screen state line. */}
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 10.5,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color:
+              muted && active
+                ? TEXT_2
+                : listening
+                  ? BLUE
+                  : denied || sessionFailed
+                    ? DANGER
+                    : TEXT_2,
+          }}
+        >
+          {muted && active
+            ? "muted"
+            : denied
+              ? "microphone unavailable"
+              : sessionFailed
+                ? "voice unavailable"
+                : stateLabel(state)}
+        </div>
 
-          {/* Live transcript: finalized (white) + in-flight (blue) + reply. */}
-          <div
-            style={{
-              maxWidth: 560,
-              minHeight: 84,
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-            }}
-          >
-            {finalTranscript ? (
-              <span
-                style={{
-                  fontSize: 20,
-                  fontWeight: 600,
-                  lineHeight: 1.4,
-                  letterSpacing: "-0.3px",
-                }}
-              >
-                {finalTranscript}{" "}
-              </span>
-            ) : null}
-            {partialTranscript ? (
-              <span
-                style={{
-                  fontSize: 20,
-                  fontWeight: 600,
-                  lineHeight: 1.4,
-                  letterSpacing: "-0.3px",
-                  color: BLUE,
-                }}
-              >
-                {partialTranscript}
-              </span>
-            ) : null}
-            {!finalTranscript && !partialTranscript && !assistantTranscript ? (
-              <div
-                style={{
-                  fontSize: 17,
-                  lineHeight: 1.45,
-                  color: denied ? TEXT_3 : TEXT_2,
-                }}
-              >
-                {denied
-                  ? "We couldn't reach your microphone."
-                  : active
-                    ? muted
-                      ? "Muted — unmute to talk."
-                      : "Listening — say something."
-                    : "Hold to talk, or tap the mic to start."}
-              </div>
-            ) : null}
-            {assistantTranscript ? (
-              <div
-                style={{
-                  fontSize: 15.5,
-                  lineHeight: 1.5,
-                  color: TEXT_2,
-                  marginTop: 14,
-                }}
-              >
-                {assistantTranscript}
-              </div>
-            ) : null}
-            {sessionFailed ? (
-              <div
-                style={{
-                  fontSize: 17,
-                  lineHeight: 1.45,
-                  color: TEXT_2,
-                  marginTop: 12,
-                }}
-              >
-                Cue couldn&rsquo;t respond just now. Tap the orb to try again.
-              </div>
-            ) : null}
-          </div>
+        {/* Live transcript: finalized (white) + in-flight (blue) + reply. */}
+        <div
+          style={{
+            maxWidth: 560,
+            minHeight: 84,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+          }}
+        >
+          {finalTranscript ? (
+            <span
+              style={{
+                fontSize: 20,
+                fontWeight: 600,
+                lineHeight: 1.4,
+                letterSpacing: "-0.3px",
+              }}
+            >
+              {finalTranscript}{" "}
+            </span>
+          ) : null}
+          {partialTranscript ? (
+            <span
+              style={{
+                fontSize: 20,
+                fontWeight: 600,
+                lineHeight: 1.4,
+                letterSpacing: "-0.3px",
+                color: BLUE,
+              }}
+            >
+              {partialTranscript}
+            </span>
+          ) : null}
+          {!finalTranscript && !partialTranscript && !assistantTranscript ? (
+            <div
+              style={{
+                fontSize: 17,
+                lineHeight: 1.45,
+                color: denied ? TEXT_3 : TEXT_2,
+              }}
+            >
+              {denied
+                ? "We couldn't reach your microphone."
+                : active
+                  ? muted
+                    ? "Muted — unmute to talk."
+                    : "Listening — say something."
+                  : "Hold to talk, or tap the mic to start."}
+            </div>
+          ) : null}
+          {assistantTranscript ? (
+            <div
+              style={{
+                fontSize: 15.5,
+                lineHeight: 1.5,
+                color: TEXT_2,
+                marginTop: 14,
+              }}
+            >
+              {assistantTranscript}
+            </div>
+          ) : null}
+          {sessionFailed ? (
+            <div
+              style={{
+                fontSize: 17,
+                lineHeight: 1.45,
+                color: TEXT_2,
+                marginTop: 12,
+              }}
+            >
+              Cue couldn&rsquo;t respond just now. Tap the orb to try again.
+            </div>
+          ) : null}
+        </div>
 
-          {/* Visual result cards (GPT-Live pattern) — stacked directly above the
+        {/* Visual result cards (GPT-Live pattern) — stacked directly above the
               orb, rendered by the SAME SurfaceRouter chat uses. Scoped to the
               dark theme so the router's design-token children resolve against
               the ink panel. Cards are per-turn and replace on each new turn. */}
-          {cards.length > 0 ? (
-            <div
-              data-theme="dark"
-              style={{
-                width: "100%",
-                maxWidth: 560,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                overflowY: "auto",
-                maxHeight: "38vh",
-                textAlign: "left",
-              }}
-            >
-              {cards.map((card) => (
-                <div key={card.surfaceId} className="cue-voice-card-enter">
-                  <SurfaceRouter
-                    surface={toSurface(card)}
-                    onAction={handleCardAction}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : null}
+        {cards.length > 0 ? (
+          <div
+            data-theme="dark"
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              overflowY: "auto",
+              maxHeight: "38vh",
+              textAlign: "left",
+            }}
+          >
+            {cards.map((card) => (
+              <div key={card.surfaceId} className="cue-voice-card-enter">
+                <SurfaceRouter
+                  surface={toSurface(card)}
+                  onAction={handleCardAction}
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
 
-          {/* Big central mic — aperture orb in a tappable circle. While
+        {/* Big central mic — aperture orb in a tappable circle. While
               listening, two offset `cueVoiceRing` halos pulse outward. When the
               capture failed (mic-denied), the circle greys out. */}
-          <button
-            type="button"
-            data-coach="voice-start"
-            onClick={handleToggle}
-            aria-label={active ? "Stop voice mode" : "Start voice mode"}
-            disabled={connecting}
+        <button
+          type="button"
+          data-coach="voice-start"
+          onClick={handleToggle}
+          aria-label={active ? "Stop voice mode" : "Start voice mode"}
+          disabled={connecting}
+          style={{
+            position: "relative",
+            width: 150,
+            height: 150,
+            flexShrink: 0,
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: connecting ? "default" : "pointer",
+            transition: "opacity 120ms ease",
+          }}
+        >
+          {listening && !muted ? (
+            <>
+              <span
+                className="cue-voice-ring"
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: "50%",
+                  border: `2px solid ${BLUE}80`,
+                  animation: "cueVoiceRing 1.8s ease-out infinite",
+                }}
+              />
+              <span
+                className="cue-voice-ring"
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: "50%",
+                  border: `2px solid ${BLUE}80`,
+                  animation: "cueVoiceRing 1.8s ease-out .9s infinite",
+                }}
+              />
+            </>
+          ) : null}
+          <span
             style={{
-              position: "relative",
-              width: 150,
-              height: 150,
-              flexShrink: 0,
-              background: "transparent",
-              border: "none",
-              padding: 0,
+              width: 118,
+              height: 118,
+              borderRadius: "50%",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              cursor: connecting ? "default" : "pointer",
-              transition: "opacity 120ms ease",
+              background: denied ? SURFACE : active && !muted ? BLUE : SURFACE,
+              border: denied ? `1px solid ${LINE_2}` : "none",
+              boxShadow:
+                active && !muted && !denied
+                  ? "0 20px 50px -16px rgba(61,110,232,.7)"
+                  : "0 16px 40px -20px rgba(0,0,0,.8)",
+              opacity: denied || (muted && active) ? 0.5 : 1,
+              transition: "background 160ms ease, opacity 160ms ease",
             }}
           >
-            {listening && !muted ? (
-              <>
-                <span
-                  className="cue-voice-ring"
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: "50%",
-                    border: `2px solid ${BLUE}80`,
-                    animation: "cueVoiceRing 1.8s ease-out infinite",
-                  }}
-                />
-                <span
-                  className="cue-voice-ring"
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: "50%",
-                    border: `2px solid ${BLUE}80`,
-                    animation: "cueVoiceRing 1.8s ease-out .9s infinite",
-                  }}
-                />
-              </>
-            ) : null}
-            <span
-              style={{
-                width: 118,
-                height: 118,
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: denied
-                  ? SURFACE
-                  : active && !muted
-                    ? BLUE
-                    : SURFACE,
-                border: denied ? `1px solid ${LINE_2}` : "none",
-                boxShadow:
-                  active && !muted && !denied
-                    ? "0 20px 50px -16px rgba(61,110,232,.7)"
-                    : "0 16px 40px -20px rgba(0,0,0,.8)",
-                opacity: denied || (muted && active) ? 0.5 : 1,
-                transition: "background 160ms ease, opacity 160ms ease",
-              }}
-            >
-              {denied ? (
-                <MicOff size={40} color={TEXT_2} aria-hidden />
-              ) : (
-                <VoiceOrb
-                  state={orbState(state)}
-                  size={88}
-                  amplitude={inputAmplitude}
-                />
-              )}
-            </span>
-          </button>
+            {denied ? (
+              <MicOff size={40} color={TEXT_2} aria-hidden />
+            ) : (
+              <VoiceOrb
+                state={orbState(state)}
+                size={88}
+                amplitude={inputAmplitude}
+              />
+            )}
+          </span>
+        </button>
 
-          {/* Mic-denied recovery: deep-link to the OS settings (book §3.3). */}
-          {denied ? (
+        {/* Mic-denied recovery: deep-link to the OS settings (book §3.3). */}
+        {denied ? (
+          <button
+            type="button"
+            onClick={() => {
+              // Best-effort native deep-link; a no-op on web. Presentational —
+              // no permission API is invoked here.
+              try {
+                window.location.href = "app-settings:";
+              } catch {
+                /* ignore — unsupported host */
+              }
+            }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontFamily: mono,
+              fontSize: 12,
+              color: "#FFFFFF",
+              background: BLUE,
+              border: "none",
+              borderRadius: 999,
+              padding: "11px 20px",
+              minHeight: 44,
+              cursor: "pointer",
+            }}
+          >
+            Enable microphone in Settings
+          </button>
+        ) : error && !denied ? (
+          <div
+            style={{
+              fontSize: 13,
+              color: DANGER,
+              maxWidth: 420,
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
+
+        {/* Controls row: mute (active only) + stop (active only). */}
+        {active ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
             <button
               type="button"
-              onClick={() => {
-                // Best-effort native deep-link; a no-op on web. Presentational —
-                // no permission API is invoked here.
-                try {
-                  window.location.href = "app-settings:";
-                } catch {
-                  /* ignore — unsupported host */
-                }
-              }}
+              onClick={() => setMuted(!muted)}
+              aria-label={muted ? "Unmute microphone" : "Mute microphone"}
+              aria-pressed={muted}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
                 fontFamily: mono,
                 fontSize: 12,
-                color: "#FFFFFF",
-                background: BLUE,
-                border: "none",
+                color: muted ? "#FFFFFF" : TEXT_2,
+                background: muted ? "rgba(255,255,255,.14)" : "transparent",
+                border: `1px solid ${LINE_2}`,
+                borderRadius: 999,
+                padding: "11px 18px",
+                minHeight: 44,
+                cursor: "pointer",
+              }}
+            >
+              {muted ? (
+                <MicOff size={14} aria-hidden />
+              ) : (
+                <Mic size={14} aria-hidden />
+              )}
+              {muted ? "Unmute" : "Mute"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void stop()}
+              aria-label="Stop voice mode"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontFamily: mono,
+                fontSize: 12,
+                color: DANGER,
+                background: `${DANGER}1A`,
+                border: `1px solid ${DANGER}59`,
                 borderRadius: 999,
                 padding: "11px 20px",
                 minHeight: 44,
                 cursor: "pointer",
               }}
             >
-              Enable microphone in Settings
+              <span
+                aria-hidden
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: DANGER,
+                }}
+              />
+              Stop
             </button>
-          ) : error && !denied ? (
-            <div
-              style={{
-                fontSize: 13,
-                color: DANGER,
-                maxWidth: 420,
-              }}
-            >
-              {error}
-            </div>
-          ) : null}
+          </div>
+        ) : null}
 
-          {/* Controls row: mute (active only) + stop (active only). */}
-          {active ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setMuted(!muted)}
-                aria-label={muted ? "Unmute microphone" : "Mute microphone"}
-                aria-pressed={muted}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontFamily: mono,
-                  fontSize: 12,
-                  color: muted ? "#FFFFFF" : TEXT_2,
-                  background: muted ? "rgba(255,255,255,.14)" : "transparent",
-                  border: `1px solid ${LINE_2}`,
-                  borderRadius: 999,
-                  padding: "11px 18px",
-                  minHeight: 44,
-                  cursor: "pointer",
-                }}
-              >
-                {muted ? (
-                  <MicOff size={14} aria-hidden />
-                ) : (
-                  <Mic size={14} aria-hidden />
-                )}
-                {muted ? "Unmute" : "Mute"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void stop()}
-                aria-label="Stop voice mode"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontFamily: mono,
-                  fontSize: 12,
-                  color: DANGER,
-                  background: `${DANGER}1A`,
-                  border: `1px solid ${DANGER}59`,
-                  borderRadius: 999,
-                  padding: "11px 20px",
-                  minHeight: 44,
-                  cursor: "pointer",
-                }}
-              >
-                <span
-                  aria-hidden
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: DANGER,
-                  }}
-                />
-                Stop
-              </button>
-            </div>
-          ) : null}
-
-          {/* Voice / TTS-provider picker — only while idle, so a turn isn't
+        {/* Voice / TTS-provider picker — only while idle, so a turn isn't
               interrupted; persists to the shared LS_TTS_PROVIDER key. Hidden in
               the mic-denied state so the recovery CTA stays the focus. */}
-          {!active && !denied ? (
-            <div
+        {!active && !denied ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 6,
+              width: 220,
+            }}
+          >
+            <span
               style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 6,
-                width: 220,
+                fontFamily: mono,
+                fontSize: 11,
+                letterSpacing: "0.1em",
+                color: TEXT_3,
               }}
             >
-              <span
-                style={{
-                  fontFamily: mono,
-                  fontSize: 11,
-                  letterSpacing: "0.1em",
-                  color: TEXT_3,
-                }}
-              >
-                VOICE
-              </span>
-              <Dropdown
-                value={provider}
-                onChange={handleProviderChange}
-                options={providerOptions}
-                aria-label="Voice provider"
-                menuAlign="start"
-                style={{ width: "100%" }}
-              />
-            </div>
-          ) : null}
+              VOICE
+            </span>
+            <Dropdown
+              value={provider}
+              onChange={handleProviderChange}
+              options={providerOptions}
+              aria-label="Voice provider"
+              menuAlign="start"
+              style={{ width: "100%" }}
+            />
+          </div>
+        ) : null}
       </>
     </div>
   );
@@ -1205,9 +1271,7 @@ function Mv3VoiceMobile({
               zIndex: 2,
             }}
           >
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: 10 }}
-            >
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {assistantTranscript ? (
                 <div
                   style={{
@@ -1232,7 +1296,10 @@ function Mv3VoiceMobile({
                 </div>
               ) : null}
               {cards.map((card, i) => (
-                <div key={card.surfaceId} style={rise(0.2 + 0.2 * Math.min(i, 3))}>
+                <div
+                  key={card.surfaceId}
+                  style={rise(0.2 + 0.2 * Math.min(i, 3))}
+                >
                   <SurfaceRouter
                     surface={toSurface(card)}
                     onAction={onCardAction}
@@ -1325,9 +1392,7 @@ function Mv3VoiceMobile({
                 </span>
               </button>
               <Mv3PillWave animate={listening && !muted} />
-              <span
-                style={{ fontSize: 12, color: "#9A9AA8", flexShrink: 0 }}
-              >
+              <span style={{ fontSize: 12, color: "#9A9AA8", flexShrink: 0 }}>
                 {pillLabel}
               </span>
               <button
@@ -1674,9 +1739,7 @@ function Mv3VoiceMobile({
                 <br />
                 take off your plate?
               </div>
-              <div
-                style={{ fontSize: 14, color: "#9A9AA8", marginTop: 14 }}
-              >
+              <div style={{ fontSize: 14, color: "#9A9AA8", marginTop: 14 }}>
                 Tap the ring and just talk.
               </div>
               {/* Suggestion chips — the live-voice channel is audio-only (no

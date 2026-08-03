@@ -116,12 +116,20 @@ function resolveWorkItemFiling(workItemId: string): {
  *                      idempotency key and the work-item's `sourceType` column.
  * @param conversationId The source conversation; becomes each work item's
  *                      `sourceId` and the task's `createdFromConversationId`.
+ * @param opts.parked   When true, mint each item as a parked reminder that never
+ *                      auto-runs (no triage/auto-run pass) — used by end-of-live-
+ *                      voice synthesis, where residual to-dos should surface in
+ *                      the recap for the user to run, not fire in the background.
+ *                      Default false preserves the triage + maybe-auto-run path
+ *                      the dictation/meeting callers rely on.
  */
 export async function actionItemsToWorkItems(
   actionItems: ActionItemInput[],
   sourceType: string,
   conversationId: string,
+  opts?: { parked?: boolean },
 ): Promise<ActionItemWorkItemRef[]> {
+  const parked = opts?.parked === true;
   const refs: ActionItemWorkItemRef[] = [];
   const seenTitles = new Set<string>();
 
@@ -178,20 +186,37 @@ export async function actionItemsToWorkItems(
         // thread can show what it spawned and its agent never redoes it.
         originConversationId: conversationId,
         ...(requiredTools ? { requiredTools } : {}),
+        // A parked item is a reminder the user should run themselves — no later
+        // pass (queue drainer, re-triage) may start it.
+        ...(parked ? { autoRunEligibility: "parked" as const } : {}),
       });
-      // Rank the fresh capture, file it onto its best-matching project (and thus
-      // mission, via project.missionId), and — when the autonomy policy allows —
-      // hand it straight to the background runner. Awaited (not fire-and-forget)
-      // so the project the item is filed onto is stamped before we read it back
-      // for the caller's response. The autonomy guard inside still governs
-      // whether it auto-runs or lands for review.
-      await triageAndMaybeAutoRunWorkItem(workItem.id);
-      refs.push({
-        id: workItem.id,
-        title: workItem.title,
-        created: true,
-        ...resolveWorkItemFiling(workItem.id),
-      });
+      if (parked) {
+        // Parked reminders skip triage/auto-run entirely (mirrors the plain
+        // to-do path): they surface in the recap + Activity for the user to run.
+        refs.push({
+          id: workItem.id,
+          title: workItem.title,
+          created: true,
+          projectId: null,
+          projectTitle: null,
+          missionId: null,
+          missionTitle: null,
+        });
+      } else {
+        // Rank the fresh capture, file it onto its best-matching project (and
+        // thus mission, via project.missionId), and — when the autonomy policy
+        // allows — hand it straight to the background runner. Awaited (not
+        // fire-and-forget) so the project the item is filed onto is stamped
+        // before we read it back for the caller's response. The autonomy guard
+        // inside still governs whether it auto-runs or lands for review.
+        await triageAndMaybeAutoRunWorkItem(workItem.id);
+        refs.push({
+          id: workItem.id,
+          title: workItem.title,
+          created: true,
+          ...resolveWorkItemFiling(workItem.id),
+        });
+      }
     } catch (err) {
       log.warn(
         { err, conversationId, title, sourceType },

@@ -98,6 +98,11 @@ export interface LiveVoiceConnectArgs {
    * Gemini Live realtime engine. Opt-in so the new engine stays dormant.
    */
   engine?: "cascade" | "gemini-live";
+  /**
+   * Conversation persona/mode ("companion" | "reflective" | "cofounder").
+   * Absent → the daemon defaults to companion. Shapes tone only.
+   */
+  persona?: string;
 }
 
 /** Factory so tests can inject a mock WebSocket. Defaults to the global. */
@@ -126,6 +131,7 @@ export class LiveVoiceChannelClient {
   private conversationId: string | undefined;
   private fullDuplex = false;
   private engine: "cascade" | "gemini-live" = "cascade";
+  private persona: string | undefined;
 
   private readonly listeners: {
     [E in LiveVoiceClientEventName]: Set<LiveVoiceClientEventHandler<E>>;
@@ -184,12 +190,14 @@ export class LiveVoiceChannelClient {
     conversationId,
     fullDuplex,
     engine,
+    persona,
   }: LiveVoiceConnectArgs): Promise<void> {
     if (this.state !== "idle") return;
     this.state = "connecting";
     this.conversationId = conversationId;
     this.fullDuplex = fullDuplex === true;
     this.engine = engine === "gemini-live" ? "gemini-live" : "cascade";
+    this.persona = persona;
 
     let url: string;
     try {
@@ -286,6 +294,7 @@ export class LiveVoiceChannelClient {
       ...(this.fullDuplex ? { fullDuplex: true } : {}),
       ...(this.engine === "gemini-live" ? { engine: "gemini-live" } : {}),
       ...(browserTimezone ? { timezone: browserTimezone } : {}),
+      ...(this.persona ? { persona: this.persona } : {}),
     };
     this.trySend(JSON.stringify(startFrame));
   }

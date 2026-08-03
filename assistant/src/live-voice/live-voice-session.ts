@@ -94,6 +94,7 @@ import {
   type LiveVoiceSessionFactoryContext,
   LiveVoiceSessionStartupError,
 } from "./live-voice-session-manager.js";
+import { finalizeLiveVoiceThread } from "./live-voice-thread.js";
 import type {
   LiveVoiceTtsOptions,
   LiveVoiceTtsResult,
@@ -103,6 +104,8 @@ import {
   LiveVoiceProtocolErrorCode,
   type LiveVoiceServerFramePayload,
 } from "./protocol.js";
+import { synthesizeLiveVoiceSession } from "./synthesize-live-voice-session.js";
+import { resolveVoicePersona } from "./voice-personas.js";
 
 type LiveVoiceSessionState =
   | "initializing"
@@ -228,6 +231,8 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private readonly createTurnId: () => string;
   private readonly conversationId: string;
   private readonly fullDuplex: boolean;
+  /** Base control prompt composed with the selected persona/mode (tone). */
+  private readonly voiceControlPrompt: string;
   private readonly fullDuplexIdleTimeoutMs: number;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private state: LiveVoiceSessionState = "initializing";
@@ -270,6 +275,14 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     this.conversationId =
       context.startFrame.conversationId ?? context.sessionId;
     this.fullDuplex = context.startFrame.fullDuplex === true;
+    // Compose the selected conversation mode (companion / reflective /
+    // cofounder) onto the base control prompt. Absent/unknown → companion,
+    // whose fragment is the base warm default, so behaviour is unchanged.
+    const persona = resolveVoicePersona(context.startFrame.persona);
+    this.voiceControlPrompt = [
+      LIVE_VOICE_CONTROL_PROMPT,
+      persona.promptFragment,
+    ].join(" ");
     this.fullDuplexIdleTimeoutMs =
       options.fullDuplexIdleTimeoutMs ?? LIVE_VOICE_FULL_DUPLEX_IDLE_TIMEOUT_MS;
     this.metrics = new LiveVoiceMetricsCollector({
@@ -466,6 +479,23 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       await this.emitSessionEndMetrics();
     }
     await this.drainOutboundFrames();
+
+    // End-of-session synthesis + recap. The turn is already cancelled, so the
+    // persisted thread is stable. Detached and best-effort: it must never delay
+    // or fail the socket teardown. Parks residual to-dos, writes memory, and
+    // writes a short first-person recap into the thread (the cascade otherwise
+    // ends a call with no summary).
+    const conversationId = this.conversationId;
+    void (async () => {
+      try {
+        const synth = await synthesizeLiveVoiceSession(conversationId);
+        await finalizeLiveVoiceThread(conversationId, {
+          taskTitles: synth.newTaskTitles,
+        });
+      } catch {
+        // Best-effort; a synthesis/recap failure never affects the ended call.
+      }
+    })();
   }
 
   private async handleAudio(chunk: Buffer): Promise<void> {
@@ -796,7 +826,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         assistantMessageChannel: "vellum",
         userMessageInterface: "macos",
         assistantMessageInterface: "macos",
-        voiceControlPrompt: LIVE_VOICE_CONTROL_PROMPT,
+        voiceControlPrompt: this.voiceControlPrompt,
         // The live-voice socket is authenticated as the instance owner, who is
         // the guardian. Without this the turn runs as a non-guardian caller and
         // the bridge strips every side-effect tool ("this action requires

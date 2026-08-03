@@ -13,6 +13,7 @@
 import { randomUUID } from "node:crypto";
 
 import { formatTurnTimestamp } from "../daemon/date-context.js";
+import { buildLiveBriefing } from "../live-voice/build-live-briefing.js";
 import type {
   LiveVoiceSession,
   LiveVoiceSessionCloseReason,
@@ -24,6 +25,8 @@ import {
   finalizeLiveVoiceThread,
   persistLiveVoiceTurn,
 } from "../live-voice/live-voice-thread.js";
+import { synthesizeLiveVoiceSession } from "../live-voice/synthesize-live-voice-session.js";
+import { resolveVoicePersona } from "../live-voice/voice-personas.js";
 import { getLogger } from "../util/logger.js";
 import {
   GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
@@ -46,15 +49,22 @@ const log = getLogger("gemini-live-session");
  * about actions, brief and TTS-clean. Gemini Live speaks the audio itself, so
  * this shapes tone and tool discipline.
  */
-function buildSystemInstruction(timezone?: string): string {
+function buildSystemInstruction(
+  timezone?: string,
+  opts?: { personaFragment?: string; briefing?: string },
+): string {
   const hasTz = typeof timezone === "string" && timezone.trim().length > 0;
   const timeLine = hasTz
     ? `The current date and time in the user's timezone is ${formatTurnTimestamp({ clientTimezone: timezone })}. That is their local time — use it for anything time-related and never quote UTC unless they ask.`
     : `The current date and time is ${formatTurnTimestamp()} (UTC). You do NOT know the user's local timezone yet, so do not assume it is UTC when you speak — if the time of day matters, briefly ask what timezone they're in, or take their word if they tell you their local time.`;
-  return [
+  const persona = opts?.personaFragment?.trim();
+  const base = [
     "You are Cue, your user's personal AI chief-of-staff, in a live spoken voice conversation with them right now.",
     "Your name is Cue. Never say you are 'a large language model', never say you were 'trained by Google', and never mention Google or Gemini. If asked what you are, say you are Cue, their AI chief-of-staff. Stay in character as Cue at all times.",
     "You are speaking with your own owner, who has authorized you. Be warm, concise, and natural — usually one or two sentences.",
+    // The selected conversation mode shapes tone (companion / reflective /
+    // co-founder). Empty → the base warm-chief-of-staff default.
+    ...(persona ? [persona] : []),
     timeLine,
     "You can take real actions with your tools. To note a quick reminder or to-do, call add_task. For anything substantive that needs real work (research, drafting, multi-step tasks), call run_deep_task and tell them you're on it. To tell them what's on their plate, call get_open_tasks.",
     "Never claim you have done something unless you actually called the tool for it and it succeeded. If a tool fails, say so in one short sentence and offer a next step.",
@@ -62,6 +72,14 @@ function buildSystemInstruction(timezone?: string): string {
     "Do not spell things out letter by letter or read punctuation, tool names, or code aloud. Just speak like a helpful person.",
     "The user speaks English. Always understand their speech as English and reply in English, even if a word is unclear.",
   ].join(" ");
+  // Append the session-start context briefing (who the user is + their current
+  // work) so the speech-native model opens the conversation already knowing
+  // them. Empty on a fresh workspace, in which case nothing is appended.
+  const briefing = opts?.briefing?.trim();
+  if (briefing) {
+    return `${base}\n\n${briefing}`;
+  }
+  return base;
 }
 
 export class GeminiLiveSession implements LiveVoiceSession {
@@ -92,11 +110,24 @@ export class GeminiLiveSession implements LiveVoiceSession {
       );
     }
 
+    // Assemble the context briefing once at session start (best-effort — never
+    // blocks or fails the session; returns "" on a fresh workspace).
+    let briefing = "";
+    try {
+      briefing = buildLiveBriefing();
+    } catch (err) {
+      log.warn({ err }, "live briefing assembly failed; continuing without it");
+    }
+
+    // Resolve the selected conversation mode (defaults to companion).
+    const persona = resolveVoicePersona(this.context.startFrame.persona);
+
     const client = new GeminiLiveClient({
       apiKey,
       model: resolveGeminiLiveModel(),
       systemInstruction: buildSystemInstruction(
         this.context.startFrame.timezone,
+        { personaFragment: persona.promptFragment, briefing },
       ),
       tools: GEMINI_LIVE_FUNCTION_DECLARATIONS,
       inputSampleRate: this.inputSampleRate,
@@ -258,8 +289,13 @@ export class GeminiLiveSession implements LiveVoiceSession {
             trailingAssistant,
           );
         }
+        // End-of-session synthesis: park any residual to-dos the user asked for
+        // that weren't already captured mid-call, and write the conversation to
+        // memory. Merge the new titles into the recap alongside the mid-call
+        // tasks. Best-effort — never blocks the finalize.
+        const synth = await synthesizeLiveVoiceSession(this.conversationId);
         await finalizeLiveVoiceThread(this.conversationId, {
-          taskTitles: this.capturedTaskTitles,
+          taskTitles: [...this.capturedTaskTitles, ...synth.newTaskTitles],
         });
       } catch (err) {
         log.warn({ err }, "gemini-live thread finalize failed");

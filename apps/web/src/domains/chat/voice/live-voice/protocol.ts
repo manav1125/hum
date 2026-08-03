@@ -69,6 +69,12 @@ export interface LiveVoiceClientStartFrame {
    * `assistant/src/live-voice/protocol.ts`.
    */
   readonly timezone?: string;
+  /**
+   * Selected conversation persona/mode ("companion" | "reflective" |
+   * "cofounder"). Absent/unknown → the default companion. Shapes tone only.
+   * Mirrors the runtime contract in `assistant/src/live-voice/protocol.ts`.
+   */
+  readonly persona?: string;
 }
 
 export interface LiveVoiceClientPttReleaseFrame {
