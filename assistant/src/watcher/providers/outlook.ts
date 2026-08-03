@@ -59,7 +59,7 @@ function messageToItem(msg: OutlookMessage): WatcherItem {
     },
     timestamp: msg.receivedDateTime
       ? new Date(msg.receivedDateTime).getTime()
-      : Date.now(),
+      : null,
   };
 }
 

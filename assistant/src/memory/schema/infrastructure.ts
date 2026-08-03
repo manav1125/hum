@@ -166,6 +166,13 @@ export const watcherEvents = sqliteTable("watcher_events", {
   disposition: text("disposition").notNull().default("pending"), // pending | silent | notify | escalate | error
   llmAction: text("llm_action"),
   processedAt: integer("processed_at"),
+  /**
+   * Epoch ms the event happened at the source (migration 320), as opposed to
+   * `createdAt`, which is when this row was written. Null when the provider
+   * supplied no time. See `schema/arrivals.ts` for why the two clocks must not
+   * be substituted for one another.
+   */
+  occurredAt: integer("occurred_at"),
   createdAt: integer("created_at").notNull(),
 });
 

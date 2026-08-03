@@ -186,6 +186,7 @@ export async function runWatchersOnce(
           eventType: item.eventType,
           summary: item.summary,
           payloadJson: JSON.stringify(item.payload),
+          occurredAt: item.timestamp,
         });
         if (inserted) {
           newEvents++;

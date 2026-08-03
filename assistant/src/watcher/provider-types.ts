@@ -10,8 +10,19 @@ export interface WatcherItem {
   summary: string;
   /** Full event data for LLM processing. */
   payload: Record<string, unknown>;
-  /** When the event occurred (epoch ms). */
-  timestamp: number;
+  /**
+   * When the event occurred at the SOURCE (epoch ms), or null when the
+   * provider did not give one.
+   *
+   * Null rather than `Date.now()` on purpose. This is persisted as
+   * `watcher_events.occurred_at` / `arrivals.occurred_at` and read as the
+   * answer to "how long since this person wrote", so substituting the current
+   * time turns a missing fact into a confident wrong one — and a wrong one
+   * that always reads as "just now", which is the direction that silences a
+   * real signal rather than raising a false one. A null is skippable; a
+   * plausible lie is not detectable.
+   */
+  timestamp: number | null;
 }
 
 /** Result of a provider fetch call. */

@@ -312,6 +312,7 @@ export { migrateAutonomyLedger } from "./316-autonomy-ledger.js";
 export { migrateWorkItemLifeLensAndWaiting } from "./317-work-item-life-lens-and-waiting.js";
 export { migrateArrivals } from "./318-arrivals.js";
 export { migrateArrivalComprehension } from "./319-arrival-comprehension.js";
+export { migrateArrivalOccurredAt } from "./320-arrival-occurred-at.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

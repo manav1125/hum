@@ -102,6 +102,21 @@ export const arrivals = sqliteTable(
     reversedAt: integer("reversed_at"),
     /** Who reversed it ('user' by default). */
     reversedBy: text("reversed_by"),
+    /**
+     * Epoch ms the message was SENT (or the event last changed) at the source
+     * — Gmail's `internalDate`, Outlook's `receivedDateTime`. Null when the
+     * provider gave no time, and on every row written before migration 320.
+     *
+     * Kept apart from `createdAt` because they answer different questions and
+     * only one of them is about the correspondent. `createdAt` is when Cue
+     * noticed, which moves with poll intervals, watermark resets and daemon
+     * downtime; a weekend outage stamps a whole backlog with Monday morning.
+     * Any reader asking a question about a PERSON ("how long since they
+     * wrote") must use this column and skip the rows where it is null —
+     * answering from `createdAt` measures Cue's uptime and attributes it to
+     * them.
+     */
+    occurredAt: integer("occurred_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -112,5 +127,9 @@ export const arrivals = sqliteTable(
       table.createdAt,
     ),
     index("idx_arrivals_sender").on(table.senderAddress),
+    index("idx_arrivals_sender_occurred_at").on(
+      table.senderAddress,
+      table.occurredAt,
+    ),
   ],
 );

@@ -115,6 +115,7 @@ function arrive(mail: MailFixture): void {
     watcherId: watcher.id,
     externalId: mail.externalId,
     eventType: "new_email",
+    occurredAt: null,
     summary: `Email from ${mail.from}: ${mail.subject}`,
     disposition: "pending",
     llmAction: null,

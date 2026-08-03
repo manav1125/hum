@@ -244,6 +244,7 @@ export async function fileWatcherEventsToCameIn(
           disposition: "surfaced",
           reason: "one of your playbooks claimed this",
           decidedBy: "playbook",
+          occurredAt: event.occurredAt,
         });
         dispositions.set(event.id, "playbook");
         continue;
@@ -320,6 +321,7 @@ export async function fileWatcherEventsToCameIn(
         decidedBy: decision.decidedBy,
         ruleId: decision.ruleId,
         confidence: decision.confidence,
+        occurredAt: event.occurredAt,
       });
 
       if (arrival.disposition === "filed") {

@@ -45,6 +45,16 @@ export interface WatcherEvent {
   disposition: string;
   llmAction: string | null;
   processedAt: number | null;
+  /**
+   * Epoch ms the event happened at the SOURCE, from the provider's own clock
+   * ({@link WatcherItem.timestamp}). Null when the provider gave no time, and
+   * on every row recorded before migration 320.
+   *
+   * `createdAt` below is when this row was written, which is a fact about the
+   * poll, not about the event. Anything measuring elapsed time for a human to
+   * read must use this field.
+   */
+  occurredAt: number | null;
   createdAt: number;
 }
 
@@ -337,6 +347,26 @@ export function resetStuckWatchers(): number {
 // ── Watcher Events ──────────────────────────────────────────────────
 
 /**
+ * Accept a provider's event time only if it could actually be one.
+ *
+ * Providers reach this value through `new Date(someHeader).getTime()`, which
+ * yields NaN for anything it cannot parse, and `parseInt`, which does the
+ * same. NaN reaching SQLite would land as a real-looking, number-shaped column
+ * value that every later comparison silently answers false to, so it is
+ * rejected here — at the one boundary every provider crosses — rather than in
+ * seven call sites that each have to remember.
+ *
+ * Zero and negatives are rejected for the same reason: they are what a failed
+ * parse or an unset field degrades into, and 1970 is not a time anybody is
+ * going to receive mail from.
+ */
+function sourceEventTime(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value;
+}
+
+/**
  * Insert a watcher event with dedup on (watcher_id, external_id).
  * Returns true if the event was inserted (new), false if it already existed.
  */
@@ -346,6 +376,13 @@ export function insertWatcherEvent(params: {
   eventType: string;
   summary: string;
   payloadJson: string;
+  /**
+   * The provider's own event time (epoch ms). Omit only when the provider
+   * genuinely has none — it is stored as null rather than defaulted to `now`,
+   * because a fabricated event time is worse than a missing one: readers can
+   * skip a null, but they cannot detect a plausible lie.
+   */
+  occurredAt?: number | null;
 }): boolean {
   const db = getDb();
   const id = uuid();
@@ -363,6 +400,7 @@ export function insertWatcherEvent(params: {
         disposition: "pending",
         llmAction: null,
         processedAt: null,
+        occurredAt: sourceEventTime(params.occurredAt),
         createdAt: now,
       })
       .run();
@@ -480,6 +518,7 @@ function parseEventRow(row: typeof watcherEvents.$inferSelect): WatcherEvent {
     disposition: row.disposition,
     llmAction: row.llmAction,
     processedAt: row.processedAt,
+    occurredAt: row.occurredAt,
     createdAt: row.createdAt,
   };
 }

@@ -148,7 +148,7 @@ function messageToItem(msg: GmailMessage, ctx: MailboxContext): WatcherItem {
           }
         : {}),
     },
-    timestamp: msg.internalDate ? parseInt(msg.internalDate, 10) : Date.now(),
+    timestamp: msg.internalDate ? parseInt(msg.internalDate, 10) : null,
   };
 }
 

@@ -116,7 +116,7 @@ function eventToItem(
     },
     timestamp: event.lastModifiedDateTime
       ? new Date(event.lastModifiedDateTime).getTime()
-      : Date.now(),
+      : null,
   };
 }
 

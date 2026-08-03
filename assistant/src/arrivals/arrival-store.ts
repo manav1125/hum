@@ -57,6 +57,15 @@ export interface Arrival {
   workItemId: string | null;
   reversedAt: number | null;
   reversedBy: string | null;
+  /**
+   * Epoch ms the message was sent at the source; null when unknown (every row
+   * written before migration 320, and any provider that gave no time).
+   *
+   * `createdAt` below is when Cue wrote the row. Read `occurredAt` for
+   * anything a person is meant to interpret as elapsed time — see
+   * `memory/schema/arrivals.ts` for why the two must not be substituted.
+   */
+  occurredAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -87,6 +96,12 @@ export interface RecordArrivalInput {
   ruleId?: string | null;
   confidence?: number | null;
   workItemId?: string | null;
+  /**
+   * The source's own event time (epoch ms), carried down from
+   * `WatcherEvent.occurredAt`. Omit when there is none — it is stored as null,
+   * never defaulted to `now`.
+   */
+  occurredAt?: number | null;
 }
 
 /**
@@ -121,6 +136,7 @@ export function recordArrival(input: RecordArrivalInput): Arrival {
     workItemId: input.workItemId ?? null,
     reversedAt: null,
     reversedBy: null,
+    occurredAt: input.occurredAt ?? null,
     createdAt: now,
     updatedAt: now,
   };

@@ -250,6 +250,7 @@ function makeEvent(id: string): WatcherEvent {
     eventType: "new_email",
     summary: `Email ${id}`,
     payloadJson: "{}",
+    occurredAt: null,
     disposition: "pending",
     llmAction: null,
     processedAt: null,

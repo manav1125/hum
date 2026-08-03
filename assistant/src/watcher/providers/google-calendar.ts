@@ -62,7 +62,7 @@ function eventToItem(event: CalendarEvent, eventType: string): WatcherItem {
         })) ?? [],
       htmlLink: event.htmlLink ?? "",
     },
-    timestamp: event.updated ? new Date(event.updated).getTime() : Date.now(),
+    timestamp: event.updated ? new Date(event.updated).getTime() : null,
   };
 }
 
