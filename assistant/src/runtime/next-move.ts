@@ -247,6 +247,32 @@ function gatherWorkItemCandidates(): NextMoveCandidate[] {
 
 const ACTIONABLE_FEED_STATUSES = new Set(["new", "seen"]);
 
+/**
+ * Can this feed item become HQ's next-move card?
+ *
+ * Three conditions, and the third is the one that was missing.
+ *
+ * The only action this promotion can offer is `open_thread`, and the card
+ * navigates by `sourceConversationId` — deliberately, because offering the
+ * button without one renders a live control wired to nothing. Action-board
+ * items never set a conversation id, so promoting one produced the most
+ * prominent card on HQ carrying a headline, reasoning, and NO BUTTON AT ALL.
+ *
+ * The gate on the client is right. The mistake was here, offering a candidate
+ * whose single action could never fire — the same rule, one step too late.
+ * Don't offer an affordance for something that isn't there.
+ *
+ * Exported so the rule is testable without a workspace or a feed on disk.
+ */
+export function isPromotableFeedItem(item: FeedItem): boolean {
+  // Still needs attention.
+  if (!ACTIONABLE_FEED_STATUSES.has(item.status)) return false;
+  // Carries at least one action to bind the endpoint to.
+  if (!item.actions || item.actions.length === 0) return false;
+  // …and can actually be opened.
+  return Boolean(item.conversationId);
+}
+
 function gatherFeedCandidates(): NextMoveCandidate[] {
   let feedItems: FeedItem[] = [];
   try {
@@ -258,9 +284,11 @@ function gatherFeedCandidates(): NextMoveCandidate[] {
 
   const candidates: NextMoveCandidate[] = [];
   for (const item of feedItems) {
-    // Only items that still need attention and carry at least one action.
-    if (!ACTIONABLE_FEED_STATUSES.has(item.status)) continue;
-    if (!item.actions || item.actions.length === 0) continue;
+    if (!isPromotableFeedItem(item)) continue;
+    // `isPromotableFeedItem` has already established both of these; the
+    // narrowing just does not survive the function boundary.
+    const firstAction = item.actions?.[0];
+    if (!firstAction) continue;
 
     const createdMs = Date.parse(item.createdAt);
     candidates.push({
@@ -282,7 +310,7 @@ function gatherFeedCandidates(): NextMoveCandidate[] {
           id: "open_thread",
           label: "Open",
           kind: "open_thread",
-          endpoint: `/v1/home/feed/${item.id}/actions/${item.actions[0].id}`,
+          endpoint: `/v1/home/feed/${item.id}/actions/${firstAction.id}`,
           method: "POST",
         },
       ],
