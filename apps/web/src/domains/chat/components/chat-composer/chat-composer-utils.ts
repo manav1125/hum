@@ -32,6 +32,56 @@ export function hasSomethingToSend(policy: {
   return policy.input.trim().length > 0 || policy.canSendAttachments;
 }
 
+// ---------------------------------------------------------------------------
+// Attachment policy
+// ---------------------------------------------------------------------------
+
+/**
+ * Shown when a text-only model would reject an image. Exported so every input
+ * path words it identically — the picker, the paste handler and the drop zone
+ * all reach this state and used to phrase it (or not phrase it) separately.
+ */
+export const NON_VISION_IMAGE_NOTICE =
+  "The current model doesn't support image input. Switch to a vision-capable model to attach images.";
+
+/**
+ * Split picked / pasted / dropped files into the ones that can be attached and
+ * a count of the images a text-only model could not read.
+ *
+ * Vision support is a question about **images**, and only about images. A PDF,
+ * a spreadsheet or a `.txt` reaches the model as a `file` block, which the
+ * providers serialize as extracted text (`fileBlockToText`) — it never touches
+ * the vision path at all. Gating the whole paperclip on `supportsVision` is
+ * therefore an answer to a question nobody asked, and on a text-only brain it
+ * is what "I can't upload a file" means: not that one image was refused, but
+ * that the picker never opened for anything.
+ */
+export function partitionAttachableFiles(
+  files: readonly File[],
+  modelSupportsVision: boolean,
+): { accepted: File[]; blockedImages: number } {
+  if (modelSupportsVision) return { accepted: [...files], blockedImages: 0 };
+  const accepted = files.filter((file) => !file.type.startsWith("image/"));
+  return { accepted, blockedImages: files.length - accepted.length };
+}
+
+/**
+ * Why the paperclip is disabled, or `null` when it is usable.
+ *
+ * The string is the button's tooltip, so a disabled control always states its
+ * own reason rather than just going grey. Note what is NOT here: a text-only
+ * model. That never made the button unusable, it made it silent.
+ */
+export function attachDisabledReason(policy: {
+  typingDisabled: boolean;
+  assistantId: string | null;
+}): string | null {
+  if (!policy.assistantId) return "No assistant is connected yet";
+  if (policy.typingDisabled)
+    return "This conversation isn't accepting input right now";
+  return null;
+}
+
 /**
  * Pure-logic mirror of the textarea `onKeyDown` policy. Returns whether the
  * Enter keypress should submit the form. The production handler delegates to

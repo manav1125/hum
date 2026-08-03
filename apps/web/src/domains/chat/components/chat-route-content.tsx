@@ -42,6 +42,10 @@ import { isSending, useTurnStore } from "@/domains/chat/turn-store";
 import { messagePlainText } from "@/domains/chat/utils/message-plain-text";
 import { useChatAttachmentDropZone } from "@/domains/chat/components/chat-attachments/use-chat-attachment-drop-zone";
 import {
+  NON_VISION_IMAGE_NOTICE,
+  partitionAttachableFiles,
+} from "@/domains/chat/components/chat-composer/chat-composer-utils";
+import {
   useComposerStore,
   selectUploadingCount,
   selectUploadedIds,
@@ -620,17 +624,18 @@ export function ChatMainPanel({
   // -------------------------------------------------------------------------
   const handleDroppedFiles = useCallback(
     (files: FileList | File[]) => {
-      const arr = Array.from(files);
-      const allowed = activeModelSupportsVision
-        ? arr
-        : arr.filter((f) => !f.type.startsWith("image/"));
-      if (allowed.length < arr.length) {
+      // Same helper the composer's picker and paste paths use, so the three
+      // ways a file can arrive cannot drift apart again.
+      const { accepted, blockedImages } = partitionAttachableFiles(
+        Array.from(files),
+        activeModelSupportsVision,
+      );
+      if (blockedImages > 0) {
         useComposerStore.setState({
-          attachmentLastError:
-            "The current model doesn't support image input. Switch to a vision-capable model to attach images.",
+          attachmentLastError: NON_VISION_IMAGE_NOTICE,
         });
       }
-      if (allowed.length > 0) addChatAttachmentFiles(allowed);
+      if (accepted.length > 0) addChatAttachmentFiles(accepted);
     },
     [addChatAttachmentFiles, activeModelSupportsVision],
   );

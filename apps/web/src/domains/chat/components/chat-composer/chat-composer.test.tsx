@@ -14,7 +14,10 @@ import { createRef, type ReactNode } from "react";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
-import type { ChatAttachment } from "@/domains/chat/composer-store";
+import {
+  type ChatAttachment,
+  useComposerStore,
+} from "@/domains/chat/composer-store";
 import type { VoiceInputButtonHandle } from "@/domains/chat/components/voice-input-button";
 import { INITIAL_TURN_STATE, useTurnStore } from "@/domains/chat/turn-store";
 
@@ -1008,5 +1011,139 @@ describe("ChatComposer — Create and Voice are findable chips", () => {
     const html = renderComposer();
     expect(html).not.toContain(">Create<");
     expect(html).not.toContain("Start voice mode");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The paperclip — "on home screen new chat I can't upload a file"
+// ---------------------------------------------------------------------------
+
+/**
+ * Reported on the desktop landing screen, where this same composer draws the
+ * new-conversation state. The paperclip was rendered but dead: it was disabled
+ * whenever the active model was known text-only, which on the prod brain
+ * (DeepSeek V4) is every turn. So the picker never opened — not for an image,
+ * and not for the PDF the user was actually trying to send.
+ *
+ * These drive the real component: click the real button, fire a real `change`
+ * on the real hidden `<input type="file">`, and assert the file arrives.
+ */
+function renderAttachComposer(
+  props: Partial<Parameters<typeof ChatComposer>[0]> = {},
+) {
+  const utils = render(
+    withRouter(
+      <ChatComposer
+        input=""
+        setInput={() => {}}
+        onSubmit={() => {}}
+        inputRef={createRef<HTMLTextAreaElement>()}
+        typingDisabled={false}
+        sendDisabled={false}
+        attachmentsUploadingCount={0}
+        canSendAttachments={false}
+        chatAttachments={[]}
+        onAddAttachmentFiles={() => {}}
+        onRemoveAttachment={() => {}}
+        onStopGenerating={() => {}}
+        canStopGenerating={false}
+        assistantId="asst_test"
+        {...props}
+      />,
+    ),
+  );
+  const button = utils.getByLabelText("Attach file") as HTMLButtonElement;
+  const input = utils.container.querySelector(
+    'input[type="file"]',
+  ) as HTMLInputElement;
+  return { ...utils, button, input };
+}
+
+/** Drive the picker end to end: click the paperclip, then pick `files`. */
+function pickFiles(
+  button: HTMLButtonElement,
+  input: HTMLInputElement,
+  files: File[],
+): { openedPicker: boolean } {
+  let opened = 0;
+  input.click = () => {
+    opened += 1;
+  };
+  fireEvent.click(button);
+  if (opened > 0) {
+    Object.defineProperty(input, "files", {
+      value: files,
+      configurable: true,
+    });
+    fireEvent.change(input);
+  }
+  return { openedPicker: opened > 0 };
+}
+
+const attachFile = (name: string, type: string): File =>
+  new File(["x"], name, { type });
+
+describe("ChatComposer — attaching on a text-only model", () => {
+  test("a PDF still attaches when the model can't read images", () => {
+    const onAddAttachmentFiles = mock((_f: FileList | File[]) => {});
+    const { button, input } = renderAttachComposer({
+      onAddAttachmentFiles,
+      modelSupportsVision: false,
+    });
+
+    expect(button.disabled).toBe(false);
+    const { openedPicker } = pickFiles(button, input, [
+      attachFile("contract.pdf", "application/pdf"),
+    ]);
+    expect(openedPicker).toBe(true);
+    expect(onAddAttachmentFiles).toHaveBeenCalledTimes(1);
+    const delivered = onAddAttachmentFiles.mock.calls[0]![0] as File[];
+    expect(Array.from(delivered).map((f) => f.name)).toEqual(["contract.pdf"]);
+  });
+
+  test("an image on the same model is dropped — but the composer says so", () => {
+    useComposerStore.setState({ attachmentLastError: null });
+    const onAddAttachmentFiles = mock((_f: FileList | File[]) => {});
+    const { button, input } = renderAttachComposer({
+      onAddAttachmentFiles,
+      modelSupportsVision: false,
+    });
+
+    pickFiles(button, input, [attachFile("shot.png", "image/png")]);
+
+    expect(onAddAttachmentFiles).not.toHaveBeenCalled();
+    // A no-op is not a success: refusing the file silently was the old bug in
+    // a different costume.
+    expect(useComposerStore.getState().attachmentLastError).toContain(
+      "doesn't support image input",
+    );
+  });
+
+  test("a vision model attaches the image untouched", () => {
+    useComposerStore.setState({ attachmentLastError: null });
+    const onAddAttachmentFiles = mock((_f: FileList | File[]) => {});
+    const { button, input } = renderAttachComposer({
+      onAddAttachmentFiles,
+      modelSupportsVision: true,
+    });
+
+    pickFiles(button, input, [attachFile("shot.png", "image/png")]);
+
+    expect(onAddAttachmentFiles).toHaveBeenCalledTimes(1);
+    expect(useComposerStore.getState().attachmentLastError).toBeNull();
+  });
+
+  test("with no assistant the paperclip IS disabled — and its tooltip says why", () => {
+    const { button } = renderAttachComposer({ assistantId: null });
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("title")).toBe("No assistant is connected yet");
+  });
+
+  test("a paused composer disables it, and says why", () => {
+    const { button } = renderAttachComposer({ typingDisabled: true });
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("title")).toBe(
+      "This conversation isn't accepting input right now",
+    );
   });
 });

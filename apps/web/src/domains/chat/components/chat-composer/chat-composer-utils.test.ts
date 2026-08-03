@@ -13,7 +13,9 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  attachDisabledReason,
   hasSomethingToSend,
+  partitionAttachableFiles,
   shouldSubmitOnEnter,
 } from "@/domains/chat/components/chat-composer/chat-composer-utils";
 
@@ -63,5 +65,85 @@ describe("the Enter path answers the same question", () => {
         cmdEnterMode: false,
       }),
     ).toBe("submit");
+  });
+});
+
+/**
+ * "On home screen new chat I can't upload a file."
+ *
+ * The paperclip was disabled outright whenever the active model was known
+ * text-only — which on the prod brain (DeepSeek V4) is always. Vision has
+ * nothing to do with a PDF, and the daemon's own `agent/vision-tier.ts` reroutes
+ * image-bearing rounds to a vision model anyway; the composer was refusing
+ * files nobody's model ever objected to.
+ */
+const file = (name: string, type: string): File =>
+  new File(["x"], name, { type });
+
+describe("partitionAttachableFiles", () => {
+  test("a text-only model still accepts documents — they are never images", () => {
+    const { accepted, blockedImages } = partitionAttachableFiles(
+      [
+        file("contract.pdf", "application/pdf"),
+        file("rows.csv", "text/csv"),
+        file("notes.txt", "text/plain"),
+      ],
+      false,
+    );
+    expect(accepted.map((f) => f.name)).toEqual([
+      "contract.pdf",
+      "rows.csv",
+      "notes.txt",
+    ]);
+    expect(blockedImages).toBe(0);
+  });
+
+  test("a text-only model takes the documents and counts the images it dropped", () => {
+    const { accepted, blockedImages } = partitionAttachableFiles(
+      [file("shot.png", "image/png"), file("contract.pdf", "application/pdf")],
+      false,
+    );
+    expect(accepted.map((f) => f.name)).toEqual(["contract.pdf"]);
+    expect(blockedImages).toBe(1);
+  });
+
+  test("images only, on a text-only model: nothing attaches and the caller is told why", () => {
+    const { accepted, blockedImages } = partitionAttachableFiles(
+      [file("a.png", "image/png"), file("b.jpg", "image/jpeg")],
+      false,
+    );
+    expect(accepted).toEqual([]);
+    // Non-zero is what makes the notice fire — a silent no-op is the bug.
+    expect(blockedImages).toBe(2);
+  });
+
+  test("a vision model takes everything untouched", () => {
+    const { accepted, blockedImages } = partitionAttachableFiles(
+      [file("shot.png", "image/png"), file("contract.pdf", "application/pdf")],
+      true,
+    );
+    expect(accepted.map((f) => f.name)).toEqual(["shot.png", "contract.pdf"]);
+    expect(blockedImages).toBe(0);
+  });
+});
+
+describe("attachDisabledReason", () => {
+  test("a text-only model is NOT a reason to disable the paperclip", () => {
+    // The regression itself: `supportsVision === false` used to land here.
+    expect(
+      attachDisabledReason({ typingDisabled: false, assistantId: "asst_1" }),
+    ).toBeNull();
+  });
+
+  test("no assistant disables it, and says so", () => {
+    expect(
+      attachDisabledReason({ typingDisabled: false, assistantId: null }),
+    ).toBe("No assistant is connected yet");
+  });
+
+  test("a composer that isn't taking input disables it, and says so", () => {
+    expect(
+      attachDisabledReason({ typingDisabled: true, assistantId: "asst_1" }),
+    ).toBe("This conversation isn't accepting input right now");
   });
 });

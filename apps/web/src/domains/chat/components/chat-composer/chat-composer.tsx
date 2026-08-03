@@ -40,7 +40,10 @@ import { isPointerCoarse } from "@/utils/pointer";
 import { Button, Popover } from "@vellumai/design-library";
 
 import {
+  NON_VISION_IMAGE_NOTICE,
+  attachDisabledReason,
   computeGhostSuffix,
+  partitionAttachableFiles,
   shouldSubmitOnEnter,
 } from "@/domains/chat/components/chat-composer/chat-composer-utils";
 import {
@@ -140,12 +143,16 @@ export interface ChatComposerProps {
   onEnterVoiceMode?: () => void;
 
   /**
-   * Whether the currently-active inference model accepts image input.
-   * When `false`, the AttachFileButton is disabled so users can't pick a
-   * file that the provider would reject downstream (MiniMax, Fireworks
-   * Kimi, several OpenRouter models, etc.). Sourced at runtime from the
-   * daemon config API — defaults to `true` (fail-open) when the daemon
-   * hasn't surfaced the flag yet.
+   * Whether the currently-active inference model accepts **image** input.
+   * Sourced at runtime from the daemon config API — defaults to `true`
+   * (fail-open) when the daemon hasn't surfaced the flag yet.
+   *
+   * When `false`, images are filtered out of a pick/paste/drop and the user is
+   * told why. It does NOT disable the paperclip: every other kind of file
+   * reaches the model as a `file` block that providers serialize as extracted
+   * text, so a text-only model (DeepSeek V4, MiniMax, Fireworks Kimi, several
+   * OpenRouter models) has no opinion about a PDF. Disabling the button here
+   * is what "I can't upload a file" meant on the desktop home screen.
    */
   modelSupportsVision?: boolean;
 
@@ -456,6 +463,41 @@ export function ChatComposer({
     isVoiceActive && !isLocallyGenerating && !isElectronHost;
   const hideTextareaForVoice = isNative && showInlineVoicePreview;
 
+  // ---- Attachments -------------------------------------------------------
+  /**
+   * Every way a file enters the composer — the paperclip, a paste, a drop —
+   * ends here. It used to be three rules: paste filtered images and explained
+   * itself, the drop zone did the same in `chat-route-content`, and the picker
+   * did neither because the paperclip was simply *disabled* whenever the model
+   * could not read images. On a text-only brain (the prod default; see the
+   * daemon's `agent/vision-tier.ts`) that turned "this one PNG won't be read"
+   * into "you cannot attach anything at all" — a PDF, a CSV and a `.txt` never
+   * go near the vision path, and the picker refused them anyway.
+   *
+   * Same lesson as `hasSomethingToSend`: one helper, so the paths cannot
+   * diverge again.
+   */
+  const acceptFiles = useCallback(
+    (files: FileList | File[]) => {
+      const { accepted, blockedImages } = partitionAttachableFiles(
+        Array.from(files),
+        modelSupportsVision,
+      );
+      // A no-op is not a success: if every file was an image the model can't
+      // read, the user must be told, not left staring at an empty strip.
+      if (blockedImages > 0) {
+        useComposerStore.setState({
+          attachmentLastError: NON_VISION_IMAGE_NOTICE,
+        });
+      }
+      if (accepted.length > 0) onAddAttachmentFiles(accepted);
+    },
+    [modelSupportsVision, onAddAttachmentFiles],
+  );
+
+  /** Null when the paperclip is usable; otherwise the tooltip saying why not. */
+  const attachDisabled = attachDisabledReason({ typingDisabled, assistantId });
+
   const ghostSuffix = useMemo(
     () =>
       computeGhostSuffix({
@@ -536,16 +578,7 @@ export function ChatComposer({
                   }
                   if (files.length > 0) {
                     e.preventDefault();
-                    const allowed = modelSupportsVision
-                      ? files
-                      : files.filter((f) => !f.type.startsWith("image/"));
-                    if (allowed.length < files.length) {
-                      useComposerStore.setState({
-                        attachmentLastError:
-                          "The current model doesn't support image input. Switch to a vision-capable model to attach images.",
-                      });
-                    }
-                    if (allowed.length > 0) onAddAttachmentFiles(allowed);
+                    acceptFiles(files);
                   }
                 }}
                 onKeyDown={(e) => {
@@ -818,15 +851,9 @@ export function ChatComposer({
                 ) : (
                   <>
                     <AttachFileButton
-                      disabled={
-                        typingDisabled || !assistantId || !modelSupportsVision
-                      }
-                      onFilesSelected={onAddAttachmentFiles}
-                      title={
-                        !modelSupportsVision
-                          ? "The current model doesn't support image input"
-                          : undefined
-                      }
+                      disabled={attachDisabled !== null}
+                      onFilesSelected={acceptFiles}
+                      title={attachDisabled ?? undefined}
                     />
                     {showVoiceInput && (
                       <VoiceInputButton
