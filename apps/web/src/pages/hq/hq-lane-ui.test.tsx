@@ -47,6 +47,7 @@ function mission(over: Partial<Mission> & { id: string }): Mission {
 function input(over: Partial<HqCensusInput> = {}): HqCensusInput {
   return {
     needsYou: known(6),
+    valve: known({ stop: "needs_you" as const, held: 0, unbanded: 0 }),
     missions: known([
       mission({ id: "Renew Acme" }),
       mission({ id: "Ship Halo" }),
