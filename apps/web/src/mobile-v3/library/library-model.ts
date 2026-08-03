@@ -8,26 +8,33 @@
  * current thing's files while the full view leads with recency, without two
  * renderings of "what Cue made" drifting apart.
  *
- * DATA: `GET /v1/assistants/:id/outputs` — "newest-first deliverables across
- * every mission and project". It is the ONLY library source that carries the
- * two fields C3 puts on every card: `projectId` (the thing) and `agent` (who
- * made it). Apps/documents/attachments — what the desktop Library reads —
- * carry neither, so a card built on them could not say what the frame says.
+ * DATA: `GET /v1/assistants/:id/library` — the composed scope: files Cue
+ * generated, the documents it wrote, the apps it built, and the deliverables
+ * work runs registered. It used to be `GET /outputs`, on the reasoning that
+ * only outputs carry `projectId` and `agent`. That reasoning held; the
+ * conclusion did not. `/outputs` holds a row only where a work item ran to
+ * completion AND produced a file, so on the owner's daemon it was two rows out
+ * of a 89-asset library — a frame's two fields are not worth 87 missing files.
+ * `/library` keeps both fields where they exist and leaves them null where
+ * they do not, which `cardMeta` already renders honestly.
  */
 
-import type { OutputsGetResponses } from "@/generated/daemon/types.gen";
+import type { LibraryGetResponses } from "@/generated/daemon/types.gen";
 
 /** One made thing, exactly as the daemon returns it. Nothing re-shaped. */
-export type LibraryEntry = OutputsGetResponses[200]["outputs"][number];
+export type LibraryEntry = LibraryGetResponses[200]["items"][number];
 
 export type OutputKind = LibraryEntry["kind"];
 
 /**
  * The chip row. "All" always leads; the rest are the C3 frame's four (Docs ·
- * Decks · Sheets · Images) plus the two kinds the daemon can also return.
+ * Decks · Sheets · Images) plus the kinds the daemon can also return.
  *
  * A chip is only offered when something behind it exists — an empty filter is
- * a dead end you can tap into and a lie about what you have.
+ * a dead end you can tap into and a lie about what you have. The corollary
+ * bit us the other way round: the phone showed only `Docs | Images` because
+ * only two entries were ever fetched, so the row was quietly asserting that
+ * the owner had no videos, decks or sheets. He had 8 videos and 12 sheets.
  */
 export const KIND_FILTER_ORDER = [
   "Docs",
@@ -35,6 +42,7 @@ export const KIND_FILTER_ORDER = [
   "Sheets",
   "Images",
   "Video",
+  "Apps",
   "Other",
 ] as const;
 
@@ -55,6 +63,8 @@ export function filterOf(kind: OutputKind): KindFilter {
       return "Images";
     case "video":
       return "Video";
+    case "app":
+      return "Apps";
     default:
       return "Other";
   }
@@ -123,17 +133,34 @@ export function countThisWeek(entries: LibraryEntry[], now: number): number {
 }
 
 /**
- * C3's header line — "48 things Cue made · 11 this week". The second leg is
+ * C3's header line — "114 things made with Cue · 3 this week". The second leg is
  * dropped when nothing landed this week rather than printing "0 this week",
  * and the whole line is a plain count of what the fetch returned.
+ *
+ * It used to read "N things Cue made", which was a claim about AUTHORSHIP the
+ * list could not keep: the fetch behind it was the work-run deliverable
+ * registry, so "2 things Cue made" was really "2 things a work run happened to
+ * register" — and the owner, holding dozens of files Cue had made him, had no
+ * way to tell which of those two sentences he was reading. "Made with Cue" is
+ * the scope this list actually applies, and `libraryScopeNote` says out loud
+ * what it leaves out.
  */
 export function madeLine(entries: LibraryEntry[], now: number): string {
   const total = entries.length;
   const noun = total === 1 ? "thing" : "things";
   const week = countThisWeek(entries, now);
-  const head = `${total} ${noun} Cue made`;
+  const head = `${total} ${noun} made with Cue`;
   return week > 0 ? `${head} · ${week} this week` : head;
 }
+
+/**
+ * The one sentence that keeps the header honest: what this list holds, and
+ * where the things it does not hold live. A narrow scope is allowed; a narrow
+ * scope that does not say where the rest went is how "I have no idea what it's
+ * showing me" happens.
+ */
+export const libraryScopeNote =
+  "Files, docs and apps you made with Cue. Things you sent it stay in their chat.";
 
 /**
  * Who made it. `agent` is the producing assignee and null reads as "cue" —
@@ -186,6 +213,8 @@ export function kindGlyph(kind: OutputKind): string {
       return "▷";
     case "pdf":
       return "▥";
+    case "app":
+      return "◈";
     case "document":
       return "≣";
     default:

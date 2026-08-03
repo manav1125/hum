@@ -8,12 +8,13 @@
  * with it. It keeps its gallery form exactly — 2-col, agent and thing on every
  * card. Filed, not demoted.
  *
- * The header line still carries the argument: "48 things Cue made · 11 this
- * week" — a plain count of real deliverables, not a folder size.
+ * The header line still carries the argument: "114 made with Cue · 3 this
+ * week" — a plain count of real things, not a folder size.
  *
- * DATA: `GET /outputs` (see library-model.ts for why it, and not the desktop
- * Library's apps/documents/attachments, is the only source that can put the
- * agent AND the thing on a card).
+ * DATA: `GET /library` — files Cue generated, documents it wrote, apps it
+ * built, deliverables work runs registered. It was `GET /outputs`, which held
+ * only run-registered deliverables: two rows on the owner's daemon, against a
+ * library of 89 assets. See library-model.ts.
  */
 import { useMemo, useRef, useState } from "react";
 
@@ -30,6 +31,7 @@ import {
   availableFilters,
   filterEntries,
   groupByRecency,
+  libraryScopeNote,
   madeLine,
   type LibraryFilter,
 } from "@/mobile-v3/library/library-model";
@@ -147,8 +149,8 @@ export function Mv3WorkLibrary() {
           <input
             autoFocus
             type="text"
-            aria-label="Search what Cue made"
-            placeholder="Search what Cue made…"
+            aria-label="Search your library"
+            placeholder="Search your library…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
@@ -177,7 +179,7 @@ export function Mv3WorkLibrary() {
 
         {isLoading ? (
           <div style={{ fontSize: 13, color: "var(--mv3-muted)" }}>
-            Loading what Cue made…
+            Loading your library…
           </div>
         ) : isError ? (
           /* A failed fetch is an error state, not an empty gallery — saying
@@ -202,10 +204,10 @@ export function Mv3WorkLibrary() {
             }}
           >
             {search.trim()
-              ? `Nothing Cue made matches “${search.trim()}”.`
+              ? `Nothing in your library matches “${search.trim()}”.`
               : filter !== "All"
-                ? `Cue hasn’t made anything filed under ${filter} yet — the chip is here because other kinds exist.`
-                : "Nothing here yet. Everything Cue makes for you lands in the Library, tagged with the agent that made it and the thing it was made for."}
+                ? `Nothing here is filed under ${filter} — the chip is here because other kinds exist.`
+                : `Nothing here yet. ${libraryScopeNote}`}
           </div>
         ) : (
           sections.map((section) => (

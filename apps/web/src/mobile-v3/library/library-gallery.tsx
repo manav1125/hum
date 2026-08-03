@@ -27,6 +27,7 @@ import {
   cardMeta,
   entryDate,
   kindGlyph,
+  libraryScopeNote,
   type LibraryEntry,
   type LibraryFilter,
 } from "./library-model";
@@ -54,6 +55,7 @@ const COVER_ART: Record<string, string> = {
   pdf: "linear-gradient(160deg,#2E2230,#1C151E)",
   image: "linear-gradient(140deg,#2B3A5C,#3D2B5C)",
   video: "linear-gradient(140deg,#20303F,#141C26)",
+  app: "linear-gradient(150deg,#2A2036,#3B2A6B)",
   other: "linear-gradient(160deg,#232A36,#181D26)",
 };
 
@@ -348,6 +350,11 @@ export function LibraryGrid({
  * for outputs that are not there, and it reads the same reach the ⇪ reads, so
  * the sentence and the button can never disagree. On a shell with no share at
  * all it degrades to the one thing that is always true: tap opens it here.
+ *
+ * It also carries the SCOPE line. The header counts what this list holds; only
+ * this says what it does not, and where that lives instead. The two belong to
+ * one claim, so they are shipped together rather than left for each surface to
+ * remember.
  */
 export function LibraryFooterNote({
   entries,
@@ -367,7 +374,8 @@ export function LibraryFooterNote({
         ...style,
       }}
     >
-      {shareFooterLine(reach, entries)}
+      <div>{libraryScopeNote}</div>
+      <div>{shareFooterLine(reach, entries)}</div>
     </div>
   );
 }

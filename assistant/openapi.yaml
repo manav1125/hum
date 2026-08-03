@@ -25409,6 +25409,160 @@ paths:
           schema:
             type: string
           description: "'true' restricts to actions that happened with no human present"
+  /v1/library:
+    get:
+      operationId: library_get
+      summary: List everything made with Cue
+      description:
+        "Newest-first library across every source: files Cue generated, the documents it wrote, the apps it built,
+        and the deliverables work runs registered. Excludes files you uploaded (inputs live in their thread) and
+        tool-internal captures."
+      tags:
+        - library
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        source:
+                          type: string
+                          enum:
+                            - output
+                            - file
+                            - document
+                            - app
+                          description:
+                            "Which registry it came from: a run-registered deliverable, a file Cue generated in a thread, a canvas
+                            document, or a built app"
+                        workItemId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set only on run-registered deliverables
+                        missionId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        attachmentId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for file-backed items; bytes via the attachment routes
+                        externalUrl:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        documentId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Canvas document surface id — how the client opens it
+                        appId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        kind:
+                          type: string
+                          enum:
+                            - document
+                            - deck
+                            - spreadsheet
+                            - pdf
+                            - image
+                            - video
+                            - app
+                            - other
+                        title:
+                          type: string
+                        why:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        agent:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The assignee that produced it; null reads as "cue"
+                        reviewState:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - pending
+                                - approved
+                            - type: "null"
+                          description:
+                            null means the artefact was never queued for review — NOT that review is pending. Only run-registered
+                            deliverables carry one.
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        attachment:
+                          anyOf:
+                            - type: object
+                              properties:
+                                id:
+                                  type: string
+                                filename:
+                                  type: string
+                                mimeType:
+                                  type: string
+                                sizeBytes:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                hasThumbnail:
+                                  type: boolean
+                              required:
+                                - id
+                                - filename
+                                - mimeType
+                                - sizeBytes
+                                - hasThumbnail
+                              additionalProperties: false
+                            - type: "null"
+                      required:
+                        - id
+                        - source
+                        - workItemId
+                        - missionId
+                        - projectId
+                        - attachmentId
+                        - externalUrl
+                        - documentId
+                        - appId
+                        - kind
+                        - title
+                        - why
+                        - agent
+                        - reviewState
+                        - createdAt
+                        - attachment
+                      additionalProperties: false
+                required:
+                  - items
+                additionalProperties: false
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max items to return (default 200, cap 500)
   /v1/llm-request-logs/{id}/context:
     get:
       operationId: llmrequestlogs_by_id_context_get

@@ -149,7 +149,16 @@ export function LibraryView({
   // v23 C3: on a phone the Library leads with what Cue MADE — a card carrying
   // the agent and the thing. Apps, documents and media (which carry neither
   // field) keep their grid underneath, so the phone loses nothing.
-  const made = useLibraryOutputs(isMobile ? assistantId : null);
+  //
+  // Narrowed to run-registered deliverables (`source === "output"`) because
+  // the hook behind it now fetches the WHOLE library, apps and documents
+  // included — the rail's whole point is the provenance only that source
+  // carries, and without the narrowing this page would list every app twice.
+  const madeAll = useLibraryOutputs(isMobile ? assistantId : null);
+  const made = useMemo(
+    () => madeAll.entries.filter((e) => e.source === "output"),
+    [madeAll.entries],
+  );
   // Same query key the rail's counts already hold, so this costs no request.
   const { projects } = useProjects(assistantId);
   const madeThingTitleOf = useMemo(() => {
@@ -371,9 +380,7 @@ export function LibraryView({
 
   // --- Render: main library grid ---
   const noResults =
-    tabApps.length === 0 &&
-    tabDocuments.length === 0 &&
-    tabMedia.length === 0;
+    tabApps.length === 0 && tabDocuments.length === 0 && tabMedia.length === 0;
   return (
     <div
       className="flex h-full flex-col overflow-hidden"
@@ -513,54 +520,54 @@ export function LibraryView({
             {/* What Cue made, with provenance on every card (C3). Only shown
                 on the All tab: the kind chips below filter apps/documents,
                 and silently ignoring them here would be a lying filter. */}
-            {activeFilter === "All" && made.entries.length > 0 ? (
+            {activeFilter === "All" && made.length > 0 ? (
               <div style={{ marginBottom: 22 }}>
                 <LibrarySectionLabel>What Cue made</LibrarySectionLabel>
                 <LibraryGrid
                   assistantId={assistantId}
-                  entries={made.entries.slice(0, 24)}
+                  entries={made.slice(0, 24)}
                   thingTitleOf={madeThingTitleOf}
                   now={madeNow}
                   onOpen={openEntry}
                 />
               </div>
             ) : null}
-            {activeFilter === "All" && made.entries.length > 0 ? (
+            {activeFilter === "All" && made.length > 0 ? (
               <LibrarySectionLabel>Apps &amp; files</LibrarySectionLabel>
             ) : null}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 12,
-            }}
-          >
-            {[...tabPinnedApps, ...tabRecentApps].map((app) => (
-              <LibraryCoverCard
-                key={app.id}
-                kind={inferAppType(app.name, app.icon).kind}
-                title={app.name}
-                dateLabel={monoDate(app.createdAt)}
-                onOpen={() => onOpenApp(app.id)}
-              />
-            ))}
-            {tabDocuments.map((doc) => (
-              <LibraryCoverCard
-                key={doc.surfaceId}
-                kind="Doc"
-                title={doc.title}
-                dateLabel={monoDate(doc.updatedAt)}
-                onOpen={() => onOpenDocument?.(doc.surfaceId)}
-              />
-            ))}
-            {tabMedia.map((item) => (
-              <LibraryMediaCard
-                key={item.id}
-                media={item}
-                onOpen={handleOpenMedia}
-              />
-            ))}
-          </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+              }}
+            >
+              {[...tabPinnedApps, ...tabRecentApps].map((app) => (
+                <LibraryCoverCard
+                  key={app.id}
+                  kind={inferAppType(app.name, app.icon).kind}
+                  title={app.name}
+                  dateLabel={monoDate(app.createdAt)}
+                  onOpen={() => onOpenApp(app.id)}
+                />
+              ))}
+              {tabDocuments.map((doc) => (
+                <LibraryCoverCard
+                  key={doc.surfaceId}
+                  kind="Doc"
+                  title={doc.title}
+                  dateLabel={monoDate(doc.updatedAt)}
+                  onOpen={() => onOpenDocument?.(doc.surfaceId)}
+                />
+              ))}
+              {tabMedia.map((item) => (
+                <LibraryMediaCard
+                  key={item.id}
+                  media={item}
+                  onOpen={handleOpenMedia}
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-8">

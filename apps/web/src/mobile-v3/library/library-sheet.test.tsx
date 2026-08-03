@@ -30,11 +30,14 @@ const NOW = Date.now();
 function entry(over: Partial<LibraryEntry>): LibraryEntry {
   return {
     id: "o1",
+    source: "output",
     workItemId: "w1",
     missionId: null,
     projectId: null,
     attachmentId: null,
     externalUrl: null,
+    documentId: null,
+    appId: null,
     kind: "document",
     title: "One-pager",
     why: null,
@@ -47,8 +50,18 @@ function entry(over: Partial<LibraryEntry>): LibraryEntry {
 }
 
 const ENTRIES: LibraryEntry[] = [
-  entry({ id: "a", title: "Acme one-pager v2", projectId: "acme", agent: "Ops" }),
-  entry({ id: "b", title: "Pricing v3", projectId: "acme", kind: "spreadsheet" }),
+  entry({
+    id: "a",
+    title: "Acme one-pager v2",
+    projectId: "acme",
+    agent: "Ops",
+  }),
+  entry({
+    id: "b",
+    title: "Pricing v3",
+    projectId: "acme",
+    kind: "spreadsheet",
+  }),
   entry({ id: "c", title: "Investor update", projectId: "seed" }),
   entry({ id: "d", title: "Halo hero", projectId: null, kind: "image" }),
 ];
@@ -179,7 +192,38 @@ describe("honest states", () => {
     outputs = { entries: [], isLoading: false, isError: false };
     render(<Host />);
     expect(
-      screen.getByText(/Everything Cue makes for you lands in the Library/i),
+      screen.getByText(/Files, docs and apps you made with Cue/i),
     ).toBeTruthy();
+    // …and says where the things it does NOT hold live, so an empty wall is
+    // never mistaken for an empty account.
+    expect(screen.getByText(/stay in their chat/i)).toBeTruthy();
+  });
+});
+
+describe("no card wears a status the daemon did not report", () => {
+  test("REVIEW rides only the entries that actually carry a review state", () => {
+    // The owner's two visible cards were both badged ‖ REVIEW. That badge was
+    // real for them (both work_outputs rows were `pending`) — but now that the
+    // Library also holds documents, apps and files no run ever registered,
+    // `reviewState` is legitimately null, and null is NOT pending.
+    outputs = {
+      entries: [
+        entry({ id: "p", title: "Queued deck", reviewState: "pending" }),
+        entry({
+          id: "n",
+          title: "Ubud itinerary",
+          source: "document",
+          documentId: "doc-1",
+          workItemId: null,
+          reviewState: null,
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    render(<Host />);
+    // One badge on the wall, not two.
+    expect(screen.getAllByText(/REVIEW/)).toHaveLength(1);
+    expect(screen.getByText("Ubud itinerary")).toBeTruthy();
   });
 });

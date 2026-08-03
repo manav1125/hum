@@ -696,8 +696,15 @@ const MEDIA_KINDS = ["audio", "video", "image"] as const;
  * artifacts). There is no source/purpose column on `attachments`, so we match
  * by the fixed names these capture sites assign. Extend as new capture sites
  * are added. Matched case-insensitively as `LIKE '<prefix>%'`.
+ *
+ * Exported because the Library composer (`src/library/library-store.ts`) has
+ * to apply the SAME denylist to `work_outputs` rows: the run-completion
+ * capture path registers every attachment a run produced, tool captures
+ * included, so a `browser-screenshot.jpeg` shipped as a deliverable card on
+ * the phone while this list correctly hid it everywhere else. One denylist,
+ * both readers.
  */
-const TOOL_CAPTURE_FILENAME_PREFIXES = [
+export const TOOL_CAPTURE_FILENAME_PREFIXES = [
   "computer-use-",
   "skill-execute",
   "vision-qa",

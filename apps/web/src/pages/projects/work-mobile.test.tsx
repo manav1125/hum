@@ -81,21 +81,47 @@ const WORK_ITEMS = [
   },
 ];
 
-/** What Cue made — the only list carrying both `projectId` and `agent`. */
-const OUTPUTS = [
+/**
+ * The library — `GET /library`, which composes run-registered deliverables
+ * with the files, documents and apps that no work run ever touched. The
+ * Library used to read `GET /outputs` alone, which is why the owner's phone
+ * showed two cards against 89 real assets.
+ */
+const LIBRARY = [
   {
     id: "out-1",
+    source: "output",
     workItemId: "wi-1",
     missionId: null,
     projectId: "proj-acme",
     attachmentId: null,
     externalUrl: null,
+    documentId: null,
+    appId: null,
     kind: "deck",
     title: "Acme one-pager v2",
     why: null,
     agent: "Ops",
     reviewState: "approved",
     createdAt: Date.now() - 86_400_000,
+    attachment: null,
+  },
+  {
+    id: "doc-1",
+    source: "document",
+    workItemId: null,
+    missionId: null,
+    projectId: null,
+    attachmentId: null,
+    externalUrl: null,
+    documentId: "surface-1",
+    appId: null,
+    kind: "document",
+    title: "Ubud Family Itinerary",
+    why: "Document · 1,204 words",
+    agent: null,
+    reviewState: null,
+    createdAt: Date.now() - 3 * 86_400_000,
     attachment: null,
   },
 ];
@@ -111,8 +137,8 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
     data: { items: WORK_ITEMS },
     ...okResponse,
   })),
-  outputsGet: mock(async () => ({
-    data: { outputs: OUTPUTS },
+  libraryGet: mock(async () => ({
+    data: { items: LIBRARY },
     ...okResponse,
   })),
 }));
@@ -221,8 +247,12 @@ describe("Work on the phone", () => {
       expect(screen.getByText("Acme one-pager v2")).toBeDefined();
     });
     expect(screen.getByText(/◆ Ops · Renew Acme/)).toBeDefined();
-    // The header line carries the argument, off a real count.
-    expect(screen.getByText(/1 thing Cue made/)).toBeDefined();
+    // …and a document no work run ever registered is on the same wall. Under
+    // the old `GET /outputs` fetch it was not reachable at all.
+    expect(screen.getByText("Ubud Family Itinerary")).toBeDefined();
+    // The header line carries the argument, off a real count, and names the
+    // scope it applied rather than claiming authorship it cannot back.
+    expect(screen.getByText(/2 things made with Cue/)).toBeDefined();
   });
 
   test("the ledger is reachable ONLY through that switcher", async () => {

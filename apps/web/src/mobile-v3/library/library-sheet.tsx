@@ -28,6 +28,7 @@ import {
 import {
   availableFilters,
   filterEntries,
+  libraryScopeNote,
   partitionByThing,
   type LibraryEntry,
   type LibraryFilter,
@@ -136,8 +137,8 @@ export function Mv3LibrarySheet({
           <input
             autoFocus
             type="text"
-            aria-label="Search what Cue made"
-            placeholder="Search what Cue made…"
+            aria-label="Search your library"
+            placeholder="Search your library…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
@@ -167,7 +168,7 @@ export function Mv3LibrarySheet({
         <div style={{ marginTop: 13 }}>
           {isLoading ? (
             <div style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
-              Loading what Cue made…
+              Loading your library…
             </div>
           ) : isError ? (
             /* A failed fetch is an error state, never an empty gallery. */
@@ -184,10 +185,10 @@ export function Mv3LibrarySheet({
               }}
             >
               {search.trim()
-                ? `Nothing Cue made matches “${search.trim()}”.`
+                ? `Nothing in your library matches “${search.trim()}”.`
                 : filter !== "All"
-                  ? `Cue hasn’t made anything filed under ${filter} yet.`
-                  : "Nothing here yet — everything Cue makes for you lands in the Library, with the thing it was made for on it."}
+                  ? `Nothing here is filed under ${filter}.`
+                  : `Nothing here yet. ${libraryScopeNote}`}
             </div>
           ) : (
             <>

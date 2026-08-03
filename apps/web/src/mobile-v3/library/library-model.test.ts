@@ -21,6 +21,7 @@ import {
   filterEntries,
   filterOf,
   groupByRecency,
+  libraryScopeNote,
   madeLine,
   partitionByThing,
   type LibraryEntry,
@@ -32,11 +33,14 @@ const DAY = 86_400_000;
 function entry(over: Partial<LibraryEntry> = {}): LibraryEntry {
   return {
     id: "o1",
+    source: "output",
     workItemId: "w1",
     missionId: null,
     projectId: null,
     attachmentId: null,
     externalUrl: null,
+    documentId: null,
+    appId: null,
     kind: "document",
     title: "One-pager",
     why: null,
@@ -55,17 +59,27 @@ describe("kind → chip", () => {
     expect(filterOf("deck")).toBe("Decks");
     expect(filterOf("spreadsheet")).toBe("Sheets");
     expect(filterOf("image")).toBe("Images");
+    expect(filterOf("video")).toBe("Video");
+    // Apps are library items too — 66 of them on the owner's daemon, and none
+    // of them reachable while the Library read the work-output registry.
+    expect(filterOf("app")).toBe("Apps");
   });
 
   test("a chip is only offered when something is behind it", () => {
-    const entries = [entry({ kind: "deck" }), entry({ id: "o2", kind: "image" })];
+    const entries = [
+      entry({ kind: "deck" }),
+      entry({ id: "o2", kind: "image" }),
+    ];
     expect(availableFilters(entries)).toEqual(["All", "Decks", "Images"]);
     // Nothing to filter → no chip row at all.
     expect(availableFilters([])).toEqual(["All"]);
   });
 
   test("filtering keeps only the picked kind, All keeps everything", () => {
-    const entries = [entry({ kind: "deck" }), entry({ id: "o2", kind: "image" })];
+    const entries = [
+      entry({ kind: "deck" }),
+      entry({ id: "o2", kind: "image" }),
+    ];
     expect(filterEntries(entries, "Decks").map((e) => e.id)).toEqual(["o1"]);
     expect(filterEntries(entries, "All")).toHaveLength(2);
   });
@@ -107,7 +121,7 @@ describe("the header line is never a fake number", () => {
       entry({ id: "b", createdAt: NOW - 40 * DAY }),
     ];
     expect(countThisWeek(old, NOW)).toBe(0);
-    expect(madeLine(old, NOW)).toBe("2 things Cue made");
+    expect(madeLine(old, NOW)).toBe("2 things made with Cue");
   });
 
   test("the week leg appears only when something actually landed", () => {
@@ -115,11 +129,36 @@ describe("the header line is never a fake number", () => {
       entry({ id: "a", createdAt: NOW - DAY }),
       entry({ id: "b", createdAt: NOW - 40 * DAY }),
     ];
-    expect(madeLine(mixed, NOW)).toBe("2 things Cue made · 1 this week");
+    expect(madeLine(mixed, NOW)).toBe("2 things made with Cue · 1 this week");
   });
 
   test("one thing is singular", () => {
-    expect(madeLine([entry()], NOW)).toBe("1 thing Cue made · 1 this week");
+    expect(madeLine([entry()], NOW)).toBe(
+      "1 thing made with Cue · 1 this week",
+    );
+  });
+
+  test("the line describes the scope it actually applied", () => {
+    // "N things Cue made" was a claim about authorship the fetch behind it
+    // could not keep — it was really "N things a work run registered", and the
+    // owner had no way to tell which sentence he was reading. The header now
+    // names the scope, and the note beside it names what is NOT in scope and
+    // where that lives.
+    expect(madeLine([entry()], NOW)).toContain("made with Cue");
+    expect(madeLine([entry()], NOW)).not.toContain("Cue made");
+    expect(libraryScopeNote).toMatch(/apps/i);
+    expect(libraryScopeNote).toMatch(/chat/i);
+  });
+});
+
+describe("nothing wears a status the daemon did not report", () => {
+  test("a library item can have NO review state at all", () => {
+    // Only run-registered deliverables carry one. A file, document or app
+    // nobody queued for review is `null` — not "pending", which is what put a
+    // ‖ REVIEW badge on both of the two cards the owner could see.
+    const plain = entry({ source: "file", reviewState: null });
+    expect(plain.reviewState).toBeNull();
+    expect(plain.reviewState === "pending").toBe(false);
   });
 });
 
