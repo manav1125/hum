@@ -30,6 +30,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 
+import { CONVERSATION_LIST_PAGE_SIZE } from "@/utils/conversation-list-fetchers";
 import { routes } from "@/utils/routes";
 
 import {
@@ -64,9 +65,12 @@ mock.module("@/hooks/conversation-queries", () => ({
   }),
 }));
 
-const { RecentThreadsSheet, RECENT_THREADS_SHOWN, recentThreads } = await import(
-  "./recent-threads-sheet"
-);
+const {
+  RecentThreadsSheet,
+  RECENT_THREADS_SHOWN,
+  allConversationsSub,
+  recentThreads,
+} = await import("./recent-threads-sheet");
 
 function LocationProbe() {
   return createElement(
@@ -169,12 +173,38 @@ describe("the count beside the full list is real, or absent", () => {
   const allSub = () =>
     rowFor("all-conversations")!.textContent!.replace(/›/g, "").trim();
 
-  test("a settled read prints the real total", () => {
+  test("151 loaded of 420 is NOT a total, and is not printed as one", () => {
+    // The exact defect, from prod: the phone's sheet said "All conversations
+    // 151" while `?limit=500` returned 420 and the table held 1188. 151 was
+    // page 0 plus the two drained pages plus a draft — the client's window.
     list.conversations = Array.from({ length: 151 }, (_, i) => ({
       conversationId: `c${i}`,
     }));
     renderSheet();
-    expect(allSub()).toBe("All conversations151");
+    expect(allSub()).not.toContain("151");
+    expect(allSub()).toBe("All conversationsEverything, including older threads");
+  });
+
+  test("a list shorter than one page IS the whole list, so it counts", () => {
+    // Page 0 asks for PAGE_SIZE and returns min(pageSize, total); holding
+    // fewer than a page is proof there was no second one.
+    list.conversations = Array.from(
+      { length: CONVERSATION_LIST_PAGE_SIZE - 1 },
+      (_, i) => ({ conversationId: `c${i}` }),
+    );
+    renderSheet();
+    expect(allSub()).toBe(
+      `All conversations${CONVERSATION_LIST_PAGE_SIZE - 1}`,
+    );
+  });
+
+  test("exactly one page is already unprovable — no number", () => {
+    list.conversations = Array.from(
+      { length: CONVERSATION_LIST_PAGE_SIZE },
+      (_, i) => ({ conversationId: `c${i}` }),
+    );
+    renderSheet();
+    expect(allSub()).not.toContain(String(CONVERSATION_LIST_PAGE_SIZE));
   });
 
   test("a read in flight prints nothing — 0 would be a claim", () => {
@@ -198,6 +228,39 @@ describe("the count beside the full list is real, or absent", () => {
     renderSheet();
     expect(screen.getByText(/No chats yet/i)).toBeDefined();
     expect(keys()).toEqual(["all-conversations", "new-chat"]);
+  });
+});
+
+describe("allConversationsSub — one rule, both sheets", () => {
+  test.each([
+    [0, { isLoading: false, isError: false }, null],
+    [12, { isLoading: true, isError: false }, null],
+    [12, { isLoading: false, isError: true }, null],
+    [12, { isLoading: false, isError: false }, "12"],
+  ] as const)("%p rows, %p → %p", (n, state, expected) => {
+    expect(allConversationsSub(n, state)).toBe(expected);
+  });
+
+  test("past the page boundary it stops being a number", () => {
+    expect(allConversationsSub(CONVERSATION_LIST_PAGE_SIZE, {
+      isLoading: false,
+      isError: false,
+    })).not.toMatch(/^\d+$/);
+  });
+});
+
+describe("the handoff target can actually reach the rest", () => {
+  test("the phone's conversations index pages past the drain cap", async () => {
+    // The switcher shows seven and points at "All conversations". That row is
+    // only honest if the destination can get past the ~150 the boot drain
+    // holds — otherwise the deeper history is unreachable from anywhere, and
+    // the person cannot tell an absent thread from a capped one.
+    const source = await Bun.file(
+      new URL("../../mobile-v3/chats/chats-index-page.tsx", import.meta.url)
+        .pathname,
+    ).text();
+    expect(source).toContain("loadMoreConversations");
+    expect(source).toContain("onLoadMore");
   });
 });
 

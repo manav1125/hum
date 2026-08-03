@@ -31,15 +31,31 @@
  * something was added to a phone header without measuring it the Work screen's
  * title shipped reading `☰ork`.
  *
- * ## Honesty rules this sheet is under
+ * ## The number that was not a number
  *
- * · The count beside "All conversations" is `conversations.length` or NOTHING.
- *   While the list is loading, and when the read FAILED, there is no number —
- *   a `0` there is indistinguishable from "you have none", and one of those is
- *   a fabrication.
- * · A failed read still renders the "All conversations" row (fail-open): an
- *   outage may not remove a door. It says why it is short instead of pretending
- *   the account is empty.
+ * The sheet the report was filed against said **"All conversations · 151"**.
+ * Measured against prod on the same account, with a real session:
+ *
+ *     the menu's label                    151
+ *     GET /v1/conversations?limit=500     420
+ *     SELECT COUNT(*) on the database    1188
+ *
+ * 151 was not a total of anything. `useConversationListQuery` resolves page 0
+ * (50 rows) and background-drains two more, so `conversations.length` is *how
+ * much this client has fetched* — 150 plus a draft — and it grows as the index
+ * page's "Older chats" is tapped. The daemon returns `hasMore` and no count,
+ * and there is no count endpoint, so a true total is not available at any
+ * price this sheet can pay.
+ *
+ * Hence {@link allConversationsSub}: the count prints ONLY when it is provably
+ * whole — a cached list shorter than one page proves the server had no second
+ * page — and otherwise the row says, in words, that it reaches further than
+ * what is above it. Both sheets that carry this row read that one function, so
+ * the phone cannot go back to quoting its own cache size at the owner.
+ *
+ * The rest of the honesty rules, unchanged: no number while loading, none when
+ * the read failed, and a failed read still renders the row (fail-open) — an
+ * outage may not remove a door, and it may not invent a figure either.
  */
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
@@ -54,6 +70,7 @@ import {
 } from "@/domains/chat/utils/conversation-navigation";
 import { useConversationListQuery } from "@/hooks/conversation-queries";
 import type { Conversation } from "@/types/conversation-types";
+import { CONVERSATION_LIST_PAGE_SIZE } from "@/utils/conversation-list-fetchers";
 import { routes } from "@/utils/routes";
 
 /**
@@ -89,6 +106,28 @@ export function recentThreads(
         (a.lastMessageAt ?? a.createdAt ?? 0),
     )
     .slice(0, limit);
+}
+
+/**
+ * What goes under "All conversations" — a count only when it is the truth.
+ *
+ * The one thing a client can prove without a total: page 0 asks for
+ * {@link CONVERSATION_LIST_PAGE_SIZE} rows and returns `min(pageSize, total)`,
+ * so a cached list SHORTER than a page is the entire list. At or above it, the
+ * list is a window of unknown depth — the owner's phone held 151 of 420 — and
+ * the row says so in words rather than quoting the window back as a total.
+ *
+ * Shared by the ☰ switcher and the ⓶ sheet's ledger row. Two sheets printing
+ * one number two ways is how the 151 survived as long as it did.
+ */
+export function allConversationsSub(
+  loaded: number,
+  state: { isLoading: boolean; isError: boolean },
+): string | null {
+  // Not known yet, and not knowable — never a `0` standing in for either.
+  if (state.isLoading || state.isError || loaded === 0) return null;
+  if (loaded < CONVERSATION_LIST_PAGE_SIZE) return String(loaded);
+  return "Everything, including older threads";
 }
 
 export interface RecentThreadsSheetProps {
@@ -150,11 +189,7 @@ export function RecentThreadsSheet({
               ? "No chats yet — the first thing you say to Cue starts one."
               : "No workspace open yet.",
     label: "All conversations",
-    // A real count or none at all: a failed or unfinished read has no number.
-    sub:
-      isError || isLoading || conversations.length === 0
-        ? null
-        : String(conversations.length),
+    sub: allConversationsSub(conversations.length, { isLoading, isError }),
     run: () => void navigate(routes.conversations),
     rule: recent.length > 0,
   });

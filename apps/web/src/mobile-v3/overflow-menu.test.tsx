@@ -169,6 +169,23 @@ describe("the ⓶ menu's contents match the ruled model", () => {
     expect(openAccountMenu()[0]).toBe("people");
   });
 
+  test("the conversations row does not quote the client's window as a total", () => {
+    // What the owner's phone actually printed: "All conversations · 151",
+    // with 420 active on the server and 1188 rows in the table. 151 was page
+    // 0 plus the two drained pages — this client's cache size. The daemon
+    // publishes no total, so above one page the row says so in words.
+    conversations = Array.from({ length: 151 }, (_, i) => ({
+      conversationId: `c${i}`,
+    }));
+    renderMenu();
+    openAccountMenu();
+    const row = screen
+      .getAllByRole("menuitem")
+      .find((el) => el.getAttribute("data-menu-key") === "conversations")!;
+    expect(row.textContent).not.toContain("151");
+    expect(row.textContent).toContain("including older threads");
+  });
+
   test("Library IS a row here — the sheet is what people read for 'everything'", () => {
     // This assertion used to run the other way round: Library was excluded
     // because it is Work's third view and a second row would be a second nav

@@ -47,7 +47,18 @@ function byTimestampDesc(
 // Internal pagination helper
 // ---------------------------------------------------------------------------
 
-const CONVERSATION_LIST_PAGE_SIZE = 50;
+/**
+ * Rows per request, and — because the daemon returns no total — the only
+ * proof of completeness a consumer has.
+ *
+ * Page 0 returns `min(PAGE_SIZE, total)`, so a cached list holding FEWER than
+ * this is the whole list; anything at or above it is a window of unknown
+ * depth. Exported for that inference: a surface that prints "N conversations"
+ * off `conversations.length` without it is printing how many rows this client
+ * happens to have drained. Prod: the phone said 151 while the account held
+ * 420 active. See `components/nav/recent-threads-sheet.tsx`.
+ */
+export const CONVERSATION_LIST_PAGE_SIZE = 50;
 const CONVERSATION_LIST_MAX_PAGES = 200;
 
 type FetchConversationListOptions = {

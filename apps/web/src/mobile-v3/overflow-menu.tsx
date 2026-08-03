@@ -59,7 +59,10 @@ import { lazy, Suspense, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { MenuSheet, type MenuEntry } from "@/components/nav/menu-sheet";
-import { RecentThreadsSheet } from "@/components/nav/recent-threads-sheet";
+import {
+  RecentThreadsSheet,
+  allConversationsSub,
+} from "@/components/nav/recent-threads-sheet";
 import { useConversationListQuery } from "@/hooks/conversation-queries";
 import { useLibraryOutputs } from "@/mobile-v3/library/use-library-outputs";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
@@ -187,7 +190,8 @@ function AccountSheet({
 }) {
   const navigate = useNavigate();
   const counts = useCueCounts(assistantId);
-  const { conversations } = useConversationListQuery(assistantId);
+  const { conversations, isLoading, isError } =
+    useConversationListQuery(assistantId);
   // The Library's own fetch, not `counts.library`. `useCueCounts` counts
   // DOCUMENTS; the Library gallery lists OUTPUTS, and they are different
   // endpoints with different totals — printing one beside the other's door is
@@ -209,7 +213,12 @@ function AccountSheet({
     {
       key: "conversations",
       label: "All conversations",
-      sub: conversations.length > 0 ? String(conversations.length) : null,
+      // This row is where the phone said "151" to an owner with 420 active
+      // conversations on the server: `conversations.length` is the client's
+      // drained window, not a total, and the daemon publishes no count. The
+      // shared helper prints the number only when the window provably IS the
+      // list. See `recent-threads-sheet.tsx`.
+      sub: allConversationsSub(conversations.length, { isLoading, isError }),
       run: () => navigate(routes.conversations),
     },
     {
