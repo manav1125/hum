@@ -1526,6 +1526,7 @@ export const ROUTES: RouteDefinition[] = [
     policy: {
       requiredScopes: ["chat.read"],
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
+      vendorDisclosing: true,
     },
     summary: "Get LLM context for a conversation",
     description:
@@ -1562,6 +1563,7 @@ export const ROUTES: RouteDefinition[] = [
     policy: {
       requiredScopes: ["chat.read"],
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
+      vendorDisclosing: true,
     },
     summary: "Get LLM context for a message",
     description:
@@ -1586,6 +1588,7 @@ export const ROUTES: RouteDefinition[] = [
     policy: {
       requiredScopes: ["chat.read"],
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
+      vendorDisclosing: true,
     },
     summary: "Get raw payload for a single LLM request log",
     description:
@@ -1605,6 +1608,7 @@ export const ROUTES: RouteDefinition[] = [
     policy: {
       requiredScopes: ["chat.read"],
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
+      vendorDisclosing: true,
     },
     summary: "Get normalized context for a single LLM request log",
     description:

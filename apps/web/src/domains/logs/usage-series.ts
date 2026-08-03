@@ -1,6 +1,6 @@
 import { isLlmUsageDimension, toDaemonGroupBy } from "@/utils/llm-dimension";
 import type { UsageGroupLabelMetadata } from "./group-labels";
-import { resolveUsageGroupLabel } from "./group-labels";
+import { isVendorUsageGroupBy, resolveUsageGroupLabel } from "./group-labels";
 import type {
   UsageGroupBreakdown,
   UsageSeriesBucket,
@@ -82,7 +82,14 @@ export function decorateUsageSeriesGroups(
   groupBy: UsageSeriesGroupBy,
   metadata: UsageGroupLabelMetadata,
 ): UsageSeriesBucket[] {
-  if (groupBy !== "task" && groupBy !== "profile") {
+  // `task` and `profile` are relabelled from metadata; `model` / `provider`
+  // are relabelled only on a managed instance, where the raw group value is
+  // the vendor's identifier (see `resolveUsageGroupLabel`).
+  const relabels =
+    groupBy === "task" ||
+    groupBy === "profile" ||
+    (metadata.hideVendor === true && isVendorUsageGroupBy(groupBy));
+  if (!relabels) {
     return [...buckets];
   }
 

@@ -219,3 +219,86 @@ describe("IPC runtime proxy upstream-response marker", () => {
     expect(res!.headers.has(UPSTREAM_RESPONSE_MARKER_HEADER)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Vendor discretion
+//
+// This proxy is the ONE path that reaches a daemon route handler without
+// running the daemon's own `enforcePolicy()`. A `vendorDisclosing` route
+// (the raw LLM request/response envelope, which names the model and the
+// provider) would therefore be wide open here to any signed-in customer's
+// session token if the gateway did not mirror the check.
+// ---------------------------------------------------------------------------
+
+const VENDOR_DISCLOSING_POLICY: RouteSchemaPolicy = {
+  requiredScopes: ["chat.read"],
+  allowedPrincipalTypes: ["actor", "svc_gateway", "svc_daemon", "local"],
+  vendorDisclosing: true,
+};
+
+describe("IPC runtime proxy vendor discretion", () => {
+  afterEach(() => {
+    delete process.env.CUE_MANAGED;
+  });
+
+  test("a managed instance refuses a vendor-disclosing route", async () => {
+    process.env.CUE_MANAGED = "1";
+    cachedPolicy = VENDOR_DISCLOSING_POLICY;
+
+    const res = await tryIpcProxy(
+      ipcRequest({ headers: { authorization: `Bearer ${TOKEN}` } }),
+      makeConfig({ runtimeProxyRequireAuth: true }),
+    );
+
+    expect(res!.status).toBe(403);
+    // Gateway-authored, not relayed from the daemon.
+    expect(res!.headers.get(UPSTREAM_RESPONSE_MARKER_HEADER)).toBeNull();
+  });
+
+  test("a self-host instance serves the same route", async () => {
+    delete process.env.CUE_MANAGED;
+    cachedPolicy = VENDOR_DISCLOSING_POLICY;
+    ipcCall = async () => ({ requestPayload: {}, responsePayload: {} });
+
+    const res = await tryIpcProxy(
+      ipcRequest({ headers: { authorization: `Bearer ${TOKEN}` } }),
+      makeConfig({ runtimeProxyRequireAuth: true }),
+    );
+
+    expect(res!.status).toBe(200);
+  });
+
+  test("routes not marked vendorDisclosing are unaffected on managed", async () => {
+    process.env.CUE_MANAGED = "1";
+    cachedPolicy = {
+      requiredScopes: ["chat.read"],
+      allowedPrincipalTypes: ["actor", "svc_gateway", "svc_daemon", "local"],
+    };
+    ipcCall = async () => ({ items: [] });
+
+    const res = await tryIpcProxy(
+      ipcRequest({ headers: { authorization: `Bearer ${TOKEN}` } }),
+      makeConfig({ runtimeProxyRequireAuth: true }),
+    );
+
+    expect(res!.status).toBe(200);
+  });
+
+  test("an old daemon that omits the field is treated as not disclosing", async () => {
+    // Forward compat: `vendorDisclosing` is optional on the wire so a daemon
+    // predating it still validates. Its own HTTP path enforces the rule.
+    process.env.CUE_MANAGED = "1";
+    cachedPolicy = {
+      requiredScopes: ["chat.read"],
+      allowedPrincipalTypes: ["actor", "svc_gateway", "svc_daemon", "local"],
+    };
+    ipcCall = async () => ({ items: [] });
+
+    const res = await tryIpcProxy(
+      ipcRequest({ headers: { authorization: `Bearer ${TOKEN}` } }),
+      makeConfig({ runtimeProxyRequireAuth: true }),
+    );
+
+    expect(res!.status).toBe(200);
+  });
+});

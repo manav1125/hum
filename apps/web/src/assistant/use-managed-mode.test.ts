@@ -9,7 +9,12 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { deriveManagedMode, hideVendorUi } from "./use-managed-mode";
+import {
+  deriveManagedMode,
+  hideVendorUi,
+  NEUTRAL_MODEL_LABEL,
+  vendorSafeModelLabel,
+} from "./use-managed-mode";
 import type { HealthzGetResponse } from "@/generated/daemon/types.gen";
 
 function healthz(managed: boolean | undefined): HealthzGetResponse {
@@ -33,7 +38,11 @@ function healthz(managed: boolean | undefined): HealthzGetResponse {
 describe("deriveManagedMode", () => {
   test("no active assistant → self-host semantics (false)", () => {
     expect(
-      deriveManagedMode({ hasAssistant: false, isError: false, data: undefined }),
+      deriveManagedMode({
+        hasAssistant: false,
+        isError: false,
+        data: undefined,
+      }),
     ).toBe(false);
   });
 
@@ -69,7 +78,11 @@ describe("deriveManagedMode", () => {
 
   test("fetch in flight → undefined (callers keep vendor UI hidden)", () => {
     expect(
-      deriveManagedMode({ hasAssistant: true, isError: false, data: undefined }),
+      deriveManagedMode({
+        hasAssistant: true,
+        isError: false,
+        data: undefined,
+      }),
     ).toBeUndefined();
   });
 
@@ -95,5 +108,32 @@ describe("hideVendorUi", () => {
     expect(hideVendorUi(true)).toBe(true);
     expect(hideVendorUi(undefined)).toBe(true);
     expect(hideVendorUi(false)).toBe(false);
+  });
+});
+
+describe("vendorSafeModelLabel", () => {
+  test("self-host sees the real model string", () => {
+    expect(vendorSafeModelLabel("deepseek/deepseek-v4-pro", false)).toBe(
+      "deepseek/deepseek-v4-pro",
+    );
+  });
+
+  test("managed sees a neutral label, never a substituted vendor", () => {
+    const label = vendorSafeModelLabel("deepseek/deepseek-v4-pro", true);
+    expect(label).toBe(NEUTRAL_MODEL_LABEL);
+    // The failure this exists to prevent: replacing one vendor's name with
+    // another's. The neutral label must not name ANY vendor.
+    expect(label?.toLowerCase()).not.toMatch(
+      /claude|anthropic|deepseek|gemini|openai|openrouter/,
+    );
+  });
+
+  test("an absent model reads as absent on self-host, not as an empty label", () => {
+    expect(vendorSafeModelLabel(null, false)).toBeNull();
+    expect(vendorSafeModelLabel("   ", false)).toBeNull();
+  });
+
+  test("managed hides even when the value is missing — no 'unknown model' tell", () => {
+    expect(vendorSafeModelLabel(null, true)).toBe(NEUTRAL_MODEL_LABEL);
   });
 });

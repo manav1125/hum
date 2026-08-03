@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router";
 
 import { Dropdown } from "@vellumai/design-library";
 
+import { useHideVendorUi } from "@/assistant/use-managed-mode";
 import {
   buildCallSiteMetadataMap,
   fetchUsageCallSiteCatalog,
@@ -43,7 +44,7 @@ import {
   shouldFetchUsageSeries,
   shouldRetryUsageGroupQuery,
   trendTitle,
-  USAGE_GROUP_BY_OPTIONS,
+  usageGroupByOptions,
   type UsageSearchParamsUpdate,
 } from "@/domains/logs/usage-tab-state";
 import type {
@@ -93,9 +94,12 @@ const COST_OPTIMIZATION_PROMPT = [
 export function UsageTab({ assistantId }: UsageTabProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Managed instances do not name the inference vendor anywhere in the
+  // product; the model / provider dimensions are the vendor's own identity.
+  const hideVendor = useHideVendorUi();
   const { range, groupBy, scheduleId } = useMemo(
-    () => readUsageUrlState(searchParams),
-    [searchParams],
+    () => readUsageUrlState(searchParams, hideVendor),
+    [searchParams, hideVendor],
   );
   const timezone = useEffectiveTimezone();
   const updateUsageSearchParams = useCallback(
@@ -263,8 +267,9 @@ export function UsageTab({ assistantId }: UsageTabProps) {
     () => ({
       callSites: buildCallSiteMetadataMap(callSiteCatalogQuery.data),
       profiles: profileMetadataQuery.data ?? {},
+      hideVendor,
     }),
-    [callSiteCatalogQuery.data, profileMetadataQuery.data],
+    [callSiteCatalogQuery.data, profileMetadataQuery.data, hideVendor],
   );
 
   const decoratedBreakdown = useMemo(() => {
@@ -745,6 +750,9 @@ function GroupByPicker({
   value: UsageGroupBy;
   onChange: (value: UsageGroupBy) => void;
 }) {
+  // Managed instances do not offer the model / provider dimensions — those
+  // group values ARE the vendor's identifiers.
+  const hideVendor = useHideVendorUi();
   return (
     <div className="flex items-center">
       <Dropdown<UsageGroupBy>
@@ -752,7 +760,7 @@ function GroupByPicker({
         onChange={onChange}
         menuAlign="end"
         menuMinWidth={196}
-        options={USAGE_GROUP_BY_OPTIONS.map((option) => ({
+        options={usageGroupByOptions(hideVendor).map((option) => ({
           value: option.value,
           label: option.label,
         }))}

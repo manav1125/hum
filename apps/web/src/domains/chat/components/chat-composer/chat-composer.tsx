@@ -23,6 +23,7 @@ import {
   useComposerStore,
 } from "@/domains/chat/composer-store";
 import { StreamingWaveform } from "@/domains/chat/components/chat-composer/streaming-waveform";
+import { useHideVendorUi } from "@/assistant/use-managed-mode";
 import { ComposerModeChips } from "@/domains/chat/components/chat-composer/composer-mode-chips";
 import {
   VoiceInputButton,
@@ -400,10 +401,18 @@ export function ChatComposer({
   const cursorRef = useRef(input.length);
 
   // Slash and emoji popups — state is derived from the input text, not stored.
+  // Managed instances never name the inference vendor, so `/models` is not
+  // offered — see `SlashCommand.vendorDisclosing`. Memoized because
+  // `useTextPopup` treats `search` as a dependency.
+  const hideVendor = useHideVendorUi();
+  const searchCommands = useCallback(
+    (filter: string) => filteredCommands(filter, hideVendor),
+    [hideVendor],
+  );
   const slash = useTextPopup({
     text: input,
     trigger: SLASH_PREFIX_RE,
-    search: filteredCommands,
+    search: searchCommands,
   });
 
   // Cursor position is a DOM property tracked via onSelect; using state

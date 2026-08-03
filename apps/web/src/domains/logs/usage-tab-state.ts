@@ -69,14 +69,38 @@ export interface UsageSearchParamsUpdate {
   scheduleId?: string | null;
 }
 
+/**
+ * The group-by dimensions offered on this instance.
+ *
+ * `model` and `provider` name the inference vendor, so a managed instance
+ * drops them: the customer neither chose nor pays that vendor directly, and
+ * the rest of the product does not name it. A self-hoster keeps both — they
+ * are paying per model and are entitled to see which.
+ */
+export function usageGroupByOptions(
+  hideVendor: boolean,
+): Array<{ value: UsageGroupBy; label: string }> {
+  if (!hideVendor) return USAGE_GROUP_BY_OPTIONS;
+  return USAGE_GROUP_BY_OPTIONS.filter(
+    (option) => option.value !== "model" && option.value !== "provider",
+  );
+}
+
 export function readUsageUrlState(
   searchParams: URLSearchParams,
+  hideVendor = false,
 ): UsageUrlState {
   const range = searchParams.get("range");
   const rawGroupBy = searchParams.get("groupBy");
-  const groupBy = isUsageGroupBy(rawGroupBy)
+  const parsedGroupBy = isUsageGroupBy(rawGroupBy)
     ? rawGroupBy
     : DEFAULT_USAGE_GROUP_BY;
+  // A `?groupBy=model` deep link (bookmark, shared URL, back-nav) must not
+  // reintroduce a dimension the picker no longer offers.
+  const groupBy =
+    hideVendor && (parsedGroupBy === "model" || parsedGroupBy === "provider")
+      ? DEFAULT_USAGE_GROUP_BY
+      : parsedGroupBy;
   return {
     range: isUsageTimeRange(range) ? range : DEFAULT_USAGE_RANGE,
     groupBy,

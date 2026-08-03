@@ -12,6 +12,7 @@
  */
 
 import { isHttpAuthDisabled } from "../../config/env.js";
+import { getManagedInstance } from "../../config/env-registry.js";
 import { getLogger } from "../../util/logger.js";
 import type { AuthContext, PrincipalType, Scope } from "./types.js";
 
@@ -24,6 +25,27 @@ const log = getLogger("route-policy");
 export interface RoutePolicy {
   requiredScopes: Scope[];
   allowedPrincipalTypes: PrincipalType[];
+  /**
+   * Marks a route whose response body contains the raw inference vendor's
+   * own payload — model slugs, provider ids, upstream request/response
+   * envelopes.
+   *
+   * Scopes cannot express this. Every scope a developer tool needs
+   * (`chat.read`, `settings.read`, `feature_flags.write`) is already in the
+   * `actor_client_v1` profile every signed-in customer holds, so raising the
+   * required scope moves nothing: the customer's own session token would
+   * still satisfy it. The distinction that actually matters is the
+   * deployment — on an HQ-provisioned ("managed") instance the customer does
+   * not choose or administer the vendor and the product must not name it,
+   * whereas a self-hoster owns the key and is entitled to the raw envelope.
+   *
+   * So these routes are denied to remote actors on managed instances only.
+   * `local` principals (the CLI over the IPC socket) still pass: that is an
+   * operator with shell access on the box, which is how staff debug a
+   * managed instance — the LLM inspector keeps working for every deployment
+   * where it was ever legitimately reachable.
+   */
+  vendorDisclosing?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +109,30 @@ export function enforcePolicy(
   if (!policy) {
     // No policy declared — unprotected endpoint (e.g. health, debug)
     return null;
+  }
+
+  // Vendor discretion. Checked BEFORE the dev-auth bypass: this is a
+  // disclosure rule about the deployment, not an authentication one, and a
+  // managed instance running with auth disabled must not start serving raw
+  // provider envelopes because of it.
+  if (
+    policy.vendorDisclosing &&
+    getManagedInstance() &&
+    authCtx.principalType !== "local"
+  ) {
+    log.warn(
+      { endpoint, principalType: authCtx.principalType },
+      "Route policy denied: vendor-disclosing route on a managed instance",
+    );
+    return Response.json(
+      {
+        error: {
+          code: "FORBIDDEN",
+          message: "Not available on this instance",
+        },
+      },
+      { status: 403 },
+    );
   }
 
   // Dev bypass: log but allow everything through

@@ -40,6 +40,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { useHideVendorUi } from "@/assistant/use-managed-mode";
 import {
   actsByIdReversePostMutation,
   agentsByIdPatchMutation,
@@ -278,8 +279,7 @@ function GuardrailsPageDesktop() {
               padding: "40px 0",
             }}
           >
-            <Loader2 className="size-4 animate-spin" /> Loading your
-            guardrails…
+            <Loader2 className="size-4 animate-spin" /> Loading your guardrails…
           </div>
         ) : query.isError || !data ? (
           <div
@@ -345,7 +345,12 @@ function GuardrailsBody({
 
   return (
     <>
-      <Header summary={summary} days={days} isMobile={isMobile} fresh={isFresh} />
+      <Header
+        summary={summary}
+        days={days}
+        isMobile={isMobile}
+        fresh={isFresh}
+      />
       <Band
         label="CHECKPOINTS"
         sub="Cue always asks before…"
@@ -373,7 +378,11 @@ function GuardrailsBody({
       </Band>
       <Band
         label="THE LEDGER"
-        sub={days === 7 ? "What your rules did this week" : "What your rules did this month"}
+        sub={
+          days === 7
+            ? "What your rules did this week"
+            : "What your rules did this month"
+        }
         right={
           <span
             style={{
@@ -444,8 +453,7 @@ function Header({
   const reversiblePct =
     summary.actCount > 0
       ? Math.round(
-          ((summary.actCount - summary.reversedCount) / summary.actCount) *
-            100,
+          ((summary.actCount - summary.reversedCount) / summary.actCount) * 100,
         )
       : null;
   const wk = days === 7 ? "WK" : "MO";
@@ -460,14 +468,22 @@ function Header({
         flexWrap: "wrap",
       }}
     >
-      <Stat value={String(summary.actCount)} label={`ACTS THIS ${wk}`} small={isMobile} />
+      <Stat
+        value={String(summary.actCount)}
+        label={`ACTS THIS ${wk}`}
+        small={isMobile}
+      />
       <Stat
         value={String(summary.heldCount)}
         label="HELD FOR YOU"
         color={summary.heldCount > 0 ? C.amber : undefined}
         small={isMobile}
       />
-      <Stat value={dollars(summary.totalCents)} label="SPENT" small={isMobile} />
+      <Stat
+        value={dollars(summary.totalCents)}
+        label="SPENT"
+        small={isMobile}
+      />
       <Stat
         value={reversiblePct === null ? "—" : `${reversiblePct}%`}
         label="REVERSIBLE"
@@ -682,8 +698,8 @@ function CheckpointsBand({
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {checkpoints.length === 0 && (
         <div style={{ fontSize: 13, color: C.t2 }}>
-          No checkpoints yet — Cue asks before anything consequential until
-          you draw lines here.
+          No checkpoints yet — Cue asks before anything consequential until you
+          draw lines here.
         </div>
       )}
       {checkpoints.map((cp) => (
@@ -697,7 +713,14 @@ function CheckpointsBand({
         />
       ))}
       {fresh && (
-        <div style={{ fontSize: 11.5, color: C.t3, lineHeight: 1.5, padding: "2px 2px 0" }}>
+        <div
+          style={{
+            fontSize: 11.5,
+            color: C.t3,
+            lineHeight: 1.5,
+            padding: "2px 2px 0",
+          }}
+        >
           The ledger is empty — it fills as Cue works. Loosen these anytime;
           most people do it from the approval dialog.
         </div>
@@ -791,8 +814,7 @@ function CheckpointRow({
           width: 30,
           height: 30,
           borderRadius: 8,
-          background:
-            checkpoint.template === "contact" ? C.blueW : C.sunken,
+          background: checkpoint.template === "contact" ? C.blueW : C.sunken,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -957,9 +979,7 @@ function CheckpointComposer({
   const [scopeKind, setScopeKind] = useState<ScopeKind>("everywhere");
   const [scopeAgentId, setScopeAgentId] = useState<string | null>(null);
   const [scopeMissionId, setScopeMissionId] = useState<string | null>(null);
-  const [label, setLabel] = useState(
-    CHECKPOINT_TEMPLATES[0].defaultLabel,
-  );
+  const [label, setLabel] = useState(CHECKPOINT_TEMPLATES[0].defaultLabel);
   const [pattern, setPattern] = useState("");
   const [touchedName, setTouchedName] = useState(false);
 
@@ -1060,7 +1080,9 @@ function CheckpointComposer({
                     fontWeight: active ? 600 : 400,
                     color: active ? "#fff" : C.t2,
                     background: active ? C.blue : C.surface,
-                    border: active ? "1px solid transparent" : `1px solid ${C.line2}`,
+                    border: active
+                      ? "1px solid transparent"
+                      : `1px solid ${C.line2}`,
                     borderRadius: 8,
                     padding: "7px 12px",
                     cursor: "pointer",
@@ -1102,7 +1124,9 @@ function CheckpointComposer({
                     fontWeight: active ? 600 : 400,
                     color: active ? C.t1 : C.t2,
                     background: active ? C.surface : "transparent",
-                    border: active ? `1px solid ${C.line2}` : "1px solid transparent",
+                    border: active
+                      ? `1px solid ${C.line2}`
+                      : "1px solid transparent",
                     borderRadius: 7,
                     padding: "7px 14px",
                     cursor: "pointer",
@@ -1114,7 +1138,14 @@ function CheckpointComposer({
             })}
           </div>
           {scopeKind === "agent" && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                marginTop: 8,
+              }}
+            >
               {agents.map((a) => {
                 const active = scopeAgentId === a.id;
                 return (
@@ -1144,7 +1175,14 @@ function CheckpointComposer({
             </div>
           )}
           {scopeKind === "mission" && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                marginTop: 8,
+              }}
+            >
               {missionsQuery.isLoading ? (
                 <span style={{ fontSize: 12, color: C.t3 }}>
                   Loading missions…
@@ -1303,8 +1341,8 @@ function AgentScopesBand({
   if (agents.length === 0) {
     return (
       <div style={{ fontSize: 13, color: C.t2 }}>
-        No agents in the registry yet — hire one from HQ and its scopes show
-        up here.
+        No agents in the registry yet — hire one from HQ and its scopes show up
+        here.
       </div>
     );
   }
@@ -1922,6 +1960,10 @@ function ModelPinRow({
   agent: Agent;
   onPin: (model: string | null) => void;
 }) {
+  // A per-agent model pin is vendor machinery — it names models ("Best ·
+  // Sonnet 4.5") and lets the user type a raw slug. Managed instances hide
+  // it for the same reason Settings → Models & Services is hidden there.
+  const hideVendor = useHideVendorUi();
   const [open, setOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [customModel, setCustomModel] = useState(agent.model ?? "");
@@ -1938,6 +1980,8 @@ function ModelPinRow({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
+
+  if (hideVendor) return null;
 
   const display = modelPinDisplay(agent.model);
 
@@ -2136,6 +2180,7 @@ function LedgerBand({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const hideVendor = useHideVendorUi();
   const { recentActs, heldItems, summary } = ledger;
 
   // Honest per-act note when reverse 409s (nothing concrete to unwind).
@@ -2305,13 +2350,17 @@ function LedgerBand({
                       model only when measured (null = unknown, never $0). */}
                   {glyph} {act.agent} · {timeAgo(act.createdAt)}
                   {act.costCents !== null ? ` · ${dollars(act.costCents)}` : ""}
-                  {act.model !== null ? ` · ${modelShortName(act.model)}` : ""}
+                  {act.model !== null && !hideVendor
+                    ? ` · ${modelShortName(act.model)}`
+                    : ""}
                   {act.estMinutesSaved !== null && act.reversed !== 1
                     ? ` · ~${act.estMinutesSaved} min saved`
                     : ""}
                 </div>
                 {note && act.reversed !== 1 && (
-                  <div style={{ fontSize: 10.5, color: C.amberText, marginTop: 3 }}>
+                  <div
+                    style={{ fontSize: 10.5, color: C.amberText, marginTop: 3 }}
+                  >
                     {note}
                   </div>
                 )}
@@ -2475,6 +2524,10 @@ function UsageBand({
   const { agents, ledger } = data;
   const summary = ledger.summary;
   const [copied, setCopied] = useState(false);
+  // The mix band's entire content is model names; there is no vendor-neutral
+  // version of "62% Sonnet / 38% Haiku" worth showing, so managed instances
+  // drop the band rather than render N identical neutral labels.
+  const hideVendor = useHideVendorUi();
 
   const byModel = summary.byModel.filter((m) => m.share > 0);
   const windowWord = days === 7 ? "week" : "month";
@@ -2739,8 +2792,8 @@ function UsageBand({
 
         {/* right — model mix + the share-able summary card */}
         <div>
-          <MicroLabel>MODEL MIX</MicroLabel>
-          {byModel.length === 0 ? (
+          {hideVendor ? null : <MicroLabel>MODEL MIX</MicroLabel>}
+          {hideVendor ? null : byModel.length === 0 ? (
             <div style={{ fontSize: 12, color: C.t3, marginTop: 12 }}>
               No model usage in this window yet.
             </div>

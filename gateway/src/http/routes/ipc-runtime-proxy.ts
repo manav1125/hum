@@ -17,7 +17,7 @@ import { resolveScopeProfile } from "../../auth/scopes.js";
 import { parseSub } from "../../auth/subject.js";
 import { validateEdgeToken } from "../../auth/token-exchange.js";
 import type { TokenClaims } from "../../auth/types.js";
-import type { GatewayConfig } from "../../config.js";
+import { isManagedInstance, type GatewayConfig } from "../../config.js";
 import {
   IpcHandlerError,
   IpcTransportError,
@@ -300,6 +300,38 @@ function enforceRoutePolicy(
   path: string,
 ): Response | null {
   if (!policy) return null;
+
+  // Vendor discretion. On an HQ-provisioned ("managed") instance the customer
+  // does not choose or administer the inference vendor and the product must
+  // not name it, so routes that return the raw provider envelope are denied
+  // to remote callers. Mirrors `enforcePolicy()` in
+  // `assistant/src/runtime/auth/route-policy.ts` — this proxy is the one path
+  // that reaches a daemon handler without running the daemon's own check.
+  //
+  // Checked before the no-claims dev skip for the same reason as on the
+  // daemon: this is a disclosure rule about the deployment, not an
+  // authentication one.
+  if (policy.vendorDisclosing && isManagedInstance()) {
+    const principalType = claims ? parseSub(claims.sub) : undefined;
+    // `local` is an operator with shell access on the box (the CLI over the
+    // IPC socket) — that is how staff debug a managed instance, and it is the
+    // carve-out that keeps the LLM inspector usable where it is legitimate.
+    if (!principalType?.ok || principalType.principalType !== "local") {
+      log.warn(
+        { path },
+        "IPC proxy policy denied: vendor-disclosing route on a managed instance",
+      );
+      return Response.json(
+        {
+          error: {
+            code: "FORBIDDEN",
+            message: "Not available on this instance",
+          },
+        },
+        { status: 403 },
+      );
+    }
+  }
 
   // When auth is disabled (dev mode), no claims → skip enforcement.
   if (!claims) return null;

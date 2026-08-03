@@ -30,6 +30,12 @@ interface IpcRouteSchemaEntry {
   policy: {
     requiredScopes: string[];
     allowedPrincipalTypes: string[];
+    /**
+     * Mirrors `RoutePolicy.vendorDisclosing`. Always serialized (not
+     * conditionally omitted) so the gateway can tell "this daemon says the
+     * route is safe" from "this daemon is too old to have an opinion".
+     */
+    vendorDisclosing: boolean;
   } | null;
 }
 
@@ -44,6 +50,7 @@ function toSchemaEntry(r: RouteDefinition): IpcRouteSchemaEntry {
           // shape doesn't carry the `Scope` / `PrincipalType` narrowing.
           requiredScopes: [...r.policy.requiredScopes],
           allowedPrincipalTypes: [...r.policy.allowedPrincipalTypes],
+          vendorDisclosing: r.policy.vendorDisclosing === true,
         }
       : null,
   };

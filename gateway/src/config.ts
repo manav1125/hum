@@ -7,6 +7,20 @@ import { getGatewaySecurityDir } from "./paths.js";
 
 const log = getLogger("config");
 
+/**
+ * True when this deployment is HQ-provisioned ("managed") rather than
+ * self-hosted. Set as a machine-level env var by the control plane, so the
+ * gateway and its co-located daemon always agree.
+ *
+ * Read live rather than captured in `GatewayConfig` so tests (and a machine
+ * env update) take effect without reloading config. Mirrors
+ * `getManagedInstance()` in `assistant/src/config/env-registry.ts`.
+ */
+export function isManagedInstance(): boolean {
+  const raw = process.env.CUE_MANAGED?.trim().toLowerCase();
+  return raw === "1" || raw === "true";
+}
+
 export type GatewayConfig = {
   assistantRuntimeBaseUrl: string;
   defaultAssistantId: string | undefined;

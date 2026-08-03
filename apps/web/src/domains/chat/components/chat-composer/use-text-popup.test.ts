@@ -20,6 +20,7 @@ import {
 import { searchEmoji } from "@/domains/chat/components/chat-composer/emoji-catalog-data";
 import {
   SLASH_PREFIX_RE,
+  availableCommands,
   filteredCommands,
   selectedInputText,
   SLASH_COMMANDS,
@@ -368,5 +369,41 @@ describe("derivePopupState — emoji", () => {
     const { filter, items } = deriveEmoji("hello :+1");
     expect(filter).toBe("+1");
     expect(items).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Vendor discretion — `/models` prints the whole provider catalog, and every
+// entry in this menu is `autoSend`: one click, no confirmation step. The
+// daemon refuses the command on a managed instance; the menu must not offer
+// it there either.
+// ---------------------------------------------------------------------------
+
+describe("slash catalog vendor discretion", () => {
+  test("managed instances are not offered /models", () => {
+    expect(availableCommands(true).map((c) => c.name)).not.toContain("models");
+    expect(filteredCommands("", true).map((c) => c.name)).not.toContain(
+      "models",
+    );
+    // Typing the prefix must not surface it either.
+    expect(filteredCommands("mo", true)).toHaveLength(0);
+  });
+
+  test("self-host keeps it", () => {
+    expect(availableCommands(false).map((c) => c.name)).toContain("models");
+    expect(filteredCommands("mo", false).map((c) => c.name)).toEqual([
+      "models",
+    ]);
+  });
+
+  test("nothing else is dropped", () => {
+    const managed = availableCommands(true).map((c) => c.name);
+    for (const name of ["commands", "compact", "clean", "status", "btw"]) {
+      expect(managed).toContain(name);
+    }
+  });
+
+  test("the default is self-host so existing call sites are unchanged", () => {
+    expect(filteredCommands("")).toBe(SLASH_COMMANDS);
   });
 });

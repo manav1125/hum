@@ -51,6 +51,7 @@ import {
   type VoiceInputButtonHandle,
 } from "@/domains/chat/components/voice-input-button";
 import { ChatAttachmentsStrip } from "@/domains/chat/components/chat-attachments/chat-attachments";
+import { useHideVendorUi } from "@/assistant/use-managed-mode";
 import {
   MobileComposerSettingsSheet,
   MobileConversationActionsSheet,
@@ -323,12 +324,7 @@ function GreetingState({
       {visible.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {visible.map((starter, i) => (
-            <GlassCard
-              key={starter.id}
-              radius={18}
-              padding={0}
-              blur={i < 3}
-            >
+            <GlassCard key={starter.id} radius={18} padding={0} blur={i < 3}>
               <button
                 type="button"
                 className="cue-pressable"
@@ -411,13 +407,8 @@ export function MobileChatView({
   const handleKeyboardDismiss = useCallback(() => {
     inputElRef.current?.blur();
   }, []);
-  const {
-    frame,
-    shellRef,
-    headerRef,
-    composerRef,
-    dragHandlers,
-  } = usePhoneKeyboard({ onDismiss: handleKeyboardDismiss });
+  const { frame, shellRef, headerRef, composerRef, dragHandlers } =
+    usePhoneKeyboard({ onDismiss: handleKeyboardDismiss });
   const keyboardOpen = frame.keyboardOpen;
 
   // Power-feature sheets (composer settings ⋅ conversation actions) — the
@@ -600,10 +591,18 @@ export function MobileChatView({
   // ── Slash commands — the SAME derived-from-input mechanism the desktop
   // composer uses (useTextPopup + slash-command-catalog), rendered as a v3
   // glass list rising above the composer.
+  // Managed instances never name the inference vendor, so `/models` is not
+  // offered — see `SlashCommand.vendorDisclosing`. Memoized because
+  // `useTextPopup` treats `search` as a dependency.
+  const hideVendor = useHideVendorUi();
+  const searchCommands = useCallback(
+    (filter: string) => filteredCommands(filter, hideVendor),
+    [hideVendor],
+  );
   const slash = useTextPopup({
     text: input,
     trigger: SLASH_PREFIX_RE,
-    search: filteredCommands,
+    search: searchCommands,
   });
   const slashDismiss = slash.dismiss;
   const handleSlashSelect = useCallback(
@@ -641,7 +640,13 @@ export function MobileChatView({
         handleSend();
       }
     },
-    [handleSend, slash.show, slash.items, slash.selectedIndex, handleSlashSelect],
+    [
+      handleSend,
+      slash.show,
+      slash.items,
+      slash.selectedIndex,
+      handleSlashSelect,
+    ],
   );
 
   // Spec 7 — the field grows to five lines, then scrolls internally. The
@@ -680,9 +685,7 @@ export function MobileChatView({
 
   // Composer focus ring lights accent; send arrow appears on focus/typing.
   const composerBorder =
-    focused || keyboardOpen
-      ? "var(--mv3-accent)"
-      : "var(--mv3-glass-border)";
+    focused || keyboardOpen ? "var(--mv3-accent)" : "var(--mv3-glass-border)";
   // A ready attachment reveals the send circle even with the composer blurred
   // and empty — otherwise the one control that would send the file is the one
   // control that isn't on screen.
@@ -942,9 +945,7 @@ export function MobileChatView({
               title={item.title}
               timeLabel={clockLabel(item.updatedAt)}
               agentName={
-                item.assignee && item.assignee !== "you"
-                  ? item.assignee
-                  : "Cue"
+                item.assignee && item.assignee !== "you" ? item.assignee : "Cue"
               }
               primaryLabel="Retry"
               primaryDisabled={retryRun.isPending}
@@ -1017,243 +1018,242 @@ export function MobileChatView({
         padding: "10px 16px",
       }}
     >
-        {voiceInterim ? (
-          <div
-            style={{
-              fontFamily: "var(--mv3-mono)",
-              fontSize: 11,
-              color: "var(--mv3-micro)",
-              padding: "0 4px 6px",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {voiceInterim}
-          </div>
-        ) : null}
-        {chatAttachments.length > 0 ? (
-          <ChatAttachmentsStrip
-            attachments={chatAttachments}
-            onRemove={removeAttachment}
-          />
-        ) : null}
-        {/* SLASH COMMANDS — rising v3 glass list (desktop SlashCommandPopup
-            equivalent; same catalog + selection behaviour). */}
-        {slash.show ? (
-          <div
-            role="listbox"
-            aria-label="Commands"
-            data-mchat-rise
-            style={{
-              marginBottom: 8,
-              borderRadius: 18,
-              overflow: "hidden",
-              background: "var(--mv3-glass)",
-              border: "1px solid var(--mv3-glass-border)",
-              backdropFilter: "blur(24px)",
-              WebkitBackdropFilter: "blur(24px)",
-              boxShadow: "var(--mv3-glass-shadow)",
-              animation: "mchatRise .18s ease both",
-            }}
-          >
-            {slash.items.map((cmd, i) => (
-              <button
-                key={cmd.name}
-                type="button"
-                role="option"
-                aria-selected={i === slash.selectedIndex}
-                className="cue-pressable"
-                onClick={() => handleSlashSelect(cmd)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  width: "100%",
-                  minHeight: 44,
-                  padding: "10px 16px",
-                  border: "none",
-                  background:
-                    i === slash.selectedIndex
-                      ? "var(--mv3-btn2-bg)"
-                      : "transparent",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  WebkitTapHighlightColor: "transparent",
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--mv3-mono)",
-                    fontSize: 13,
-                    color: "var(--mv3-accent-text)",
-                    flexShrink: 0,
-                  }}
-                >
-                  /{cmd.name}
-                </span>
-                <span
-                  style={{
-                    fontSize: 13,
-                    color: "var(--mv3-muted)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {cmd.description}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {/* THE COMPOSER, AND ITS FOUR MODES (v25 · G1/G6).
-            Field on top; ＋ attach · ✎ Create · ▦ Library · mic underneath.
-            All four are states of THIS composer — same thread, same thing
-            chip — which is why none of them is a tab. */}
+      {voiceInterim ? (
         <div
           style={{
-            display: "flex",
-            flexDirection: "column",
+            fontFamily: "var(--mv3-mono)",
+            fontSize: 11,
+            color: "var(--mv3-micro)",
+            padding: "0 4px 6px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {voiceInterim}
+        </div>
+      ) : null}
+      {chatAttachments.length > 0 ? (
+        <ChatAttachmentsStrip
+          attachments={chatAttachments}
+          onRemove={removeAttachment}
+        />
+      ) : null}
+      {/* SLASH COMMANDS — rising v3 glass list (desktop SlashCommandPopup
+            equivalent; same catalog + selection behaviour). */}
+      {slash.show ? (
+        <div
+          role="listbox"
+          aria-label="Commands"
+          data-mchat-rise
+          style={{
+            marginBottom: 8,
+            borderRadius: 18,
+            overflow: "hidden",
             background: "var(--mv3-glass)",
-            border: `1px solid ${composerBorder}`,
-            borderRadius: 22,
-            padding: "10px 12px 6px 15px",
+            border: "1px solid var(--mv3-glass-border)",
             backdropFilter: "blur(24px)",
             WebkitBackdropFilter: "blur(24px)",
             boxShadow: "var(--mv3-glass-shadow)",
-            transition: "border-color .15s ease",
+            animation: "mchatRise .18s ease both",
           }}
         >
-          <textarea
-            ref={(el) => {
-              inputElRef.current = el;
-            }}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            disabled={typingDisabled}
-            rows={1}
-            placeholder="Ask, or tell Cue what to take on"
-            style={{
-              width: "100%",
-              resize: "none",
-              border: "none",
-              outline: "none",
-              background: "transparent",
-              color: "var(--mv3-text)",
-              // ≥16px (build rules): anything smaller triggers iOS focus-zoom,
-              // which moves the window — the exact thing G3 forbids.
-              fontSize: COMPOSER_FONT_SIZE_PX,
-              lineHeight: 1.4,
-              fontFamily: "inherit",
-              padding: "0 0 4px",
-              // Spec 7 — five lines, then the FIELD scrolls. Nothing else moves.
-              maxHeight:
-                COMPOSER_LINE_HEIGHT_PX * 5 + COMPOSER_FIELD_PADDING_PX,
-              minWidth: 0,
-            }}
-          />
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: "1px solid var(--mv3-line)",
-            }}
-          >
-            {/* ＋ attach (hidden picker into the shared composer store). */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              onChange={handlePickFiles}
-              style={{ display: "none" }}
-              aria-hidden
-              tabIndex={-1}
-            />
-            <ComposerAffordance
-              label="Add attachment"
-              onPress={() => fileInputRef.current?.click()}
+          {slash.items.map((cmd, i) => (
+            <button
+              key={cmd.name}
+              type="button"
+              role="option"
+              aria-selected={i === slash.selectedIndex}
+              className="cue-pressable"
+              onClick={() => handleSlashSelect(cmd)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                minHeight: 44,
+                padding: "10px 16px",
+                border: "none",
+                background:
+                  i === slash.selectedIndex
+                    ? "var(--mv3-btn2-bg)"
+                    : "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                WebkitTapHighlightColor: "transparent",
+              }}
             >
-              <Plus size={16} aria-hidden />
-            </ComposerAffordance>
-
-            {/* ✎ Create — a sheet over the composer, not a destination. */}
-            <ComposerCreateEntry />
-
-            {/* ▦ Library — pick a file to reference in what you're saying. */}
-            {assistantId ? (
-              <ComposerAffordance
-                label="Reference a file from your library"
-                expanded={libraryOpen}
-                onPress={() => setLibraryOpen(true)}
-              >
-                <LibraryBig size={15} aria-hidden />
-              </ComposerAffordance>
-            ) : null}
-
-            {/* Tune — composer settings (model profile + autonomy threshold),
-                the v3 sheet mount of the desktop ComposerSettingsMenu. */}
-            {assistantId ? (
-              <ComposerAffordance
-                label="Conversation settings"
-                expanded={settingsOpen}
-                onPress={() => setSettingsOpen(true)}
-              >
-                <SlidersHorizontal size={15} aria-hidden />
-              </ComposerAffordance>
-            ) : null}
-
-            <span style={{ flex: 1 }} />
-
-            {/* ◎ Voice — the mark IS the mic (frame G5). A live session bound
-                to THIS conversation; spoken turns land in this thread. */}
-            {canThreadVoice && !threadVoiceOpen && !showSend ? (
-              <button
-                type="button"
-                onClick={handleStartThreadVoice}
-                aria-label="Talk in this chat (voice)"
+              <span
                 style={{
-                  width: 44,
-                  height: 44,
+                  fontFamily: "var(--mv3-mono)",
+                  fontSize: 13,
+                  color: "var(--mv3-accent-text)",
+                  flexShrink: 0,
+                }}
+              >
+                /{cmd.name}
+              </span>
+              <span
+                style={{
+                  fontSize: 13,
+                  color: "var(--mv3-muted)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {cmd.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {/* THE COMPOSER, AND ITS FOUR MODES (v25 · G1/G6).
+            Field on top; ＋ attach · ✎ Create · ▦ Library · mic underneath.
+            All four are states of THIS composer — same thread, same thing
+            chip — which is why none of them is a tab. */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--mv3-glass)",
+          border: `1px solid ${composerBorder}`,
+          borderRadius: 22,
+          padding: "10px 12px 6px 15px",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          boxShadow: "var(--mv3-glass-shadow)",
+          transition: "border-color .15s ease",
+        }}
+      >
+        <textarea
+          ref={(el) => {
+            inputElRef.current = el;
+          }}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          disabled={typingDisabled}
+          rows={1}
+          placeholder="Ask, or tell Cue what to take on"
+          style={{
+            width: "100%",
+            resize: "none",
+            border: "none",
+            outline: "none",
+            background: "transparent",
+            color: "var(--mv3-text)",
+            // ≥16px (build rules): anything smaller triggers iOS focus-zoom,
+            // which moves the window — the exact thing G3 forbids.
+            fontSize: COMPOSER_FONT_SIZE_PX,
+            lineHeight: 1.4,
+            fontFamily: "inherit",
+            padding: "0 0 4px",
+            // Spec 7 — five lines, then the FIELD scrolls. Nothing else moves.
+            maxHeight: COMPOSER_LINE_HEIGHT_PX * 5 + COMPOSER_FIELD_PADDING_PX,
+            minWidth: 0,
+          }}
+        />
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            marginTop: 6,
+            paddingTop: 6,
+            borderTop: "1px solid var(--mv3-line)",
+          }}
+        >
+          {/* ＋ attach (hidden picker into the shared composer store). */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handlePickFiles}
+            style={{ display: "none" }}
+            aria-hidden
+            tabIndex={-1}
+          />
+          <ComposerAffordance
+            label="Add attachment"
+            onPress={() => fileInputRef.current?.click()}
+          >
+            <Plus size={16} aria-hidden />
+          </ComposerAffordance>
+
+          {/* ✎ Create — a sheet over the composer, not a destination. */}
+          <ComposerCreateEntry />
+
+          {/* ▦ Library — pick a file to reference in what you're saying. */}
+          {assistantId ? (
+            <ComposerAffordance
+              label="Reference a file from your library"
+              expanded={libraryOpen}
+              onPress={() => setLibraryOpen(true)}
+            >
+              <LibraryBig size={15} aria-hidden />
+            </ComposerAffordance>
+          ) : null}
+
+          {/* Tune — composer settings (model profile + autonomy threshold),
+                the v3 sheet mount of the desktop ComposerSettingsMenu. */}
+          {assistantId ? (
+            <ComposerAffordance
+              label="Conversation settings"
+              expanded={settingsOpen}
+              onPress={() => setSettingsOpen(true)}
+            >
+              <SlidersHorizontal size={15} aria-hidden />
+            </ComposerAffordance>
+          ) : null}
+
+          <span style={{ flex: 1 }} />
+
+          {/* ◎ Voice — the mark IS the mic (frame G5). A live session bound
+                to THIS conversation; spoken turns land in this thread. */}
+          {canThreadVoice && !threadVoiceOpen && !showSend ? (
+            <button
+              type="button"
+              onClick={handleStartThreadVoice}
+              aria-label="Talk in this chat (voice)"
+              style={{
+                width: 44,
+                height: 44,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                cursor: "pointer",
+                flexShrink: 0,
+                marginRight: -4,
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <span
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: "50%",
+                  background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                  color: "#fff",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  border: "none",
-                  background: "transparent",
-                  padding: 0,
-                  cursor: "pointer",
-                  flexShrink: 0,
-                  marginRight: -4,
-                  WebkitTapHighlightColor: "transparent",
+                  boxShadow: "var(--mv3-plus-shadow)",
                 }}
               >
-                <span
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: "50%",
-                    background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
-                    color: "#fff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "var(--mv3-plus-shadow)",
-                  }}
-                >
-                  <AudioLines size={16} aria-hidden />
-                </span>
-              </button>
-            ) : null}
+                <AudioLines size={16} aria-hidden />
+              </span>
+            </button>
+          ) : null}
 
-            {showSend ? (
+          {showSend ? (
             <button
               type="button"
               onClick={handleSend}
@@ -1270,8 +1270,7 @@ export function MobileChatView({
                 border: "none",
                 background: "transparent",
                 padding: 0,
-                cursor:
-                  canStopGenerating || canSend ? "pointer" : "default",
+                cursor: canStopGenerating || canSend ? "pointer" : "default",
                 flexShrink: 0,
                 WebkitTapHighlightColor: "transparent",
               }}
@@ -1292,9 +1291,7 @@ export function MobileChatView({
                     ? "1px solid var(--mv3-btn2-border)"
                     : "none",
                   color:
-                    !canStopGenerating && canSend
-                      ? "#fff"
-                      : "var(--mv3-text)",
+                    !canStopGenerating && canSend ? "#fff" : "var(--mv3-text)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1351,8 +1348,8 @@ export function MobileChatView({
               />
             </div>
           )}
-          </div>
         </div>
+      </div>
     </div>
   );
 
@@ -1402,7 +1399,6 @@ export function MobileChatView({
         onClose={() => setThreadsOpen(false)}
         assistantId={assistantId}
       />
-
 
       {/* ▦ LIBRARY — pick a file to reference in what you're saying. Leads
           with what this conversation itself made. */}

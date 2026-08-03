@@ -35,6 +35,11 @@ const log = getLogger("route-schema-cache");
 const routeSchemaPolicySchema = z.object({
   requiredScopes: z.array(z.string()).readonly(),
   allowedPrincipalTypes: z.array(z.string()).readonly(),
+  // Route returns the raw inference vendor's payload (model slugs, upstream
+  // envelopes). Optional so a daemon predating the field still validates —
+  // absent reads as `false`, which is the pre-existing behavior, and the
+  // daemon's own HTTP path enforces it regardless.
+  vendorDisclosing: z.boolean().optional(),
 });
 
 const routeSchemaEntrySchema = z.object({

@@ -28,18 +28,21 @@ import {
   StepFooter,
   StepHead,
 } from "./setup-chrome";
+import { useHideVendorUi } from "@/assistant/use-managed-mode";
 import { useSaveOpenRouterKey, validateOpenRouterKey } from "./use-setup-data";
 
 type ThinkChoice = "credits" | "byo" | "claude";
 
-const OPTIONS: Array<{
+interface ThinkOption {
   key: ThinkChoice;
   icon: string;
   title: string;
   sub: string;
   badge?: string;
   disabled?: boolean;
-}> = [
+}
+
+const OPTIONS: ThinkOption[] = [
   {
     key: "credits",
     icon: "✦",
@@ -63,6 +66,26 @@ const OPTIONS: Array<{
   },
 ];
 
+/**
+ * The options this instance may offer.
+ *
+ * Both BYO rows exist only to name an inference vendor — you cannot ask
+ * someone for "your OpenRouter key" without telling them it is OpenRouter,
+ * and "Use your Claude subscription" invites the reader to conclude Cue *is*
+ * Claude. On a managed instance neither is true to what the customer is
+ * buying (metered Cue credits) and neither may be shown, so the step becomes
+ * a confirmation of the managed plan rather than a chooser.
+ *
+ * NOTE: this removes BYO-key entry from the managed onboarding path
+ * altogether — Settings → Models & Services is already hidden there, so a
+ * managed customer has no BYO route at all. That is the deliberate trade:
+ * discretion over a capability no alpha tester is using.
+ */
+export function thinkOptions(hideVendor: boolean): ThinkOption[] {
+  if (!hideVendor) return OPTIONS;
+  return OPTIONS.filter((opt) => opt.key === "credits");
+}
+
 type KeyPhase =
   | { kind: "idle" }
   | { kind: "checking" }
@@ -85,6 +108,8 @@ export function ThinkStep({
   onContinue: () => void;
   onSkip: () => void;
 }) {
+  const hideVendor = useHideVendorUi();
+  const options = thinkOptions(hideVendor);
   const [choice, setChoice] = useState<ThinkChoice>("credits");
   const [key, setKey] = useState("");
   const [phase, setPhase] = useState<KeyPhase>({ kind: "idle" });
@@ -151,7 +176,7 @@ export function ThinkStep({
         style={{ display: "flex", flexDirection: "column", gap: 10 }}
         data-slot="hq-setup-think-options"
       >
-        {OPTIONS.map((opt) => {
+        {options.map((opt) => {
           const on = choice === opt.key;
           return (
             <button
@@ -234,7 +259,7 @@ export function ThinkStep({
         })}
       </div>
 
-      {choice === "byo" ? (
+      {choice === "byo" && !hideVendor ? (
         <div style={{ marginTop: 12 }} data-slot="hq-setup-think-byo-form">
           <input
             value={key}

@@ -8,6 +8,7 @@ import {
   buildUsageSearchParams,
   readUsageUrlState,
   resolveRangeWindow,
+  usageGroupByOptions,
 } from "@/domains/logs/usage-tab-state";
 
 const UTC = "UTC";
@@ -213,5 +214,46 @@ describe("usage URL state", () => {
     );
 
     expect(params.toString()).toBe("range=90d&groupBy=schedule");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Vendor discretion — the `model` / `provider` dimensions ARE the inference
+// vendor's identity, so a managed instance must not offer or accept them.
+// A self-hoster is paying per model and keeps both.
+// ---------------------------------------------------------------------------
+
+describe("usage group-by on a managed instance", () => {
+  test("the picker drops model and provider", () => {
+    const values = usageGroupByOptions(true).map((o) => o.value);
+    expect(values).not.toContain("model");
+    expect(values).not.toContain("provider");
+    // The dimensions that describe the user's own work stay.
+    expect(values).toContain("task");
+    expect(values).toContain("schedule");
+    expect(values).toContain("conversation");
+  });
+
+  test("the picker keeps them on self-host", () => {
+    const values = usageGroupByOptions(false).map((o) => o.value);
+    expect(values).toContain("model");
+    expect(values).toContain("provider");
+  });
+
+  test("a ?groupBy=model deep link is coerced away", () => {
+    const params = new URLSearchParams("groupBy=model");
+    expect(readUsageUrlState(params, true).groupBy).toBe("task");
+    expect(readUsageUrlState(params, false).groupBy).toBe("model");
+  });
+
+  test("?groupBy=provider is coerced too", () => {
+    const params = new URLSearchParams("groupBy=provider");
+    expect(readUsageUrlState(params, true).groupBy).toBe("task");
+  });
+
+  test("a non-vendor deep link is left alone on both deployments", () => {
+    const params = new URLSearchParams("groupBy=schedule&scheduleId=s_1");
+    expect(readUsageUrlState(params, true).groupBy).toBe("schedule");
+    expect(readUsageUrlState(params, true).scheduleId).toBe("s_1");
   });
 });

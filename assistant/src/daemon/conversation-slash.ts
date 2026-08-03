@@ -1,4 +1,5 @@
 import type { InterfaceId } from "../channels/types.js";
+import { getManagedInstance } from "../config/env-registry.js";
 import { resolveEffectiveContextWindow } from "../config/llm-context-resolution.js";
 import { resolveCallSiteConfig } from "../config/llm-resolver.js";
 import {
@@ -96,6 +97,25 @@ export function buildSlashContextForContent(
     userMessageInterface: source.userMessageInterface,
   };
 }
+
+// ── Managed-instance vendor discretion ───────────────────────────────
+
+/**
+ * On HQ-provisioned ("managed") instances the customer does not choose,
+ * pay for, or administer the inference vendor, and the product must not
+ * name it — the same policy the web client enforces with `hideVendorUi()`
+ * and the system prompt enforces with its identity-discretion section.
+ *
+ * Slash commands are the one chat surface a prompt rule cannot reach:
+ * `/models`, `/model` and `/status` are rendered by the daemon and posted
+ * verbatim as a chat message, so the model never sees them and never gets
+ * the chance to decline. They are gated here instead.
+ *
+ * Self-host installs are unaffected: an owner who supplies their own key is
+ * entitled to see, and switch, exactly what they are paying for.
+ */
+const MANAGED_MODEL_COMMAND_MESSAGE =
+  "Inference is managed for this instance — there is no model to list or switch here. Ask me anything and I'll pick the right one for the job.";
 
 // ── Deprecated model-switching shortcuts ─────────────────────────────
 
@@ -269,7 +289,10 @@ async function resolveModelList(): Promise<SlashResolution> {
   };
 }
 
-function resolveStatusCommand(context: SlashContext): SlashResolution {
+function resolveStatusCommand(
+  context: SlashContext,
+  managed: boolean,
+): SlashResolution {
   const {
     inputTokens,
     maxInputTokens,
@@ -292,7 +315,9 @@ function resolveStatusCommand(context: SlashContext): SlashResolution {
     `Context:  ${bar}  ${pct}%  (${fmt(inputTokens)} / ${fmt(
       maxInputTokens,
     )} tokens)`,
-    `Model:    ${model} (${provider})`,
+    // Everything else on this card is about the conversation; only this line
+    // is about the vendor. Managed instances drop it and keep the rest.
+    ...(managed ? [] : [`Model:    ${model} (${provider})`]),
     `Messages: ${fmt(messageCount)}`,
     `Tokens:   ${fmt(inputTokens)} in / ${fmt(outputTokens)} out`,
     `Cost:     $${estimatedCost.toFixed(2)} (estimated)`,
@@ -304,7 +329,23 @@ function resolveStatusCommand(context: SlashContext): SlashResolution {
 const CLEAN_HELP_LINE =
   "/clean — Strip injected runtime context and reset memory injection state (no summarization)";
 
-function resolveCommandsList(context?: SlashContext): string[] {
+/**
+ * `/commands` advertises the command surface. On a managed instance the
+ * model commands are unavailable (see {@link MANAGED_MODEL_COMMAND_MESSAGE}),
+ * so they are dropped from the menu rather than listed and then refused.
+ */
+function resolveCommandsList(
+  context: SlashContext | undefined,
+  managed: boolean,
+): string[] {
+  const lines = buildCommandsList(context);
+  if (!managed) return lines;
+  return lines.filter(
+    (line) => !line.startsWith("/model — ") && !line.startsWith("/models — "),
+  );
+}
+
+function buildCommandsList(context?: SlashContext): string[] {
   const fallbackLines = [
     "/commands — List all available commands",
     "/compact — Force context compaction immediately",
@@ -405,10 +446,17 @@ export async function resolveSlash(
   content: string,
   context?: SlashContext,
 ): Promise<SlashResolution> {
+  // Managed instances never name or expose the inference vendor. Resolved
+  // once per invocation so every branch below agrees.
+  const managed = getManagedInstance();
+
   // Handle `/model` — list profiles (no arg) or switch active profile.
   const trimmed = content.trim();
   const modelParse = parseModelCommand(trimmed);
   if (modelParse != null) {
+    if (managed) {
+      return { kind: "unknown", message: MANAGED_MODEL_COMMAND_MESSAGE };
+    }
     return await resolveModelCommand(modelParse);
   }
 
@@ -418,6 +466,9 @@ export async function resolveSlash(
     shortcutMatch &&
     DEPRECATED_MODEL_SHORTCUTS.has(shortcutMatch[1].toLowerCase())
   ) {
+    if (managed) {
+      return { kind: "unknown", message: MANAGED_MODEL_COMMAND_MESSAGE };
+    }
     return {
       kind: "unknown",
       message: `The \`/${shortcutMatch[1]}\` shortcut has been removed. Use **Settings → Models & Services** to change your model and provider.`,
@@ -426,6 +477,9 @@ export async function resolveSlash(
 
   // Handle /models command (read-only listing)
   if (trimmed === "/models") {
+    if (managed) {
+      return { kind: "unknown", message: MANAGED_MODEL_COMMAND_MESSAGE };
+    }
     return await resolveModelList();
   }
 
@@ -445,14 +499,14 @@ export async function resolveSlash(
         message: "Status information is not available in this context.",
       };
     }
-    return resolveStatusCommand(context);
+    return resolveStatusCommand(context, managed);
   }
 
   // Handle /commands command
   if (trimmed === "/commands") {
     return {
       kind: "unknown",
-      message: resolveCommandsList(context).join("\n"),
+      message: resolveCommandsList(context, managed).join("\n"),
     };
   }
 

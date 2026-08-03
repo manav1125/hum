@@ -301,7 +301,17 @@ export function getDisableBackgroundMemory(): boolean {
  * on the health endpoints so clients can hide LLM-vendor machinery (API-key
  * entry, provider/model pickers, BYO settings) — managed customers must never
  * see that surface area. Self-host deployments leave it unset and keep the
- * full BYO experience. Display-only: it gates UI, not any daemon behavior.
+ * full BYO experience.
+ *
+ * It also gates the vendor-naming surfaces a client-side flag cannot reach,
+ * because the daemon composes them itself: the `/model`, `/models` and
+ * `/status` slash commands (`daemon/conversation-slash.ts`), the raw upstream
+ * text spliced into chat error banners (`daemon/conversation-error.ts`), and
+ * the `vendorDisclosing` routes that return the provider's own request /
+ * response envelope (`runtime/auth/route-policy.ts`). It changes no
+ * inference behavior — what runs is identical either way; only what the
+ * product says about it differs.
+ *
  * Already on the safe-env allowlist (tools/terminal/safe-env.ts).
  */
 export function getManagedInstance(): boolean {

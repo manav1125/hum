@@ -82,3 +82,42 @@ export function useManagedMode(): boolean | undefined {
 export function hideVendorUi(managed: boolean | undefined): boolean {
   return managed !== false;
 }
+
+/**
+ * Hook form of {@link hideVendorUi} — the one-liner most render bodies want.
+ */
+export function useHideVendorUi(): boolean {
+  return hideVendorUi(useManagedMode());
+}
+
+/**
+ * What a managed instance shows where a model name would otherwise go.
+ *
+ * Deliberately generic. The rule is show-nothing-or-show-this: never
+ * substitute a *different* vendor's name. A plausible-but-false attribution
+ * ("running on Claude") is worse than the leak it replaces — it is a claim
+ * the product cannot stand behind, and the identity work that prompted this
+ * change caught exactly that failure coming out of an ungated model.
+ */
+export const NEUTRAL_MODEL_LABEL = "Cue's model";
+
+/**
+ * Render helper for a model / provider string that arrives as *data* (a
+ * usage rollup row, a ledger act, a settings subtitle) rather than as a
+ * literal in the source.
+ *
+ * Component-level gates cannot cover these: the leak is a server-supplied
+ * value flowing through a generic renderer, so the substitution has to
+ * happen at the point of display.
+ *
+ * @param name  the model or provider string from the daemon
+ * @param hide  the result of {@link hideVendorUi} / {@link useHideVendorUi}
+ */
+export function vendorSafeModelLabel(
+  name: string | null | undefined,
+  hide: boolean,
+): string | null {
+  if (hide) return NEUTRAL_MODEL_LABEL;
+  const trimmed = name?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+}

@@ -226,7 +226,9 @@ export function VoiceModeSurface({
     }
   }, [active, connecting, start, stop, assistantId, conversationId]);
 
-  // --- Voice engine toggle (Realtime = Gemini Live vs Classic = cascade) -----
+  // --- Voice engine toggle (Realtime = the `gemini-live` speech-native
+  // session, Classic = cascade). The ids are internal; see the user-facing
+  // copy note at the toggle's render site below. ---------------------------
   // Persists to the same `cue.voiceEngine` key `resolveVoiceEngine()` reads, so
   // flipping it and (re)starting a session picks the chosen engine. Visible in
   // the header because a localStorage flag is unusable inside the desktop app.
@@ -443,16 +445,26 @@ export function VoiceModeSurface({
         </button>
       ) : null}
 
-      {/* Engine toggle — Realtime (Gemini Live) vs Classic (cascade). Top-left,
-          mirroring the Done button. Visible so it's usable inside the desktop
-          app where a localStorage flag can't be set. */}
+      {/* Engine toggle — Realtime (the `gemini-live` speech-native session)
+          vs Classic (cascade). Top-left, mirroring the Done button. Visible so
+          it's usable inside the desktop app where a localStorage flag can't be
+          set.
+
+          USER-FACING COPY NAMES NO VENDOR. The engine ids are internal; the
+          tooltip a user reads says "Realtime"/"Classic" only. The realtime
+          session is already instructed not to name its own provider
+          (`assistant/src/gemini-live/gemini-live-session.ts`) — a tooltip that
+          named it would undo that from the outside, on every deployment,
+          managed or not. Nothing is lost on self-host either: this toggle
+          picks an engine, not a provider account, so it is removed outright
+          rather than gated on managed mode. */}
       <button
         type="button"
         onClick={toggleEngine}
         aria-label={`Voice engine: ${engine === "gemini-live" ? "Realtime" : "Classic"}. Tap to switch.`}
         title={
           engine === "gemini-live"
-            ? "Realtime engine (Gemini Live) — faster, speech-native. Tap for Classic."
+            ? "Realtime engine — faster, speech-native. Tap for Classic."
             : "Classic engine (full assistant) — deeper, slower. Tap for Realtime."
         }
         style={{
@@ -1187,7 +1199,7 @@ function Mv3VoiceMobile({
           }. Tap to switch.`}
           title={
             engine === "gemini-live"
-              ? "Realtime engine (Gemini Live). Tap for Classic."
+              ? "Realtime engine. Tap for Classic."
               : "Classic engine (full assistant). Tap for Realtime."
           }
         >

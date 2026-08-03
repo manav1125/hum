@@ -2,6 +2,7 @@ import type {
   ConversationErrorCode,
   ConversationErrorEvent,
 } from "../api/events/conversation-error.js";
+import { getManagedInstance } from "../config/env-registry.js";
 import {
   ORDERING_ERROR_PATTERNS,
   WEB_SEARCH_ORDERING_PATTERNS,
@@ -206,6 +207,35 @@ export function isUserCancellation(error: unknown, ctx: ErrorContext): boolean {
   }
   if (isAbortReason(error)) return true;
   return false;
+}
+
+/**
+ * Gate for raw upstream text on its way into a user-facing error banner.
+ *
+ * Every other `userMessage` in this file is copy we wrote, which says "the
+ * AI provider" and never names one. Two branches are different: the generic
+ * 4xx suffix and the unclassified-error fallback both splice the upstream
+ * SDK's own words into the banner, and those words routinely carry the
+ * model slug and the vendor's name.
+ *
+ * On a self-host install that detail is the whole value of the banner — the
+ * owner holds the key and needs the provider's actual complaint. On a
+ * managed instance the customer neither chose nor administers the vendor,
+ * so the pass-through is suppressed and the caller falls back to its
+ * vendor-neutral wording. The status code, the error code, `retryable` and
+ * `errorCategory` are untouched either way, so "did my turn fail, and
+ * should I retry" survives the redaction; only the vendor's prose does not.
+ *
+ * `debugDetails` (the stack) is deliberately NOT gated here: it is carried
+ * on the wire for diagnostics and log reports but no client renders it.
+ *
+ * @returns `detail` unchanged on self-host, `undefined` on managed.
+ */
+function passesVendorDiscretion(
+  detail: string | undefined,
+): string | undefined {
+  if (!detail) return undefined;
+  return getManagedInstance() ? undefined : detail;
 }
 
 /** Maximum length for debugDetails to prevent unbounded event payloads. */
@@ -462,9 +492,13 @@ function classifyCore(
           errorCategory: "vision_not_supported",
         };
       }
-      // Extract the provider detail after "API error (NNN): " prefix
+      // Extract the provider detail after "API error (NNN): " prefix.
+      // Upstream 400 bodies routinely name the model slug and the vendor
+      // ("... is not a valid model ID"), so managed instances keep the
+      // status code — which is what tells the user whether to retry — and
+      // drop the vendor's own prose. See `passesVendorDiscretion`.
       const detailMatch = message.match(/API error \(\d+\):\s*(.+)/i);
-      const detail = detailMatch?.[1];
+      const detail = passesVendorDiscretion(detailMatch?.[1]);
       const suffix = detail
         ? `: ${detail.length > 200 ? detail.slice(0, 200) + "…" : detail}`
         : "";
@@ -774,11 +808,16 @@ function classifyByMessage(
 
   // Default: processing failure — include the first non-empty line of the actual error
   // so users know what went wrong instead of seeing a completely generic message.
+  // Unclassified text is unbounded in content: it can be an SDK message that
+  // names the vendor and model, so managed instances fall through to the
+  // generic sentence instead. See `passesVendorDiscretion`.
   const firstLine =
-    message
-      .split("\n")
-      .map((l) => l.trim())
-      .find((l) => l.length > 0) ?? "";
+    passesVendorDiscretion(
+      message
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.length > 0),
+    ) ?? "";
   const userMessage = firstLine
     ? `Processing failed: ${firstLine}`
     : "Something went wrong processing your message. Please try again.";

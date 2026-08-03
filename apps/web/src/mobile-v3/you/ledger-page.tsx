@@ -21,6 +21,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { useHideVendorUi } from "@/assistant/use-managed-mode";
 import {
   actsByIdReversePostMutation,
   actsGetOptions,
@@ -103,15 +104,12 @@ function modelShortName(model: string): string {
   return tail;
 }
 
-function ActDetail({
-  act,
-  assistantId,
-}: {
-  act: Act;
-  assistantId: string;
-}) {
+function ActDetail({ act, assistantId }: { act: Act; assistantId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  // The cost stays — it is the user's money. The model name is the vendor's
+  // identity, which a managed instance does not disclose.
+  const hideVendor = useHideVendorUi();
   const [conflict, setConflict] = useState<string | null>(null);
 
   const reverse = useMutation({
@@ -154,7 +152,7 @@ function ActDetail({
         {KIND_META[act.kind].title} · {shortDate(act.createdAt)} at{" "}
         {clockLabel(act.createdAt)} · by {act.agent}
       </div>
-      {cost || act.model ? (
+      {cost || (act.model && !hideVendor) ? (
         <div
           style={{
             display: "flex",
@@ -164,7 +162,7 @@ function ActDetail({
           }}
         >
           <span style={{ color: "var(--mv3-green)", flexShrink: 0 }}>✓</span>
-          {[cost, act.model ? modelShortName(act.model) : null]
+          {[cost, act.model && !hideVendor ? modelShortName(act.model) : null]
             .filter(Boolean)
             .join(" · ")}{" "}
           — measured, not estimated
@@ -349,9 +347,7 @@ export function Mv3LedgerPage() {
                   fontWeight: agentFilter === null ? 600 : 400,
                   fontFamily: "inherit",
                   color:
-                    agentFilter === null
-                      ? "var(--mv3-bg)"
-                      : "var(--mv3-muted)",
+                    agentFilter === null ? "var(--mv3-bg)" : "var(--mv3-muted)",
                   background:
                     agentFilter === null
                       ? "var(--mv3-text)"

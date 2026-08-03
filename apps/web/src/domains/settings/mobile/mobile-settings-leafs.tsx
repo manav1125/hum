@@ -30,6 +30,7 @@ import {
   visibleProfilesForPicker,
 } from "@/assistant/profile-pickers";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { hideVendorUi, useManagedMode } from "@/assistant/use-managed-mode";
 import { IntegrationIcon } from "@/components/integrations/integration-icon";
 import { IntegrationDetailModal } from "@/domains/settings/components/integration-detail-modal";
 import { buildOrderedProfiles } from "@/domains/settings/ai/ai-utils";
@@ -140,13 +141,7 @@ function rowShell(isLast?: boolean): React.CSSProperties {
   };
 }
 
-function RowText({
-  name,
-  line,
-}: {
-  name: string;
-  line?: React.ReactNode;
-}) {
+function RowText({ name, line }: { name: string; line?: React.ReactNode }) {
   return (
     <span style={{ flex: 1, minWidth: 0 }}>
       <span
@@ -177,7 +172,11 @@ function RowText({
   );
 }
 
-function StateChip({ on, onText = "ON", offText = "OFF" }: {
+function StateChip({
+  on,
+  onText = "ON",
+  offText = "OFF",
+}: {
   on: boolean;
   onText?: string;
   offText?: string;
@@ -385,8 +384,8 @@ export function Mv3AppearanceLeaf() {
         </div>
       </SectionCard>
       <Mv3SettingsNote>
-        Assistant name, timezone and software updates live in Settings →
-        General on desktop.
+        Assistant name, timezone and software updates live in Settings → General
+        on desktop.
       </Mv3SettingsNote>
     </Mv3SettingsScreen>
   );
@@ -409,6 +408,12 @@ type EffortOption = (typeof EFFORT_OPTIONS)[number];
 export function Mv3AiLeaf() {
   const assistantId = useActiveAssistantId();
   const queryClient = useQueryClient();
+  // Mirror the desktop twin (`domains/settings/ai/ai-page.tsx`). The You-screen
+  // nav row is hidden on managed instances, but this route stays mounted and
+  // is reachable by deep link and by back-nav, so gate the leaf itself — its
+  // subtitle would otherwise read "Running on <model slug>". Per the
+  // use-managed-mode flash policy, an unresolved flag renders nothing.
+  const managed = useManagedMode();
 
   const { data: config, isLoading } = useQuery({
     ...configGetOptions({ path: { assistant_id: assistantId } }),
@@ -434,9 +439,7 @@ export function Mv3AiLeaf() {
     const mainSite = config?.llm?.callSites?.mainAgent;
     const mainSiteModel =
       mainSite?.model ??
-      (mainSite?.profile
-        ? (profiles[mainSite.profile]?.model ?? null)
-        : null);
+      (mainSite?.profile ? (profiles[mainSite.profile]?.model ?? null) : null);
     return activeProfileModel ?? mainSiteModel ?? defaultModel;
   }, [config, activeProfile, defaultModel]);
 
@@ -486,6 +489,23 @@ export function Mv3AiLeaf() {
     });
   };
 
+  if (hideVendorUi(managed)) {
+    return (
+      <Mv3SettingsScreen
+        title="AI models"
+        sub={
+          managed === true
+            ? "Managed by Cue — nothing to set up here"
+            : undefined
+        }
+        tint="blue"
+        testId="mv3-settings-ai"
+      >
+        {null}
+      </Mv3SettingsScreen>
+    );
+  }
+
   return (
     <Mv3SettingsScreen
       title="AI models"
@@ -519,9 +539,7 @@ export function Mv3AiLeaf() {
             <RadioRow
               key={p.name}
               name={
-                p.name === AUTO_PROFILE_NAME
-                  ? "Auto"
-                  : profilePickerLabel(p)
+                p.name === AUTO_PROFILE_NAME ? "Auto" : profilePickerLabel(p)
               }
               line={
                 p.name === AUTO_PROFILE_NAME
@@ -564,9 +582,7 @@ export function Mv3AiLeaf() {
                   fontWeight: active ? 600 : 400,
                   fontFamily: "inherit",
                   color: active ? "var(--mv3-bg)" : "var(--mv3-muted)",
-                  background: active
-                    ? "var(--mv3-text)"
-                    : "var(--mv3-btn2-bg)",
+                  background: active ? "var(--mv3-text)" : "var(--mv3-btn2-bg)",
                   border: active
                     ? "1px solid transparent"
                     : "1px solid var(--mv3-btn2-border)",
@@ -684,11 +700,7 @@ export function Mv3PrivacyLeaf() {
           onToggle={() => {
             const next = !shareDiagnostics;
             setShareDiagnostics(next);
-            savePreferenceToggle(
-              "share_diagnostics",
-              next,
-              hasPlatformSession,
-            );
+            savePreferenceToggle("share_diagnostics", next, hasPlatformSession);
           }}
         />
       </SectionCard>
@@ -786,7 +798,7 @@ function localCadenceLine(schedule: Schedule): string | undefined {
       ? "daily"
       : chips.chip === "weekday"
         ? "weekdays"
-        : WEEKDAY_PLURALS[chips.weekday] ?? "weekly";
+        : (WEEKDAY_PLURALS[chips.weekday] ?? "weekly");
   return `${time} · ${cadence}`;
 }
 
@@ -825,10 +837,7 @@ function ScheduleRow({
       }}
       style={{ ...rowShell(isLast), cursor: "pointer" }}
     >
-      <RowText
-        name={schedule.name}
-        line={localCadenceLine(schedule)}
-      />
+      <RowText name={schedule.name} line={localCadenceLine(schedule)} />
       <button
         type="button"
         role="switch"
@@ -867,7 +876,11 @@ export function Mv3SchedulesLeaf() {
   const queryClient = useQueryClient();
 
   const queryKey = assistantSchedulesQueryKey(assistantId);
-  const { data: schedules, isLoading, isError } = useQuery({
+  const {
+    data: schedules,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey,
     queryFn: () => fetchSchedules(assistantId),
     staleTime: 10_000,
@@ -899,10 +912,7 @@ export function Mv3SchedulesLeaf() {
   });
 
   const list = schedules ?? [];
-  const { recurring, upcomingOneTime, pastOneTime } = groupSchedules(
-    list,
-    now,
-  );
+  const { recurring, upcomingOneTime, pastOneTime } = groupSchedules(list, now);
 
   const renderRows = (rows: Schedule[]) =>
     rows.map((s, i) => (
@@ -930,8 +940,7 @@ export function Mv3SchedulesLeaf() {
           : // "Live" counts ENABLED schedules only (UAT P2: a paused one was
             // counted as live).
             `${
-              [...recurring, ...upcomingOneTime].filter((s) => s.enabled)
-                .length
+              [...recurring, ...upcomingOneTime].filter((s) => s.enabled).length
             } live · tap a schedule to edit`
       }
       tint="teal"
@@ -954,8 +963,8 @@ export function Mv3SchedulesLeaf() {
               lineHeight: 1.5,
             }}
           >
-            No schedules yet — ask Cue to set one up (&ldquo;every weekday at
-            8, brief me&rdquo;) and it shows up here.
+            No schedules yet — ask Cue to set one up (&ldquo;every weekday at 8,
+            brief me&rdquo;) and it shows up here.
           </div>
         </GlassCard>
       ) : null}
@@ -977,8 +986,8 @@ export function Mv3SchedulesLeaf() {
         </Mv3SettingsNote>
       ) : null}
       <Mv3SettingsNote>
-        Creating schedules and run history live on desktop — or ask Cue in
-        chat (&ldquo;every weekday at 8, brief me&rdquo;).
+        Creating schedules and run history live on desktop — or ask Cue in chat
+        (&ldquo;every weekday at 8, brief me&rdquo;).
       </Mv3SettingsNote>
 
       {editingSchedule ? (
@@ -1160,9 +1169,8 @@ export function Mv3VoiceLeaf() {
         ))}
       </SectionCard>
       <Mv3SettingsNote>
-        How long Cue waits for you to start speaking before ending a voice
-        turn. Push-to-talk shortcuts and speech models (STT/TTS) are set on
-        desktop.
+        How long Cue waits for you to start speaking before ending a voice turn.
+        Push-to-talk shortcuts and speech models (STT/TTS) are set on desktop.
       </Mv3SettingsNote>
     </Mv3SettingsScreen>
   );
@@ -1313,8 +1321,10 @@ export function Mv3SoundsLeaf() {
 
       <SectionCard eyebrow="Sound events" delay={0.25}>
         {SOUND_EVENT_IDS.map((event: SoundEventId, i) => {
-          const eventConfig =
-            config.events[event] ?? { enabled: false, sounds: [] };
+          const eventConfig = config.events[event] ?? {
+            enabled: false,
+            sounds: [],
+          };
           return (
             <ToggleRow
               key={event}
@@ -1394,9 +1404,9 @@ export function Mv3IntegrationsLeaf() {
   const assistantId = assistant?.id ?? storeAssistantId;
   const [searchText, setSearchText] = useState("");
   const [filter, setFilter] = useState<IntegrationFilter>("all");
-  const [selectedProviderKey, setSelectedProviderKey] = useState<
-    string | null
-  >(null);
+  const [selectedProviderKey, setSelectedProviderKey] = useState<string | null>(
+    null,
+  );
   // OAuth-callback outcome, shown inline (v3 grammar) instead of a toast.
   const [oauthNotice, setOauthNotice] = useState<{
     tone: "ok" | "error";
@@ -1515,7 +1525,9 @@ export function Mv3IntegrationsLeaf() {
   }, [managedProviders, connections, searchText, filter]);
 
   const loading =
-    (assistantLoading && !assistantId) || providersLoading || connectionsLoading;
+    (assistantLoading && !assistantId) ||
+    providersLoading ||
+    connectionsLoading;
   const connectedCount = managedProviders.filter((p) =>
     Boolean(connectionForProvider(connections, p.provider_key)?.connected),
   ).length;
@@ -1571,9 +1583,7 @@ export function Mv3IntegrationsLeaf() {
             >
               {oauthNotice.tone === "ok" ? "✓" : "✕"}
             </span>
-            <span
-              style={{ fontSize: 12.5, color: "var(--mv3-text)", flex: 1 }}
-            >
+            <span style={{ fontSize: 12.5, color: "var(--mv3-text)", flex: 1 }}>
               {oauthNotice.text}
             </span>
             <span style={{ fontSize: 11, color: "var(--mv3-faint)" }}>
@@ -1625,9 +1635,7 @@ export function Mv3IntegrationsLeaf() {
                   fontWeight: active ? 600 : 400,
                   fontFamily: "inherit",
                   color: active ? "var(--mv3-bg)" : "var(--mv3-muted)",
-                  background: active
-                    ? "var(--mv3-text)"
-                    : "var(--mv3-btn2-bg)",
+                  background: active ? "var(--mv3-text)" : "var(--mv3-btn2-bg)",
                   border: active
                     ? "1px solid transparent"
                     : "1px solid var(--mv3-btn2-border)",
@@ -1692,9 +1700,7 @@ export function Mv3IntegrationsLeaf() {
                   key={provider.provider_key}
                   type="button"
                   className="cue-pressable"
-                  aria-label={
-                    connected ? `Manage ${name}` : `Enable ${name}`
-                  }
+                  aria-label={connected ? `Manage ${name}` : `Enable ${name}`}
                   onClick={() => {
                     haptic.light();
                     setSelectedProviderKey(provider.provider_key);
@@ -1834,10 +1840,7 @@ function BrandKitRow({
         opacity: pending ? 0.6 : 1,
       }}
     >
-      <span
-        aria-hidden
-        style={{ display: "flex", gap: 3, flexShrink: 0 }}
-      >
+      <span aria-hidden style={{ display: "flex", gap: 3, flexShrink: 0 }}>
         {swatches.length > 0 ? (
           swatches.map((hex, i) => (
             <span
@@ -1947,18 +1950,13 @@ export function Mv3BrandLeaf() {
             <Suspense
               fallback={
                 <GlassCard>
-                  <div
-                    style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}
-                  >
+                  <div style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
                     Opening the brand studio…
                   </div>
                 </GlassCard>
               }
             >
-              <BrandKitStudioLazy
-                compact
-                onDone={() => setStudioOpen(false)}
-              />
+              <BrandKitStudioLazy compact onDone={() => setStudioOpen(false)} />
             </Suspense>
           </div>
         </>
@@ -2332,7 +2330,9 @@ export function Mv3NotificationsLeaf() {
     });
   };
 
-  const quietOn = Boolean(pushPrefs?.quietHours.start && pushPrefs?.quietHours.end);
+  const quietOn = Boolean(
+    pushPrefs?.quietHours.start && pushPrefs?.quietHours.end,
+  );
 
   if (platformNotifications && platformGate !== "gated") {
     return (
@@ -2426,7 +2426,10 @@ export function Mv3NotificationsLeaf() {
                 }}
                 style={quietTimeInputStyle}
               />
-              <span style={{ color: "var(--mv3-faint)", fontSize: 12 }} aria-hidden>
+              <span
+                style={{ color: "var(--mv3-faint)", fontSize: 12 }}
+                aria-hidden
+              >
                 –
               </span>
               <input
@@ -2464,9 +2467,9 @@ export function Mv3NotificationsLeaf() {
           </button>
         </SectionCard>
         <Mv3SettingsNote>
-          Pushes land on phones with the Cue app installed. During quiet
-          hours nothing pages your phone — approvals and review items still
-          wait for you in-app.
+          Pushes land on phones with the Cue app installed. During quiet hours
+          nothing pages your phone — approvals and review items still wait for
+          you in-app.
         </Mv3SettingsNote>
       </Mv3SettingsScreen>
     );

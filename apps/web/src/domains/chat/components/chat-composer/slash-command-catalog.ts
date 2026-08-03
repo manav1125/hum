@@ -9,6 +9,14 @@ export interface SlashCommand {
   name: string;
   description: string;
   selectionBehavior: SlashCommandSelectionBehavior;
+  /**
+   * The command's output names the inference vendor. The daemon refuses
+   * these on a managed instance (`daemon/conversation-slash.ts`), so the
+   * popup must not advertise them there either — every entry in this menu
+   * is one click from being sent, and `autoSend` means no confirmation
+   * step in which a user could reconsider.
+   */
+  vendorDisclosing?: boolean;
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
@@ -32,6 +40,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: "models",
     description: "List all available models",
     selectionBehavior: "autoSend",
+    vendorDisclosing: true,
   },
   {
     name: "status",
@@ -86,11 +95,21 @@ export function stripBackgroundCommand(text: string): string | null {
   return text.trimStart().slice(match[0].length).trim();
 }
 
+/** The commands offerable on this instance. See `SlashCommand.vendorDisclosing`. */
+export function availableCommands(hideVendor: boolean): SlashCommand[] {
+  if (!hideVendor) return SLASH_COMMANDS;
+  return SLASH_COMMANDS.filter((c) => !c.vendorDisclosing);
+}
+
 /** Returns commands whose name starts with `filter` (case-insensitive). Empty filter returns all. */
-export function filteredCommands(filter: string): SlashCommand[] {
-  if (!filter) return SLASH_COMMANDS;
+export function filteredCommands(
+  filter: string,
+  hideVendor = false,
+): SlashCommand[] {
+  const available = availableCommands(hideVendor);
+  if (!filter) return available;
   const lower = filter.toLowerCase();
-  return SLASH_COMMANDS.filter((c) => c.name.startsWith(lower));
+  return available.filter((c) => c.name.startsWith(lower));
 }
 
 /** Returns the input text to set after selecting a command. */
