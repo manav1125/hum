@@ -36,6 +36,23 @@ export function localModePlugin(env: Record<string, string>): Plugin {
 
   return {
     name: "vellum-local-mode",
+    // Dev server only. Every other hook here is `configureServer` middleware,
+    // but `transformIndexHtml` also runs during `vite build` — so a production
+    // bundle was shipping `__VELLUM_CONFIG__` with the seed's absolute
+    // `webUrl`, baked at build time from whatever environment built it.
+    //
+    // That is wrong for a self-hosted artifact twice over. The image is shared
+    // by every instance, so no single absolute host can be correct in it; and
+    // the seed's host is the upstream platform, so the injected value pointed
+    // sign-in at another company's domain. Tapping "Log In" on a fresh install
+    // opened `vellum.ai/account/login` and asked for credentials there.
+    //
+    // With nothing injected, each instance resolves the platform as its own
+    // origin — which for a self-hosted deployment is the only host that can be
+    // right, and is the one already serving the page. A deployment that really
+    // does authenticate elsewhere sets VITE_PLATFORM_URL or serves its own
+    // config; it does not inherit one from the machine that ran the build.
+    apply: "serve",
     transformIndexHtml(html) {
       return html.replace(
         "</head>",
