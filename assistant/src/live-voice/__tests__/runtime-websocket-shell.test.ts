@@ -1,19 +1,43 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { LiveVoiceConfigSchema } from "../../config/schemas/live-voice.js";
+import { initializeDb } from "../../memory/db-init.js";
 import type {
   StreamingTranscriber,
   SttStreamServerEvent,
 } from "../../stt/types.js";
 
+// The shell drives a real `LiveVoiceSession`, which ensures a `conversations`
+// row on start and reads one again during end-of-session synthesis. Both need
+// a schema.
+initializeDb();
+
+const loggerActual = await import("../../util/logger.js");
 mock.module("../../util/logger.js", () => ({
+  ...loggerActual,
   getLogger: () =>
     new Proxy({} as Record<string, unknown>, {
       get: () => () => {},
     }),
 }));
 
+// The config the shell sees.
+//
+// `liveVoice` is parsed from its own schema rather than hand-written. The
+// hand-written version omitted it entirely, so `getConfig().liveVoice` was
+// undefined and `resolveLiveVoiceSettings` threw on `config.frontModel` — the
+// session never sent `ready`, the socket died at 1006, and four assertions
+// reported a live-voice bug that only existed in this fixture. Production is
+// unaffected: `LiveVoiceConfigSchema` defaults `frontModel`, so a config file
+// with no `liveVoice` key still resolves one.
+//
+// Parsing the real schema means a new required field cannot silently reappear
+// as `undefined` here.
+const liveVoice = LiveVoiceConfigSchema.parse({});
+
 mock.module("../../config/loader.js", () => {
   const config = {
+    liveVoice,
     model: "test",
     provider: "test",
     platform: { baseUrl: "https://example.com" },
@@ -181,6 +205,37 @@ async function waitForClose(ws: WebSocket, timeoutMs = 2000): Promise<void> {
   });
 }
 
+/**
+ * Wait for the NEXT frame of a given type, skipping any that arrive ahead of
+ * it.
+ *
+ * The plain "take whatever arrives first" version broke when the session
+ * started emitting a `metrics` frame before `ready`. That is not a protocol
+ * violation: the real client (`live-voice-client.ts`) dispatches on
+ * `frame.type` in a switch and gates `ready` on `state === "connecting"`, so
+ * it is order-independent by construction and a `metrics` frame arriving
+ * first costs it nothing.
+ *
+ * So the ordering assumption lived only in this helper. A test that is
+ * stricter than the client it stands for reports a product bug that isn't
+ * one — which is what four red assertions here were doing.
+ */
+async function waitForFrameOfType(
+  ws: WebSocket,
+  type: string,
+  timeoutMs = 2000,
+): Promise<JsonFrame> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new Error(`Timed out waiting for a ${type} frame`);
+    }
+    const frame = await waitForJsonFrame(ws, remaining);
+    if ((frame as { type?: string }).type === type) return frame;
+  }
+}
+
 async function waitForJsonFrame(
   ws: WebSocket,
   timeoutMs = 2000,
@@ -304,7 +359,7 @@ describe("RuntimeHttpServer live voice WebSocket shell", () => {
     await waitForOpen(ws);
 
     ws.send(startFrame("conversation-ready"));
-    const ready = await waitForJsonFrame(ws);
+    const ready = await waitForFrameOfType(ws, "ready");
 
     expect(ready).toMatchObject({
       type: "ready",
@@ -342,7 +397,7 @@ describe("RuntimeHttpServer live voice WebSocket shell", () => {
     });
 
     ws.send(startFrame("conversation-after-error"));
-    const ready = await waitForJsonFrame(ws);
+    const ready = await waitForFrameOfType(ws, "ready");
     expect(ready).toMatchObject({
       type: "ready",
       conversationId: "conversation-after-error",
@@ -400,7 +455,7 @@ describe("RuntimeHttpServer live voice WebSocket shell", () => {
     });
 
     ws.send(startFrame("conversation-retry"));
-    const ready = await waitForJsonFrame(ws);
+    const ready = await waitForFrameOfType(ws, "ready");
 
     expect(ready).toMatchObject({
       type: "ready",

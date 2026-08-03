@@ -4,6 +4,7 @@ import type {
   VoiceTurnCallbacks,
   VoiceTurnOptions,
 } from "../../calls/voice-session-bridge.js";
+import { initializeDb } from "../../memory/db-init.js";
 import type {
   StreamingTranscriber,
   SttStreamServerEvent,
@@ -18,6 +19,9 @@ import {
   type LiveVoiceClientStartFrame,
   type LiveVoiceServerFrame,
 } from "../protocol.js";
+
+// Drives a real session, which ensures a `conversations` row on start.
+initializeDb();
 
 const START_FRAME = {
   type: "start",
