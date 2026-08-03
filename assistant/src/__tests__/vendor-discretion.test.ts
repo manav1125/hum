@@ -256,6 +256,8 @@ describe("chat error banners on a managed instance", () => {
  * `vendorDisclosing` should fail here.
  */
 const VENDOR_DISCLOSING_OPERATIONS = [
+  // Whole response is the active model + provider + catalog of alternatives.
+  "model_get",
   "conversations_llm_context_get",
   "messages_llm_context_get",
   "llm_request_logs_payload_get",

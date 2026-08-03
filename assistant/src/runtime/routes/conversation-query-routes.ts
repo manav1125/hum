@@ -1315,6 +1315,11 @@ export const ROUTES: RouteDefinition[] = [
     policy: {
       requiredScopes: ["settings.read"],
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
+      // Its entire response is the vendor's identity — active model id,
+      // provider, and the catalog of alternatives. No client calls it (the
+      // web app reads `config_get`; the Swift type is generated but unused),
+      // so on a managed instance it is pure disclosure surface.
+      vendorDisclosing: true,
     },
     summary: "Get current model config",
     description:
