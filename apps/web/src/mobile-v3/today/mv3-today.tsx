@@ -30,7 +30,7 @@
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import { client } from "@/generated/daemon/client.gen";
 import { relativeTime } from "@/domains/activity/theme";
@@ -80,7 +80,7 @@ import { CueRing, CueRingHero, type OrbitChip } from "../cue-ring";
 import { EmptyOrbit } from "../empty-orbit";
 import { GlassCard } from "../glass-card";
 import { DismissX, dismissLeave, useDismissTask } from "../undo-toast";
-import { CORNER_CHROME_BAND, CORNER_CHROME_INSET } from "../corner-chrome";
+import { cornerChromeProps } from "../corner-chrome";
 import {
   cardBody,
   cardTitle,
@@ -1035,6 +1035,9 @@ export function Mv3Today({
   degraded: boolean;
 }) {
   const navigate = useNavigate();
+  // The fixed ☰ / avatar buttons land on the eyebrow row; this is the row's
+  // half of that arrangement. See `corner-chrome.ts`.
+  const cornerChrome = cornerChromeProps(useLocation().pathname, "row");
   const scrollRef = useRef<HTMLDivElement>(null);
   const eyebrowRowRef = useRef<HTMLDivElement>(null);
   const greetingRef = useRef<HTMLDivElement>(null);
@@ -1377,6 +1380,7 @@ export function Mv3Today({
         <div style={{ padding: `calc(${SAFE_TOP} + 6px) 22px 0` }}>
           <div
             ref={eyebrowRowRef}
+            {...cornerChrome}
             style={{
               display: "flex",
               alignItems: "center",
@@ -1387,12 +1391,12 @@ export function Mv3Today({
               // a ☰ button with "DAY · 2 AUG" beside it. The insets are the
               // buttons' outer edges (18 + 34) less this container's own 22px
               // padding, plus a gap.
-              paddingLeft: CORNER_CHROME_INSET,
-              paddingRight: CORNER_CHROME_INSET,
-              // Holds the band open to the buttons' height. The avatar `<span>`
-              // that used to sit in this row was doing this incidentally; when
-              // it moved into the corner chrome the hero jumped 21px up.
-              minHeight: CORNER_CHROME_BAND,
+              // Holds the band open to the buttons' height too. The avatar
+              // `<span>` that used to sit in this row was doing this
+              // incidentally; when it moved into the corner chrome the hero
+              // jumped 21px up. Spread from `cornerChromeProps` rather than
+              // written out, so `corner-chrome.test.tsx` can see this header.
+              ...cornerChrome.style,
             }}
           >
             <div

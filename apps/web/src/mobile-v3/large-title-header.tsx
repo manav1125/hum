@@ -20,8 +20,8 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "react-router";
 
 import {
-  CORNER_CHROME_BAND,
   CORNER_CHROME_INSET,
+  cornerChromeProps,
   overflowVisible,
 } from "./corner-chrome";
 
@@ -48,7 +48,12 @@ export function LargeTitleHeader({
   // Whether the fixed ☰ / avatar buttons are painted over this header. Read
   // from the route rather than taken as a prop — see `corner-chrome.ts`: a
   // prop is a thing each new screen can forget, and two screens forgot.
-  const underCornerChrome = overflowVisible(useLocation().pathname);
+  const pathname = useLocation().pathname;
+  const underCornerChrome = overflowVisible(pathname);
+  // The eyebrow row sits INSIDE the buttons' band and insets out from between
+  // them (iOS nav-bar grammar). Spread rather than hand-written so this header
+  // is one of the ones `corner-chrome.test.tsx` can see.
+  const chrome = cornerChromeProps(pathname, "row");
 
   useEffect(() => {
     const scroller = scrollRef?.current;
@@ -138,13 +143,14 @@ export function LargeTitleHeader({
           render its title as "☰ork" — and insets its own content so an eyebrow
           does not slide under them either. */}
       <div
+        {...chrome}
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          minHeight: underCornerChrome ? CORNER_CHROME_BAND : undefined,
-          paddingLeft: underCornerChrome ? CORNER_CHROME_INSET : 0,
-          paddingRight: underCornerChrome ? CORNER_CHROME_INSET : 0,
+          paddingLeft: 0,
+          paddingRight: 0,
+          ...chrome.style,
         }}
       >
         {eyebrow ? (

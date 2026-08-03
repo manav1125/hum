@@ -7,7 +7,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import { WORK_VIEWS, type WorkView } from "@/components/nav/nav-model";
 import { useNavCounts } from "@/components/nav/use-nav-counts";
@@ -17,6 +17,7 @@ import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { rateLimitRetry } from "@/utils/rate-limit-retry";
 
+import { cornerChromeProps } from "./corner-chrome";
 import { mv3Mono } from "./mv3-kit";
 
 /* -------------------------------------------------------------------------- */
@@ -631,6 +632,15 @@ export function WorkCountsLine({
  * The Work header block: title, counts line, segmented control — the three
  * rows C2 and C3 share above the scroller, so the three views cannot drift
  * apart at the top of the screen.
+ *
+ * CORNER CHROME: all three Work views live on `routes.projects` (the views are
+ * a `?view=` query, not separate paths), so the fixed ☰ / avatar buttons are
+ * painted over this header on every one of them. This header did not know that
+ * and the title rendered as `☰ork` with the filter chip truncated under the
+ * avatar. It reserves the buttons' band above its own first row rather than
+ * insetting horizontally: the title row runs edge to edge — title left,
+ * trailing affordance right — so there is no room between the buttons to inset
+ * into. See `corner-chrome.ts` for why this is a spread and not a prop.
  */
 export function WorkHeader({
   assistantId,
@@ -644,13 +654,16 @@ export function WorkHeader({
   /** Right-hand affordance on the title row (filter, ＋, search). */
   trailing?: React.ReactNode;
 }) {
+  const chrome = cornerChromeProps(useLocation().pathname, "band");
   return (
     <div
+      {...chrome}
       style={{
         padding: "0 18px 8px",
         flexShrink: 0,
         position: "relative",
         zIndex: 2,
+        ...chrome.style,
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
