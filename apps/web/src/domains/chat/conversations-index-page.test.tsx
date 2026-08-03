@@ -125,6 +125,13 @@ function renderPage() {
 
 const DAY = 86_400_000;
 
+/** Local midnight, matching the component's own day boundary. */
+function startOfToday(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 function conversation(
   id: string,
   title: string,
@@ -202,7 +209,14 @@ describe("pinned leads, then strict recency (§11.3)", () => {
         lastMessageAt: now - 3 * DAY,
       }),
       conversation("yday", "Flight detail inquiry", {
-        lastMessageAt: now - 30 * 60 * 60 * 1000,
+        // Noon yesterday, derived from the calendar rather than from a
+        // duration. `now - 30h` was a time bomb: "yesterday" is the calendar
+        // day before today, so a 30-hour-old row only lands there when the
+        // suite runs after 06:00. Before that it falls into EARLIER THIS
+        // WEEK, the YESTERDAY heading never renders, and the failure reads
+        // as a bucketing bug rather than as a fixture that cannot tell a
+        // duration from a date. It fails here at 03:00 and passes at 09:00.
+        lastMessageAt: startOfToday(now) - 12 * 60 * 60 * 1000,
       }),
       conversation("today", "Amex suspension steps", { lastMessageAt: now }),
       conversation("pin", "Acme pricing", {
