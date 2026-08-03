@@ -9,7 +9,6 @@
  * session cookie.
  */
 
-const FALLBACK_WEB_URL = "https://www.vellum.ai";
 const LOOPBACK_STATE_KEY = "vellum:loopback:state";
 const LOOPBACK_RETURN_TO_KEY = "vellum:loopback:returnTo";
 
@@ -18,11 +17,30 @@ interface VellumConfig {
   platformUrl?: string;
 }
 
+/**
+ * Where the login page lives when the host has not said.
+ *
+ * This used to be a hardcoded `https://www.vellum.ai`, and on any deployment
+ * that does not inject `__VELLUM_CONFIG__` — which is every self-hosted one —
+ * the consequences chained: `isPlatformLocal()` compared the upstream fork's
+ * domain against this origin, got false, and `startAuthFlow` classified the
+ * install as "standalone local mode" and sent the browser off-origin. The
+ * first button on the first screen of a fresh Cue install opened another
+ * company's sign-in page and asked the reader for credentials there.
+ *
+ * It could not have completed either: the callback it requests is
+ * `http://127.0.0.1:{port}/callback`, so on a phone there was nothing
+ * listening to come back to.
+ *
+ * Same-origin is the only defensible default. A deployment that genuinely
+ * authenticates elsewhere injects `webUrl` and is unaffected; one that says
+ * nothing gets its own login page, which is the one it is already serving.
+ */
 function getLocalConfig(): { webUrl: string } {
   const injected = (window as unknown as { __VELLUM_CONFIG__?: VellumConfig })
     .__VELLUM_CONFIG__;
   if (injected?.webUrl) return { webUrl: injected.webUrl };
-  return { webUrl: FALLBACK_WEB_URL };
+  return { webUrl: window.location.origin };
 }
 
 function generateState(): string {
