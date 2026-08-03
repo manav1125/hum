@@ -22,6 +22,7 @@ import { useActivitySync } from "@/hooks/use-activity-sync";
 import { AuroraBackdrop } from "@/mobile-v3";
 import {
   LibraryFilterChips,
+  LibraryFooterNote,
   LibraryGrid,
   LibrarySectionLabel,
 } from "@/mobile-v3/library/library-gallery";
@@ -91,7 +92,8 @@ export function Mv3WorkLibrary() {
 
       <div
         style={{
-          height: "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px)",
+          height:
+            "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px)",
           flexShrink: 0,
         }}
       />
@@ -99,9 +101,7 @@ export function Mv3WorkLibrary() {
       <WorkHeader
         assistantId={assistantId}
         current="library"
-        countsOverride={
-          isLoading || isError ? " " : madeLine(entries, now)
-        }
+        countsOverride={isLoading || isError ? " " : madeLine(entries, now)}
         trailing={
           <button
             type="button"
@@ -222,18 +222,14 @@ export function Mv3WorkLibrary() {
           ))
         )}
 
+        {/* Computed from the shell's real reach and the cards actually on the
+            wall, not written down. The ⇪ buttons already work here — the grid
+            owns the share — so a hardcoded "Tap opens it here." understated
+            what this surface does. An understatement is a smaller lie than an
+            overstatement, but it is still the footer disagreeing with the
+            buttons above it. */}
         {visible.length > 0 ? (
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--mv3-faint)",
-              textAlign: "center",
-              marginTop: 11,
-              lineHeight: 1.5,
-            }}
-          >
-            Tap opens it here.
-          </div>
+          <LibraryFooterNote entries={visible} style={{ marginTop: 11 }} />
         ) : null}
       </div>
 
