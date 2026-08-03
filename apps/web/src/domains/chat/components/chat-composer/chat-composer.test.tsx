@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createRef, type ReactNode } from "react";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 
 import {
@@ -443,7 +444,22 @@ beforeEach(resetLiveVoiceMocks);
  * composer's output.
  */
 function withRouter(node: ReactNode) {
-  return <MemoryRouter>{node}</MemoryRouter>;
+  // The composer also reads managed mode (`useHideVendorUi`) to decide whether
+  // to offer `/models` in the slash popup, and that hook is a `useQuery` — so
+  // rendering the composer bare now throws "No QueryClient set" before a single
+  // assertion runs. Both providers contribute no markup, so the `toContain`
+  // assertions below still see exactly the composer's output.
+  //
+  // `retry: false` matters: the healthz fetch has no handler here, and a
+  // retrying query would keep the suite's timers alive after the test ends.
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{node}</MemoryRouter>
+    </QueryClientProvider>
+  );
 }
 
 function renderComposer(
