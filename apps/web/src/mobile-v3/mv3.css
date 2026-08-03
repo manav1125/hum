@@ -81,6 +81,14 @@
   --mv3-amber-card-bg: #fbf4e4;
   --mv3-amber-card-border: rgba(180, 119, 15, 0.35);
   --mv3-amber-card-shadow: 0 10px 26px -18px rgba(180, 119, 15, 0.35);
+  /* The amber control's GROUND and its ink move together, always.
+   *
+   * `--mv3-amber` (#b4770f) under white measures 3.76:1 — the same number
+   * design flagged on C5's "Send it", and the ninth recurrence of one class.
+   * It shipped here because the button's two halves lived in separate tokens
+   * and only one of them was ever checked. Naming the pair is the fix:
+   * whoever changes the ground sees the ink beside it. */
+  --mv3-amber-btn-bg: #8a5a08;
   --mv3-amber-btn-text: #ffffff;
   --mv3-violet-card-bg: rgba(255, 255, 255, 0.85);
   --mv3-violet-card-border: rgba(127, 119, 221, 0.35);
@@ -165,7 +173,9 @@
   --mv3-amber-card-bg: rgba(52, 42, 22, 0.75);
   --mv3-amber-card-border: rgba(224, 166, 75, 0.4);
   --mv3-amber-card-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.7);
-  --mv3-amber-btn-text: #211e16; /* dark amber buttons carry ink text */
+  /* Dark inverts the pair: a light amber ground carrying ink, 7.71:1. */
+  --mv3-amber-btn-bg: #e0a64b;
+  --mv3-amber-btn-text: #211e16;
   --mv3-violet-card-bg: rgba(38, 34, 58, 0.6);
   --mv3-violet-card-border: rgba(167, 159, 240, 0.35);
   --mv3-violet-card-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.7);

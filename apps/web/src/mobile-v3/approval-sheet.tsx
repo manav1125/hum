@@ -513,7 +513,7 @@ export function ApprovalSheet({
             onClick={() => send("allow")}
             style={{
               width: "100%",
-              background: "var(--mv3-amber)",
+              background: "var(--mv3-amber-btn-bg)",
               color: "var(--mv3-amber-btn-text)",
               border: "none",
               borderRadius: 13,

@@ -729,7 +729,7 @@ export function PluginUntrustedInstallSheet({
             }}
             style={{
               flex: 1,
-              background: "#E5675B",
+              background: "var(--mv3-fail-on-fill)",
               color: "#fff",
               border: "none",
               borderRadius: 12,
