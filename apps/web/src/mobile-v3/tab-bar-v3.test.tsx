@@ -72,15 +72,30 @@ describe("the bar's shape", () => {
     expect(nav.querySelectorAll("button")).toHaveLength(3);
   });
 
-  test("HQ, the mark, then Work — in that order", () => {
+  test("Today, the mark, then Work — in that order, mark CENTRED", () => {
     renderBar();
     const nav = screen.getByRole("navigation", { name: "Primary" });
-    const labels = [...nav.querySelectorAll("button")].map((b) =>
-      b.getAttribute("aria-label"),
-    );
+    const buttons = [...nav.querySelectorAll("button")];
+    const labels = buttons.map((b) => b.getAttribute("aria-label"));
     expect(labels[0]).toBe("HQ");
     expect(labels[1]).toContain("Talk to Cue");
     expect(labels[2]).toBe("Work");
+    // The centre is the whole argument for three: at four slots the mark sits
+    // at position 2 of 4 and reads as an accident.
+    expect(buttons.indexOf(buttons[1]!)).toBe((buttons.length - 1) / 2);
+  });
+
+  test("the phone prints Today, not HQ", () => {
+    // The rail says HQ; v24's frames say Today under the phone glyph. One
+    // declaration, `phoneLabel` — not a ternary at the call site.
+    renderBar();
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    const printed = [...nav.querySelectorAll("button")].map((b) =>
+      b.textContent?.trim(),
+    );
+    expect(printed[0]).toContain("Today");
+    expect(printed[1]).toContain("Cue");
+    expect(printed[2]).toContain("Work");
   });
 
   test("the mark advertises its long-press, so voice is discoverable", () => {
@@ -96,8 +111,10 @@ describe("active state", () => {
     ["/assistant/hq", "HQ"],
     ["/assistant/projects", "Work"],
     ["/assistant/projects/proj-1", "Work"],
-    ["/assistant", "Talk to Cue (hold for voice)"],
-  ])("%s marks %s current", (pathname, label) => {
+    // At home the mark's own label changes (it opens the ⓶ screen there), so
+    // this row matches the part that never moves.
+    ["/assistant", /hold for voice/],
+  ])("%s marks %s current", (pathname, label: string | RegExp) => {
     renderBar(pathname);
     expect(screen.getByLabelText(label).getAttribute("aria-current")).toBe(
       "page",
@@ -118,9 +135,40 @@ describe("active state", () => {
     renderBar("/assistant");
     expect(
       screen
-        .getByLabelText("Talk to Cue (hold for voice)")
-        .getAttribute("aria-current"),
+        .getByLabelText(/hold for voice/).getAttribute("aria-current"),
     ).toBe("page");
+  });
+
+  test("the mark stays lit across the whole ⓶ stack", () => {
+    // Otherwise Your Cue renders three dim tabs and nothing selected, which
+    // is the "nav that looked like decoration" bug this branch already had.
+    renderBar("/assistant/your-cue");
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    const current = [...nav.querySelectorAll("button")].filter(
+      (b) => b.getAttribute("aria-current") === "page",
+    );
+    expect(current).toHaveLength(1);
+    // It is the MARK that is lit, and from here a tap goes back home — so
+    // its label is the plain destination, not the ⓶ one.
+    expect(current[0]!.getAttribute("aria-label")).toContain("hold for voice");
+  });
+});
+
+describe("pressing the mark at home", () => {
+  test("it stops being a no-op and opens the ⓶ screen", () => {
+    // At home the mark used to navigate to the route you were already on.
+    // Design's rule for the centre slot: it must point at something.
+    renderBar("/assistant");
+    const mark = screen.getByLabelText(/hold for voice/);
+    expect(mark.getAttribute("aria-label")).toContain("Your Cue");
+    expect(mark.getAttribute("aria-label")).toContain(
+      "what Cue is doing and how it",
+    );
+  });
+
+  test("anywhere else it still says where it goes", () => {
+    renderBar("/assistant/projects");
+    expect(screen.getByLabelText("Talk to Cue (hold for voice)")).toBeDefined();
   });
 });
 
@@ -146,7 +194,7 @@ describe("the pulse", () => {
 });
 
 describe("the badge", () => {
-  test("HQ carries the app's only badge", async () => {
+  test("Today carries the app's only badge", async () => {
     workItems = [
       { id: "wi-1", status: "awaiting_review", projectId: null },
       { id: "wi-2", status: "awaiting_review", projectId: null },

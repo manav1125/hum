@@ -8,10 +8,12 @@
  * tests make that condition fail loudly.
  */
 
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, test } from "bun:test";
 
 import {
-  CUE_NAV,
   MOBILE_TAB_ORDER,
   PRIMARY_NAV,
   SIDEBAR_DESTINATIONS,
@@ -20,6 +22,7 @@ import {
   activePrimaryKey,
   primaryDestination,
   readWorkView,
+  tabLabel,
   type PrimaryNavKey,
   type WorkView,
 } from "./nav-model";
@@ -56,6 +59,16 @@ describe("the two platforms agree", () => {
       "Talk to Cue",
       "Work",
     ]);
+  });
+
+  test("the phone's shorter labels are declared, not computed at the call site", () => {
+    // v24's final frames print `Today` under the phone's first glyph and the
+    // mark's label is `Cue`; the rail keeps `HQ` and `Talk to Cue`, which are
+    // the words a wide row has space for. One declaration either way — the
+    // tab bar used to carry an inline ternary nobody could read from here.
+    expect(MOBILE_TAB_ORDER.map((k) => tabLabel(primaryDestination(k)))).toEqual(
+      ["Today", "Cue", "Work"],
+    );
   });
 });
 
@@ -105,15 +118,19 @@ describe("what each destination claims", () => {
   });
 });
 
-describe("Work's two views are views, not destinations", () => {
+describe("Work's views are views, not destinations", () => {
   test("both views live on the ONE Work path", () => {
     for (const view of WORK_VIEWS) {
       expect(view.to.startsWith(routes.projects)).toBe(true);
     }
   });
 
-  test("Things and Everything, in that order", () => {
-    expect(WORK_VIEWS.map((v) => v.key)).toEqual(["things", "everything"]);
+  test("Things, Everything and Library, in that order", () => {
+    expect(WORK_VIEWS.map((v) => v.key)).toEqual([
+      "things",
+      "everything",
+      "library",
+    ]);
   });
 
   test("both views light the Work tab — switching view never changes tab", () => {
@@ -139,6 +156,15 @@ describe("Work's two views are views, not destinations", () => {
     expect(readWorkView(new URLSearchParams("view=everything"))).toBe(
       "everything",
     );
+  });
+
+  test("every view is readable back off its own URL", () => {
+    // A view that exists in the segmented control but not in the parser is a
+    // segment that renders the WRONG page — silently, and only for that one.
+    // The parser is derived from this list for exactly that reason.
+    for (const view of WORK_VIEWS) {
+      expect(readWorkView(view.to.slice(view.to.indexOf("?")))).toBe(view.key);
+    }
   });
 });
 
@@ -266,25 +292,48 @@ describe("Your Cue is the one door", () => {
   });
 });
 
-describe("CUE_NAV survives only for the phone's ◍ menu", () => {
-  // Deliberately unchanged: `mobile-v3/overflow-menu.tsx` renders it and the
-  // phone follows the v3 native spec, which this round did not review.
-  // Restructuring it here would have silently redesigned a surface nobody
-  // looked at.
-  test("still the six the phone's menu expects", () => {
-    expect(CUE_NAV.map((d) => d.label)).toEqual([
-      "Agents",
-      "Skills",
-      "Rhythms",
-      "Memory",
-      "Library",
-      "Watching",
-    ]);
-  });
-
-  test("its unbuilt row still admits it rather than pointing at a lookalike", () => {
-    const watching = CUE_NAV.find((d) => d.key === "watching");
-    expect(watching?.to).toBeNull();
-    expect(watching?.unavailableReason?.length).toBeGreaterThan(0);
+describe("CUE_NAV is gone, and stays gone", () => {
+  /**
+   * The retired desktop model (Agents · Skills · Rhythms · Memory · Library ·
+   * Watching). Its own docstring asked to be deleted "when the phone's ◍ menu
+   * is next revisited" — v23 C6 revisited it, so this is that.
+   *
+   * The test is a grep rather than a type check on purpose: TypeScript can
+   * only tell you the symbol is missing from the files that import it, and the
+   * whole failure mode here was a constant nobody imported *on desktop* while
+   * one phone file kept it alive for two rounds.
+   */
+  test("no source file mentions it", () => {
+    const root = join(import.meta.dir, "..", "..");
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir)) {
+        if (entry === "node_modules" || entry === "generated") continue;
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/\.(ts|tsx)$/.test(entry)) continue;
+        // This file names it in prose, which is the point of the test.
+        if (full.endsWith("nav-model.test.ts")) continue;
+        // Comments are stripped first: the name survives in prose that
+        // explains the deletion, and a docstring is not a reader.
+        const code = readFileSync(full, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/[^\n]*/g, "");
+        if (code.includes("CUE_NAV")) {
+          hits.push(full.replace(root, ""));
+        }
+      }
+    };
+    walk(root);
+    expect(
+      hits,
+      `CUE_NAV is the retired desktop nav model. Read \`your-cue-model.ts\`
+(configuration leaves) or \`SIDEBAR_DESTINATIONS\` (what accumulates)
+instead.\n${hits.join("\n")}`,
+    ).toEqual([]);
   });
 });
+

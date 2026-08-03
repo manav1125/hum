@@ -117,16 +117,18 @@ export const routes = {
   projects: r("/assistant/projects"),
   project: (id: string) => dyn(r("/assistant/projects"), id),
   /**
-   * Work's two views. `Things` (containers) and `Everything` (the flat
-   * ledger) are two views of ONE destination — the ledger stopped being its
-   * own place in v11, because having both the tab and the ledger answer to
-   * the word "work" was the second collision that word caused in a week.
+   * Work's three views. `Things` (containers), `Everything` (the flat ledger)
+   * and `Library` (what Cue made) are views of ONE destination — the ledger
+   * stopped being its own place in v11, because having both the tab and the
+   * ledger answer to the word "work" was the second collision that word caused
+   * in a week; Library joined them in v23, because the phone's tab bar is
+   * three slots and full, and Library *is* work output.
    *
    * This deliberately returns a query on `routes.projects` rather than a
    * second path: a view is not a destination, and this codebase has already
    * had to clean up duplicate nav once.
    */
-  workView: (view: "things" | "everything") =>
+  workView: (view: "things" | "everything" | "library") =>
     `${r("/assistant/projects")}?view=${view}`,
   /**
    * Legacy standalone ledger URL. Now redirects into Work → Everything.
@@ -168,17 +170,48 @@ export const routes = {
   guardrails: r("/assistant/guardrails"),
   trust: r("/assistant/trust"),
   people: r("/assistant/people"),
+  /**
+   * One person (design v24 frame F4). A real URL rather than in-page state so
+   * the phone's swipe-back gesture and the browser's back button are the same
+   * gesture — People lost its tab slot in v23, so every arrival here is
+   * contextual (a name in a task, a search hit) and must be linkable.
+   *
+   * Desktop renders the same `PeoplePage` with this contact preselected in the
+   * master–detail split; there is one People page at one URL family.
+   */
+  person: (contactId: string) => dyn(r("/assistant/people"), contactId),
+  /**
+   * Watching (design v24 frame F5) — every source states what flowed through
+   * it and how much became work, plus the two honesty cards.
+   */
+  watching: r("/assistant/watching"),
+  /**
+   * Weekly review (design v24 frame F3) — the Friday four beats, paged.
+   */
+  weekly: r("/assistant/weekly"),
   voice: r("/assistant/voice"),
   /**
    * **Your Cue** — the door. One URL for "the place I change things", which
    * every configuration surface now lives under and which `/assistant/settings`
    * redirects to.
    *
-   * It is a redirect, not a page: a door with its own landing screen would be
-   * a seventh thing to read before getting to the leaf you came for. It lands
+   * On DESKTOP it is a redirect, not a page: a door with its own landing
+   * screen would be a seventh thing to read before getting to the leaf you
+   * came for, and the rail already renders the leaf column beside it. It lands
    * on Identity, the first leaf of the first group.
+   *
+   * On the PHONE there is no leaf column, so the same redirect drops you
+   * *inside a single setting with no map*. The phone renders the ⓶ screen here
+   * instead (v24 F2): what Cue is doing now, the two accumulating surfaces,
+   * then the config groups that work on a phone. {@link yourCueAll} is the
+   * full leaf list behind it.
    */
   yourCue: r("/assistant/your-cue"),
+  /**
+   * Every leaf of Your Cue, grouped, as a pushed list (v22 M5) — the phone's
+   * answer to the desktop leaf column. Desktop redirects it to the door.
+   */
+  yourCueAll: r("/assistant/your-cue/all"),
   identity: r("/assistant/identity"),
   /**
    * Agent network — the A2A peering surface (invite, pair, revoke). Split out
@@ -186,8 +219,10 @@ export const routes = {
    * the channel grid: design's "Agent network" is its own leaf because pairing
    * with another agent and connecting Slack are different trust decisions.
    *
-   * `/assistant/channels` still renders on mobile as the whole v3 "You" hub,
-   * so that route is unchanged — this is an addition, not a move.
+   * `/assistant/channels` used to render the whole v3 "You" hub on mobile.
+   * That hub is now {@link yourCue} (design R2: one name on both platforms),
+   * and the phone's `/assistant/channels` redirects there so every screen that
+   * shipped with `back={routes.channels}` still lands somewhere real.
    */
   agentNetwork: r("/assistant/agent-network"),
   cueLive: r("/assistant/cue-live"),

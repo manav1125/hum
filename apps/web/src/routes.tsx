@@ -865,6 +865,40 @@ export const routeTree = [
                         },
                       },
                       {
+                        // One person. The SAME page — desktop preselects the
+                        // contact in its split, the phone pushes frame F4 —
+                        // so there is one People surface at one URL family
+                        // rather than a second page with the same name.
+                        path: "people/:contactId",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/people/people-page").then(
+                              (m) => m.PeoplePage,
+                            ),
+                        },
+                      },
+                      {
+                        // Watching (v24 F5) — what each source sent through
+                        // and how much of it became work.
+                        path: "watching",
+                        lazy: {
+                          Component: () =>
+                            import("@/mobile-v3/watching/mv3-watching-page").then(
+                              (m) => m.Mv3WatchingPage,
+                            ),
+                        },
+                      },
+                      {
+                        // Weekly review (v24 F3) — the Friday four beats.
+                        path: "weekly",
+                        lazy: {
+                          Component: () =>
+                            import("@/mobile-v3/weekly/mv3-weekly-page").then(
+                              (m) => m.Mv3WeeklyPage,
+                            ),
+                        },
+                      },
+                      {
                         path: "voice",
                         lazy: {
                           Component: () =>
@@ -887,11 +921,36 @@ export const routeTree = [
                         },
                         children: [
                           {
-                            // The door. A redirect rather than a landing page:
+                            // The door.
+                            //
+                            // DESKTOP: a redirect rather than a landing page —
                             // a screen you must read before reaching the leaf
-                            // you came for is a toll, not a home.
+                            // you came for is a toll, not a home, and the rail
+                            // renders the leaf column beside it anyway.
+                            //
+                            // PHONE: there is no column, so that same redirect
+                            // drops you inside one setting with no map. The
+                            // phone gets the ⓶ screen (v24 F2) here instead —
+                            // what Cue is doing, then how it is set up. Both
+                            // branches live in `YourCueDoor`.
                             path: "your-cue",
-                            element: <Navigate to={routes.identity} replace />,
+                            lazy: {
+                              Component: () =>
+                                import("@/mobile-v3/you/your-cue-door").then(
+                                  (m) => m.YourCueDoor,
+                                ),
+                            },
+                          },
+                          {
+                            // Every leaf, grouped, as a pushed list (v22 M5).
+                            // Phone-only: on desktop the leaf column IS this.
+                            path: "your-cue/all",
+                            lazy: {
+                              Component: () =>
+                                import("@/mobile-v3/you/your-cue-door").then(
+                                  (m) => m.YourCueAllDoor,
+                                ),
+                            },
                           },
                           // ── Settings, absorbed ──────────────────────
                           // Was a separate SidebarShell at the same URLs, with

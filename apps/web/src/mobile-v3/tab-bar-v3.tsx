@@ -1,5 +1,13 @@
 /**
- * TabBarV3 — the phone's primary navigation: `HQ · ◉ · Work`.
+ * TabBarV3 — the phone's primary navigation: `◈ Today · ◉ · ▤ Work`.
+ *
+ * **Three is the ceiling and it is full.** v22 shipped a fourth slot (People);
+ * v23 took it back, and the argument was about the mark rather than about
+ * counting: *"with four slots the mark sits at position 2 of 4 — off-centre,
+ * which reads as an accident. The raised centre button only works when it IS
+ * the centre."* People moved to the ⓶ surfaces plus contextual entry from
+ * every name in the app; Library became Work's third view. A new destination
+ * displaces one or becomes a view inside an existing tab. Never a fourth tab.
  *
  * Three slots, down from five (`Today · Projects · + · Voice · You`). The cut
  * took three passes and the reasoning is the load-bearing part:
@@ -17,12 +25,13 @@
  * Everything else moved by frequency of use, not by importance:
  *   · Voice — a mode, not a place. Long-press ◉ here; a mic in the composer
  *     is the primary affordance (that half lives in the chat composer).
- *   · Past conversations — ☰, top-left (`Mv3OverflowMenu`).
- *   · Trust / brand / connections / data / settings — avatar, top-right.
+ *   · Search and batch capture — ☰, top-left (`Mv3OverflowMenu`).
+ *   · People, conversations and Your Cue — the avatar, top-right.
+ *   · Config — the ⓶ screen, one press of the mark from home.
  * Two of the old five slots went to things touched weekly or less, which is
  * precisely what was squeezing the actual work.
  *
- * HQ carries the only badge in the app.
+ * Today carries the only badge in the app.
  *
  * The three destinations come from `@/components/nav/nav-model`, shared with
  * the desktop sidebar — v11's finding was that the two platforms had quietly
@@ -44,7 +53,9 @@ import { useLocation, useNavigate } from "react-router";
 
 import {
   MOBILE_TAB_ORDER,
+  YOUR_CUE_DOOR,
   primaryDestination,
+  tabLabel,
   type PrimaryDestination,
 } from "@/components/nav/nav-model";
 import { useNavCounts } from "@/components/nav/use-nav-counts";
@@ -165,7 +176,7 @@ function TabItem({
               height: 15,
               padding: "0 4px",
               borderRadius: 8,
-              background: "var(--mv3-accent)",
+              background: "var(--mv3-accent-on-fill)",
               color: "#fff",
               fontSize: 9,
               fontWeight: 700,
@@ -184,18 +195,28 @@ function TabItem({
           color: active ? "var(--mv3-micro)" : "var(--mv3-text)",
         }}
       >
-        {destination.label === "Talk to Cue" ? "Cue" : destination.label}
+        {tabLabel(destination)}
       </span>
     </button>
   );
 }
 
 /**
- * The centre mark — home tab, working-indicator and voice shortcut in one.
+ * The centre mark — home tab, working-indicator, config door and voice
+ * shortcut in one.
  *
- * Tap  → the conversation surface (`/assistant` resumes the last thread).
- * Hold → Voice. Voice stopped being a tab because it is a mode, not a place;
- *        this keeps it one gesture away from the thumb's home position.
+ * Tap          → the conversation surface (`/assistant` resumes the last
+ *                thread).
+ * Tap at home  → the ⓶ screen (v24 F2): what Cue is doing, and how it is set
+ *                up. This is the brief's *"You / config → the ⓶ screen (press
+ *                the mark when already home)"*, and it is what pays for the
+ *                third tab slot the config door no longer occupies.
+ * Hold         → Voice. Voice stopped being a tab because it is a mode, not a
+ *                place; this keeps it one gesture away from the thumb's home.
+ *
+ * A tap at home used to be a no-op — a navigation to the route you were
+ * already on. That is the shape design rejected in v9: *"asked 'what does the
+ * C point to?', the answer was nothing."*
  *
  * `pulsing` is driven by real running work items — never by "something might
  * be happening". A pulse that lies is worse than no pulse.
@@ -209,7 +230,13 @@ function MarkTab({
 }) {
   const navigate = useNavigate();
   const destination = primaryDestination("talk");
-  const active = destination.match(pathname);
+  const atHome = destination.match(pathname);
+  // The mark stays lit across the whole ⓶ stack — the screen it opens and
+  // every leaf pushed from it. Without this the bar renders three dim tabs on
+  // Your Cue, which is the "nothing is selected" state the phone shipped for
+  // days on a different surface.
+  const inCueStack = YOUR_CUE_DOOR.match(pathname);
+  const active = atHome || inCueStack;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firedLongPress = useRef(false);
 
@@ -233,7 +260,11 @@ function MarkTab({
   return (
     <button
       type="button"
-      aria-label={`${destination.label} (hold for voice)`}
+      aria-label={
+        atHome
+          ? "Your Cue — what Cue is doing and how it's set up (hold for voice)"
+          : `${destination.label} (hold for voice)`
+      }
       aria-current={active ? "page" : undefined}
       className="cue-pressable"
       onPointerDown={onPressStart}
@@ -248,29 +279,34 @@ function MarkTab({
           return;
         }
         haptic.light();
-        navigate(destination.to);
+        // Already home → the ⓶ screen. Anywhere else → home.
+        navigate(active ? routes.yourCue : destination.to);
       }}
       style={{
+        // Raised, filled, and 46px across — the treatment every frame in v22,
+        // v23 and v24 draws. The mark is not a tab that happens to be in the
+        // middle; it is the brand, and the raised centre is the only thing
+        // that makes three slots read as deliberate rather than arbitrary.
+        position: "relative",
+        width: 46,
+        height: 46,
+        flexShrink: 0,
+        marginTop: -14,
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 3,
-        minWidth: 56,
-        minHeight: 44,
         padding: 0,
         border: "none",
         background: "transparent",
         cursor: "pointer",
         WebkitTapHighlightColor: "transparent",
         color: "var(--mv3-text)",
-        opacity: active ? 1 : "var(--mv3-tab-dim)",
-        transition: "opacity .15s ease",
       }}
     >
       <span
         style={{
-          position: "relative",
+          position: "absolute",
+          inset: 0,
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
@@ -309,28 +345,42 @@ function MarkTab({
         ) : null}
         <span
           style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            // `-on-fill` is the ground under white marks. The bright accent
+            // leg belongs to strokes and rings, never under white.
+            background: "var(--mv3-accent-on-fill)",
+            // The ring of background separating the raised mark from the pill
+            // beneath it — the frames draw 3px of the screen colour.
+            border: "3px solid var(--mv3-bg)",
+            boxShadow: "var(--mv3-plus-shadow)",
             display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
             animation: pulsing
               ? "mv3Breathe 2.4s ease-in-out infinite"
               : undefined,
           }}
         >
-          <CueRing
-            size={27}
-            stroke={active ? "var(--mv3-ring-active)" : "currentColor"}
-            strokeWidth={46}
-            dotRadius={34}
-          />
+          <CueRing size={23} stroke="#fff" strokeWidth={48} dotRadius={36} />
         </span>
       </span>
+      {/* The frames give the mark no printed label — it is the brand, raised
+          and filled, which is the iOS convention for a centre action. The name
+          is still announced, and the tab-bar test still reads it, so this is a
+          typographic decision rather than a missing affordance. */}
       <span
         style={{
-          fontSize: 9.5,
-          fontWeight: active ? 600 : 400,
-          color: active ? "var(--mv3-micro)" : "var(--mv3-text)",
+          position: "absolute",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+          clipPath: "inset(50%)",
+          whiteSpace: "nowrap",
         }}
       >
-        Cue
+        {tabLabel(destination)}
       </span>
     </button>
   );

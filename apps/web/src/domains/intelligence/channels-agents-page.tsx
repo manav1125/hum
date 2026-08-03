@@ -15,26 +15,29 @@
  * its own — see `your-cue-model.ts` — because it is per-person channel
  * verification, and that belongs on the person's row in People.
  *
- * On MOBILE this route is the "You" tab of the native shell and renders the
- * mobile-v3 You screen (`Mv3YouPage`, spec frame 9 — trust HQ): the autonomy
- * mode dial, the track-record receipts, and native grouped rows into Memory /
- * Connections / Skills / Agents / Brand kit. Channel setup stays reachable
- * through the Connections screen + the quiet Channels footer link (the
- * `/assistant/contacts` workbench is unchanged). Desktop rendering is
- * untouched.
+ * On MOBILE this route used to render the whole v3 "You" hub, which is why the
+ * phone's Channels leaf never had a screen of its own. Design's R2 gave that
+ * hub its real name and its real URL — Your Cue, at `routes.yourCue` — so this
+ * route now redirects there. The redirect is deliberate rather than a deletion:
+ * a dozen phone screens shipped with `back={routes.channels}` pointing at the
+ * hub, and every one of them still lands somewhere real.
+ *
+ * Per-channel SETUP on a phone is the Connections workbench at
+ * `/assistant/contacts`, which is where the Your Cue leaf list sends the
+ * Channels row (`your-cue-mobile.ts`). Desktop rendering is untouched.
  */
+
+import { Navigate } from "react-router";
 
 import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { ChannelsPage } from "@/domains/intelligence/channels-page";
-import { Mv3YouPage } from "@/mobile-v3/you/you-page";
+import { routes } from "@/utils/routes";
 
 export function ChannelsAgentsPage() {
   const isMobile = useMobileLayout();
 
-  // MOBILE "You" tab — the mobile-v3 trust-HQ screen (spec frame 9). Desktop
-  // path below is left exactly as it was.
   if (isMobile) {
-    return <Mv3YouPage />;
+    return <Navigate to={routes.yourCue} replace />;
   }
 
   // DESKTOP: channels only. The A2A block that used to hang below the channel

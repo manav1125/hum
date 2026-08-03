@@ -1,19 +1,20 @@
 /**
- * The phone's ⓜ menu — the corner that holds everything the three tabs dropped.
+ * The phone's ⓶ menu — the corner that holds what the three tabs dropped.
  *
- * What is actually at risk here is not the pixels, it is agreement. This menu
- * spent a release listing `CUE_NAV`'s six (Agents · Skills · Rhythms · Memory ·
- * Library · Watching) while the desktop rail had already retired that grouping
- * for two destinations and a door — so the two platforms were describing
- * different products from one codebase. The tests below hold the menu to the
- * SHARED model rather than to a hardcoded list of labels, which is the only
- * version of this assertion that cannot go stale the same way.
+ * Two things are at risk here, and neither is pixels.
  *
- * And one navigation fact, because it is the bug that hid the longest: every
- * leaf on the phone's You screen carries `back={routes.channels}`, but until
- * the Your Cue row existed nothing navigated FORWARD there. The mode dial, the
- * track record and thirteen rows were reachable only by backing out of one of
- * their own children.
+ * **Agreement.** This menu spent a release listing `CUE_NAV`'s six (Agents ·
+ * Skills · Rhythms · Memory · Library · Watching) while the desktop rail had
+ * already retired that grouping — so the two platforms described different
+ * products from one codebase. That constant is now deleted, and v23 C6 rules
+ * what stands in its place: People and All conversations under *Accumulating*,
+ * then Agents, Skills and the door to all of Your Cue.
+ *
+ * **Reach.** These rows used to drop from the corner they were tapped in,
+ * which put every one of them inside the top third of an 844px screen. The
+ * brief allows a top-side chevron as an escape; a menu of destinations is not
+ * an escape. Both menus are bottom sheets now, and the test below asserts the
+ * dialog rather than trusting the styling.
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
@@ -22,21 +23,31 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 
-import {
-  SIDEBAR_DESTINATIONS,
-  YOUR_CUE_DOOR,
-} from "@/components/nav/nav-model";
 import { routes } from "@/utils/routes";
 
 const ASSISTANT_ID = "asst-1";
 
 let userName: string | null = "Manav";
 
-const homeQueryActual =
-  await import("@/domains/home/hooks/use-home-state-query");
+const homeQueryActual = await import(
+  "@/domains/home/hooks/use-home-state-query"
+);
 mock.module("@/domains/home/hooks/use-home-state-query", () => ({
   ...homeQueryActual,
   useHomeStateQuery: () => ({ data: { userName } }),
+}));
+
+const conversationQueriesActual = await import("@/hooks/conversation-queries");
+mock.module("@/hooks/conversation-queries", () => ({
+  ...conversationQueriesActual,
+  useConversationListQuery: () => ({
+    conversations: [],
+    isLoading: false,
+    isPending: false,
+    isError: false,
+    error: null,
+    refetch: () => {},
+  }),
 }));
 
 mock.module("@/stores/resolved-assistants-store", () => ({
@@ -75,10 +86,15 @@ function LocationProbe() {
   );
 }
 
-/** Opens the right-hand menu and returns its menuitem labels, in order. */
+/** Opens the right-hand menu and returns its row keys, in render order. */
 function openAccountMenu(): string[] {
-  const button = screen.getByRole("button", { name: /People, Library/i });
-  fireEvent.click(button);
+  fireEvent.click(screen.getByRole("button", { name: /People, conversations/i }));
+  return screen
+    .getAllByRole("menuitem")
+    .map((el) => el.getAttribute("data-menu-key") ?? "");
+}
+
+function rowLabels(): string[] {
   return screen
     .getAllByRole("menuitem")
     .map((el) => el.textContent?.replace(/›/g, "").trim() ?? "");
@@ -89,63 +105,106 @@ afterEach(() => {
   cleanup();
 });
 
-describe("the ⓜ menu agrees with the desktop rail", () => {
-  test("lists every shared sidebar destination, by the model's own label", () => {
+describe("the ⓶ menu's contents match the ruled model", () => {
+  test("People, conversations, then Your Cue's shortcuts — in C6's order", () => {
     renderMenu();
-    const labels = openAccountMenu();
-    for (const destination of SIDEBAR_DESTINATIONS) {
-      expect(labels.some((l) => l.startsWith(destination.label))).toBe(true);
-    }
+    expect(openAccountMenu()).toEqual([
+      "people",
+      "conversations",
+      "agents",
+      "skills",
+      "your-cue",
+      "create",
+      "logs",
+    ]);
   });
 
-  test("names the door exactly what the desktop rail names it", () => {
+  test("People leads — it is what the tab bar stopped being able to say", () => {
+    // v23 took People's tab away and the mitigation was contextual entry plus
+    // this row. If it stops leading, the fallback has been quietly demoted too.
     renderMenu();
-    const labels = openAccountMenu();
-    expect(labels.some((l) => l.startsWith(YOUR_CUE_DOOR.label))).toBe(true);
+    expect(openAccountMenu()[0]).toBe("people");
   });
 
-  test("the destinations come before the door", () => {
+  test("Library is NOT a row here — it is Work's third view", () => {
     renderMenu();
-    const labels = openAccountMenu();
-    const door = labels.findIndex((l) => l.startsWith(YOUR_CUE_DOOR.label));
-    for (const destination of SIDEBAR_DESTINATIONS) {
-      const at = labels.findIndex((l) => l.startsWith(destination.label));
-      expect(at).toBeGreaterThanOrEqual(0);
-      expect(at).toBeLessThan(door);
-    }
+    openAccountMenu();
+    expect(rowLabels().some((l) => l.startsWith("Library"))).toBe(false);
   });
 
-  test("no longer renders the retired CUE group as destinations", () => {
+  test("the retired CUE group is not back as destinations", () => {
     renderMenu();
-    const labels = openAccountMenu();
-    // These are leaves inside Your Cue now — rows on the You screen, one tap
-    // behind the door. A top-level row here is the old information model.
-    for (const retired of ["Agents", "Skills", "Rhythms", "Memory"]) {
-      expect(labels).not.toContain(retired);
+    openAccountMenu();
+    const labels = rowLabels();
+    // Rhythms and Memory are configuration leaves inside Your Cue now. Agents
+    // and Skills survive as the two most-touched shortcuts, which is design's
+    // own list, not a leftover.
+    for (const retired of ["Rhythms", "Memory", "Watching"]) {
+      expect(labels.some((l) => l.startsWith(retired))).toBe(false);
     }
   });
 });
 
-describe("a row that renders is a row that navigates", () => {
-  test("Your Cue lands on the phone's You screen, not the Identity leaf", () => {
+describe("reach — a menu of destinations is not a corner escape", () => {
+  test("it opens as a bottom sheet, not a popover under the button", () => {
     renderMenu();
     openAccountMenu();
-    const door = screen
-      .getAllByRole("menuitem")
-      .find((el) => el.textContent?.startsWith(YOUR_CUE_DOOR.label));
-    expect(door).toBeDefined();
-    fireEvent.click(door!);
-    expect(screen.getByTestId("path").textContent).toBe(routes.channels);
+    expect(screen.getByRole("dialog")).toBeDefined();
   });
 
-  test("People lands on People", () => {
+  test("the sheet can be dismissed without hitting the button again", () => {
+    renderMenu();
+    openAccountMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("menuitem")).toBeNull();
+  });
+});
+
+describe("a row that renders is a row that navigates", () => {
+  test.each([
+    ["people", () => routes.people],
+    ["conversations", () => routes.conversations],
+    ["agents", () => routes.hqAgents],
+    ["skills", () => routes.skills],
+    ["your-cue", () => routes.yourCue],
+    ["logs", () => routes.logs.root],
+  ])("%s lands somewhere real", (key, expected) => {
     renderMenu();
     openAccountMenu();
     const row = screen
       .getAllByRole("menuitem")
-      .find((el) => el.textContent?.startsWith("People"));
+      .find((el) => el.getAttribute("data-menu-key") === key);
+    expect(row).toBeDefined();
     fireEvent.click(row!);
-    expect(screen.getByTestId("path").textContent).toBe(routes.people);
+    expect(screen.getByTestId("path").textContent).toBe(expected());
+  });
+});
+
+describe("the ⓶ screen always has a door", () => {
+  test("the menu reaches it even when the mark cannot", () => {
+    // The spec's entrance is "press the mark when already home". Home resolves
+    // into a conversation, and the conversation surface hides the tab bar — so
+    // that gesture has no mark to press. This row is the door that does exist.
+    renderMenu();
+    openAccountMenu();
+    const row = screen
+      .getAllByRole("menuitem")
+      .find((el) => el.getAttribute("data-menu-key") === "your-cue");
+    fireEvent.click(row!);
+    expect(screen.getByTestId("path").textContent).toBe(routes.yourCue);
+  });
+});
+
+describe("the ☰ corner", () => {
+  test("does not duplicate conversations — that row lives in ⓶", () => {
+    // One destination, one nav path. This codebase has had to remove the same
+    // duplication three times.
+    renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Search and capture" }));
+    const keys = screen
+      .getAllByRole("menuitem")
+      .map((el) => el.getAttribute("data-menu-key"));
+    expect(keys).toEqual(["search", "add-tasks"]);
   });
 });
 
@@ -153,7 +212,7 @@ describe("the button is the owner, honestly", () => {
   test("carries the signed-in user's initial", () => {
     renderMenu();
     expect(
-      screen.getByRole("button", { name: /Manav — People, Library/ }),
+      screen.getByRole("button", { name: /Manav — People, conversations/ }),
     ).toBeDefined();
   });
 
@@ -162,7 +221,7 @@ describe("the button is the owner, honestly", () => {
     renderMenu();
     // Not a letter — a letter would read as an initial Cue does not have.
     const button = screen.getByRole("button", {
-      name: /^You — People, Library/,
+      name: /^You — People, conversations/,
     });
     expect(button.textContent).toBe("☺");
   });

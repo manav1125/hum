@@ -1,69 +1,65 @@
 /**
- * The phone's top chrome — two affordances, one on each side.
+ * The phone's top chrome — two affordances, one on each side, and both of
+ * them open **from the bottom**.
  *
- * When the tab bar went from five slots to three (`HQ · ◉ · Work`), the two
- * slots that were cut held things touched weekly or less. They did not
- * disappear; they moved to the corners, which is where a phone puts what you
- * reach for occasionally:
+ *   ☰ top-left    — search, and batch capture.
+ *   ⓶ top-right   — the owner's initial: what accumulates, then Your Cue.
  *
- *   ☰ top-left    — past conversations, search, batch capture.
- *   ⓜ top-right   — the owner's initial: the two accumulating destinations,
- *                   then the single door to everything you configure.
+ * ## Why a sheet and not a popover
  *
- * ## The right-hand menu is the same model the desktop rail renders
+ * These used to drop a popover from the corner they were tapped in, which put
+ * every row inside the top third of an 844px screen. The brief's reach rule:
+ * *"every primary action sits below 60% of viewport height. Back chevrons and
+ * ⋯ may sit top-side as escapes — provided every screen has swipe-back."* A
+ * button is an escape; a menu of destinations is not. Design drew both of
+ * these as bottom sheets (v22 M2, v23 C6) for exactly that reason, and
+ * `SheetShell` already is that grammar — grabber, scrim, swipe-to-dismiss.
  *
- * It used to list `CUE_NAV`'s six (Agents · Skills · Rhythms · Memory ·
- * Library · Watching) as if that were "what Cue is". Desktop retired that
- * grouping: four of the six were configuration rather than destinations, and
- * they are now leaves behind **Your Cue**. The phone kept rendering the old
- * list, so the two platforms had quietly started describing different
- * products — which is worse than either being wrong alone.
+ * ## The ⓶ menu's contents are ruled, not chosen
  *
- * The menu now mirrors the shipped model exactly:
+ * It spent a release listing `CUE_NAV`'s six (Agents · Skills · Rhythms ·
+ * Memory · Library · Watching) as if that were "what Cue is". Desktop retired
+ * that grouping — four of the six were configuration rather than destinations
+ * — and `CUE_NAV` is now **deleted**, its own docstring having asked for that
+ * once this menu was revisited. v23 C6 rules what replaces it:
  *
- *   People · Library      the two rows that accumulate on their own
- *   ─────────
- *   Your Cue              the door — every configuration surface
- *   ─────────
- *   Create · Data & logs  actions, not places
+ *   ACCUMULATING   People · All conversations
+ *   YOUR CUE       Agents · Skills · All of Your Cue
  *
- * Nothing became unreachable. Every row this menu dropped (Agents, Skills,
- * Automations, Memory, Connections, Brand kit, Explore, Trust, Appearance,
- * Notifications, Settings) is a row on the You screen, one tap behind
- * **Your Cue** — that screen IS the phone's Your Cue, and design's mobile
- * ruling already said this cluster lives behind the avatar, top-right.
+ * **People leads.** It lost its tab when the bar went to three, and design's
+ * mitigation is that contextual entry (a name in a task, a search hit) is the
+ * real path while this row is the fallback. **Library is not here**: it became
+ * Work's third view, and it also has a card on the ⓶ screen.
+ *
+ * Create and Data & logs keep their rows below the hairline. C6 does not draw
+ * them, but it does not withdraw them either, and this branch has already
+ * shipped a screen with no entrance at all — dropping a working door to match
+ * a crop is how that happens.
  *
  * ## Why the button carries an initial
  *
  * "Trust / brand / connections / data / settings → **avatar, top-right**"
- * (BRIEF-FOR-CODE §2). It rendered a `◍` glyph inboard of the true corner,
- * because the HQ/Today header painted its own initial chip in that corner —
- * so the thing that LOOKED like the door was a decorative `<span>` and the
- * live affordance was the anonymous circle beside it. The Today chip is gone
- * (it never navigated); this button took over its position and its initial,
- * which is what the placement note here always said should happen.
- *
- * The initial comes from the signed-in user, never a hardcoded letter — the
- * same `homeState.userName` the You screen reads. With no name on file the
- * button falls back to `☺`, matching the You screen's avatar rather than
- * inventing a plausible letter.
+ * (BRIEF §2). The initial comes from the signed-in user, never a hardcoded
+ * letter; with no name on file it falls back to `☺` rather than inventing a
+ * plausible one.
  *
  * Renders ONLY on the primary surfaces where root-layout hides the legacy
  * chrome — detail screens carry their own ‹ back and ⋯ in the v3 grammar.
  */
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useNavigate } from "react-router";
 
-import {
-  SIDEBAR_DESTINATIONS,
-  YOUR_CUE_DOOR,
-} from "@/components/nav/nav-model";
+import { useConversationListQuery } from "@/hooks/conversation-queries";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { Mv3AddTasksSheet } from "@/pages/projects/mv3-add-tasks-sheet";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
+
+import { microLabel } from "./mv3-kit";
+import { SheetShell } from "./sheet-shell";
+import { useCueCounts } from "./you/use-cue-counts";
 
 // The Create sheet — lazy so the create catalogs don't ride in every route's
 // bundle; only fetched the first time Create is chosen.
@@ -76,52 +72,94 @@ const CreateSheet = lazy(() =>
 const SAFE_TOP = "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))";
 
 interface MenuEntry {
+  key: string;
   label: string;
-  meta?: string;
-  /** Draw a hairline above this row — separates destinations, door, actions. */
-  startsGroup?: boolean;
+  /** The second line — a real count, or nothing. Never a guess. */
+  sub?: string | null;
+  /** Mono eyebrow printed above this row, starting a group. */
+  group?: string;
+  /** Hairline above this row without an eyebrow (the quiet actions group). */
+  rule?: boolean;
   run: () => void;
 }
 
-/** One corner button + its popover menu. */
-function CornerMenu({
+/** One row of a menu sheet. */
+function MenuRow({ item, onDone }: { item: MenuEntry; onDone: () => void }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className="cue-pressable"
+      data-slot="mv3-menu-row"
+      data-menu-key={item.key}
+      onClick={() => {
+        haptic.light();
+        onDone();
+        item.run();
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        width: "100%",
+        textAlign: "left",
+        background: "transparent",
+        border: "none",
+        borderTop: item.rule ? "1px solid var(--mv3-sheet-border)" : "none",
+        borderRadius: 12,
+        padding: "12px 12px",
+        minHeight: 48,
+        fontFamily: "inherit",
+        cursor: "pointer",
+        WebkitTapHighlightColor: "transparent",
+        color: "var(--mv3-text)",
+      }}
+    >
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, display: "block" }}>
+          {item.label}
+        </span>
+        {item.sub ? (
+          <span
+            style={{
+              fontSize: 10,
+              color: "var(--mv3-muted)",
+              display: "block",
+              marginTop: 1,
+            }}
+          >
+            {item.sub}
+          </span>
+        ) : null}
+      </span>
+      <span aria-hidden style={{ color: "var(--mv3-muted)", flexShrink: 0 }}>
+        ›
+      </span>
+    </button>
+  );
+}
+
+/** The corner button. The sheet it opens is rendered by the caller. */
+function CornerButton({
   side,
   glyph,
   ariaLabel,
-  items,
+  expanded,
+  onPress,
 }: {
   side: "left" | "right";
   glyph: string;
   ariaLabel: string;
-  items: MenuEntry[];
+  expanded: boolean;
+  onPress: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  // Dismiss on outside tap.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    window.addEventListener("pointerdown", onDown);
-    return () => window.removeEventListener("pointerdown", onDown);
-  }, [open]);
-
   return (
     <div
-      ref={rootRef}
       data-mv3
       data-slot={`mv3-corner-${side}`}
       style={{
         position: "fixed",
         top: `calc(${SAFE_TOP} + 8px)`,
-        // Both corners now sit on the same 18px gutter. The right-hand button
-        // used to be inset to 62px to clear Today's decorative initial chip;
-        // that chip is gone (see the module docblock), so the live affordance
-        // takes the corner the spec asks for.
         ...(side === "left" ? { left: 18 } : { right: 18 }),
         zIndex: 45,
         fontFamily: "var(--mv3-font)",
@@ -130,18 +168,19 @@ function CornerMenu({
       <button
         type="button"
         aria-label={ariaLabel}
-        aria-expanded={open}
+        aria-expanded={expanded}
+        aria-haspopup="menu"
         className="cue-pressable"
         onClick={() => {
           haptic.light();
-          setOpen((v) => !v);
+          onPress();
         }}
         style={{
           width: 34,
           height: 34,
           borderRadius: "50%",
-          // The right-hand button inherits Today's avatar material — it IS the
-          // avatar now, so it must not read as a second, weaker chip.
+          // The right-hand button IS the avatar, so it must not read as a
+          // second, weaker chip beside one.
           border:
             side === "right"
               ? "1px solid var(--mv3-avatar-border)"
@@ -165,98 +204,148 @@ function CornerMenu({
       >
         <span aria-hidden>{glyph}</span>
       </button>
-      {open ? (
-        <div
-          role="menu"
-          aria-label={ariaLabel}
-          style={{
-            position: "absolute",
-            top: 40,
-            ...(side === "left" ? { left: 0 } : { right: 0 }),
-            minWidth: 186,
-            background: "var(--mv3-sheet)",
-            border: "1px solid var(--mv3-sheet-border)",
-            borderRadius: 16,
-            padding: 6,
-            backdropFilter: "blur(24px)",
-            WebkitBackdropFilter: "blur(24px)",
-            boxShadow: "var(--mv3-glass-shadow)",
-            animation: "mv3Fade .18s ease both",
-          }}
-        >
-          {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="menuitem"
-              className="cue-pressable"
-              onClick={() => {
-                haptic.light();
-                setOpen(false);
-                item.run();
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                border: "none",
-                // The hairline is the group boundary — destinations, then the
-                // door, then actions. `borderTop` rather than a separate <hr>
-                // so the rule can never drift away from the row it belongs to.
-                borderTop: item.startsGroup
-                  ? "1px solid var(--mv3-sheet-border)"
-                  : "none",
-                borderRadius: 11,
-                padding: "12px 14px",
-                minHeight: 44,
-                fontSize: 14.5,
-                color: "var(--mv3-text)",
-                fontFamily: "inherit",
-                cursor: "pointer",
-                WebkitTapHighlightColor: "transparent",
-              }}
-            >
-              <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
-              {item.meta ? (
-                <>
-                  <span
-                    style={{
-                      fontSize: 12.5,
-                      color: "var(--mv3-muted)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {item.meta}
-                  </span>
-                  <span
-                    aria-hidden
-                    style={{ color: "var(--mv3-faint)", flexShrink: 0 }}
-                  >
-                    ›
-                  </span>
-                </>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
 
-export function Mv3OverflowMenu() {
+/** A grouped sheet of menu rows. */
+function MenuSheet({
+  open,
+  onClose,
+  label,
+  items,
+}: {
+  open: boolean;
+  onClose: () => void;
+  label: string;
+  items: MenuEntry[];
+}) {
+  return (
+    <SheetShell open={open} onClose={onClose} label={label} maxHeight="72%">
+      <div role="menu" aria-label={label}>
+        {items.map((item) => (
+          <div key={item.key}>
+            {item.group ? (
+              <div
+                style={{
+                  ...microLabel,
+                  fontSize: 8.5,
+                  letterSpacing: ".12em",
+                  color: "var(--mv3-micro)",
+                  padding: "10px 4px 6px",
+                }}
+              >
+                {item.group}
+              </div>
+            ) : null}
+            <MenuRow item={item} onDone={onClose} />
+          </div>
+        ))}
+      </div>
+    </SheetShell>
+  );
+}
+
+/**
+ * The ⓶ sheet's rows. A separate component so its queries only run once the
+ * sheet is actually open — this chrome mounts on every primary route, and a
+ * menu nobody opened should not be reading the contact list.
+ */
+function AccountSheet({
+  open,
+  onClose,
+  assistantId,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  assistantId: string;
+  onCreate: () => void;
+}) {
   const navigate = useNavigate();
+  const counts = useCueCounts(assistantId);
+  const { conversations } = useConversationListQuery(assistantId);
+
+  const items: MenuEntry[] = [
+    {
+      key: "people",
+      group: "Accumulating",
+      label: "People",
+      // Design's frame reads "214 · 7 going quiet". The going-quiet signal is
+      // not computed anywhere in this codebase yet, and a number invented to
+      // match a frame is the one thing this product may never print.
+      sub: counts.people == null ? null : `${counts.people} known`,
+      run: () => navigate(routes.people),
+    },
+    {
+      key: "conversations",
+      label: "All conversations",
+      sub: conversations.length > 0 ? String(conversations.length) : null,
+      run: () => navigate(routes.conversations),
+    },
+    {
+      key: "agents",
+      group: "Your Cue",
+      label: "Agents",
+      sub: counts.agents == null ? null : `${counts.agents} on staff`,
+      run: () => navigate(routes.hqAgents),
+    },
+    {
+      key: "skills",
+      label: "Skills",
+      sub: counts.skills == null ? null : `${counts.skills} learned`,
+      run: () => navigate(routes.skills),
+    },
+    {
+      // Design's C6 row is "All of Your Cue · 18", i.e. the leaf list, because
+      // in that frame the mark is the ⓶ screen's only door.
+      //
+      // On this build that door does not reliably exist: `/assistant` resolves
+      // into a conversation, and the conversation surface hides the tab bar —
+      // so "press the mark when already home" has no mark to press. Until that
+      // is true, this row lands on the ⓶ SCREEN, which carries its own door to
+      // the full list. A screen whose only entrance is a gesture that cannot
+      // fire is a screen with no entrance, and this branch has shipped one.
+      key: "your-cue",
+      label: "All of Your Cue",
+      sub: "What it's doing, and how it's set up",
+      run: () => navigate(routes.yourCue),
+    },
+    {
+      key: "create",
+      label: "Create",
+      rule: true,
+      run: onCreate,
+    },
+    {
+      key: "logs",
+      label: "Data & logs",
+      run: () => navigate(routes.logs.root),
+    },
+  ];
+
+  return (
+    <MenuSheet
+      open={open}
+      onClose={onClose}
+      label="People, conversations and Your Cue"
+      items={items}
+    />
+  );
+}
+
+export function Mv3OverflowMenu() {
   const toggleCommandPalette = useCommandPaletteStore.use.toggle();
   // These render outside the ActiveAssistantGate, so read the raw store and
   // only offer assistant-scoped rows once one is actually active.
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [addTasksOpen, setAddTasksOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createMounted, setCreateMounted] = useState(false);
-  // The button's initial. Same source as the You screen's avatar — never a
+
+  // The button's initial. Same source as the ⓶ screen's header — never a
   // hardcoded letter, and `☺` (not a plausible-looking initial) when no name
   // is on file.
   const stateQuery = useHomeStateQuery(assistantId ?? null);
@@ -265,68 +354,38 @@ export function Mv3OverflowMenu() {
     null;
   const ownerInitial = (ownerName ?? "").charAt(0).toUpperCase() || "☺";
 
-  // ☰ — what you have already said, and what you want to capture.
+  // ☰ — finding and capturing. Conversations are NOT duplicated here: they
+  // live under Accumulating in the ⓶ sheet, and one destination with two nav
+  // paths is the duplication this codebase keeps having to remove.
   const historyItems: MenuEntry[] = [
     {
-      // The mobile Chats index at /assistant/conversations — routing there
-      // directly (not /assistant, which redirects into the most recent
-      // conversation) is what makes chat history reachable.
-      label: "Past conversations",
-      run: () => navigate(routes.conversations),
+      key: "search",
+      label: "Search",
+      sub: "Anything Cue has read, made or said",
+      run: () => toggleCommandPalette(),
     },
-    { label: "Search", run: () => toggleCommandPalette() },
     ...(assistantId
-      ? [{ label: "Add tasks", run: () => setAddTasksOpen(true) }]
+      ? [
+          {
+            key: "add-tasks",
+            label: "Add tasks",
+            sub: "Paste a list; Cue files each one",
+            run: () => setAddTasksOpen(true),
+          },
+        ]
       : []),
-  ];
-
-  // ⓜ — the two destinations, the door, then the actions.
-  const accountItems: MenuEntry[] = [
-    // The rows that accumulate on their own. Labels come from the shared
-    // model so People cannot be called one thing on a phone and another on a
-    // desktop; only the ORDER and the grouping are the phone's own.
-    ...SIDEBAR_DESTINATIONS.map((d) => ({
-      label: d.label,
-      run: () => navigate(d.to),
-    })),
-    {
-      // The door. The LABEL is `YOUR_CUE_DOOR`'s, so the two platforms can
-      // never disagree about what the settings door is called.
-      //
-      // The DESTINATION is not: `YOUR_CUE_DOOR.to` redirects into the Identity
-      // leaf, which is the right landing for a desktop rail that renders the
-      // leaf column beside it, and the wrong one for a phone that would arrive
-      // inside a single setting with no map. The phone's Your Cue is the v3
-      // You screen at `routes.channels` — the mode dial, the track record and
-      // every leaf as a row — and every one of those leaves already carries
-      // `back={routes.channels}`. This row is what those back arrows were
-      // pointing at: until now nothing on the phone navigated FORWARD to it,
-      // so the whole screen was reachable only by leaving somewhere else.
-      label: YOUR_CUE_DOOR.label,
-      meta: ownerName ?? undefined,
-      startsGroup: true,
-      run: () => navigate(routes.channels),
-    },
-    {
-      label: "Create",
-      startsGroup: true,
-      run: () => {
-        setCreateMounted(true);
-        setCreateOpen(true);
-      },
-    },
-    { label: "Data & logs", run: () => navigate(routes.logs.root) },
   ];
 
   return (
     <>
-      <CornerMenu
+      <CornerButton
         side="left"
         glyph="☰"
-        ariaLabel="Conversations and search"
-        items={historyItems}
+        ariaLabel="Search and capture"
+        expanded={historyOpen}
+        onPress={() => setHistoryOpen((v) => !v)}
       />
-      <CornerMenu
+      <CornerButton
         side="right"
         glyph={ownerInitial}
         // The accessible name says whose workspace and where the button goes.
@@ -334,11 +393,31 @@ export function Mv3OverflowMenu() {
         // screen reader, and `☺` is worse than meaningless.
         ariaLabel={
           ownerName
-            ? `${ownerName} — People, Library and Your Cue`
-            : "You — People, Library and Your Cue"
+            ? `${ownerName} — People, conversations and Your Cue`
+            : "You — People, conversations and Your Cue"
         }
-        items={accountItems}
+        expanded={accountOpen}
+        onPress={() => setAccountOpen((v) => !v)}
       />
+
+      <MenuSheet
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        label="Search and capture"
+        items={historyItems}
+      />
+
+      {assistantId ? (
+        <AccountSheet
+          open={accountOpen}
+          onClose={() => setAccountOpen(false)}
+          assistantId={assistantId}
+          onCreate={() => {
+            setCreateMounted(true);
+            setCreateOpen(true);
+          }}
+        />
+      ) : null}
 
       {/* Batch task capture — the SheetShell portals itself, so mounting it
           here keeps the whole flow inside the global affordances. */}

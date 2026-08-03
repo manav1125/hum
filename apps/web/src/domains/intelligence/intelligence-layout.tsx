@@ -183,6 +183,11 @@ export function IntelligenceLayout() {
     isMobile &&
     (pathname.startsWith(routes.settings.root) ||
       [
+        // The ⓶ screen and the full leaf list behind it. Both carry their own
+        // header (and the ⓶ screen IS the thing a "‹ You" row would point
+        // back at), so the strip standing down is what keeps one navigation
+        // on one screen.
+        routes.yourCue,
         routes.channels,
         routes.memory,
         routes.connectors,

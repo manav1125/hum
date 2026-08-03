@@ -230,8 +230,16 @@ describe("Your Cue absorbed Settings without 404ing a bookmark", () => {
     expect(leafIsNotFound("/assistant/agent-network")).toBe(false);
   });
 
-  test("the Your Cue door lands on Identity, not a landing screen", () => {
-    expect(redirectTarget("/assistant/your-cue")).toBe("/assistant/identity");
+  test("the Your Cue door branches on layout instead of redirecting blindly", () => {
+    // It USED to be a bare `<Navigate to={identity}>`, which is right on
+    // desktop (the leaf column renders beside the door) and wrong on a phone,
+    // where the same redirect drops you inside one setting with no map. Both
+    // branches live in `mobile-v3/you/your-cue-door.tsx`, so the route no
+    // longer declares a redirect target here.
+    expect(redirectTarget("/assistant/your-cue")).toBe(null);
+    expect(leafIsNotFound("/assistant/your-cue")).toBe(false);
+    // The phone's full leaf list is a real route, not a modal with no URL.
+    expect(leafIsNotFound("/assistant/your-cue/all")).toBe(false);
   });
 });
 

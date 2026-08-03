@@ -9,9 +9,17 @@
  * than editorial: both surfaces import {@link PRIMARY_NAV}, so a label or a
  * destination cannot drift on one platform without moving on the other.
  *
- *   Phone   ◈ HQ · ◉ Talk to Cue · ▤ Work        (three tabs, mark centred)
+ *   Phone   ◈ Today · ◉ (the mark) · ▤ Work      (three tabs, mark centred)
  *   Desktop ✎ Talk to Cue · ◈ HQ · ▤ Work        (then conversations, then
- *                                                 the CUE group's six)
+ *                                                 People, Library, Your Cue)
+ *
+ * **Three is the ceiling and it is full.** A fourth destination displaces one
+ * or becomes a view inside an existing tab — the Library precedent, see
+ * {@link WORK_VIEWS}. Design's reason is about the mark rather than about
+ * counting: with four slots the mark sits at position 2 of 4, off-centre,
+ * "which reads as an accident. The raised centre button only works when it IS
+ * the centre." People went to the ⓶ surfaces plus contextual entry from every
+ * name in the app; Library became Work's third view.
  *
  * The ORDER differs by platform on purpose — the phone centres the mark
  * because the centre slot is the thumb's home and the mark is the fastest
@@ -35,6 +43,19 @@ export interface PrimaryDestination {
   key: PrimaryNavKey;
   /** User-facing label. Identical on both platforms — that is the point. */
   label: string;
+  /**
+   * What the PHONE's tab bar prints under the glyph, when that differs.
+   *
+   * Not a licence to drift: the destination, the match and the set stay one
+   * declaration, and this field exists because a 9.5px tab label and a rail
+   * row are different typographic budgets. "Talk to Cue" does not fit under a
+   * 27px mark; v24's final frames print `Today` on the phone where the rail
+   * says `HQ`, because the phone's deck is a day and the rail's is a room.
+   *
+   * It replaces an inline `label === "Talk to Cue" ? "Cue" : label` ternary in
+   * the tab bar — the same drift, just undeclared and unreadable from here.
+   */
+  phoneLabel?: string;
   /** Where the destination lands. */
   to: string;
   /**
@@ -101,10 +122,11 @@ export const PRIMARY_NAV: readonly PrimaryDestination[] = [
   {
     key: "talk",
     label: "Talk to Cue",
+    phoneLabel: "Cue",
     to: routes.assistant,
     match: matchTalk,
   },
-  { key: "hq", label: "HQ", to: routes.hq, match: matchHq },
+  { key: "hq", label: "HQ", phoneLabel: "Today", to: routes.hq, match: matchHq },
   { key: "work", label: "Work", to: routes.projects, match: matchWork },
 ] as const;
 
@@ -126,6 +148,11 @@ export function primaryDestination(key: PrimaryNavKey): PrimaryDestination {
   return found;
 }
 
+/** What the phone prints under a tab glyph. See {@link PrimaryDestination.phoneLabel}. */
+export function tabLabel(destination: PrimaryDestination): string {
+  return destination.phoneLabel ?? destination.label;
+}
+
 /** Which primary destination owns `pathname`, or null when none does. */
 export function activePrimaryKey(pathname: string): PrimaryNavKey | null {
   return PRIMARY_NAV.find((d) => d.match(pathname))?.key ?? null;
@@ -134,18 +161,31 @@ export function activePrimaryKey(pathname: string): PrimaryNavKey | null {
 // --- Work's two views -------------------------------------------------------
 
 /**
- * Work has two views over ONE destination, not two destinations.
+ * Work has three views over ONE destination, not three destinations.
  *
  *   · Things     — the containers. The default.
  *   · Everything — the flat ledger, keeping its filters, search, bulk select
  *                  and the "Not in anything yet" bucket.
+ *   · Library    — what Cue made. Its gallery form, kept whole.
  *
- * Both surfaces were called "work" (the tab and the old "All work" ledger),
- * which is the second naming collision the word caused in a week. The fix is
- * a merge, not another rename: grouping headers in Everything are the same
- * things listed in Things, so the two views are provably the same data.
+ * Both of the first two were called "work" (the tab and the old "All work"
+ * ledger), which is the second naming collision the word caused in a week. The
+ * fix is a merge, not another rename: grouping headers in Everything are the
+ * same things listed in Things, so the two views are provably the same data.
+ *
+ * **Library is the third view, not a fourth destination** (v23 R1). The phone's
+ * tab bar is three slots and full; a new destination either displaces one or
+ * becomes a view inside an existing tab, and Library *is* work output, so it
+ * belongs inside the tab called Work rather than competing with it. Desktop
+ * already read this way (Things · Everything · Files). One segmented control,
+ * no new place.
+ *
+ * The Library ROUTE (`routes.library.root`) is untouched: the desktop rail
+ * still lists it as a Tier-2 destination, and the artefact sheet (v24 F1) opens
+ * over whatever you are doing rather than navigating. This constant is only
+ * about what the Work segmented control offers.
  */
-export type WorkView = "things" | "everything";
+export type WorkView = "things" | "everything" | "library";
 
 export const WORK_VIEWS: readonly {
   key: WorkView;
@@ -154,17 +194,22 @@ export const WORK_VIEWS: readonly {
 }[] = [
   { key: "things", label: "Things", to: routes.workView("things") },
   { key: "everything", label: "Everything", to: routes.workView("everything") },
+  { key: "library", label: "Library", to: routes.workView("library") },
 ] as const;
 
 /**
  * Read the current view off a location's search string. Anything unrecognised
  * (including no param at all) falls back to Things — a bad `?view=` value must
  * land somewhere real, never on a blank screen.
+ *
+ * Derived from {@link WORK_VIEWS} rather than a hand-written union of string
+ * literals, so a view added above cannot be one the parser refuses to read.
  */
 export function readWorkView(search: string | URLSearchParams): WorkView {
   const params =
     typeof search === "string" ? new URLSearchParams(search) : search;
-  return params.get("view") === "everything" ? "everything" : "things";
+  const raw = params.get("view");
+  return WORK_VIEWS.find((v) => v.key === raw)?.key ?? "things";
 }
 
 // --- The accumulating destinations ------------------------------------------
@@ -237,68 +282,6 @@ export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
     label: "Library",
     to: routes.library.root,
     match: (p) => p.includes("/library"),
-  },
-] as const;
-
-// --- The phone's ◍ menu (compatibility) -------------------------------------
-
-export interface CueDestination {
-  key: string;
-  label: string;
-  /** `null` when the surface does not exist. The ◍ menu filters those out. */
-  to: string | null;
-  unavailableReason?: string;
-  match: (pathname: string) => boolean;
-}
-
-/**
- * @deprecated Desktop no longer reads this. The rail's Tier-2 group is now
- * {@link SIDEBAR_DESTINATIONS} (two rows) plus {@link YOUR_CUE_DOOR}, and the
- * four rows that used to live here are leaves inside Your Cue.
- *
- * It survives because `mobile-v3/overflow-menu.tsx` renders it, and the phone
- * follows the v3 NATIVE spec rather than this brief — changing it here would
- * silently restructure a surface this round did not review. Left byte-identical
- * on purpose: when the phone's ◍ menu is next revisited, delete this and read
- * `your-cue-model.ts` instead.
- */
-export const CUE_NAV: readonly CueDestination[] = [
-  {
-    key: "agents",
-    label: "Agents",
-    to: routes.hqAgents,
-    match: (p) => p.includes("/hq/agents"),
-  },
-  {
-    key: "skills",
-    label: "Skills",
-    to: routes.skills,
-    match: (p) => p.includes("/skills") || p.includes("/marketplace"),
-  },
-  {
-    key: "rhythms",
-    label: "Rhythms",
-    to: routes.automations,
-    match: (p) => p.includes("/automations"),
-  },
-  {
-    key: "memory",
-    label: "Memory",
-    to: routes.memory,
-    match: (p) => p.includes("/memory"),
-  },
-  {
-    key: "library",
-    label: "Library",
-    to: routes.library.root,
-    match: (p) => p.includes("/library"),
-  },
-  {
-    key: "watching",
-    label: "Watching",
-    to: null,
-    unavailableReason: "Not built yet — sources live under Skills › Channels",
-    match: () => false,
   },
 ] as const;
 

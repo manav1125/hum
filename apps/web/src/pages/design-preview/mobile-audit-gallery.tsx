@@ -335,6 +335,233 @@ const LONG_EVENTS = Array.from({ length: 24 }, (_, i) => ({
   at: NOW - (40 - i) * MIN,
 }));
 
+const DAY = 24 * 60 * MIN;
+
+/** `?state=people-degraded` drives the extraction-is-learning-nothing path. */
+const PEOPLE_DEGRADED = STATE === "people-degraded";
+
+/**
+ * Four contacts chosen to cover every branch People can take: a rich
+ * relationship, a thin one, a long gap, and someone Cue knows nothing about.
+ * Names and addresses are invented; the `example.com` convention is enforced
+ * by a pre-commit hook.
+ */
+const PREVIEW_CONTACTS = [
+  {
+    id: "c-1",
+    displayName: "Rowan Vale",
+    role: "counsel",
+    contactType: "human",
+    notes: null,
+    interactionCount: 47,
+    lastInteraction: NOW - 2 * 60 * MIN,
+    channels: [],
+  },
+  {
+    id: "c-2",
+    displayName: "Imani Rooke",
+    role: "procurement",
+    contactType: "human",
+    notes: null,
+    interactionCount: 31,
+    lastInteraction: NOW - 2 * DAY,
+    channels: [],
+  },
+  {
+    id: "c-3",
+    displayName: "Sasha Quill",
+    role: "partner",
+    contactType: "human",
+    notes: null,
+    interactionCount: 9,
+    lastInteraction: NOW - 11 * DAY,
+    channels: [],
+  },
+  {
+    id: "c-4",
+    displayName: "Devon Marsh",
+    role: "partnerships",
+    contactType: "human",
+    notes: null,
+    interactionCount: 0,
+    lastInteraction: null,
+    channels: [],
+  },
+];
+
+const CONTACT_MEMORY = [
+  {
+    id: "cm-1",
+    contactId: "c-1",
+    statement: "Handles the redlines",
+    kind: "fact",
+    source: "from_conversation",
+    sourceRef: null,
+    confidence: 0.9,
+    createdAt: NOW - 120 * DAY,
+    lastSeenAt: NOW,
+  },
+  {
+    id: "cm-2",
+    contactId: "c-1",
+    statement: "Replies before 10am, never after 6",
+    kind: "preference",
+    source: "from_conversation",
+    sourceRef: null,
+    confidence: 0.8,
+    createdAt: NOW - 90 * DAY,
+    lastSeenAt: NOW,
+  },
+  {
+    id: "cm-3",
+    contactId: "c-1",
+    statement: "Prefers email over chat for anything contractual",
+    kind: "preference",
+    source: "from_conversation",
+    sourceRef: null,
+    confidence: 0.8,
+    createdAt: NOW - 40 * DAY,
+    lastSeenAt: NOW,
+  },
+];
+
+/** Two rules you told Cue, two things it worked out. */
+const PREVIEW_MEMORY_ITEMS = [
+  {
+    id: "n-1",
+    kind: "behavioral",
+    subject: "meetings",
+    statement: "Never book meetings before 9am",
+    status: "active",
+    confidence: 0.95,
+    importance: 0.8,
+    firstSeenAt: NOW - 50 * DAY,
+    lastSeenAt: NOW,
+    sourceType: "direct",
+    reinforcementCount: 0,
+    accessCount: null,
+    lastUsedAt: null,
+  },
+  {
+    id: "n-2",
+    kind: "procedural",
+    subject: "discounts",
+    statement: "Never discount below 15% without asking",
+    status: "active",
+    confidence: 0.9,
+    importance: 0.9,
+    firstSeenAt: NOW - 30 * DAY,
+    lastSeenAt: NOW,
+    sourceType: "direct",
+    reinforcementCount: 2,
+    accessCount: null,
+    lastUsedAt: null,
+  },
+  {
+    id: "n-3",
+    kind: "semantic",
+    subject: "acme",
+    statement: "Imani decides; Rowan executes",
+    status: "active",
+    confidence: 0.7,
+    importance: 0.6,
+    firstSeenAt: NOW - 2 * DAY,
+    lastSeenAt: NOW,
+    sourceType: "inferred",
+    reinforcementCount: 0,
+    accessCount: null,
+    lastUsedAt: null,
+  },
+  {
+    id: "n-4",
+    kind: "behavioral",
+    subject: "mornings",
+    statement: "You clear the deck between 8 and 9am",
+    status: "active",
+    confidence: 0.8,
+    importance: 0.5,
+    firstSeenAt: NOW - 1 * DAY,
+    lastSeenAt: NOW,
+    sourceType: "observed",
+    reinforcementCount: 0,
+    accessCount: null,
+    lastUsedAt: null,
+  },
+];
+
+/** One healthy source, one healthy source, one that needs reconnecting. */
+const PREVIEW_WATCHERS = [
+  {
+    id: "wa-1",
+    name: "Gmail",
+    providerId: "gmail",
+    enabled: true,
+    pollIntervalMs: 300_000,
+    intakeMode: "all",
+    watermark: null,
+    status: "ok",
+    lastPollAt: NOW - 4 * MIN,
+    lastError: null,
+    configJson: null,
+    credentialService: "gmail",
+    health: "ok",
+  },
+  {
+    id: "wa-2",
+    name: "Google Calendar",
+    providerId: "google-calendar",
+    enabled: true,
+    pollIntervalMs: 600_000,
+    intakeMode: "all",
+    watermark: null,
+    status: "ok",
+    lastPollAt: NOW - 9 * MIN,
+    lastError: null,
+    configJson: null,
+    credentialService: "googlecalendar",
+    health: "ok",
+  },
+  {
+    id: "wa-3",
+    name: "Slack",
+    providerId: "slack",
+    enabled: true,
+    pollIntervalMs: 300_000,
+    intakeMode: "all",
+    watermark: null,
+    status: "error",
+    lastPollAt: NOW - 3 * DAY,
+    lastError: "Provider rejected the connection (HTTP 401) — reconnect to fix",
+    configJson: null,
+    credentialService: "slack",
+    health: "reauth",
+  },
+];
+
+/** 200 rows — the endpoint's hard cap, so the "sample" copy is exercised. */
+const PREVIEW_ARRIVALS = Array.from({ length: 200 }, (_, i) => ({
+  id: `ar-${i}`,
+  channel: i % 3 === 0 ? "watcher:google-calendar" : "watcher:gmail",
+  externalId: `x-${i}`,
+  watcherId: null,
+  eventId: null,
+  title: "An arrival",
+  senderAddress: null,
+  senderName: null,
+  snippet: null,
+  sourceContext: null,
+  disposition: i % 2 === 0 ? "filed" : "surfaced",
+  reason: null,
+  decidedBy: "model",
+  ruleId: null,
+  confidence: null,
+  workItemId: i % 2 === 0 ? null : `wi-${i}`,
+  reversedAt: null,
+  reversedBy: null,
+  createdAt: NOW - i * 60 * MIN,
+  updatedAt: NOW,
+}));
+
 const FIXTURES: [RegExp, () => unknown][] = [
   [
     /\/work-items\/[^/]+\/events$/,
@@ -732,6 +959,185 @@ const FIXTURES: [RegExp, () => unknown][] = [
       },
     ],
   ],
+  // ── handoff-2026-08-03 · People · Memory · Watching · Weekly ──────────
+  // Four contacts covering all four relationship states AND all four
+  // "what Cue has learned" outcomes, because those splits are the whole
+  // point of those screens.
+  [
+    /\/people\/memory\/health$/,
+    () => ({
+      conversationRuns: 40,
+      conversationsIdentified: 12,
+      consecutiveUnidentified: 0,
+      sweeps: 5,
+      lastSweepAt: NOW,
+      lastSweepExamined: 8,
+      lastSweepSaved: 3,
+      consecutiveUnproductiveSweeps: 0,
+      contactsProvisioned: 4,
+      factsWritten: 14,
+      degraded: PEOPLE_DEGRADED,
+      degradedReason: PEOPLE_DEGRADED
+        ? "the extraction budget expired before the model replied"
+        : null,
+    }),
+  ],
+  [/\/contacts\/[^/]+\/memory$/, () => ({ ok: true, memory: [] })],
+  [
+    /\/contacts\/[^/]+\/dossier$/,
+    () => ({
+      ok: true,
+      dossier: {
+        contactId: "c-1",
+        displayName: PREVIEW_CONTACTS[0]!.displayName,
+        contactType: "human",
+        role: "counsel",
+        relationship: {
+          contactId: "c-1",
+          score: 62,
+          tier: "building",
+          lastInteractionAt: NOW - 2 * 60 * MIN,
+          interactionCount: 47,
+          updatedAt: NOW,
+        },
+        memory: CONTACT_MEMORY,
+        reachability: [
+          {
+            channelId: "ch-1",
+            type: "email",
+            address: "rowan@example.com",
+            isPrimary: true,
+            status: "active",
+            reachable: true,
+            lastSeenAt: NOW,
+          },
+        ],
+        interactions: [
+          {
+            kind: "conversation",
+            conversationId: "c-1",
+            channel: "email",
+            title: "Redlines — one open point on term length",
+            at: NOW - 2 * 60 * MIN,
+          },
+        ],
+        interactionsDegraded: false,
+      },
+    }),
+  ],
+  [/\/contacts$/, () => ({ ok: true, contacts: PREVIEW_CONTACTS })],
+  [
+    /\/memory-items$/,
+    () => ({ items: PREVIEW_MEMORY_ITEMS, total: PREVIEW_MEMORY_ITEMS.length }),
+  ],
+  [/\/watchers\/list$/, () => PREVIEW_WATCHERS],
+  [
+    /\/watchers\/providers$/,
+    () => [
+      { id: "gmail", displayName: "Gmail", requiredCredentialService: "gmail" },
+      {
+        id: "google-calendar",
+        displayName: "Google Calendar",
+        requiredCredentialService: "googlecalendar",
+      },
+      { id: "slack", displayName: "Slack", requiredCredentialService: "slack" },
+    ],
+  ],
+  [
+    /\/arrivals\/summary$/,
+    () => ({
+      since: NOW - 7 * DAY,
+      until: NOW,
+      windowHours: 168,
+      arrived: 415,
+      filed: 166,
+      kept: 249,
+      reversed: 0,
+      topFiledReasons: [
+        { reason: "newsletter from a mailing list", count: 88 },
+        { reason: "automated build notification", count: 41 },
+        { reason: "receipt from a no-reply sender", count: 22 },
+      ],
+    }),
+  ],
+  [
+    /\/arrivals\/comprehension\/health$/,
+    () => ({
+      census: {
+        since: NOW - 30 * DAY,
+        total: 70,
+        withDeadline: 12,
+        byStatus: {
+          comprehended: 21,
+          low_confidence: 15,
+          failed: 27,
+          skipped: 7,
+        },
+      },
+      lastBatchAt: NOW - 20 * MIN,
+      lastBatchCandidates: 6,
+      lastBatchComprehended: 1,
+      consecutiveUnproductiveBatches: 2,
+      unproductiveWarnAt: 5,
+      totalBatches: 718,
+      totalComprehended: 21,
+    }),
+  ],
+  [/\/arrivals$/, () => ({ arrivals: PREVIEW_ARRIVALS })],
+  [
+    /\/connector-apps$/,
+    () => ({
+      configured: true,
+      source: "composio",
+      apps: [
+        { slug: "gmail", name: "Gmail", category: "email", connected: true },
+        {
+          slug: "googlecalendar",
+          name: "Google Calendar",
+          category: "calendar",
+          connected: true,
+        },
+        { slug: "notion", name: "Notion", category: "docs", connected: true },
+        {
+          slug: "googledrive",
+          name: "Google Drive",
+          category: "docs",
+          connected: true,
+        },
+      ],
+    }),
+  ],
+  [/\/acts\/summary$/, () => ({ acts: 61, reversed: 2, estMinutesSaved: 420, byAgent: [] })],
+  [
+    /\/usage\/totals$/,
+    () => ({
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalCacheReadTokens: 0,
+      totalEstimatedCostUsd: 18.4,
+      eventCount: 1218,
+      pricedEventCount: 1218,
+      unpricedEventCount: 0,
+    }),
+  ],
+  [
+    /\/ledger\/autonomy$/,
+    () => ({
+      entries: [],
+      summary: {
+        total: 9,
+        executed: 8,
+        parked: 1,
+        denied: 0,
+        failed: 0,
+        executedUnattended: 3,
+        executedWithoutApproval: 2,
+        byClass: [],
+      },
+      window: { days: 7, from: NOW - 7 * DAY },
+    }),
+  ],
   [
     /\/brief\/morning$/,
     () => ({
@@ -843,8 +1249,8 @@ const Mv3AllWork = lazy(() =>
     default: m.Mv3AllWork,
   })),
 );
-const Mv3YouPage = lazy(() =>
-  import("@/mobile-v3/you/you-page").then((m) => ({ default: m.Mv3YouPage })),
+const Mv3CueScreen = lazy(() =>
+  import("@/mobile-v3/you/cue-screen").then((m) => ({ default: m.Mv3CueScreen })),
 );
 const Mv3AgentsPage = lazy(() =>
   import("@/mobile-v3/you/agents-page").then((m) => ({
@@ -877,8 +1283,29 @@ const Mv3RulesPage = lazy(() =>
   })),
 );
 const Mv3MemoryPage = lazy(() =>
-  import("@/mobile-v3/you/memory-page").then((m) => ({
-    default: m.Mv3MemoryPage,
+  import("@/mobile-v3/memory/mv3-memory-page-v24").then((m) => ({
+    default: m.Mv3MemoryV24Page,
+  })),
+);
+// v22 M3 / v24 F4 · F5 · F3 — the handoff-2026-08-03 screens.
+const Mv3PeoplePage = lazy(() =>
+  import("@/mobile-v3/people/mv3-people-page").then((m) => ({
+    default: m.Mv3PeoplePage,
+  })),
+);
+const Mv3PersonPage = lazy(() =>
+  import("@/mobile-v3/people/mv3-person-page").then((m) => ({
+    default: m.Mv3PersonPage,
+  })),
+);
+const Mv3WatchingPage = lazy(() =>
+  import("@/mobile-v3/watching/mv3-watching-page").then((m) => ({
+    default: m.Mv3WatchingPage,
+  })),
+);
+const Mv3WeeklyPage = lazy(() =>
+  import("@/mobile-v3/weekly/mv3-weekly-page").then((m) => ({
+    default: m.Mv3WeeklyPage,
   })),
 );
 const Mv3LedgerPage = lazy(() =>
@@ -1119,11 +1546,13 @@ const SCREENS: Screen[] = [
     overflow: true,
   },
   {
-    key: "you",
-    label: "You",
-    entry: "/assistant/channels",
-    route: "/assistant/channels",
-    element: <Mv3YouPage />,
+    // Was "You" at /assistant/channels. Design R2: one name on both
+    // platforms, and the hub moved to its real URL.
+    key: "your-cue",
+    label: "Your Cue",
+    entry: "/assistant/your-cue",
+    route: "/assistant/your-cue",
+    element: <Mv3CueScreen />,
     tabBar: true,
   },
   {
@@ -1176,7 +1605,7 @@ const SCREENS: Screen[] = [
   },
   {
     key: "memory",
-    label: "You › Memory",
+    label: "Memory (v24 F6)",
     entry: "/assistant/memory",
     route: "/assistant/memory",
     element: <Mv3MemoryPage />,
@@ -1205,6 +1634,39 @@ const SCREENS: Screen[] = [
     route: "/assistant/identity",
     element: <Mv3IdentityPage assistantId={ASSISTANT_ID} />,
     tabBar: true,
+  },
+  {
+    key: "people",
+    label: "People (v22 M3)",
+    entry: "/assistant/people",
+    route: "/assistant/people",
+    element: <Mv3PeoplePage />,
+    tabBar: true,
+    overflow: true,
+  },
+  {
+    key: "person",
+    label: "A person (v24 F4)",
+    entry: "/assistant/people/c-1",
+    route: "/assistant/people/:contactId",
+    element: <Mv3PersonPage />,
+    tabBar: true,
+  },
+  {
+    key: "watching",
+    label: "Watching (v24 F5)",
+    entry: "/assistant/watching",
+    route: "/assistant/watching",
+    element: <Mv3WatchingPage />,
+    tabBar: true,
+  },
+  {
+    key: "weekly",
+    label: "Weekly review (v24 F3)",
+    entry: "/assistant/weekly",
+    route: "/assistant/weekly",
+    element: <Mv3WeeklyPage />,
+    tabBar: false,
   },
   {
     key: "organizer",
