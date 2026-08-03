@@ -1,0 +1,864 @@
+/**
+ * Mobile v3 Create — scoped styles.
+ *
+ * Every colour is a `var(--mv3-*)` token from mv3.css. No literal hex appears
+ * after a `color:` here, and no white-text control sits on a bright fill leg —
+ * both are enforced by `mv3-contrast-tokens.test.ts`, which scans this file.
+ *
+ * The v27 mock was drawn against these exact tokens (its dark ground #0B0D13 is
+ * `--mv3-bg`, its muted #9A9AA8 is `--mv3-muted`, its violet button #534AB7 is
+ * `--mv3-violet-on-fill`), so matching the spec and passing the guard are the
+ * same act. The two places the mock and the guard disagree are noted inline.
+ *
+ * Local tokens below cover the two values the mock uses that mv3.css has no name
+ * for. They are declared for both themes so nothing here is dark-only.
+ */
+
+.mv3c {
+  /* A step between --mv3-text and --mv3-muted: label text inside cards that
+     should read clearly but not compete with the value beside it. The mock uses
+     #C9C9D4 on dark for exactly this role. */
+  --mv3c-soft: #4a5462;
+  /* The deck-tile gradient the mock uses for slide thumbnails. */
+  --mv3c-tile-a: #e8e6f5;
+  --mv3c-tile-b: #d5d1ec;
+  /* Dashed placeholder ground for not-yet-rendered structure. */
+  --mv3c-ghost: rgba(0, 0, 0, 0.04);
+  --mv3c-ghost-line: rgba(0, 0, 0, 0.16);
+
+  font-family: var(--mv3-font);
+  color: var(--mv3-text);
+}
+
+[data-theme="dark"] .mv3c,
+[data-theme="velvet"] .mv3c {
+  --mv3c-soft: #c9c9d4;
+  --mv3c-tile-a: #2a2456;
+  --mv3c-tile-b: #0f0d22;
+  --mv3c-ghost: rgba(255, 255, 255, 0.06);
+  --mv3c-ghost-line: rgba(255, 255, 255, 0.14);
+}
+
+/* --------------------------------------------------------------------- */
+/* Detent sheet                                                          */
+/* --------------------------------------------------------------------- */
+
+.mv3c-scrim {
+  position: fixed;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(6, 8, 14, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 60;
+  animation: mv3Fade 0.2s ease both;
+}
+
+.mv3c-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  background: var(--mv3-sheet);
+  border-top: 1px solid var(--mv3-sheet-border);
+  border-radius: 28px 28px 0 0;
+  backdrop-filter: blur(24px);
+  box-shadow: var(--mv3-card-shadow);
+  overflow: hidden;
+  /* Detent changes are a height transition, so the sheet grows from the bottom
+     edge rather than sliding — the content under the finger stays put. */
+  transition: height 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mv3c-sheet[data-dragging="true"] {
+  transition: none;
+}
+
+.mv3c-grabber {
+  width: 40px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--mv3-grabber);
+  margin: 10px auto 8px;
+  flex-shrink: 0;
+}
+
+/* The grab strip is a real target, not just the pill. */
+.mv3c-grabstrip {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  width: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.mv3c-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mv3c-body::-webkit-scrollbar {
+  display: none;
+}
+
+/* --------------------------------------------------------------------- */
+/* Pushed stage                                                          */
+/* --------------------------------------------------------------------- */
+
+.mv3c-stage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  animation: mv3c-push 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes mv3c-push {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mv3c-navrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px 9px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--mv3-line);
+}
+
+.mv3c-back {
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--mv3-micro);
+  padding: 6px 8px 6px 0;
+  cursor: pointer;
+  /* Reach: the chevron is an escape, never the only way out — the stage also
+     accepts a swipe-back drag (use-swipe-back.ts). */
+}
+
+.mv3c-navtitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mv3-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mv3c-navsub {
+  font-size: 10px;
+  color: var(--mv3-muted);
+  margin-top: 1px;
+}
+
+.mv3c-skip {
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--mv3-micro);
+  padding: 6px 0 6px 8px;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------- */
+/* Entry (J1)                                                            */
+/* --------------------------------------------------------------------- */
+
+.mv3c-eyebrow {
+  font-family: var(--mv3-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--mv3-violet-text);
+  text-transform: uppercase;
+}
+
+.mv3c-title {
+  font-family: var(--mv3-font);
+  font-size: 29px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  color: var(--mv3-text);
+  margin: 8px 0 0;
+}
+
+.mv3c-typerow {
+  display: flex;
+  gap: 11px;
+  padding: 0 18px;
+}
+
+.mv3c-typecard {
+  width: 158px;
+  flex-shrink: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid var(--mv3-card-border);
+  background: var(--mv3-card);
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mv3c-typecard[data-lead="true"] {
+  border: 1.5px solid var(--mv3-violet-card-border);
+  box-shadow: var(--mv3-violet-card-shadow);
+}
+
+.mv3c-tile {
+  height: 104px;
+  padding: 13px;
+  background: linear-gradient(155deg, var(--mv3c-tile-a), var(--mv3c-tile-b));
+}
+
+.mv3c-tile-rule {
+  border-radius: 2px;
+  background: var(--mv3-text);
+  opacity: 0.85;
+}
+
+.mv3c-typemeta {
+  padding: 11px 13px;
+}
+
+.mv3c-typename {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mv3-text);
+}
+
+.mv3c-typecount {
+  font-size: 10px;
+  color: var(--mv3-muted);
+  margin-top: 2px;
+}
+
+.mv3c-more {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  background: var(--mv3-chip-bg);
+  border: 1px solid var(--mv3-card-border);
+  border-radius: 14px;
+  padding: 11px 13px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--mv3c-soft);
+  cursor: pointer;
+  text-align: left;
+}
+
+.mv3c-composer {
+  background: var(--mv3-glass);
+  border: 1.5px solid var(--mv3-violet-card-border);
+  border-radius: 19px;
+  padding: 12px 14px;
+}
+
+.mv3c-input {
+  width: 100%;
+  background: none;
+  border: none;
+  outline: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--mv3-text);
+  resize: none;
+  max-height: 108px;
+}
+
+.mv3c-input::placeholder {
+  color: var(--mv3-muted);
+}
+
+/* The send affordance. `--mv3-violet-on-fill` is the ground stop of the violet
+   hue — the one that carries white text at contrast. The mock's #534AB7 IS this
+   token, so spec and guard agree here. */
+.mv3c-send {
+  width: 31px;
+  height: 31px;
+  border-radius: 50%;
+  border: none;
+  background: var(--mv3-violet-on-fill);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.mv3c-send:disabled {
+  /* Never dim the container to express disabled — the recessed ground and the
+     muted glyph carry it, and the label beside it stays at full strength. */
+  background: var(--mv3-btn2-bg);
+  color: var(--mv3-muted);
+  cursor: default;
+}
+
+.mv3c-rescue {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--mv3-muted);
+  text-align: center;
+  margin-top: 10px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.mv3c-rescue span {
+  color: var(--mv3-micro);
+}
+
+/* --------------------------------------------------------------------- */
+/* Gallery (J2)                                                          */
+/* --------------------------------------------------------------------- */
+
+.mv3c-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 11px 18px 0;
+  scrollbar-width: none;
+}
+
+.mv3c-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.mv3c-chip {
+  font-size: 11.5px;
+  color: var(--mv3c-soft);
+  background: var(--mv3-chip-bg);
+  border: 1px solid var(--mv3-card-border);
+  border-radius: 99px;
+  padding: 6px 12px;
+  white-space: nowrap;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mv3c-chip[aria-pressed="true"] {
+  background: var(--mv3-text);
+  color: var(--mv3-bg);
+  font-weight: 600;
+  border-color: transparent;
+}
+
+.mv3c-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  padding: 13px 18px 18px;
+}
+
+.mv3c-card {
+  border-radius: 15px;
+  overflow: hidden;
+  border: 1px solid var(--mv3-card-border);
+  background: var(--mv3-card);
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+
+.mv3c-cardmeta {
+  padding: 9px 11px;
+}
+
+.mv3c-cardname {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mv3-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mv3c-cardsub {
+  font-size: 9.5px;
+  color: var(--mv3-muted);
+  margin-top: 2px;
+}
+
+/* "Blank" sits IN the grid, not below it (rule 6) — same cell size, dashed edge
+   so it reads as an option rather than a fallback. */
+.mv3c-blank {
+  border: 1px dashed var(--mv3c-ghost-line);
+  background: var(--mv3c-ghost);
+  align-items: center;
+  justify-content: center;
+  min-height: 148px;
+  text-align: center;
+  padding: 12px;
+}
+
+.mv3c-blank-glyph {
+  font-size: 17px;
+  color: var(--mv3-micro);
+}
+
+/* --------------------------------------------------------------------- */
+/* Fill (J3)                                                             */
+/* --------------------------------------------------------------------- */
+
+.mv3c-flow {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 13px 18px 0;
+  display: flex;
+  flex-direction: column;
+  /* Bottom-anchored: short flows sit against the footer, not floating at top. */
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.mv3c-flow::-webkit-scrollbar {
+  display: none;
+}
+
+.mv3c-said {
+  align-self: flex-start;
+  max-width: 92%;
+  background: var(--mv3-card);
+  border: 1px solid var(--mv3-card-border);
+  border-radius: 17px 17px 17px 5px;
+  padding: 11px 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mv3-text);
+}
+
+.mv3c-known {
+  align-self: flex-start;
+  width: 92%;
+  background: var(--mv3-chip-bg);
+  border: 1px solid var(--mv3-card-border);
+  border-radius: 14px;
+  padding: 11px 13px;
+}
+
+.mv3c-knownrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.mv3c-tick {
+  color: var(--mv3-green-text);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.mv3c-knownlabel {
+  font-size: 12px;
+  color: var(--mv3c-soft);
+  flex-shrink: 0;
+}
+
+.mv3c-knownvalue {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mv3-text);
+  flex: 1;
+}
+
+.mv3c-origin {
+  font-size: 9.5px;
+  color: var(--mv3-muted);
+  flex-shrink: 0;
+}
+
+.mv3c-ask {
+  align-self: flex-start;
+  width: 92%;
+  background: var(--mv3-violet-card-bg);
+  border: 1px solid var(--mv3-violet-card-border);
+  border-radius: 16px;
+  padding: 12px 13px;
+}
+
+.mv3c-asklabel {
+  font-size: 11px;
+  color: var(--mv3-violet-text);
+  font-weight: 600;
+}
+
+.mv3c-asklabel + .mv3c-asklabel,
+.mv3c-askfield + .mv3c-asklabel {
+  margin-top: 13px;
+}
+
+.mv3c-askfield {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.mv3c-askinput {
+  width: 100%;
+  background: var(--mv3-chip-bg);
+  border: 1px solid var(--mv3-card-border);
+  border-radius: 11px;
+  padding: 10px 11px;
+  margin-top: 7px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--mv3-text);
+  outline: none;
+  resize: none;
+}
+
+.mv3c-askinput::placeholder {
+  color: var(--mv3-muted);
+}
+
+.mv3c-askinput:focus {
+  border-color: var(--mv3-violet-card-border);
+}
+
+.mv3c-optchip {
+  font-size: 12px;
+  color: var(--mv3c-soft);
+  background: var(--mv3-chip-bg);
+  border: 1px solid var(--mv3-card-border);
+  border-radius: 99px;
+  padding: 7px 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mv3c-optchip[aria-pressed="true"] {
+  background: var(--mv3-text);
+  color: var(--mv3-bg);
+  font-weight: 600;
+  border-color: transparent;
+}
+
+.mv3c-footer {
+  flex-shrink: 0;
+  padding: 11px 18px calc(10px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  border-top: 1px solid var(--mv3-line);
+}
+
+/* Primary actions live in the footer — always below 60% of viewport height. */
+.mv3c-primary {
+  width: 100%;
+  background: var(--mv3-violet-on-fill);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  padding: 14px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--mv3-primary-btn-shadow);
+}
+
+.mv3c-primary:disabled {
+  background: var(--mv3-btn2-bg);
+  color: var(--mv3-muted);
+  box-shadow: none;
+  cursor: default;
+}
+
+.mv3c-footnote {
+  font-size: 10.5px;
+  color: var(--mv3-muted);
+  text-align: center;
+  margin-top: 8px;
+}
+
+.mv3c-brandchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--mv3-chip-bg);
+  border: 1px solid var(--mv3-card-border);
+  border-radius: 99px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+  color: var(--mv3c-soft);
+  margin-bottom: 9px;
+}
+
+/* --------------------------------------------------------------------- */
+/* Purpose (J6)                                                          */
+/* --------------------------------------------------------------------- */
+
+.mv3c-purpose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 18px;
+}
+
+.mv3c-purposerow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  background: var(--mv3-chip-bg);
+  border: 1px solid var(--mv3-card-border);
+  border-radius: 16px;
+  padding: 14px 15px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.mv3c-purposename {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--mv3-text);
+}
+
+.mv3c-purposedetail {
+  font-size: 11px;
+  color: var(--mv3-muted);
+  margin-top: 2px;
+}
+
+/* --------------------------------------------------------------------- */
+/* Building (J4) + artefact (J5) — rendered inside a chat thread          */
+/* --------------------------------------------------------------------- */
+
+.mv3c-build {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--mv3-violet-card-border);
+  background: var(--mv3-card);
+}
+
+.mv3c-buildhead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 13px;
+}
+
+.mv3c-buildlabel {
+  font-family: var(--mv3-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--mv3-violet-text);
+  flex: 1;
+}
+
+.mv3c-elapsed {
+  font-size: 10px;
+  color: var(--mv3-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mv3c-bars {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.mv3c-bar {
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--mv3-violet-fill);
+  animation: mv3Bar 1.2s ease-in-out infinite;
+}
+
+.mv3c-skeleton {
+  display: flex;
+  gap: 5px;
+  padding: 0 13px 9px;
+}
+
+/* Structure, drawn as structure. These are never presented as thumbnails of the
+   user's artefact — the caption under them says what they are. */
+.mv3c-skel {
+  flex: 1;
+  height: 34px;
+  border-radius: 5px;
+  border: 1px dashed var(--mv3c-ghost-line);
+  background: var(--mv3c-ghost);
+}
+
+.mv3c-caption {
+  padding: 9px 13px;
+  border-top: 1px solid var(--mv3-line);
+  background: var(--mv3c-ghost);
+}
+
+.mv3c-step {
+  font-size: 11.5px;
+  color: var(--mv3c-soft);
+  line-height: 1.45;
+}
+
+.mv3c-disclaimer {
+  font-size: 10px;
+  color: var(--mv3-muted);
+  margin-top: 3px;
+}
+
+.mv3c-leave {
+  font-size: 11.5px;
+  color: var(--mv3-muted);
+  line-height: 1.5;
+  padding: 8px 2px 0;
+}
+
+.mv3c-artefact {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--mv3-card-border);
+  background: var(--mv3-card);
+}
+
+.mv3c-cover {
+  height: 118px;
+  padding: 14px;
+  position: relative;
+  background: linear-gradient(155deg, var(--mv3c-tile-a), var(--mv3c-tile-b));
+}
+
+.mv3c-measure {
+  position: absolute;
+  bottom: 9px;
+  right: 12px;
+  font-family: var(--mv3-mono);
+  font-size: 9px;
+  color: var(--mv3-text);
+  background: var(--mv3-glass);
+  border-radius: 5px;
+  padding: 3px 7px;
+}
+
+.mv3c-artmeta {
+  padding: 11px 13px;
+}
+
+.mv3c-artname {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mv3-text);
+  flex: 1;
+}
+
+.mv3c-filed {
+  font-size: 10.5px;
+  color: var(--mv3-muted);
+  margin-top: 4px;
+}
+
+.mv3c-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.mv3c-open {
+  flex: 1;
+  background: var(--mv3-text);
+  color: var(--mv3-bg);
+  border: none;
+  border-radius: 11px;
+  padding: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mv3c-secondary {
+  background: var(--mv3-btn2-bg);
+  color: var(--mv3-text);
+  border: 1px solid var(--mv3-btn2-border);
+  border-radius: 11px;
+  padding: 10px 13px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.mv3c-remix {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+
+.mv3c-offer {
+  background: var(--mv3-chip-bg);
+  border: 1px dashed var(--mv3-teal-text);
+  border-radius: 16px;
+  padding: 11px 13px;
+  margin-top: 9px;
+}
+
+.mv3c-offertext {
+  font-size: 12.5px;
+  color: var(--mv3c-soft);
+  line-height: 1.5;
+}
+
+.mv3c-offeryes {
+  font-size: 12px;
+  color: var(--mv3-teal-text);
+  background: var(--mv3-chip-bg);
+  border: 1px solid var(--mv3-teal-text);
+  border-radius: 99px;
+  padding: 7px 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mv3c-empty {
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.mv3c-emptytitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mv3-text);
+}
+
+.mv3c-emptywhy {
+  font-size: 12px;
+  color: var(--mv3-muted);
+  margin-top: 6px;
+  line-height: 1.5;
+}
