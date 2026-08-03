@@ -33,12 +33,28 @@ export interface VisibleViewport {
 // In WKWebView (Capacitor iOS without `@capacitor/keyboard`), the web view
 // frame itself is resized to fit above the keyboard. Both `innerHeight` and
 // `vv.height` shrink together, making `innerHeight - vv.height ≈ 0` even when
-// the keyboard is visible. By comparing against the maximum observed
-// `innerHeight` — which corresponds to the keyboard-dismissed state — keyboard
-// detection works correctly across both runtimes.
+// the keyboard is visible. Comparing against a remembered keyboard-dismissed
+// `innerHeight` makes keyboard detection work across both runtimes.
 //
-// Orientation changes are tracked so the reference resets when the viewport
-// dimensions change due to rotation rather than a keyboard event.
+// WHICH remembered value is the whole difficulty, and it used to be "the
+// largest ever seen", which only ever went UP. That is a guess that cannot be
+// corrected: any event that permanently shrinks the layout viewport — a
+// rotation, a WKWebView frame change, browser chrome appearing — left the
+// reference stale-high, and `referenceInnerHeight - vv.height` then reported a
+// keyboard of 60–120px with no keyboard on screen. Past the 100px threshold
+// `RootLayout` sizes its shell to `visualViewport.height` and adds a matching
+// `paddingTop`, so the app resized itself while the user was only browsing.
+// The mirror-image bug: the orientation reset re-sampled `innerHeight` at the
+// instant of the flip, which can be a keyboard-SHRUNK height, and then the app
+// insisted the keyboard was closed while it was plainly up.
+//
+// The fix is to stop guessing when the answer is knowable. A soft keyboard
+// requires an editable element to be focused — in every runtime, with no
+// exceptions. So while nothing editable holds focus, the reference is simply
+// set to the current `innerHeight`, in BOTH directions; it is only frozen (and
+// allowed to ratchet up, for a rotation mid-typing) while a field is focused
+// and the frame may be keyboard-shrunk. Drift now self-corrects the moment the
+// user taps away, instead of persisting for the life of the page.
 let referenceInnerHeight =
   typeof window !== "undefined" ? window.innerHeight : 0;
 
@@ -53,6 +69,42 @@ function isPortrait(): boolean {
 let lastIsPortrait: boolean = isPortrait();
 
 /**
+ * Whether focus is on something that can raise a soft keyboard.
+ *
+ * This is the fact the reference was guessing at. `readonly` inputs and
+ * non-editing hosts are excluded — they take focus without a keyboard.
+ *
+ * Exported so tests can assert the two states drive different behaviour rather
+ * than reaching into module state.
+ */
+export function isEditableFocused(): boolean {
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  if (tag === "TEXTAREA") return !(el as HTMLTextAreaElement).readOnly;
+  if (tag === "INPUT") {
+    const input = el as HTMLInputElement;
+    // Pickers, checkboxes and buttons focus without raising a keyboard.
+    const noKeyboard = new Set([
+      "button",
+      "checkbox",
+      "color",
+      "file",
+      "hidden",
+      "image",
+      "radio",
+      "range",
+      "reset",
+      "submit",
+    ]);
+    return !input.readOnly && !noKeyboard.has(input.type);
+  }
+  return false;
+}
+
+/**
  * Read the current visual-viewport state.
  *
  * Exported so unit tests can drive the function against a stubbed
@@ -64,18 +116,27 @@ export function readVisibleViewport(): VisibleViewport | null {
   }
   const vv = window.visualViewport;
 
-  // Reset the reference when the device orientation changes — a rotation
-  // legitimately changes the viewport dimensions and would otherwise look
-  // like a keyboard event.
+  // A rotation legitimately changes the viewport dimensions and would
+  // otherwise look like a keyboard event — but only re-sample the reference
+  // if nothing editable holds focus. Rotating mid-typing used to capture the
+  // keyboard-shrunk height as "the height with no keyboard", after which the
+  // app reported the keyboard closed while the user was still typing into it.
   const currentIsPortrait = isPortrait();
+  const typing = isEditableFocused();
   if (currentIsPortrait !== lastIsPortrait) {
     lastIsPortrait = currentIsPortrait;
-    referenceInnerHeight = window.innerHeight;
+    if (!typing) referenceInnerHeight = window.innerHeight;
   }
 
-  // Update the reference whenever the viewport grows (keyboard dismissed,
-  // or first observation after an orientation change that settled).
-  if (window.innerHeight > referenceInnerHeight) {
+  if (!typing) {
+    // Nothing can be covering the viewport, so this IS the reference — take it
+    // downwards as readily as upwards. Only-upwards was the drift that made the
+    // shell resize itself mid-browse.
+    referenceInnerHeight = window.innerHeight;
+  } else if (window.innerHeight > referenceInnerHeight) {
+    // Focused: the frame may be keyboard-shrunk, so never lower the reference.
+    // Growth is still real (a rotation to a taller layout viewport while the
+    // keyboard is up), so it still ratchets.
     referenceInnerHeight = window.innerHeight;
   }
 
