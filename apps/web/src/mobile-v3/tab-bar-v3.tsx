@@ -58,6 +58,8 @@ import {
   tabLabel,
   type PrimaryDestination,
 } from "@/components/nav/nav-model";
+import { useSoftKeyboardOpen } from "@/hooks/use-soft-keyboard-open";
+
 import { useNavCounts } from "@/components/nav/use-nav-counts";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -107,15 +109,21 @@ function WorkGlyph() {
  * Surfaces that own their own bottom dock — the bar hides there so those
  * screens keep rendering edge-to-edge.
  *
- * A conversation (with id) owns its composer dock; the bare chats index
- * (/assistant/conversations) keeps the bar so the list stays inside the
- * primary nav. The Morning Brief is a full-canvas takeover; the pre-app
- * onboarding flow owns its full canvas too.
+ * These are genuine full-canvas takeovers. A conversation is NOT one of them
+ * any more.
+ *
+ * It used to be: `/conversations/` was on this list, so the bar vanished on
+ * the surface you spend most of your day on. That is hidden-while-typing plus
+ * hidden the rest of the time, and v25 · G3 #4 only asks for the first half —
+ * *"returns on dismiss; it's navigation, and you're not navigating."* The cost
+ * was not cosmetic. `/assistant` resolves into a conversation, so with the bar
+ * gone there was no mark to press at home, and the mark is this phone's only
+ * door to Your Cue. A whole destination was unreachable because a route
+ * predicate was standing in for a question about the keyboard.
  */
 function tabBarHidden(pathname: string): boolean {
   return (
     pathname.endsWith("/voice") ||
-    pathname.includes("/conversations/") ||
     pathname.endsWith("/brief") ||
     pathname.includes("/onboarding/")
   );
@@ -393,8 +401,12 @@ export function TabBarV3() {
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const { count: needsYouCount } = useNeedsYouBadge(assistantId ?? null);
   const { agentsWorking } = useNavCounts(assistantId ?? null);
+  const typing = useSoftKeyboardOpen();
 
-  if (tabBarHidden(pathname)) return null;
+  // Hidden while typing, present otherwise. `useSoftKeyboardOpen` fails open —
+  // a viewport it cannot read reports no keyboard — because hiding somebody's
+  // only door on a failure is the wrong direction to fail in.
+  if (typing || tabBarHidden(pathname)) return null;
 
   return (
     <nav

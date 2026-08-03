@@ -134,8 +134,7 @@ describe("active state", () => {
     // v9's floating mark pointed at nothing. This asserts it points somewhere.
     renderBar("/assistant");
     expect(
-      screen
-        .getByLabelText(/hold for voice/).getAttribute("aria-current"),
+      screen.getByLabelText(/hold for voice/).getAttribute("aria-current"),
     ).toBe("page");
   });
 
@@ -210,17 +209,27 @@ describe("the badge", () => {
 });
 
 describe("surfaces that own their own dock", () => {
-  test.each([
-    "/assistant/voice",
-    "/assistant/brief",
-    "/assistant/conversations/abc",
-  ])("%s hides the bar", (pathname) => {
-    renderBar(pathname);
-    expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
-  });
+  test.each(["/assistant/voice", "/assistant/brief"])(
+    "%s hides the bar",
+    (pathname) => {
+      renderBar(pathname);
+      expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
+    },
+  );
 
   test("the bare chats index keeps it", () => {
     renderBar("/assistant/conversations");
+    expect(screen.getByRole("navigation", { name: "Primary" })).toBeDefined();
+  });
+
+  test("a conversation keeps it too — hiding is about the keyboard, not the route", () => {
+    // This asserted the opposite until v25 · G3 #4 was read properly. The
+    // rule is "hides while typing, returns on dismiss"; a route predicate
+    // hides it while typing AND for the rest of the day. Since `/assistant`
+    // resolves into a conversation, that left no mark to press at home — and
+    // the mark is this phone's only door to Your Cue, so a whole destination
+    // was unreachable because a route was standing in for the keyboard.
+    renderBar("/assistant/conversations/abc");
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeDefined();
   });
 });
