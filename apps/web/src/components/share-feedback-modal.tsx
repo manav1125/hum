@@ -1,5 +1,4 @@
 import { Capacitor } from "@capacitor/core";
-import { useMutation } from "@tanstack/react-query";
 import {
   Bug,
   Info,
@@ -28,7 +27,11 @@ import { createPortal } from "react-dom";
 
 import type { ChatDebugEventsApi } from "@/domains/chat/api/debug-api";
 import type { ChatDebugApi } from "@/domains/chat/utils/debug-api";
-import { feedbackCreateMutation } from "@/generated/api/@tanstack/react-query.gen";
+import {
+  buildFeedbackMailto,
+  FEEDBACK_EMAIL,
+  saveBundleToDevice,
+} from "./feedback-delivery";
 import type { ClassificationEnum } from "@/generated/api/types.gen";
 import { logsExportPost } from "@/generated/daemon/sdk.gen";
 import type { LogsExportPostData } from "@/generated/daemon/types.gen";
@@ -542,9 +545,8 @@ export function ShareFeedbackModal({
   const [isDragging, setIsDragging] = useState(false);
   const [includeConversation, setIncludeConversation] = useState(false);
 
-  const mutation = useMutation(feedbackCreateMutation());
   const [isBuildingLogs, setIsBuildingLogs] = useState(false);
-  const isSubmitting = mutation.isPending || isBuildingLogs;
+  const isSubmitting = isBuildingLogs;
 
   const shouldShowEmail = !authEmail;
   const canSend = useMemo(
@@ -568,7 +570,6 @@ export function ShareFeedbackModal({
     setIncludeConversation(false);
     setSubmitError(null);
     setIsBuildingLogs(false);
-    mutation.reset();
     const t = setTimeout(() => {
       if (!authEmail) {
         emailRef.current?.focus();
@@ -686,39 +687,27 @@ export function ShareFeedbackModal({
             getDiagnosticsSnapshot,
           )
         : null;
-      await mutation.mutateAsync({
-        headers: { "Content-Type": null },
-        body: {
-          message: message.trim(),
-          classification: CLASSIFICATION_MAP[selectedReason],
-          email: email.trim(),
-          client: getFeedbackClient(),
-          client_version: import.meta.env.VITE_APP_VERSION ?? undefined,
-          ...(assistantId ? { assistant_id: assistantId } : {}),
-          ...(assistantVersion ? { assistant_version: assistantVersion } : {}),
-          ...(logsFile ? { logs_file: logsFile } : {}),
-          ...(attachments.length ? { attachments } : {}),
-        },
-        bodySerializer: (body) => {
-          const form = new FormData();
-          for (const [key, value] of Object.entries(
-            body as Record<string, unknown>,
-          )) {
-            if (value == null) continue;
-            if (key === "attachments" && Array.isArray(value)) {
-              for (const file of value)
-                form.append("attachments", file as Blob);
-              continue;
-            }
-            if (value instanceof Blob) {
-              form.append(key, value);
-            } else {
-              form.append(key, String(value));
-            }
-          }
-          return form;
-        },
+      // A mailto cannot carry an attachment, so anything the toggles built is
+      // saved to the device and named in the mail body. The alternative —
+      // building a bundle and dropping it — is the shape this whole change
+      // exists to remove.
+      const bundleFilename = logsFile
+        ? saveBundleToDevice(logsFile)
+        : undefined;
+      const extraFilenames = attachments.map((f) => f.name);
+
+      window.location.href = buildFeedbackMailto({
+        message: message.trim(),
+        classification: CLASSIFICATION_MAP[selectedReason],
+        client: getFeedbackClient(),
+        clientVersion: import.meta.env.VITE_APP_VERSION ?? undefined,
+        assistantId: assistantId ?? undefined,
+        assistantVersion: assistantVersion ?? undefined,
+        bundleFilename:
+          bundleFilename ??
+          (extraFilenames.length ? extraFilenames.join(", ") : undefined),
       });
+
       onSubmitted?.();
       onClose();
     } catch (err) {
@@ -965,6 +954,19 @@ export function ShareFeedbackModal({
           )}
         </div>
 
+        {/* The button opens a mail composer; it does not send anything. Saying
+            so is not a disclaimer, it is the difference between this form and
+            the one it replaced, which claimed to have sent reports that
+            reached a 404. And a mailto cannot carry an attachment, so when a
+            bundle exists the reader has to be told they are holding it. */}
+        <p className="mt-4 text-body-small text-[var(--content-secondary)]">
+          This opens your mail app addressed to {FEEDBACK_EMAIL} — nothing is
+          sent until you send it.
+          {includeLogs || includeConversation
+            ? " Cue will save the diagnostics file to your downloads; attach it before sending."
+            : ""}
+        </p>
+
         <div
           className="mt-4 flex items-center justify-end gap-2 border-t pt-4"
           style={{ borderColor: "var(--border-subtle)" }}
@@ -972,7 +974,7 @@ export function ShareFeedbackModal({
           {isSubmitting ? (
             <span className="inline-flex items-center gap-2 text-body-medium-lighter text-[var(--content-secondary)]">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Sending feedback…
+              Preparing your report…
             </span>
           ) : (
             <>
@@ -985,7 +987,7 @@ export function ShareFeedbackModal({
                 onClick={handleSubmit}
                 disabled={!canSend}
               >
-                Submit
+                Open mail
               </Button>
             </>
           )}
