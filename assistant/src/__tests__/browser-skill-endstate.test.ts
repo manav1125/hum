@@ -1,12 +1,35 @@
 /**
- * End-state verification test for the browser CLI-only architecture.
+ * Where browser operations come from, and where they must not come from.
  *
- * Locks the invariants of the CLI-only browser contract so that future
- * changes cannot silently regress any of the architectural guarantees.
+ * This file used to lock a **CLI-only** contract: no `browser_*` tools
+ * anywhere, every operation dispatched through `assistant browser <cmd>`.
+ * That end-state was deliberately abandoned in `9fb8d1de3d` — the model was
+ * never told the CLI existed, so it fell back to `computer_use_*` and clicked
+ * at pixels instead of driving the connected browser. A capability reachable
+ * only through a channel nothing mentions is the same as no capability: the
+ * same defect as a tool named in the prompt but never registered.
+ *
+ * So `browser_*` tools are now registered from the manifest, and the two
+ * assertions that demanded zero of them have been red ever since — a guard
+ * nobody read, which is how it survived the change that invalidated it.
+ *
+ * What is still true, and still worth locking:
+ *
+ * - The tools come from the **manifest**, one per canonical operation. If an
+ *   operation loses its tool it becomes invisible again, silently.
+ * - They must **not** also arrive via skill projection. Loading the browser
+ *   skill emits no tool definitions; two registration paths for one operation
+ *   is how you get a name bound to a stale executor.
+ * - The CLI path still exists and still carries help text, because the skill
+ *   documents it.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 
+const actualLoader = await import("../config/loader.js");
+// Spread the real module: a hand-written factory deletes every export it does
+// not name, process-wide, for every file that runs after this one.
 mock.module("../config/loader.js", () => ({
+  ...actualLoader,
   getConfig: () => ({}),
 }));
 
@@ -33,7 +56,7 @@ afterAll(() => {
   setOverridesForTesting({});
 });
 
-describe("browser CLI-only architecture end-state", () => {
+describe("browser operations reach the model exactly once", () => {
   beforeAll(async () => {
     __resetRegistryForTesting();
     setOverridesForTesting({
@@ -42,20 +65,41 @@ describe("browser CLI-only architecture end-state", () => {
     await initializeTools();
   });
 
-  // ── 1. No browser_* tools in startup payload ─────────────────────
+  // ── 1. Every operation has a tool, or it is invisible ────────────
 
-  test("no browser_* tools are registered at startup", () => {
-    const toolNames = getAllTools().map((t) => t.name);
-    const browserTools = toolNames.filter((n) => n.startsWith("browser_"));
-    expect(browserTools).toHaveLength(0);
+  test("every canonical browser operation is registered as a tool", () => {
+    // The defect this replaces: operations existed, the CLI could run them,
+    // and the model had no way to know. Counting is not enough — name the
+    // missing operation, because "16 not 17" does not say which one went.
+    const registered = new Set(
+      getAllTools()
+        .map((t) => t.name)
+        .filter((n) => n.startsWith("browser_")),
+    );
+    const missing = BROWSER_OPERATION_META.map(
+      (m) => `browser_${m.operation}`,
+    ).filter((name) => !registered.has(name));
+    expect(
+      missing,
+      "A browser operation lost its tool. The model cannot call what is not registered, and it will fall back to clicking pixels with computer_use_* rather than report the gap.",
+    ).toEqual([]);
   });
 
-  test("no browser_* tool definitions at startup", () => {
-    const definitions = getAllToolDefinitions();
-    const browserDefs = definitions.filter((d) =>
-      d.name.startsWith("browser_"),
+  test("browser tool definitions match the registered tools exactly", () => {
+    // Definitions are what the model is shown; tools are what can execute.
+    // A name in one and not the other is a control wired to nothing.
+    const defs = new Set(
+      getAllToolDefinitions()
+        .map((d) => d.name)
+        .filter((n) => n.startsWith("browser_")),
     );
-    expect(browserDefs).toHaveLength(0);
+    const tools = new Set(
+      getAllTools()
+        .map((t) => t.name)
+        .filter((n) => n.startsWith("browser_")),
+    );
+    expect([...defs].sort()).toEqual([...tools].sort());
+    expect(defs.size).toBe(BROWSER_OPERATION_META.length);
   });
 
   // ── 2. Browser skill directory exists with SKILL.md ──────────────

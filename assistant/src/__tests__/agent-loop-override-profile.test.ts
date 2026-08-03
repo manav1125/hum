@@ -286,17 +286,30 @@ mock.module("../providers/inference/connections.js", () => ({
   }),
 }));
 
-mock.module("../config/loader.js", () => ({
-  getConfig: () => ({
-    llm: {
-      default: {
-        provider: "anthropic",
-        model: "claude-opus-4-7",
-        provider_connection: "anthropic-conn",
-      },
+// Spread the real module and fill every nested default through the production
+// path. A hand-listed config is not a smaller config — it is a *different* one,
+// and the keys it omits read as disabled rather than as absent.
+//
+// The multi-turn test below was red for exactly that reason: with only `llm`
+// and `rateLimit` present, the agent loop's own limits came back undefined, the
+// loop stopped after a single send, and a test named "multi-turn" never ran a
+// second turn. It failed while asserting something true. Anything red long
+// enough stops being read, which is how it survived.
+const actualLoader = await import("../config/loader.js");
+const testConfig = actualLoader.applyNestedDefaults({
+  llm: {
+    default: {
+      provider: "anthropic",
+      model: "claude-opus-4-7",
+      provider_connection: "anthropic-conn",
     },
-    rateLimit: { maxRequestsPerMinute: 0 },
-  }),
+  },
+  rateLimit: { maxRequestsPerMinute: 0 },
+});
+
+mock.module("../config/loader.js", () => ({
+  ...actualLoader,
+  getConfig: () => testConfig,
 }));
 
 import { SubagentManager } from "../subagent/manager.js";
