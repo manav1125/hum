@@ -2825,6 +2825,41 @@ paths:
                           reason. null on everything captured any other way (quick-add, chat, voice, mission cycles) and
                           on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which mean
                           'assigned to a project' — a different axis entirely.
+                      valve:
+                        anyOf:
+                          - type: object
+                            properties:
+                              band:
+                                type: string
+                                enum:
+                                  - urgent
+                                  - needs_you
+                                  - everything
+                                description:
+                                  How loudly this item asks for you. Compared against your stop to decide whether it interrupts. An item the
+                                  valve has never sized up reports 'urgent' with ruleId 'unbanded' — being unknown is
+                                  the loudest state, never the quietest.
+                              ruleId:
+                                type: string
+                                description: Which valve rule set the band, e.g. 'automated_sender'
+                              reason:
+                                type: string
+                                description: Why, in your words. Never a code, never a score.
+                              unbanded:
+                                type: boolean
+                                description:
+                                  True when no band was ever stamped and the item is loud by default. Render it as 'not yet sized up', not as
+                                  'urgent' — the two look the same to the valve but mean different things to you.
+                            required:
+                              - band
+                              - ruleId
+                              - reason
+                              - unbanded
+                            additionalProperties: false
+                          - type: "null"
+                        description:
+                          Present on list reads. The valve governs what INTERRUPTS you; it never governs what Cue keeps. An item
+                          below your stop is still here, still queryable, still counted — it is just not on HQ.
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -3626,6 +3661,41 @@ paths:
                           reason. null on everything captured any other way (quick-add, chat, voice, mission cycles) and
                           on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which mean
                           'assigned to a project' — a different axis entirely.
+                      valve:
+                        anyOf:
+                          - type: object
+                            properties:
+                              band:
+                                type: string
+                                enum:
+                                  - urgent
+                                  - needs_you
+                                  - everything
+                                description:
+                                  How loudly this item asks for you. Compared against your stop to decide whether it interrupts. An item the
+                                  valve has never sized up reports 'urgent' with ruleId 'unbanded' — being unknown is
+                                  the loudest state, never the quietest.
+                              ruleId:
+                                type: string
+                                description: Which valve rule set the band, e.g. 'automated_sender'
+                              reason:
+                                type: string
+                                description: Why, in your words. Never a code, never a score.
+                              unbanded:
+                                type: boolean
+                                description:
+                                  True when no band was ever stamped and the item is loud by default. Render it as 'not yet sized up', not as
+                                  'urgent' — the two look the same to the valve but mean different things to you.
+                            required:
+                              - band
+                              - ruleId
+                              - reason
+                              - unbanded
+                            additionalProperties: false
+                          - type: "null"
+                        description:
+                          Present on list reads. The valve governs what INTERRUPTS you; it never governs what Cue keeps. An item
+                          below your stop is still here, still queryable, still counted — it is just not on HQ.
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -22413,6 +22483,651 @@ paths:
               required:
                 - requestId
               additionalProperties: false
+  /v1/hq/valve:
+    get:
+      operationId: hq_valve_get
+      summary: Where the volume valve is set, and what it is holding
+      description:
+        "The valve decides what interrupts you, not what Cue keeps. `held` items are in Work with a reason attached
+        and are one stop-change away from visible — the valve has no delete. Read `unbanded` alongside `shown`: items
+        the valve has never sized up are treated as urgent, so a large `unbanded` means less filtering is happening than
+        `shown` suggests."
+      tags:
+        - hq
+        - valve
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stop:
+                    type: string
+                    enum:
+                      - everything
+                      - needs_you
+                      - only_urgent
+                    description: Where the global valve is set. 'needs_you' is the default.
+                  missionOverrides:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        missionId:
+                          type: string
+                        missionTitle:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        stop:
+                          type: string
+                          enum:
+                            - everything
+                            - needs_you
+                            - only_urgent
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - missionId
+                        - missionTitle
+                        - stop
+                        - updatedAt
+                      additionalProperties: false
+                    description:
+                      Missions with their own stop. An override at 'everything' bumps that mission's work to the top band while
+                      it is live.
+                  shown:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Open work items that interrupt at the current stop
+                  held:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Open work items the valve is holding back. NOT hidden and NOT deleted — they are in Work, and each one
+                      carries the reason it is held. This is the tappable number.
+                  unbanded:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Of `shown`, how many are shown only because the valve has never sized them up. Items with no band are
+                      treated as urgent — that is the fail-open guarantee, so a high number here means the valve is
+                      doing less than it appears to, never more.
+                  bands:
+                    type: object
+                    properties:
+                      urgent:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      needs_you:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      everything:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - urgent
+                      - needs_you
+                      - everything
+                    additionalProperties: false
+                    description: All open work items by band
+                required:
+                  - stop
+                  - missionOverrides
+                  - shown
+                  - held
+                  - unbanded
+                  - bands
+                additionalProperties: false
+      parameters:
+        - name: stop
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - everything
+              - needs_you
+              - only_urgent
+          description: Preview the counts at a different stop without changing anything.
+    put:
+      operationId: hq_valve_put
+      summary: Move the volume valve
+      description:
+        "Set the global stop. Takes effect on the next read with no re-ingestion and no re-judging: the stop is
+        compared against bands that already exist, so moving it back restores exactly what was there. Nothing is filed,
+        archived or deleted as a side effect."
+      tags:
+        - hq
+        - valve
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stop:
+                    type: string
+                    enum:
+                      - everything
+                      - needs_you
+                      - only_urgent
+                    description: Where the global valve is set. 'needs_you' is the default.
+                  missionOverrides:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        missionId:
+                          type: string
+                        missionTitle:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        stop:
+                          type: string
+                          enum:
+                            - everything
+                            - needs_you
+                            - only_urgent
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - missionId
+                        - missionTitle
+                        - stop
+                        - updatedAt
+                      additionalProperties: false
+                    description:
+                      Missions with their own stop. An override at 'everything' bumps that mission's work to the top band while
+                      it is live.
+                  shown:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Open work items that interrupt at the current stop
+                  held:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Open work items the valve is holding back. NOT hidden and NOT deleted — they are in Work, and each one
+                      carries the reason it is held. This is the tappable number.
+                  unbanded:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Of `shown`, how many are shown only because the valve has never sized them up. Items with no band are
+                      treated as urgent — that is the fail-open guarantee, so a high number here means the valve is
+                      doing less than it appears to, never more.
+                  bands:
+                    type: object
+                    properties:
+                      urgent:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      needs_you:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      everything:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - urgent
+                      - needs_you
+                      - everything
+                    additionalProperties: false
+                    description: All open work items by band
+                required:
+                  - stop
+                  - missionOverrides
+                  - shown
+                  - held
+                  - unbanded
+                  - bands
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stop:
+                  type: string
+                  enum:
+                    - everything
+                    - needs_you
+                    - only_urgent
+                  description:
+                    "'everything' = every open item interrupts. 'needs_you' (default) = items Cue could not judge, work that
+                    names you, and anything waiting on you. 'only_urgent' = only what Cue is blocked on, what is due
+                    within a day, and people you know."
+              required:
+                - stop
+              additionalProperties: false
+  /v1/hq/valve/feedback:
+    post:
+      operationId: hq_valve_feedback_post
+      summary: Teach the valve
+      description:
+        "The ✕ / 'not relevant' signal, and its opposite. Two dismissals of the same sender with no intervening
+        action quiets them to the 'everything' stop — quiets, never deletes, and never for a sender whose mail Cue could
+        not judge. One dismissal is deliberately not enough: a single ✕ is as likely to mean 'dealt with it'. Both
+        counts are kept, so saying 'this mattered' about a sender you previously dismissed genuinely undoes it rather
+        than being merely absent."
+      tags:
+        - hq
+        - valve
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taught:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        subjectKind:
+                          type: string
+                        subjectKey:
+                          type: string
+                        dismissed:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        kept:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        lastSignalAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - subjectKind
+                        - subjectKey
+                        - dismissed
+                        - kept
+                        - lastSignalAt
+                      additionalProperties: false
+                required:
+                  - taught
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subjectKind:
+                  type: string
+                  enum:
+                    - sender
+                    - channel
+                    - rule
+                  description: What is being corrected. 'sender' is the learning key.
+                subjectKey:
+                  type: string
+                  minLength: 1
+                  description: The lowercased sender address, channel key or rule id
+                signal:
+                  type: string
+                  enum:
+                    - dismissed
+                    - kept
+                  description:
+                    "'dismissed' = not relevant, quiet this. 'kept' = this mattered, and it counts against any dismissals
+                    already recorded."
+              required:
+                - subjectKind
+                - subjectKey
+                - signal
+              additionalProperties: false
+  /v1/hq/valve/health:
+    get:
+      operationId: hq_valve_health_get
+      summary: Which valve rules actually fire
+      description:
+        "The firing distribution, and — the important half — `neverFired`: rules that exist in code and have never
+        once fired on this instance. A rule that has never fired is unreachable or mis-specified, and reading this list
+        is how you find out before it matters. The previous arrival safety floor in this daemon ran with three of its
+        four conditions dead for weeks because nothing exposed this."
+      tags:
+        - hq
+        - valve
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  windowHours:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  since:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  firings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ruleId:
+                          type: string
+                        band:
+                          type: string
+                        count:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - ruleId
+                        - band
+                        - count
+                      additionalProperties: false
+                    description: How often each rule fired in the window, biggest first
+                  neverFired:
+                    type: array
+                    items:
+                      type: string
+                    description:
+                      Rules that exist in code and have NEVER fired, in the whole history of this instance. A rule here is either
+                      unreachable or mis-specified. This list is the check that a previous safety floor in this daemon
+                      never had.
+                  knownRules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ruleId:
+                          type: string
+                        band:
+                          type: string
+                      required:
+                        - ruleId
+                        - band
+                      additionalProperties: false
+                    description: Every rule the valve can fire, and the band it assigns
+                required:
+                  - windowHours
+                  - since
+                  - firings
+                  - neverFired
+                  - knownRules
+                additionalProperties: false
+      parameters:
+        - name: windowHours
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Window for `firings` (default 168, i.e. one week)
+  /v1/hq/valve/missions/{missionId}:
+    delete:
+      operationId: hq_valve_missions_by_missionId_delete
+      summary: Drop a mission's override
+      description:
+        The mission follows the global stop again. This deletes a preference row and nothing else — no work item is
+        touched.
+      tags:
+        - hq
+        - valve
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stop:
+                    type: string
+                    enum:
+                      - everything
+                      - needs_you
+                      - only_urgent
+                    description: Where the global valve is set. 'needs_you' is the default.
+                  missionOverrides:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        missionId:
+                          type: string
+                        missionTitle:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        stop:
+                          type: string
+                          enum:
+                            - everything
+                            - needs_you
+                            - only_urgent
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - missionId
+                        - missionTitle
+                        - stop
+                        - updatedAt
+                      additionalProperties: false
+                    description:
+                      Missions with their own stop. An override at 'everything' bumps that mission's work to the top band while
+                      it is live.
+                  shown:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Open work items that interrupt at the current stop
+                  held:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Open work items the valve is holding back. NOT hidden and NOT deleted — they are in Work, and each one
+                      carries the reason it is held. This is the tappable number.
+                  unbanded:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Of `shown`, how many are shown only because the valve has never sized them up. Items with no band are
+                      treated as urgent — that is the fail-open guarantee, so a high number here means the valve is
+                      doing less than it appears to, never more.
+                  bands:
+                    type: object
+                    properties:
+                      urgent:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      needs_you:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      everything:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - urgent
+                      - needs_you
+                      - everything
+                    additionalProperties: false
+                    description: All open work items by band
+                required:
+                  - stop
+                  - missionOverrides
+                  - shown
+                  - held
+                  - unbanded
+                  - bands
+                additionalProperties: false
+      parameters:
+        - name: missionId
+          in: path
+          required: true
+          schema:
+            type: string
+    put:
+      operationId: hq_valve_missions_by_missionId_put
+      summary: Turn one mission up while it is live
+      description:
+        Give one mission its own stop. An override at 'everything' lifts that mission's work to the top band, ahead
+        of every quieting rule — so a hot mission's traffic reaches you even from senders you have previously dismissed.
+        The override is a preference, not a change to any item; deleting it restores the global behaviour exactly.
+      tags:
+        - hq
+        - valve
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stop:
+                    type: string
+                    enum:
+                      - everything
+                      - needs_you
+                      - only_urgent
+                    description: Where the global valve is set. 'needs_you' is the default.
+                  missionOverrides:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        missionId:
+                          type: string
+                        missionTitle:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        stop:
+                          type: string
+                          enum:
+                            - everything
+                            - needs_you
+                            - only_urgent
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - missionId
+                        - missionTitle
+                        - stop
+                        - updatedAt
+                      additionalProperties: false
+                    description:
+                      Missions with their own stop. An override at 'everything' bumps that mission's work to the top band while
+                      it is live.
+                  shown:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Open work items that interrupt at the current stop
+                  held:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Open work items the valve is holding back. NOT hidden and NOT deleted — they are in Work, and each one
+                      carries the reason it is held. This is the tappable number.
+                  unbanded:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Of `shown`, how many are shown only because the valve has never sized them up. Items with no band are
+                      treated as urgent — that is the fail-open guarantee, so a high number here means the valve is
+                      doing less than it appears to, never more.
+                  bands:
+                    type: object
+                    properties:
+                      urgent:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      needs_you:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      everything:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - urgent
+                      - needs_you
+                      - everything
+                    additionalProperties: false
+                    description: All open work items by band
+                required:
+                  - stop
+                  - missionOverrides
+                  - shown
+                  - held
+                  - unbanded
+                  - bands
+                additionalProperties: false
+        "404":
+          description: No such mission
+      parameters:
+        - name: missionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stop:
+                  type: string
+                  enum:
+                    - everything
+                    - needs_you
+                    - only_urgent
+              required:
+                - stop
+              additionalProperties: false
   /v1/identity:
     get:
       operationId: identity_get
@@ -35142,6 +35857,41 @@ paths:
                             reason. null on everything captured any other way (quick-add, chat, voice, mission cycles)
                             and on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which
                             mean 'assigned to a project' — a different axis entirely.
+                        valve:
+                          anyOf:
+                            - type: object
+                              properties:
+                                band:
+                                  type: string
+                                  enum:
+                                    - urgent
+                                    - needs_you
+                                    - everything
+                                  description:
+                                    How loudly this item asks for you. Compared against your stop to decide whether it interrupts. An item the
+                                    valve has never sized up reports 'urgent' with ruleId 'unbanded' — being unknown is
+                                    the loudest state, never the quietest.
+                                ruleId:
+                                  type: string
+                                  description: Which valve rule set the band, e.g. 'automated_sender'
+                                reason:
+                                  type: string
+                                  description: Why, in your words. Never a code, never a score.
+                                unbanded:
+                                  type: boolean
+                                  description:
+                                    True when no band was ever stamped and the item is loud by default. Render it as 'not yet sized up', not as
+                                    'urgent' — the two look the same to the valve but mean different things to you.
+                              required:
+                                - band
+                                - ruleId
+                                - reason
+                                - unbanded
+                              additionalProperties: false
+                            - type: "null"
+                          description:
+                            Present on list reads. The valve governs what INTERRUPTS you; it never governs what Cue keeps. An item
+                            below your stop is still here, still queryable, still counted — it is just not on HQ.
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -43257,6 +44007,41 @@ paths:
                             reason. null on everything captured any other way (quick-add, chat, voice, mission cycles)
                             and on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which
                             mean 'assigned to a project' — a different axis entirely.
+                        valve:
+                          anyOf:
+                            - type: object
+                              properties:
+                                band:
+                                  type: string
+                                  enum:
+                                    - urgent
+                                    - needs_you
+                                    - everything
+                                  description:
+                                    How loudly this item asks for you. Compared against your stop to decide whether it interrupts. An item the
+                                    valve has never sized up reports 'urgent' with ruleId 'unbanded' — being unknown is
+                                    the loudest state, never the quietest.
+                                ruleId:
+                                  type: string
+                                  description: Which valve rule set the band, e.g. 'automated_sender'
+                                reason:
+                                  type: string
+                                  description: Why, in your words. Never a code, never a score.
+                                unbanded:
+                                  type: boolean
+                                  description:
+                                    True when no band was ever stamped and the item is loud by default. Render it as 'not yet sized up', not as
+                                    'urgent' — the two look the same to the valve but mean different things to you.
+                              required:
+                                - band
+                                - ruleId
+                                - reason
+                                - unbanded
+                              additionalProperties: false
+                            - type: "null"
+                          description:
+                            Present on list reads. The valve governs what INTERRUPTS you; it never governs what Cue keeps. An item
+                            below your stop is still here, still queryable, still counted — it is just not on HQ.
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -43309,8 +44094,30 @@ paths:
                         - createdAt
                         - updatedAt
                       additionalProperties: false
+                  stop:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                    description: The stop applied, or null when no filtering was requested
+                  held:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      How many items the valve held back. Always 0 when no stop was requested. These are NOT deleted or archived
+                      — GET the same endpoint without `stop` to see them.
+                  unbanded:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Of the returned items, how many are present only because the valve has never sized them up. High means less
+                      filtering is happening than the item count suggests.
                 required:
                   - items
+                  - stop
+                  - held
+                  - unbanded
                 additionalProperties: false
       parameters:
         - name: status
@@ -43353,6 +44160,33 @@ paths:
             'Filter to one lens: "work" (grouped by mission) or "life" (grouped by horizon). Omit for both — a client
             that does not know about lenses sees every item, exactly as before. This is also the privacy switch: "hide
             Life" for a screen-share is ?domain=work.'
+        - name: stop
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - saved
+              - everything
+              - needs_you
+              - only_urgent
+          description:
+            Apply the volume valve at this stop, returning only the items that interrupt. Use "saved" for the stop you
+            have set. OMIT IT and no filtering happens at all — that default is deliberate, so a client that has never
+            heard of the valve, or one written before it existed, keeps seeing every item. `held` reports how many were
+            held back; they are still in Work and a stop-change away.
+        - name: markSeen
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+          description:
+            Set "true" only on the read that actually renders HQ. It records that the shown items reached you, which is
+            what lets already-seen work rest later. A count, a poll or a preview must not burn an item's one guaranteed
+            appearance, so this defaults to false.
     post:
       operationId: workitems_post
       summary: Create a work item
@@ -43623,6 +44457,41 @@ paths:
                           reason. null on everything captured any other way (quick-add, chat, voice, mission cycles) and
                           on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which mean
                           'assigned to a project' — a different axis entirely.
+                      valve:
+                        anyOf:
+                          - type: object
+                            properties:
+                              band:
+                                type: string
+                                enum:
+                                  - urgent
+                                  - needs_you
+                                  - everything
+                                description:
+                                  How loudly this item asks for you. Compared against your stop to decide whether it interrupts. An item the
+                                  valve has never sized up reports 'urgent' with ruleId 'unbanded' — being unknown is
+                                  the loudest state, never the quietest.
+                              ruleId:
+                                type: string
+                                description: Which valve rule set the band, e.g. 'automated_sender'
+                              reason:
+                                type: string
+                                description: Why, in your words. Never a code, never a score.
+                              unbanded:
+                                type: boolean
+                                description:
+                                  True when no band was ever stamped and the item is loud by default. Render it as 'not yet sized up', not as
+                                  'urgent' — the two look the same to the valve but mean different things to you.
+                            required:
+                              - band
+                              - ruleId
+                              - reason
+                              - unbanded
+                            additionalProperties: false
+                          - type: "null"
+                        description:
+                          Present on list reads. The valve governs what INTERRUPTS you; it never governs what Cue keeps. An item
+                          below your stop is still here, still queryable, still counted — it is just not on HQ.
                       createdAt:
                         type: integer
                         minimum: -9007199254740991

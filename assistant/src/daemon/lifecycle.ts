@@ -100,6 +100,7 @@ import {
 } from "../util/platform.js";
 import { APP_VERSION } from "../version.js";
 import { seedDefaultAgentRoster } from "../work-items/default-roster-seed.js";
+import { startValveArchiveSweeper } from "../valve/valve-archive-sweep.js";
 import { startWorkItemAutoFiler } from "../work-items/work-item-auto-file.js";
 import { startWorkItemQueueDrainer } from "../work-items/work-item-queue-drainer.js";
 import { recoverOrphanedWorkItemRuns } from "../work-items/work-item-recovery.js";
@@ -708,6 +709,20 @@ export async function runDaemon(): Promise<void> {
         log.warn(
           { err },
           "Work-item auto-filer failed to start — continuing startup",
+        );
+      }
+
+      // The volume valve's rest sweep: moves work the valve positively
+      // demoted, and has not changed in 48h, into the archive. Archive is a
+      // status and not a delete — the item keeps its arrival, its band and
+      // its reason, and reopens like any other archived item. Config:
+      // valve.autoArchive.* (re-read every sweep).
+      try {
+        startValveArchiveSweeper();
+      } catch (err) {
+        log.warn(
+          { err },
+          "Valve archive sweeper failed to start — continuing startup",
         );
       }
 

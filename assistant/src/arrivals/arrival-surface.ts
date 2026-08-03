@@ -9,6 +9,7 @@
  */
 
 import { createTask } from "../tasks/task-store.js";
+import { bandWorkItem } from "../valve/valve-intake.js";
 import {
   createWorkItem,
   type WorkItem,
@@ -39,5 +40,12 @@ export function createWorkItemForArrival(
     actor: opts.actor ?? "watcher",
   });
   attachWorkItemToArrival(arrival.id, workItem.id);
+  // Size it for the volume valve. Deliberately AFTER the link is made, so the
+  // band is computed against an arrival that already points at its item, and
+  // deliberately best-effort: `bandWorkItem` never throws, and an item it
+  // fails to band has no band row, which reads as urgent. A valve failure can
+  // only ever leave this item louder, never quieter — so it cannot turn the
+  // one function that mints Came-in work into a way to lose work.
+  bandWorkItem(workItem);
   return workItem;
 }

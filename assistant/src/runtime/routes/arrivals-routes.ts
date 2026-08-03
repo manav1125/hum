@@ -35,6 +35,8 @@ import {
 } from "../../arrivals/arrival-store.js";
 import { createWorkItemForArrival } from "../../arrivals/arrival-surface.js";
 import type { ServerMessage } from "../../daemon/message-protocol.js";
+import { bandWorkItem } from "../../valve/valve-intake.js";
+import { recordFeedback } from "../../valve/valve-store.js";
 import {
   getWorkItem,
   updateWorkItem,
@@ -361,6 +363,24 @@ export const ROUTES: RouteDefinition[] = [
             actor: "user",
           });
       const updated = markArrivalReversed(id, workItem.id, "user");
+
+      // Teach the valve, in the loud direction. A reversal is the owner going
+      // into the filed pile by hand — the strongest evidence available that
+      // this sender needs them — so it counts against any dismissals already
+      // recorded for that address rather than merely being absent from them.
+      if (arrival.senderAddress) {
+        recordFeedback("sender", arrival.senderAddress, "kept");
+      }
+      // Re-band AFTER `markArrivalReversed`, not before: `owner_reversed`
+      // reads `reversedAt`, which does not exist until the line above runs.
+      // This also covers the restore branch, which never touches
+      // `createWorkItemForArrival` and so was never banded at all.
+      // The arrival is passed explicitly rather than looked up off the work
+      // item: the restore branch reuses a pre-existing row whose `arrivalId`
+      // may predate the link, and banding a reversal as though it had no
+      // arrival would silently lose the `owner_reversed` rule.
+      bandWorkItem(workItem, { arrival: updated ?? arrival });
+
       // Same enrichment the item would have got had the gate surfaced it, so
       // a reversed item is indistinguishable from a normally-kept one.
       await triageAndMaybeAutoRunWorkItem(workItem.id, { skipAutoRun: true });

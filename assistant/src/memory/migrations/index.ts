@@ -315,6 +315,7 @@ export { migrateArrivalComprehension } from "./319-arrival-comprehension.js";
 export { migrateArrivalOccurredAt } from "./320-arrival-occurred-at.js";
 export { migratePushBudgetLedger } from "./321-push-budget-ledger.js";
 export { migrateMemoryJobOutcome } from "./322-memory-job-outcome.js";
+export { migrateVolumeValve } from "./323-volume-valve.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

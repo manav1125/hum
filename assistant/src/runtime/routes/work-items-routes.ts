@@ -21,6 +21,13 @@ import {
 } from "../../tasks/tool-sanitizer.js";
 import { createAbortReason } from "../../util/abort-reasons.js";
 import { truncate } from "../../util/truncate.js";
+import {
+  isValveStop,
+  VALVE_STOPS,
+  type ValveStop,
+} from "../../valve/valve-bands.js";
+import { applyValve } from "../../valve/valve-filter.js";
+import { getGlobalStop } from "../../valve/valve-store.js";
 import { resolveRequiredTools } from "../../work-items/resolve-required-tools.js";
 import {
   classifyTitlesForPreview,
@@ -276,9 +283,58 @@ export const workItemSchema = z.object({
         "NOT autoFiledBy/autoFileConfidence, which mean 'assigned to a " +
         "project' — a different axis entirely.",
     ),
+  // --- Volume valve (323) -------------------------------------------------
+  valve: z
+    .object({
+      band: z
+        .enum(["urgent", "needs_you", "everything"])
+        .describe(
+          "How loudly this item asks for you. Compared against your stop to " +
+            "decide whether it interrupts. An item the valve has never sized " +
+            "up reports 'urgent' with ruleId 'unbanded' — being unknown is " +
+            "the loudest state, never the quietest.",
+        ),
+      ruleId: z
+        .string()
+        .describe("Which valve rule set the band, e.g. 'automated_sender'"),
+      reason: z
+        .string()
+        .describe("Why, in your words. Never a code, never a score."),
+      unbanded: z
+        .boolean()
+        .describe(
+          "True when no band was ever stamped and the item is loud by " +
+            "default. Render it as 'not yet sized up', not as 'urgent' — the " +
+            "two look the same to the valve but mean different things to you.",
+        ),
+    })
+    .nullable()
+    .describe(
+      "Present on list reads. The valve governs what INTERRUPTS you; it " +
+        "never governs what Cue keeps. An item below your stop is still " +
+        "here, still queryable, still counted — it is just not on HQ.",
+    )
+    .optional(),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
+
+/**
+ * Reject an unknown stop rather than widening it.
+ *
+ * The same house rule as the `domain` lens above and for a sharper reason:
+ * silently reading an unrecognised `?stop=urgnet` as "only urgent" would hide
+ * most of the owner's work because of a typo, and they would have no way to
+ * tell that from Cue having decided the work did not matter.
+ */
+function parseValveStop(raw: string): ValveStop {
+  if (!isValveStop(raw)) {
+    throw new BadRequestError(
+      `stop must be "saved" or one of ${VALVE_STOPS.join(", ")} (got "${raw}")`,
+    );
+  }
+  return raw;
+}
 
 /**
  * Attach the read-time `ranProvenance` trust signal to a single work item for
@@ -582,9 +638,52 @@ export const ROUTES: RouteDefinition[] = [
           'privacy switch: "hide Life" for a screen-share is ?domain=work.',
         schema: { type: "string", enum: ["work", "life"] },
       },
+      {
+        name: "stop",
+        description:
+          "Apply the volume valve at this stop, returning only the items " +
+          'that interrupt. Use "saved" for the stop you have set. OMIT IT ' +
+          "and no filtering happens at all — that default is deliberate, so " +
+          "a client that has never heard of the valve, or one written before " +
+          "it existed, keeps seeing every item. `held` reports how many were " +
+          "held back; they are still in Work and a stop-change away.",
+        schema: {
+          type: "string",
+          enum: ["saved", "everything", "needs_you", "only_urgent"],
+        },
+      },
+      {
+        name: "markSeen",
+        description:
+          'Set "true" only on the read that actually renders HQ. It records ' +
+          "that the shown items reached you, which is what lets already-seen " +
+          "work rest later. A count, a poll or a preview must not burn an " +
+          "item's one guaranteed appearance, so this defaults to false.",
+        schema: { type: "string", enum: ["true", "false"] },
+      },
     ],
     responseBody: z.object({
       items: z.array(workItemSchema),
+      stop: z
+        .string()
+        .nullable()
+        .describe("The stop applied, or null when no filtering was requested"),
+      held: z
+        .number()
+        .int()
+        .describe(
+          "How many items the valve held back. Always 0 when no stop was " +
+            "requested. These are NOT deleted or archived — GET the same " +
+            "endpoint without `stop` to see them.",
+        ),
+      unbanded: z
+        .number()
+        .int()
+        .describe(
+          "Of the returned items, how many are present only because the " +
+            "valve has never sized them up. High means less filtering is " +
+            "happening than the item count suggests.",
+        ),
     }),
     handler: ({ queryParams }) => {
       const status = queryParams?.status ?? undefined;
@@ -630,7 +729,45 @@ export const ROUTES: RouteDefinition[] = [
         if (projectId) items = items.filter((i) => i.projectId === projectId);
         if (domain) items = items.filter((i) => i.domain === domain);
       }
-      return { items: annotateWorkItems(items) };
+
+      // The valve. Opt-in by query param, and absent means OFF — a caller
+      // that does not ask about volume gets every item, exactly as it did
+      // before this existed. That is the same fail-open shape as the rest of
+      // the valve: the quiet behaviour is never the default you fall into.
+      const stopParam = queryParams?.stop;
+      if (stopParam === undefined) {
+        return {
+          items: annotateWorkItems(items),
+          stop: null,
+          held: 0,
+          unbanded: 0,
+        };
+      }
+      const stop =
+        stopParam === "saved" ? getGlobalStop() : parseValveStop(stopParam);
+      const result = applyValve(items, {
+        stop,
+        markSeen: queryParams?.markSeen === "true",
+      });
+      const bandByItem = new Map(
+        [...result.shown, ...result.held].map((v) => [
+          v.item.id,
+          {
+            band: v.band,
+            ruleId: v.ruleId,
+            reason: v.reason,
+            unbanded: v.unbanded,
+          },
+        ]),
+      );
+      return {
+        items: annotateWorkItems(result.shown.map((v) => v.item)).map(
+          (item) => ({ ...item, valve: bandByItem.get(item.id) ?? null }),
+        ),
+        stop,
+        held: result.held.length,
+        unbanded: result.unbandedCount,
+      };
     },
   },
 

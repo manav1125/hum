@@ -70,6 +70,7 @@ import {
 } from "./schemas/timeouts.js";
 import { ToolApisConfigSchema } from "./schemas/tool-apis.js";
 import { ToolsConfigSchema } from "./schemas/tools.js";
+import { ValveConfigSchema } from "./schemas/valve.js";
 import { WatchersConfigSchema } from "./schemas/watchers.js";
 import { WorkItemsConfigSchema } from "./schemas/work-items.js";
 import { WorkspaceGitConfigSchema } from "./schemas/workspace-git.js";
@@ -108,6 +109,7 @@ export const AssistantConfigSchema = z
     workItems: WorkItemsConfigSchema.default(WorkItemsConfigSchema.parse({})),
     // Standing pollers: today, whether connecting a connector also stands up a
     // default watcher for it (watchers.autoProvision.*).
+    valve: ValveConfigSchema.default(ValveConfigSchema.parse({})),
     watchers: WatchersConfigSchema.default(WatchersConfigSchema.parse({})),
     heartbeat: HeartbeatConfigSchema.default(HeartbeatConfigSchema.parse({})),
     hostBrowser: HostBrowserConfigSchema.default(

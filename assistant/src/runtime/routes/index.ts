@@ -164,6 +164,7 @@ import { ROUTES as USER_ROUTES } from "./user-routes.js";
 import { ROUTES as USER_ROUTES_CLI } from "./user-routes-cli.js";
 import { ROUTES as VOICE_INTAKE_ROUTES } from "./voice-intake-routes.js";
 import { ROUTES as WAKE_CONVERSATION_ROUTES } from "./wake-conversation-routes.js";
+import { ROUTES as VALVE_ROUTES } from "./valve-routes.js";
 import { ROUTES as WATCHER_ROUTES } from "./watcher-routes.js";
 import { ROUTES as WEBHOOK_ROUTES } from "./webhook-routes.js";
 import { ROUTES as WIPE_CONVERSATION_ROUTES } from "./wipe-conversation-routes.js";
@@ -183,6 +184,7 @@ export const ROUTES: RouteDefinition[] = [
   ...APPROVAL_ROUTES,
   ...ARRIVAL_COMPREHENSION_ROUTES,
   ...ARRIVALS_ROUTES,
+  ...VALVE_ROUTES,
   ...AUDIO_ROUTES,
   ...AUDIT_ROUTES,
   ...AUTH_ROUTES,
