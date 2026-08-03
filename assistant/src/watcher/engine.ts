@@ -20,6 +20,8 @@ import {
 import {
   fileWatcherDecisions,
   fileWatcherEventsToCameIn,
+  openDecisionKeys,
+  retireResolvedDecisions,
 } from "./watcher-intake.js";
 import {
   claimDueWatchers,
@@ -279,15 +281,21 @@ export async function runWatchersOnce(
     // here is silence, and every failure path returns to it: this is the one
     // place in intake that fails CLOSED, because a wrong item minted from a
     // recording source is the exact failure the pin above exists to prevent.
+    //
+    // The same call settles decisions already in the lane. Failure is silence
+    // on BOTH halves and the two silences point the same way: nothing new is
+    // minted, and nothing already visible is retired.
     if (intakeMode === "record_only") {
       const provider = getWatcherProvider(watcher.providerId);
       if (provider?.decisionsFrom) {
         try {
-          const decisions = await provider.decisionsFrom(
+          const outcome = await provider.decisionsFrom(
             watcher.credentialService,
             pendingEvents,
+            openDecisionKeys(watcher),
           );
-          fileWatcherDecisions(watcher, decisions);
+          fileWatcherDecisions(watcher, outcome.decisions);
+          retireResolvedDecisions(watcher, outcome.resolved);
         } catch (err) {
           log.warn(
             { err, watcherId: watcher.id, name: watcher.name },

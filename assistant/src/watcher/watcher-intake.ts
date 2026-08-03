@@ -55,12 +55,17 @@ import {
 import { buildArrivalSignals } from "../arrivals/arrival-signals.js";
 import { recordArrival } from "../arrivals/arrival-store.js";
 import { createWorkItemForArrival } from "../arrivals/arrival-surface.js";
+import { DECISION_ID_PREFIX } from "../calendar/calendar-decisions.js";
 import {
   evaluatePlaybooksForEvent,
   type PlaybookEvent,
 } from "../playbooks/playbook-runtime.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import { getLogger } from "../util/logger.js";
+import {
+  listWorkItems,
+  updateWorkItem,
+} from "../work-items/work-item-store.js";
 import { triageAndMaybeAutoRunWorkItem } from "../work-items/work-item-triage.js";
 import type { WatcherDecision } from "./provider-types.js";
 import type { Watcher, WatcherEvent } from "./watcher-store.js";
@@ -187,6 +192,102 @@ export function fileWatcherDecisions(
   }
   return minted;
 }
+
+/**
+ * The decision keys this watcher currently has in front of the owner.
+ *
+ * `queued` only, and that is the whole of the safety argument for retiring
+ * anything. The moment an item is running, awaiting review, done, cancelled or
+ * archived, somebody has taken a position on it — and a row somebody has moved
+ * is theirs, not the detector's to reach back into.
+ */
+export function openDecisionKeys(watcher: Watcher): string[] {
+  const channel = watcherChannel(watcher);
+  try {
+    return listWorkItems({ includeUnComprehended: true })
+      .filter(
+        (item) =>
+          item.sourceType === channel &&
+          item.status === "queued" &&
+          (item.sourceId ?? "").startsWith(DECISION_ID_PREFIX),
+      )
+      .map((item) => item.sourceId as string);
+  } catch (err) {
+    // No keys means nothing is offered for retirement, which means nothing is
+    // hidden. This failure costs the sweep, never an item.
+    log.warn(
+      { err: String(err), watcherId: watcher.id },
+      "could not read open decisions (nothing retired this poll)",
+    );
+    return [];
+  }
+}
+
+/**
+ * Retire the decisions the source has proved are settled.
+ *
+ * The other half of "a conflict is work": work that is finished leaves the
+ * lane. Without this the detector only ever adds — a conflict key carries no
+ * date and is idempotent forever, so the row for a dinner the owner moved
+ * three weeks ago sits in the lane until they dismiss it by hand. That is the
+ * no-op the flood guard was supposed to prevent, arriving one row at a time.
+ *
+ * `archived`, never `done`: the owner resolved this on their calendar, and
+ * marking it done would be Cue claiming a completion it had no part in. The
+ * row, its notes and its arrival all survive, and the note says which fact
+ * retired it so "why did this leave my lane" has an answer on the item itself.
+ *
+ * The proof is the caller's to make. This function trusts `keys` and only
+ * re-checks the one thing it owns: that the item is still `queued`.
+ */
+export function retireResolvedDecisions(
+  watcher: Watcher,
+  keys: readonly string[],
+): number {
+  if (keys.length === 0) return 0;
+  const channel = watcherChannel(watcher);
+  const wanted = new Set(keys);
+  let retired = 0;
+
+  let items: ReturnType<typeof listWorkItems>;
+  try {
+    items = listWorkItems({ includeUnComprehended: true });
+  } catch (err) {
+    log.warn(
+      { err: String(err), watcherId: watcher.id },
+      "could not read work items (nothing retired this poll)",
+    );
+    return 0;
+  }
+
+  for (const item of items) {
+    if (item.sourceType !== channel) continue;
+    if (item.status !== "queued") continue;
+    if (!item.sourceId || !wanted.has(item.sourceId)) continue;
+    try {
+      updateWorkItem(item.id, {
+        status: "archived",
+        notes: [item.notes, RESOLVED_NOTE].filter(Boolean).join("\n"),
+      });
+      retired++;
+    } catch (err) {
+      log.warn(
+        { err: String(err), workItemId: item.id },
+        "failed to retire a settled decision (others unaffected)",
+      );
+    }
+  }
+
+  if (retired > 0) {
+    log.info({ watcherId: watcher.id, retired }, "settled decisions retired");
+    broadcastMessage({ type: "tasks_changed" });
+  }
+  return retired;
+}
+
+/** Why a decision left the lane, written onto the item that left. */
+const RESOLVED_NOTE =
+  "Retired by Cue: the calendar no longer shows these overlapping.";
 
 function toPlaybookEvent(watcher: Watcher, event: WatcherEvent): PlaybookEvent {
   return {

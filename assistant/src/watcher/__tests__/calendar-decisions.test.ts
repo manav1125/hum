@@ -34,6 +34,11 @@ let horizonItems: unknown[] = [];
 let horizonReads = 0;
 /** When set, the horizon read fails the way a real API outage would. */
 let horizonFails = false;
+/**
+ * When set, the horizon read hands back a `nextPageToken` forever, which is
+ * what a calendar bigger than the page cap looks like from inside the provider.
+ */
+let horizonTruncated = false;
 
 mock.module("../../oauth/connection-resolver.js", () => ({
   resolveOAuthConnection: async () => ({
@@ -52,7 +57,13 @@ mock.module("../../oauth/connection-resolver.js", () => ({
       if (req.query?.timeMin) {
         horizonReads++;
         if (horizonFails) return { status: 503, headers: {}, body: "upstream" };
-        return { status: 200, headers: {}, body: { items: horizonItems } };
+        return {
+          status: 200,
+          headers: {},
+          body: horizonTruncated
+            ? { items: horizonItems, nextPageToken: "more" }
+            : { items: horizonItems },
+        };
       }
       // The one-time bootstrap walk that establishes a sync token.
       return {
@@ -88,7 +99,8 @@ mock.module("../../runtime/background-job-runner.js", () => ({
 
 const { getDb } = await import("../../memory/db-connection.js");
 const { initializeDb } = await import("../../memory/db-init.js");
-const { listWorkItems } = await import("../../work-items/work-item-store.js");
+const { listWorkItems, updateWorkItem } =
+  await import("../../work-items/work-item-store.js");
 const { registerWatcherProvider } = await import("../provider-registry.js");
 const { googleCalendarProvider } =
   await import("../providers/google-calendar.js");
@@ -175,6 +187,7 @@ beforeEach(() => {
   horizonItems = [];
   horizonReads = 0;
   horizonFails = false;
+  horizonTruncated = false;
   getDb().run("DELETE FROM watcher_events");
   getDb().run("DELETE FROM watchers");
   getDb().run("DELETE FROM work_items");
@@ -591,5 +604,397 @@ describe("the same conflict twice mints once", () => {
     const items = calendarWorkItems();
     expect(items).toHaveLength(1);
     expect(items[0]!.sourceId).toBe("decision:conflict:pt+sync");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Only a commitment can be half of a conflict
+// ---------------------------------------------------------------------------
+
+describe("a conflict is between two things the owner agreed to", () => {
+  /** The owner's RSVP on an event somebody else organised. */
+  function rsvp(status: string) {
+    return {
+      organizer: { email: "chair@example.com" },
+      attendees: [
+        { email: "owner@example.com", self: true, responseStatus: status },
+      ],
+    };
+  }
+
+  test("an unanswered invite lands as ONE row, not a conflict as well", async () => {
+    // The measured defect: on this install 2 of 11 conflicts were about an
+    // event that ALSO had an unanswered-invite row. One event, one decision —
+    // and the decision is "answer it", not "resolve a clash with it", because
+    // there is no clash until the owner says yes.
+    makeCalendarWatcher();
+    const standup = timed("standup", "Standup", 2 * DAY, 2 * DAY + HOUR);
+    const invite = timed(
+      "invite",
+      "Partner intro",
+      2 * DAY + HOUR / 2,
+      2 * DAY + 2 * HOUR,
+      rsvp("needsAction"),
+    );
+    changedItems = [invite];
+    horizonItems = [standup, invite];
+
+    await runWatchersOnce(() => {});
+
+    const items = calendarWorkItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]!.sourceId).toBe("decision:invite:invite");
+  });
+
+  test("a tentative hold over a real meeting is not a conflict", async () => {
+    // "Maybe" is the owner having already recorded that this is unsettled.
+    // Telling them it clashes tells them what they said.
+    makeCalendarWatcher();
+    const board = timed("board", "Board meeting", 2 * DAY, 2 * DAY + 2 * HOUR);
+    const hold = timed(
+      "hold",
+      "HOLD: site visit",
+      2 * DAY + HOUR,
+      2 * DAY + 3 * HOUR,
+      rsvp("tentative"),
+    );
+    changedItems = [hold];
+    horizonItems = [board, hold];
+
+    await runWatchersOnce(() => {});
+
+    expect(calendarWorkItems()).toHaveLength(0);
+  });
+
+  test("two tentative holds over each other are not a conflict either", async () => {
+    makeCalendarWatcher();
+    const a = timed(
+      "h1",
+      "HOLD: option A",
+      2 * DAY,
+      2 * DAY + 2 * HOUR,
+      rsvp("tentative"),
+    );
+    const b = timed(
+      "h2",
+      "HOLD: option B",
+      2 * DAY + HOUR,
+      2 * DAY + 3 * HOUR,
+      rsvp("tentative"),
+    );
+    changedItems = [b];
+    horizonItems = [a, b];
+
+    await runWatchersOnce(() => {});
+
+    expect(calendarWorkItems()).toHaveLength(0);
+  });
+
+  test("two accepted commitments still conflict — the narrowing did not eat the rule", async () => {
+    makeCalendarWatcher();
+    const dinner = timed(
+      "dinner",
+      "Dinner with Ana",
+      2 * DAY,
+      2 * DAY + 2 * HOUR,
+      rsvp("accepted"),
+    );
+    const flight = timed(
+      "flight",
+      "Flight CX 784",
+      2 * DAY + HOUR,
+      2 * DAY + 5 * HOUR,
+      rsvp("accepted"),
+    );
+    changedItems = [flight];
+    horizonItems = [dinner, flight];
+
+    await runWatchersOnce(() => {});
+
+    const items = calendarWorkItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]!.sourceId).toBe("decision:conflict:dinner+flight");
+  });
+
+  test("a block the owner made for themselves is a commitment, attendee list or not", async () => {
+    // No `attendees` at all is what a personal block looks like. Requiring an
+    // explicit `accepted` would silently disable the rule for solo calendars.
+    makeCalendarWatcher();
+    const focus = timed("gym", "Gym", 2 * DAY, 2 * DAY + HOUR);
+    const call = timed(
+      "call",
+      "Investor call",
+      2 * DAY + HOUR / 2,
+      2 * DAY + 2 * HOUR,
+    );
+    changedItems = [call];
+    horizonItems = [focus, call];
+
+    await runWatchersOnce(() => {});
+
+    expect(calendarWorkItems()).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Work that is finished leaves the lane
+// ---------------------------------------------------------------------------
+
+describe("a conflict the owner resolved stops being work", () => {
+  /** Items actually in front of the owner, as opposed to rows that exist. */
+  function inTheLane() {
+    return calendarWorkItems().filter((i) => i.status === "queued");
+  }
+
+  /** The dinner and the flight, clashing, already minted. */
+  async function aMintedConflict() {
+    makeCalendarWatcher();
+    const dinner = timed(
+      "dinner",
+      "Dinner with Ana",
+      2 * DAY,
+      2 * DAY + 2 * HOUR,
+    );
+    const flight = timed(
+      "flight",
+      "Flight CX 784",
+      2 * DAY + HOUR,
+      2 * DAY + 5 * HOUR,
+    );
+    changedItems = [flight];
+    horizonItems = [dinner, flight];
+    await runWatchersOnce(() => {});
+    expect(inTheLane()).toHaveLength(1);
+    return { dinner, flight };
+  }
+
+  test("moving one of the two events retires the item, with a note saying why", async () => {
+    const { dinner, flight } = await aMintedConflict();
+
+    // The owner moves the dinner a day later. That edit is itself a calendar
+    // change, so the poll that learns the clash is over is the same poll that
+    // sees the move — no separate sweep is needed.
+    makeDueAgain();
+    const moved = timed(
+      "dinner",
+      "Dinner with Ana",
+      3 * DAY,
+      3 * DAY + 2 * HOUR,
+    );
+    changedItems = [{ ...moved, updated: "2026-08-03T09:00:00.000Z" }];
+    horizonItems = [moved, flight];
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(0);
+    const [row] = calendarWorkItems();
+    expect(row!.status).toBe("archived");
+    // No colour-only state, and no silent disappearance: the row itself says
+    // what retired it.
+    expect(row!.notes).toContain("no longer shows these overlapping");
+    expect(dinner.id).toBe("dinner");
+  });
+
+  test("declining one of the two retires it — a decline is a resolution", async () => {
+    const { dinner, flight } = await aMintedConflict();
+
+    makeDueAgain();
+    const declined = {
+      ...flight,
+      updated: "2026-08-03T09:00:00.000Z",
+      organizer: { email: "chair@example.com" },
+      attendees: [
+        { email: "owner@example.com", self: true, responseStatus: "declined" },
+      ],
+    };
+    changedItems = [declined];
+    horizonItems = [dinner, declined];
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(0);
+  });
+
+  test("a truncated horizon retires NOTHING — absence is not proof", async () => {
+    // The failure this guards: a page cap turns "we did not look far enough"
+    // into "the calendar no longer shows it", and the owner silently loses a
+    // real clash. Retiring is hiding, and hiding may never run on inference.
+    const { dinner, flight } = await aMintedConflict();
+
+    makeDueAgain();
+    horizonTruncated = true;
+    changedItems = [{ ...flight, updated: "2026-08-03T09:00:00.000Z" }];
+    horizonItems = [flight]; // the dinner is "beyond the page limit"
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(1);
+    expect(dinner.id).toBe("dinner");
+  });
+
+  test("a horizon read that fails retires nothing", async () => {
+    const { flight } = await aMintedConflict();
+
+    makeDueAgain();
+    horizonFails = true;
+    changedItems = [{ ...flight, updated: "2026-08-03T09:00:00.000Z" }];
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(1);
+  });
+
+  test("an empty horizon retires nothing", async () => {
+    // A 200 with no items and a genuinely empty calendar are the same bytes.
+    // The cheap read is the safe one: leave every item where it is.
+    const { flight } = await aMintedConflict();
+
+    makeDueAgain();
+    changedItems = [{ ...flight, updated: "2026-08-03T09:00:00.000Z" }];
+    horizonItems = [];
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(1);
+  });
+
+  test("an item the owner has already moved on is not reached back into", async () => {
+    const { dinner, flight } = await aMintedConflict();
+    const [item] = calendarWorkItems();
+    updateWorkItem(item!.id, { status: "awaiting_review" });
+
+    makeDueAgain();
+    const moved = timed(
+      "dinner",
+      "Dinner with Ana",
+      3 * DAY,
+      3 * DAY + 2 * HOUR,
+    );
+    changedItems = [{ ...moved, updated: "2026-08-03T09:00:00.000Z" }];
+    horizonItems = [moved, flight];
+
+    await runWatchersOnce(() => {});
+
+    expect(calendarWorkItems()[0]!.status).toBe("awaiting_review");
+    expect(dinner.id).toBe("dinner");
+  });
+
+  test("a conflict that is still a conflict is left alone", async () => {
+    const { dinner, flight } = await aMintedConflict();
+
+    makeDueAgain();
+    changedItems = [{ ...flight, updated: "2026-08-03T09:00:00.000Z" }];
+    horizonItems = [dinner, flight];
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(1);
+  });
+
+  test("retiring does not re-open the key — the pair still mints once, ever", async () => {
+    // A stated cost, pinned so it cannot change by accident. The pair key
+    // carries no date, so the arrival from the first clash is permanent and
+    // the same two series colliding again is silent. Retirement does not make
+    // that worse; it only stops the dead row sitting in the lane.
+    const { dinner, flight } = await aMintedConflict();
+
+    makeDueAgain();
+    const moved = timed(
+      "dinner",
+      "Dinner with Ana",
+      3 * DAY,
+      3 * DAY + 2 * HOUR,
+    );
+    changedItems = [{ ...moved, updated: "2026-08-03T09:00:00.000Z" }];
+    horizonItems = [moved, flight];
+    await runWatchersOnce(() => {});
+    expect(inTheLane()).toHaveLength(0);
+
+    // It clashes again.
+    makeDueAgain();
+    changedItems = [{ ...dinner, updated: "2026-08-03T11:00:00.000Z" }];
+    horizonItems = [dinner, flight];
+    await runWatchersOnce(() => {});
+
+    expect(calendarWorkItems()).toHaveLength(1);
+    expect(inTheLane()).toHaveLength(0);
+  });
+});
+
+describe("an invite the owner answered stops being work", () => {
+  function inTheLane() {
+    return calendarWorkItems().filter((i) => i.status === "queued");
+  }
+
+  const invited = {
+    organizer: { email: "chair@example.com", displayName: "Chair" },
+    attendees: [
+      {
+        email: "owner@example.com",
+        self: true,
+        responseStatus: "needsAction",
+      },
+    ],
+  };
+
+  /** An unanswered invite, already minted. */
+  async function aMintedInvite() {
+    makeCalendarWatcher();
+    const invite = timed(
+      "intro",
+      "Partner intro",
+      2 * DAY,
+      2 * DAY + HOUR,
+      invited,
+    );
+    changedItems = [invite];
+    horizonItems = [invite];
+    await runWatchersOnce(() => {});
+    expect(inTheLane()).toHaveLength(1);
+    return invite;
+  }
+
+  test("answering it retires the item", async () => {
+    const invite = await aMintedInvite();
+
+    makeDueAgain();
+    const answered = {
+      ...invite,
+      updated: "2026-08-03T09:00:00.000Z",
+      attendees: [
+        { email: "owner@example.com", self: true, responseStatus: "accepted" },
+      ],
+    };
+    changedItems = [answered];
+    horizonItems = [answered];
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(0);
+    expect(calendarWorkItems()[0]!.notes).toContain("Retired by Cue");
+  });
+
+  test("an invite still unanswered is left alone", async () => {
+    const invite = await aMintedInvite();
+
+    makeDueAgain();
+    changedItems = [{ ...invite, updated: "2026-08-03T09:00:00.000Z" }];
+    horizonItems = [invite];
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(1);
+  });
+
+  test("a failed horizon read retires no invite either", async () => {
+    const invite = await aMintedInvite();
+
+    makeDueAgain();
+    horizonFails = true;
+    changedItems = [{ ...invite, updated: "2026-08-03T09:00:00.000Z" }];
+
+    await runWatchersOnce(() => {});
+
+    expect(inTheLane()).toHaveLength(1);
   });
 });

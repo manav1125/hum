@@ -78,6 +78,26 @@ export interface WatcherDecision {
 }
 
 /**
+ * What one poll of a `record_only` source concluded.
+ *
+ * Two halves, because a source that can mint work must also be able to say
+ * when that work is over. A detector that only ever adds turns the lane into a
+ * pile: a conflict key is deliberately idempotent forever, so without the
+ * second half the row outlives the clash and the owner is left dismissing
+ * items about meetings they already moved.
+ */
+export interface WatcherDecisionSet {
+  /** Decisions this poll's changes created. Empty is the normal answer. */
+  decisions: WatcherDecision[];
+  /**
+   * Keys from `openKeys` the source can now PROVE are settled. Retiring hides
+   * a row, so this must never carry a guess: a provider that could not read
+   * enough to be sure returns none of them, and every item stays visible.
+   */
+  resolved: string[];
+}
+
+/**
  * A watcher provider adapts an external API into the watcher system.
  * Each provider knows how to poll for new events and track its position.
  */
@@ -141,11 +161,17 @@ export interface WatcherProvider {
    * `events` are the rows already written to `watcher_events`, so a provider
    * that needs more than the recorded payload (the other half of a conflict
    * never changed, so it is not in the sync feed) must go and fetch it.
+   *
+   * `openKeys` are the decision keys already in front of the owner. They are
+   * passed in rather than looked up because the provider owns the only thing
+   * that can settle them — the source's current state, which it is already
+   * fetching for the first half of the answer.
    */
   decisionsFrom?(
     credentialService: string,
     events: readonly WatcherEvent[],
-  ): Promise<WatcherDecision[]>;
+    openKeys: readonly string[],
+  ): Promise<WatcherDecisionSet>;
 
   /**
    * Release any in-process state held for a watcher instance.

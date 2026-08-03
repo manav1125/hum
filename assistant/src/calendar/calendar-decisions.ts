@@ -29,6 +29,11 @@
  *    feature, so this is left out rather than approximated. If holds ever
  *    arrive as structured data (a Calendar API field, or a Cue-side hold
  *    record), this is the module that gains the rule.
+ *  · **A clash involving something the owner has not agreed to.** A conflict
+ *    is between two COMMITMENTS. An unanswered invite is not one (that is a
+ *    different decision, and the rule below already mints it), and neither is
+ *    a tentative hold — "maybe" is the owner having already said this is
+ *    unsettled. See {@link isSettledCommitment}.
  *  · **A double-booking the owner has lived with for months.** Only pairs
  *    involving an event that CHANGED are considered — this is an arrivals rule,
  *    not a calendar audit.
@@ -131,18 +136,48 @@ interface TimedEvent {
 }
 
 /**
+ * The owner has actually taken this on.
+ *
+ * A conflict is a collision between two things the owner is COMMITTED to, and
+ * the RSVP is the calendar saying, in its own vocabulary, whether they are:
+ *
+ *  · `accepted` — yes.
+ *  · absent (`null`) — they are not on an attendee list at all, which is what
+ *    a block they made for themselves looks like. Also yes.
+ *  · `declined` — no, and the event is only still on the calendar as a record.
+ *  · `needsAction` — an invite nobody has answered. It is not a commitment,
+ *    and the decision it creates is "answer this", which is
+ *    `calendar_invite_needs_answer` — a rule that already fires on exactly
+ *    these events. Counting it here too puts TWO rows in the lane about one
+ *    event. In production 2 of 11 conflicts were this same double-report.
+ *  · `tentative` — a hold. "Maybe" is the owner having already recorded that
+ *    this is unsettled; Cue telling them it clashes is telling them the thing
+ *    they said. Two holds over each other is furniture, not a decision.
+ *
+ * The cost is stated rather than hidden: a tentatively-held meeting that a
+ * hard commitment lands on top of will not be reported. That is a false
+ * negative, and a false negative here is a clash the owner still sees on their
+ * own calendar. A false positive is a row in the lane about a meeting they had
+ * already marked as uncertain — the flood shape, and the more expensive one.
+ */
+function isSettledCommitment(event: CalendarEvent): boolean {
+  const rsvp = selfResponseStatus(event);
+  return rsvp === null || rsvp === "accepted";
+}
+
+/**
  * A busy, timed commitment — the only thing that can be half of a conflict.
  *
  * Every clause is a way the calendar says "this does not collide":
- * cancelled, marked Free, declined by the owner, all-day, or not a real
- * commitment in the first place. An event whose times cannot be read is
+ * cancelled, marked Free, not actually agreed to by the owner, all-day, or not
+ * a real commitment in the first place. An event whose times cannot be read is
  * dropped, because an overlap computed from a time we could not parse is a
  * guess, and this path does not guess.
  */
 function asCommitment(event: CalendarEvent): TimedEvent | null {
   if (event.status === "cancelled") return null;
   if (event.transparency === "transparent") return null;
-  if (selfResponseStatus(event) === "declined") return null;
+  if (!isSettledCommitment(event)) return null;
   if (isAllDay(event)) return null;
   if (event.eventType && NON_COMMITMENT_EVENT_TYPES.has(event.eventType)) {
     return null;
@@ -288,12 +323,35 @@ function conflictDecisions(
 }
 
 /**
+ * Somebody is still waiting on a yes or a no for this.
+ *
+ * The narrowing clauses are the ones that stop an unanswered invite being a
+ * firehose: their own event (nothing to answer), an event already under way,
+ * and anything they have in fact already answered.
+ *
+ * Factored out because it is asked twice and from opposite directions — once
+ * to mint the decision, once to retire it — and the two answers have to be the
+ * same question. An invite that stops satisfying this is an invite that has
+ * been answered, cancelled, or has simply started without one.
+ */
+function isUnansweredInvite(event: CalendarEvent, now: number): boolean {
+  if (event.status === "cancelled") return false;
+  if (selfResponseStatus(event) !== "needsAction") return false;
+  // You do not RSVP to your own meeting.
+  if (event.organizer?.self === true) return false;
+
+  // The past-event bound again, and stricter here on purpose: an invite you
+  // did not answer before it began is not a decision, it is history.
+  const startMs =
+    instantOf(event.start?.dateTime) ?? instantOf(event.start?.date);
+  return startMs !== null && startMs > now;
+}
+
+/**
  * Invites the owner has not answered.
  *
  * An unanswered invite is a decision by construction: somebody is waiting on a
- * yes or a no. The narrowing clauses are the ones that stop it being a firehose
- * — their own event (nothing to answer), an event already under way, and
- * anything they have in fact already answered.
+ * yes or a no.
  */
 function inviteDecisions(
   horizon: readonly CalendarEvent[],
@@ -304,17 +362,8 @@ function inviteDecisions(
   const seen = new Set<string>();
 
   for (const event of horizon) {
-    if (event.status === "cancelled") continue;
     if (!changedByThisPoll(event, changedIds)) continue;
-    if (selfResponseStatus(event) !== "needsAction") continue;
-    // You do not RSVP to your own meeting.
-    if (event.organizer?.self === true) continue;
-
-    // The past-event bound again, and stricter here on purpose: an invite you
-    // did not answer before it began is not a decision, it is history.
-    const startMs =
-      instantOf(event.start?.dateTime) ?? instantOf(event.start?.date);
-    if (startMs === null || startMs <= now) continue;
+    if (!isUnansweredInvite(event, now)) continue;
 
     const key = `${DECISION_ID_PREFIX}invite:${seriesKey(event)}`;
     if (seen.has(key)) continue;
@@ -337,6 +386,112 @@ function inviteDecisions(
     });
   }
   return decisions;
+}
+
+export interface ResolvedDecisionsInput {
+  /**
+   * The `externalId` of every decision still in front of the owner. A key this
+   * module does not recognise, or cannot parse, is ignored rather than guessed
+   * at — an unreadable key must never become a retired item.
+   */
+  openKeys: readonly string[];
+  /** The same forward horizon the detector reads. */
+  horizon: readonly CalendarEvent[];
+  /**
+   * False when the horizon read stopped at a page limit. Absence from a
+   * TRUNCATED horizon is not evidence of anything, and this flag is the only
+   * thing standing between "the calendar no longer shows this" and "we did not
+   * look far enough".
+   */
+  horizonComplete: boolean;
+  now: number;
+}
+
+/**
+ * Which open decisions the calendar can now PROVE are settled.
+ *
+ * The detector only ever adds. A decision key carries no date, so once minted
+ * it is idempotent forever — which is what stops a weekly clash minting
+ * fifty-two rows, and also what leaves the row sitting in the lane long after
+ * the owner moved the dinner or answered the invite. A row describing a
+ * decision that has already been made is a no-op the owner still has to read
+ * and dismiss, and a lane that only grows is the thing that made HQ feel
+ * overwhelming in the first place.
+ *
+ * ── The standard of proof ──────────────────────────────────────────────────
+ * Retiring is HIDING, so nothing here may run on inference:
+ *
+ *  · A truncated or empty horizon proves nothing. Both return no keys, so a
+ *    degraded read leaves every item exactly where it was.
+ *  · Otherwise the horizon is the whole of the owner's next 90 days, and what
+ *    it does not contain, the calendar does not have. A pair that overlaps
+ *    nowhere in it does not overlap; an invite that is unanswered nowhere in
+ *    it has been answered. Both cover every way the decision actually ends —
+ *    moved, declined, deleted, answered, or the day simply passed (the horizon
+ *    starts at `now`, so anything finished is absent from it).
+ *
+ * The two kinds are settled by asking the SAME predicate that minted them, so
+ * the mint and the retire cannot drift into disagreeing about one event.
+ *
+ * The caller decides what "open" means and what retiring does. This function
+ * only answers the question the calendar can answer.
+ */
+export function resolvedDecisionKeys(input: ResolvedDecisionsInput): string[] {
+  if (!input.horizonComplete) return [];
+  if (input.horizon.length === 0) return [];
+
+  // Every FUTURE commitment on the calendar, grouped by the series a conflict
+  // key names. Anything `asCommitment` rejects is absent by construction — a
+  // declined half of a clash lands here as "no commitments for that series",
+  // which is the answer we want.
+  const bySeries = new Map<string, TimedEvent[]>();
+  for (const event of input.horizon) {
+    const timed = asCommitment(event);
+    if (!timed || timed.endMs <= input.now) continue;
+    const key = seriesKey(timed.event);
+    const bucket = bySeries.get(key);
+    if (bucket) bucket.push(timed);
+    else bySeries.set(key, [timed]);
+  }
+
+  // Every series that still has an invite nobody has answered.
+  const unanswered = new Set<string>();
+  for (const event of input.horizon) {
+    if (isUnansweredInvite(event, input.now)) {
+      unanswered.add(seriesKey(event));
+    }
+  }
+
+  const conflictPrefix = `${DECISION_ID_PREFIX}conflict:`;
+  const invitePrefix = `${DECISION_ID_PREFIX}invite:`;
+  const resolved: string[] = [];
+
+  for (const openKey of input.openKeys) {
+    if (openKey.startsWith(conflictPrefix)) {
+      const parts = openKey.slice(conflictPrefix.length).split("+");
+      // A series id containing a "+" would split into more than two, and a key
+      // we cannot read is a key we must not act on.
+      if (parts.length !== 2) continue;
+      const [a, b] = parts as [string, string];
+      if (a.length === 0 || b.length === 0) continue;
+
+      const left = bySeries.get(a) ?? [];
+      const right = bySeries.get(b) ?? [];
+      const stillClashes = left.some((x) =>
+        right.some((y) => x.startMs < y.endMs && y.startMs < x.endMs),
+      );
+      if (!stillClashes) resolved.push(openKey);
+      continue;
+    }
+
+    if (openKey.startsWith(invitePrefix)) {
+      const series = openKey.slice(invitePrefix.length);
+      if (series.length === 0) continue;
+      if (!unanswered.has(series)) resolved.push(openKey);
+    }
+  }
+
+  return resolved;
 }
 
 /**

@@ -6,7 +6,10 @@
  * Falls back to listing recent upcoming events if the syncToken has expired (410 Gone).
  */
 
-import { detectCalendarDecisions } from "../../calendar/calendar-decisions.js";
+import {
+  detectCalendarDecisions,
+  resolvedDecisionKeys,
+} from "../../calendar/calendar-decisions.js";
 import type { CalendarEvent } from "../../calendar/google-calendar-client.js";
 import {
   CalendarApiError,
@@ -19,7 +22,7 @@ import { wrapUntrustedContent } from "../../security/untrusted-content.js";
 import { getLogger } from "../../util/logger.js";
 import type {
   FetchResult,
-  WatcherDecision,
+  WatcherDecisionSet,
   WatcherItem,
   WatcherProvider,
 } from "../provider-types.js";
@@ -253,7 +256,7 @@ const DECISION_MAX_PAGES = 4;
 async function fetchHorizon(
   connection: OAuthConnection,
   now: number,
-): Promise<CalendarEvent[]> {
+): Promise<{ events: CalendarEvent[]; complete: boolean }> {
   const timeMin = new Date(now).toISOString();
   const timeMax = new Date(now + DECISION_HORIZON_MS).toISOString();
   const events: CalendarEvent[] = [];
@@ -273,7 +276,11 @@ async function fetchHorizon(
     if (!pageToken) break;
   }
 
-  return events;
+  // A page token still in hand after the last permitted page means the window
+  // is only partly read. Detection tolerates that — it can only ever miss a
+  // conflict. Retirement cannot: "absent from the calendar" and "past the page
+  // limit" look identical, so the flag is carried out rather than dropped.
+  return { events, complete: pageToken === undefined };
 }
 
 /** The Google event id inside a recorded watcher payload, when it is readable. */
@@ -315,31 +322,51 @@ export const googleCalendarProvider: WatcherProvider = {
   async decisionsFrom(
     credentialService: string,
     events: readonly WatcherEvent[],
-  ): Promise<WatcherDecision[]> {
+    openKeys: readonly string[],
+  ): Promise<WatcherDecisionSet> {
     const changedIds = events
       .map(payloadEventId)
       .filter((id): id is string => id !== null);
-    if (changedIds.length === 0) return [];
+    if (changedIds.length === 0 && openKeys.length === 0) {
+      return { decisions: [], resolved: [] };
+    }
 
     const now = Date.now();
     const connection = await resolveOAuthConnection(credentialService);
     const horizon = await fetchHorizon(connection, now);
-    const decisions = detectCalendarDecisions({ changedIds, horizon, now });
+    const decisions = detectCalendarDecisions({
+      changedIds,
+      horizon: horizon.events,
+      now,
+    });
+    const resolved = resolvedDecisionKeys({
+      openKeys,
+      horizon: horizon.events,
+      horizonComplete: horizon.complete,
+      now,
+    });
 
-    if (decisions.length > 0) {
+    if (decisions.length > 0 || resolved.length > 0) {
       log.info(
-        { count: decisions.length, changed: changedIds.length },
+        {
+          count: decisions.length,
+          resolved: resolved.length,
+          changed: changedIds.length,
+        },
         "Calendar: changes created decisions",
       );
     }
-    return decisions.map((d) => ({
-      externalId: d.externalId,
-      title: d.title,
-      snippet: d.snippet,
-      reason: d.reason,
-      ruleId: d.ruleId,
-      kind: d.kind,
-    }));
+    return {
+      decisions: decisions.map((d) => ({
+        externalId: d.externalId,
+        title: d.title,
+        snippet: d.snippet,
+        reason: d.reason,
+        ruleId: d.ruleId,
+        kind: d.kind,
+      })),
+      resolved,
+    };
   },
 
   async fetchNew(
