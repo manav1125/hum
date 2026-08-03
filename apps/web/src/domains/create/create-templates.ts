@@ -291,7 +291,7 @@ export const CREATE_MODES: CreateMode[] = [
         title: "KPI dashboard",
         description: "At-a-glance metrics with charts and trends.",
         prompt:
-          "Build me a KPI dashboard app. Show top-line metric cards (revenue, active users, growth %, churn) with trend indicators, plus a line chart of the primary metric over time and a bar chart breaking it down by segment. Seed it with realistic placeholder data I can replace, and make the layout precise and navy/finance-grade.",
+          "Build me a KPI dashboard app. Show top-line metric cards (revenue, active users, growth %, churn) with trend indicators, plus a line chart of the primary metric over time and a bar chart breaking it down by segment. Never invent data: wire the cards and charts to obviously-empty states labelled as awaiting my figures, so the layout is reviewable without any of it reading as measured. Precise, navy/finance-grade layout.",
         elicit: [
           {
             question: "What kind of business is this for?",
@@ -752,7 +752,8 @@ export const CREATE_MODES: CreateMode[] = [
         elicit: [
           {
             question: "Who are the competitors?",
-            description: "Pick the default to let me identify them from context.",
+            description:
+              "Pick the default to let me identify them from context.",
             options: [
               { label: "Infer them from my context", isDefault: true },
               { label: "I'll name a few" },
@@ -762,7 +763,10 @@ export const CREATE_MODES: CreateMode[] = [
           {
             question: "What should the scan focus on?",
             options: [
-              { label: "Positioning, pricing & differentiators", isDefault: true },
+              {
+                label: "Positioning, pricing & differentiators",
+                isDefault: true,
+              },
               { label: "Product & features" },
               { label: "Marketing & messaging" },
             ],
@@ -778,7 +782,10 @@ export const CREATE_MODES: CreateMode[] = [
           {
             question: "Deliver it as?",
             options: [
-              { label: "Comparison table + where there's an opening", isDefault: true },
+              {
+                label: "Comparison table + where there's an opening",
+                isDefault: true,
+              },
               { label: "A short narrative brief" },
             ],
           },

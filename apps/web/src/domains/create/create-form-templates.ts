@@ -198,7 +198,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("Raise stage", str(v, "stage")),
         line("The ask", str(v, "ask")),
         "",
-        "Produce slides for: title, problem, solution, product, market size, traction, business model, competition, team, and the funding ask. One clear idea per slide, confident modern visual direction with strong typography. Fill any gaps with sensible placeholders I can edit, and make it presentable as-is.",
+        "Produce slides for: title, problem, solution, product, market size, traction, business model, competition, team, and the funding ask. One clear idea per slide, confident modern visual direction with strong typography. Where I have not given detail, use a bracketed placeholder I can spot at a glance — and never a number, since an invented market size or traction figure reads exactly like a measured one.",
       ),
   },
   {
@@ -262,7 +262,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("What slipped and why", str(v, "misses")),
         line("Next-quarter priorities", str(v, "priorities")),
         "",
-        "Include: executive summary, a KPI scorecard with trend callouts for each metric above, wins, misses with root cause, customer/revenue highlights, risks, and next-quarter priorities. Clean, data-forward design, one headline per slide. Seed realistic placeholder figures where I haven't given numbers.",
+        "Include: executive summary, a KPI scorecard with trend callouts for each metric above, wins, misses with root cause, customer/revenue highlights, risks, and next-quarter priorities. Clean, data-forward design, one headline per slide. Never invent a figure: where I have not given a number, write a visible blank such as [Q3 revenue — not supplied] and list those gaps on a final slide, so nothing reads as measured that was not.",
       ),
   },
   {
@@ -326,7 +326,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("Launch date", str(v, "launchDate")),
         line("Pricing / packaging", str(v, "pricing")),
         "",
-        "Cover: positioning & value prop, the problem solved, key features, a demo walkthrough section, pricing/packaging, launch timeline, and the go-to-market plan. Energetic but professional visual direction. Fill gaps with editable placeholders.",
+        "Cover: positioning & value prop, the problem solved, key features, a demo walkthrough section, pricing/packaging, launch timeline, and the go-to-market plan. Energetic but professional visual direction. Fill gaps with bracketed placeholders I can spot at a glance, and never invent a price or a date.",
       ),
   },
 
@@ -390,7 +390,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("Timeframe", str(v, "timeframe")),
         line("Audience", str(v, "audience")),
         "",
-        "Show a top-line metric card for each tracked metric with a trend indicator, a line chart of the primary metric over the chosen timeframe, and a bar chart breaking it down by segment. Seed realistic placeholder data I can replace. Precise, finance-grade layout.",
+        "Show a top-line metric card for each tracked metric with a trend indicator, a line chart of the primary metric over the chosen timeframe, and a bar chart breaking it down by segment. Never invent data: where I have not supplied figures, label the chart clearly as sample shape only and leave the values blank rather than plotting numbers I did not supply. Precise, finance-grade layout.",
       ),
   },
   {
