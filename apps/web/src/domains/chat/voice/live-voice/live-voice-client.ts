@@ -51,6 +51,12 @@ export interface LiveVoiceClientError {
   /** Protocol error code from the server `error` frame, when applicable. */
   readonly code?: string;
   readonly message: string;
+  /**
+   * Whether the session is over. `false` only for a server `error` frame the
+   * daemon explicitly marked non-terminal (`fatal: false`) — the socket is
+   * still live and the conversation continues; the client has NOT torn down.
+   */
+  readonly fatal: boolean;
 }
 
 /**
@@ -346,6 +352,17 @@ export class LiveVoiceChannelClient {
         this.emit("card", frame);
         return;
       case "error":
+        if (frame.fatal === false) {
+          // The daemon absorbed this one and kept the session running (e.g. a
+          // transcriber's transient poll error). Surface it, keep the socket.
+          this.emit("error", {
+            reason: "protocol-error",
+            message: frame.message,
+            fatal: false,
+            ...(frame.code ? { code: frame.code } : {}),
+          });
+          return;
+        }
         this.fail("protocol-error", frame.message, frame.code);
         return;
     }
@@ -391,7 +408,12 @@ export class LiveVoiceChannelClient {
   ): void {
     if (this.state === "closed") return;
     this.teardown();
-    this.emit("error", { reason, message, ...(code ? { code } : {}) });
+    this.emit("error", {
+      reason,
+      message,
+      fatal: true,
+      ...(code ? { code } : {}),
+    });
     this.emit("closed", undefined);
   }
 

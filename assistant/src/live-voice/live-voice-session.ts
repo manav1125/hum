@@ -557,12 +557,15 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     try {
       this.transcriber?.stop();
     } catch (err) {
+      // Recovered from below (`transcriber_closed` lets the turn proceed), so
+      // the client must keep the session up.
       await this.sendFrame({
         type: "error",
         code: LiveVoiceProtocolErrorCode.InvalidField,
         message: `Live voice transcription could not be stopped: ${errorMessage(
           err,
         )}`,
+        fatal: false,
       });
       this.state = "transcriber_closed";
     }
@@ -600,11 +603,14 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         // Non-terminal: providers like OpenAI Whisper emit `error` for
         // transient poll failures and continue streaming. Let `closed` /
         // `final` drive turn lifecycle so we don't drain audio buffers or
-        // mark the turn cancelled prematurely.
+        // mark the turn cancelled prematurely. `fatal: false` says so on the
+        // wire — otherwise the client ends the call on a hiccup we recovered
+        // from, which is how live conversations dropped mid-sentence.
         await this.sendFrame({
           type: "error",
           code: LiveVoiceProtocolErrorCode.InvalidField,
           message: event.message,
+          fatal: false,
         });
         return;
       case "closed":
@@ -780,7 +786,20 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
 
     const content = this.finalTranscriptText.trim();
     if (content.length === 0) {
-      await this.finalizePendingTurn("empty_transcript");
+      // Nothing to answer — a cough, a door, background noise that tripped the
+      // client's automatic push-to-talk release. There is no assistant turn to
+      // run, but the utterance still has to be CLOSED: the transcriber was
+      // stopped by `ptt_release`, so a full-duplex session that just returns
+      // here is alive on the socket and permanently deaf — it never sends
+      // `tts_done`, never re-arms, and the call silently stops working until
+      // the inactivity timeout eventually kills it minutes later. Close the
+      // turn and loop back to listening exactly as a completed turn does.
+      //
+      // Latch first: `ptt_release` and the transcriber's `closed` event both
+      // reach here for the same utterance, so without it the empty turn would
+      // be closed — and listening re-armed — twice.
+      this.assistantTurnStarted = true;
+      await this.endTurnWithoutAnswer("empty_transcript");
       return;
     }
 
@@ -1288,6 +1307,25 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     if (this.metricsTurnStarted || this.metricsTurnFinished) return;
     this.metrics.startTurn(turnId);
     this.metricsTurnStarted = true;
+  }
+
+  /**
+   * Close a turn that produced no spoken answer and, in full-duplex, re-arm
+   * listening for the next utterance.
+   *
+   * `tts_done` is the client's "this turn is over" signal — the only thing that
+   * moves it out of transcribing/thinking and re-opens its mic gate. A turn that
+   * ends without one leaves both sides stuck: the daemon on a stopped
+   * transcriber, the client waiting for an answer that will never come. Mirrors
+   * the closing half of the success path (`completeTtsForTurn`).
+   */
+  private async endTurnWithoutAnswer(reason: string): Promise<void> {
+    const turnId = this.ensureTurnId();
+    await this.finalizePendingTurn(reason);
+    await this.sendFrame({ type: "tts_done", turnId });
+    if (this.fullDuplex) {
+      await this.beginNextListeningTurn();
+    }
   }
 
   private async finalizePendingTurn(reason: string): Promise<void> {

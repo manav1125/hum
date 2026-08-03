@@ -238,6 +238,19 @@ export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "error";
   readonly code: LiveVoiceProtocolErrorCode;
   readonly message: string;
+  /**
+   * Whether this error ends the session. Omit (or `true`) for a terminal
+   * failure; send `false` when the session is still running and the client
+   * must NOT tear down.
+   *
+   * Several conditions here are reported but recovered from — a streaming
+   * transcriber emitting a transient poll error and continuing, for instance.
+   * Without this field the wire could not say so, so clients treated every
+   * `error` frame as fatal and a healthy conversation died on a hiccup the
+   * daemon had already absorbed. Optional so older clients (which ignore it)
+   * keep exactly their current behaviour.
+   */
+  readonly fatal?: boolean;
 }
 
 export type LiveVoiceServerFrame =

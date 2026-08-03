@@ -336,10 +336,14 @@ describe("LiveVoiceSession assistant turn", () => {
     );
 
     expect(startVoiceTurn).not.toHaveBeenCalled();
+    // `tts_done` closes the empty turn. There is no answer to speak, but the
+    // client is sitting in `transcribing` waiting for one, and the transcriber
+    // is already stopped — without it both sides wait forever.
     expect(frames.map((frame) => frame.type)).toEqual([
       "ready",
       "stt_final",
       "metrics",
+      "tts_done",
     ]);
   });
 
@@ -362,7 +366,12 @@ describe("LiveVoiceSession assistant turn", () => {
     await waitForFrameCount(frames, 2);
 
     expect(startVoiceTurn).not.toHaveBeenCalled();
-    expect(frames.map((frame) => frame.type)).toEqual(["ready", "stt_final"]);
+    // No assistant turn — but the empty turn is still closed (see above).
+    expect(frames.map((frame) => frame.type)).toEqual([
+      "ready",
+      "stt_final",
+      "tts_done",
+    ]);
   });
 
   test("falls back to the session id when start omits a conversation id", async () => {

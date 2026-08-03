@@ -136,6 +136,7 @@ export class GeminiLiveSession implements LiveVoiceSession {
       callbacks: {
         onAudio: (pcm) => this.onModelAudio(pcm),
         onOutputText: (text) => {
+          this.beginTurn();
           this.pendingAssistantText += text;
           void this.context.sendFrame({ type: "assistant_text_delta", text });
         },
@@ -217,9 +218,28 @@ export class GeminiLiveSession implements LiveVoiceSession {
     this.client?.sendAudio(chunk);
   }
 
+  /**
+   * Open a model turn, announcing it with a `thinking` frame exactly once.
+   *
+   * `thinking` is the protocol's turn-start marker — clients reset their
+   * per-turn display state on it (reply text, result cards). This engine never
+   * sent one, so on the realtime path a client had no turn boundary at all and
+   * each reply was appended to the last: answers ran together and a new turn
+   * opened by repeating the answer to the previous question. Returns the turn
+   * id so callers can attribute frames to it.
+   */
+  private beginTurn(): string {
+    const existing = this.currentTurnId;
+    if (existing) return existing;
+    const turnId = randomUUID();
+    this.currentTurnId = turnId;
+    void this.context.sendFrame({ type: "thinking", turnId });
+    return turnId;
+  }
+
   private onModelAudio(pcm: Buffer): void {
     if (this.closed) return;
-    if (!this.currentTurnId) this.currentTurnId = randomUUID();
+    this.beginTurn();
     void this.context.sendFrame({
       type: "tts_audio",
       mimeType: "audio/pcm",
@@ -229,6 +249,7 @@ export class GeminiLiveSession implements LiveVoiceSession {
   }
 
   private onTurnComplete(): void {
+    // A turn that produced no audio and no text still needs an id to close.
     const turnId = this.currentTurnId ?? randomUUID();
     this.currentTurnId = null;
     // Save this turn (user utterance + assistant reply) to the thread, then

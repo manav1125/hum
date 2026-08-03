@@ -379,7 +379,12 @@ describe("server frame dispatch", () => {
 
   test("server error frame emits a protocol-error and closes", async () => {
     const { client, ws } = await ready();
-    const errors: { reason: string; code?: string; message: string }[] = [];
+    const errors: {
+      reason: string;
+      code?: string;
+      message: string;
+      fatal: boolean;
+    }[] = [];
     let closedCount = 0;
     client.on("error", (e) => errors.push(e));
     client.on("closed", () => closedCount++);
@@ -387,10 +392,55 @@ describe("server frame dispatch", () => {
     ws.receive({ type: "error", seq: 10, code: "boom", message: "kaboom" });
 
     expect(errors).toEqual([
-      { reason: "protocol-error", code: "boom", message: "kaboom" },
+      {
+        reason: "protocol-error",
+        code: "boom",
+        message: "kaboom",
+        fatal: true,
+      },
     ]);
     expect(closedCount).toBe(1);
     expect(ws.closed).toBe(true);
+  });
+
+  test("a `fatal: false` error frame is surfaced without closing the socket", async () => {
+    // The daemon reports conditions it recovered from over the same frame (a
+    // transcriber's transient poll error). Closing on those killed live calls.
+    const { client, ws } = await ready();
+    const errors: Array<{
+      reason: string;
+      code?: string;
+      message: string;
+      fatal: boolean;
+    }> = [];
+    let closedCount = 0;
+    client.on("error", (e) => errors.push(e));
+    client.on("closed", () => closedCount++);
+
+    ws.receive({
+      type: "error",
+      seq: 10,
+      code: "invalid_field",
+      message: "transcription poll failed",
+      fatal: false,
+    });
+
+    expect(errors).toEqual([
+      {
+        reason: "protocol-error",
+        code: "invalid_field",
+        message: "transcription poll failed",
+        fatal: false,
+      },
+    ]);
+    expect(closedCount).toBe(0);
+    expect(ws.closed).toBe(false);
+
+    // Still live: a later frame is still dispatched.
+    const finals: string[] = [];
+    client.on("sttFinal", (f) => finals.push(f.text));
+    ws.receive({ type: "stt_final", seq: 11, text: "still here" });
+    expect(finals).toEqual(["still here"]);
   });
 
   test("ignores inbound binary frames (no parse, no event)", async () => {

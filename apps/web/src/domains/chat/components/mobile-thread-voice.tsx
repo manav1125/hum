@@ -21,18 +21,25 @@
  *  · voice bar — breathing orb (tap = mute), 4-bar waveform, ⌨ flip-to-typing
  *    (does NOT end the session), ✕ end.
  *
- * HONEST LIMIT (persistence marker): the daemon persists voice turns into the
- * conversation with no voice marker — the cascade engine stamps
- * `sourceInterface: "macos"` (assistant/src/live-voice/live-voice-session.ts)
- * and the Gemini path plain `addMessage` (live-voice-thread.ts) — so persisted
- * voice turns are indistinguishable from typed ones after reload. The italic
- * 🎙 treatment is therefore applied to the LIVE session's turns only (tracked
- * locally per turn); once the thread is reloaded from history those turns
- * render as regular bubbles. Styling them retroactively would require a
- * server-side marker that doesn't exist yet.
+ * WHAT THE STRIP MAY DRAW — the thread above it is the record of the
+ * conversation, and this strip must never be a second copy of it. Persisted
+ * voice turns carry the durable `voiceTurn` marker and MobileChatView already
+ * renders them with this component's own {@link VOICE_BUBBLE_LOOK}, so anything
+ * the strip draws for an exchange the thread already holds appears twice on
+ * screen. The strip therefore shows only the CURRENT exchange, and only for as
+ * long as the thread does not have it:
+ *
+ *  · cascade — the daemon runs the turn through the normal agent loop and
+ *    broadcasts the persisted user message and every assistant delta onto the
+ *    conversation, so the thread streams the whole exchange live. The strip
+ *    contributes only the in-flight speech recognition (the partial transcript,
+ *    which never leaves the voice socket) and the thinking marker.
+ *  · gemini-live — the realtime engine writes the turn to the thread only when
+ *    it completes and broadcasts nothing meanwhile, so for it the strip IS the
+ *    live view of the exchange, until the turn closes and the thread takes over.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Keyboard, Mic, MicOff, X } from "lucide-react";
 
@@ -126,12 +133,6 @@ function toSurface(card: LiveVoiceCard): Surface {
   };
 }
 
-/** A completed exchange within the live session (kept locally — see header). */
-interface ThreadVoiceTurn {
-  user: string;
-  assistant: string;
-}
-
 export interface MobileThreadVoiceProps {
   assistantId: string;
   /** The conversation the session binds to — spoken turns land in this thread. */
@@ -165,6 +166,8 @@ export function MobileThreadVoice({
     setMuted,
   } = useLiveVoice();
   const cards = useLiveVoiceStore.use.cards();
+  const engine = useLiveVoiceStore.use.engine();
+  const turnClosed = useLiveVoiceStore.use.turnClosed();
 
   // Cards are display-only here (Slice 1 parity with the Voice tab — actions
   // don't round-trip on the live-voice channel yet).
@@ -178,38 +181,26 @@ export function MobileThreadVoice({
     void start(assistantId, conversationId);
   }, [started, start, assistantId, conversationId]);
 
-  // ── Session-local turn history (see the honesty note in the header): when a
-  // full-duplex turn completes (speaking → listening re-arm), archive the
-  // exchange so it stays visible as 🎙 bubbles while the session continues.
-  const [turns, setTurns] = useState<ThreadVoiceTurn[]>([]);
-  const prevStateRef = useRef(state);
-  useEffect(() => {
-    const prev = prevStateRef.current;
-    prevStateRef.current = state;
-    if (prev === "speaking" && state === "listening") {
-      const store = useLiveVoiceStore.getState();
-      const user = store.finalTranscript.trim();
-      const assistant = store.assistantTranscript.trim();
-      if (user || assistant) {
-        setTurns((t) => [...t, { user, assistant }]);
-      }
-    }
-  }, [state]);
-
-  const lastTurn = turns.length > 0 ? turns[turns.length - 1] : undefined;
-
-  // Current-exchange text, deduped against the archived last turn (the store
-  // keeps finalTranscript/assistantTranscript until the NEXT turn resets them).
-  const currentUser =
-    finalTranscript.trim() === (lastTurn?.user ?? "").trim()
-      ? partialTranscript.trim()
-      : [finalTranscript, partialTranscript].filter(Boolean).join(" ").trim();
-  const currentAssistant =
-    assistantTranscript.trim() === (lastTurn?.assistant ?? "").trim()
-      ? ""
-      : assistantTranscript.trim();
-
   const listening = state === "listening" || state === "transcribing";
+
+  // Whether this session's turns reach the thread only after they finish (see
+  // the header). When they do not, the strip carries the live exchange; when
+  // the thread is already streaming it, the strip stays out of the way.
+  const stripOwnsExchange = engine === "gemini-live";
+
+  // The exchange is the strip's to draw until `turnClosed` — the moment the
+  // session re-arms for the next utterance, by which point the completed turn
+  // is a persisted 🎙 citizen of the thread above.
+  const currentUser = (
+    stripOwnsExchange && !turnClosed
+      ? [finalTranscript, partialTranscript].filter(Boolean).join(" ")
+      : // Cascade: the finalized utterance is persisted and broadcast the
+        // moment the turn starts, so only the in-flight partial — which never
+        // leaves the voice socket — is ours to show.
+        partialTranscript
+  ).trim();
+  const currentAssistant =
+    stripOwnsExchange && !turnClosed ? assistantTranscript.trim() : "";
   const active =
     state !== "idle" && state !== "failed" && state !== "connecting";
   const failed = state === "failed";
@@ -235,7 +226,6 @@ export function MobileThreadVoice({
   }, [start, assistantId, conversationId]);
 
   const hasStrip =
-    turns.length > 0 ||
     currentUser.length > 0 ||
     currentAssistant.length > 0 ||
     cards.length > 0 ||
@@ -259,9 +249,6 @@ export function MobileThreadVoice({
             padding: "10px 16px 4px",
           }}
         >
-          {turns.map((turn, i) => (
-            <TurnBubbles key={i} user={turn.user} assistant={turn.assistant} />
-          ))}
           {currentUser ? (
             <div style={VOICE_BUBBLE}>
               <span aria-hidden>🎙 </span>&ldquo;{currentUser}&rdquo;
@@ -552,20 +539,6 @@ function EndButton({ onClick }: { onClick: () => void }) {
         <X size={13} />
       </span>
     </button>
-  );
-}
-
-/** One archived exchange — 🎙 user bubble + assistant reply bubble. */
-function TurnBubbles({ user, assistant }: { user: string; assistant: string }) {
-  return (
-    <>
-      {user ? (
-        <div style={VOICE_BUBBLE}>
-          <span aria-hidden>🎙 </span>&ldquo;{user}&rdquo;
-        </div>
-      ) : null}
-      {assistant ? <div style={REPLY_BUBBLE}>{assistant}</div> : null}
-    </>
   );
 }
 

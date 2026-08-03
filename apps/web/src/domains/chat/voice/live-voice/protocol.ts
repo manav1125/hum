@@ -220,6 +220,17 @@ export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "error";
   readonly code: string;
   readonly message: string;
+  /**
+   * Whether this error ends the session. Absent → `true` (the historical
+   * meaning, and what every older daemon sends).
+   *
+   * The daemon reports some conditions that it explicitly recovers from — a
+   * streaming transcriber emitting a transient poll error and continuing, for
+   * instance — over the same frame. With no severity on the wire the client
+   * had to treat those as terminal, so a healthy conversation could be torn
+   * down mid-sentence by a hiccup the server had already absorbed.
+   */
+  readonly fatal?: boolean;
 }
 
 export type LiveVoiceServerFrame =
@@ -244,6 +255,8 @@ export interface LiveVoiceInvalidJsonFrame {
   readonly type: "error";
   readonly code: "invalid_json";
   readonly message: string;
+  /** Always fatal — a frame we cannot parse is not a condition to continue on. */
+  readonly fatal?: true;
 }
 
 // ---------------------------------------------------------------------------

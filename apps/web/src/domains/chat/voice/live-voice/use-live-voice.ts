@@ -426,6 +426,9 @@ export function useLiveVoice(
       const fullDuplex = opts.fullDuplex !== false;
       const engine = resolveVoiceEngine(opts.engine);
       const persona = resolveVoicePersona(opts.persona);
+      // Consumers that render inside a chat thread need to know whether the
+      // daemon is also streaming this session's turns into that thread.
+      store.setEngine(engine);
       const client = (
         opts.createClient ?? (() => new LiveVoiceChannelClient())
       )();
@@ -559,6 +562,10 @@ export function useLiveVoice(
         }),
         client.on("error", (err: LiveVoiceClientError) => {
           if (!live()) return;
+          // The daemon marked this one non-terminal and is still running the
+          // session (a transcriber poll hiccup, say). Tearing down here is what
+          // dropped live conversations mid-sentence; the socket is fine.
+          if (err.fatal === false) return;
           // Transient transport failures recover; a protocol-error is the
           // server refusing and is terminal (never retried).
           if (
@@ -573,10 +580,17 @@ export function useLiveVoice(
           // A transport close after a clean end()/teardown is expected — those
           // null the session first, so `live()` is already false. Reaching here
           // with a live session means an UNEXPECTED drop: try to recover it
-          // before giving up. teardown() resets the store to idle.
+          // before giving up.
           if (!live()) return;
           if (attemptReconnect(assistantId, conversationId)) return;
-          teardown();
+          // Recovery is exhausted. Say so — silently resetting to idle is how a
+          // dropped session read as "voice randomly stops", with the orb back
+          // at "tap to talk" and nothing explaining why.
+          finishWithError(
+            session,
+            teardown,
+            "Voice disconnected and couldn't reconnect. Tap to start again.",
+          );
         }),
       );
 
@@ -756,6 +770,10 @@ function resumeListening(session: SessionContext): void {
   session.silenceMs = 0;
   const s = useLiveVoiceStore.getState();
   s.setPartialTranscript("");
+  // The exchange is over: whatever arrives next belongs to a NEW turn. This is
+  // the client's own turn boundary — the server `thinking` frame (which only
+  // the cascade sends) is no longer the sole thing that resets the reply.
+  s.closeTurn();
   s.setInputAmplitude(0);
   s.setState("listening");
 }
@@ -833,8 +851,22 @@ async function finishResponseAfterPlayback(
   ]);
   if (session.generation !== generation) return;
 
-  // A barge-in mid-drain already advanced the session; leave it alone.
-  if (useLiveVoiceStore.getState().state !== "speaking") return;
+  // A barge-in mid-drain already re-armed the session, and a stopped/failed
+  // session must not be revived — leave those alone. Anything else is a turn
+  // still waiting to be closed, INCLUDING one that never reached `speaking`:
+  // the daemon closes a turn with no spoken answer (an utterance that
+  // transcribed to nothing) with a bare `tts_done`, and bailing on every phase
+  // but `speaking` left those sessions stuck in `transcribing` with the mic
+  // gate shut — alive, but unable to hear another word.
+  const phase = useLiveVoiceStore.getState().state;
+  if (
+    phase === "listening" ||
+    phase === "idle" ||
+    phase === "ending" ||
+    phase === "failed"
+  ) {
+    return;
+  }
 
   if (session.fullDuplex) {
     // Loop back to listening on the same open socket for the next utterance.

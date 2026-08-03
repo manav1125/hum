@@ -73,12 +73,39 @@ export interface LiveVoiceCard {
 export interface LiveVoiceState {
   /** Current phase of the session lifecycle. */
   state: LiveVoiceSessionState;
+  /**
+   * Which server engine the active session negotiated. `"cascade"` runs the
+   * turn through the normal agent loop, so the daemon broadcasts the persisted
+   * user message and every assistant delta onto the conversation itself;
+   * `"gemini-live"` is speech-native and only writes the turn to the thread
+   * once it completes. Consumers that render inside a chat thread need this to
+   * know whether the thread is already showing the exchange.
+   */
+  engine: "cascade" | "gemini-live";
   /** In-flight partial transcript of the user's current utterance. */
   partialTranscript: string;
   /** Last finalized user transcript. */
   finalTranscript: string;
   /** Accumulated assistant response text for the current turn. */
   assistantTranscript: string;
+  /**
+   * Whether the exchange currently held in `finalTranscript` /
+   * `assistantTranscript` is FINISHED — the assistant stopped speaking and the
+   * session re-armed for the next utterance.
+   *
+   * This is the per-turn boundary. Without it the only thing that ever reset
+   * `assistantTranscript` was the server's `thinking` frame, which the cascade
+   * sends and the realtime engine does not — so on the realtime engine every
+   * reply was appended to the previous one and a new turn opened by repeating
+   * the answer to the PREVIOUS question. The flag makes the boundary the
+   * client's own, independent of any server frame: the next transcript or
+   * delta that arrives opens a new turn and replaces, instead of appending.
+   *
+   * The text is deliberately kept on screen while closed — surfaces with no
+   * conversation behind them (the /voice route) show the last exchange until
+   * the next one starts.
+   */
+  turnClosed: boolean;
   /** Smoothed RMS mic amplitude in [0, 1] for UI / barge-in. */
   inputAmplitude: number;
   /** Human-readable error message when `state === "failed"`, `null` otherwise. */
@@ -101,12 +128,19 @@ export interface LiveVoiceState {
 export interface LiveVoiceActions {
   /** Replace the session phase. */
   setState: (state: LiveVoiceSessionState) => void;
+  /** Record which engine the active session negotiated. */
+  setEngine: (engine: "cascade" | "gemini-live") => void;
   setPartialTranscript: (text: string) => void;
   setFinalTranscript: (text: string) => void;
   /** Append a delta to the accumulated assistant transcript. */
   appendAssistantTranscript: (delta: string) => void;
   /** Reset the assistant transcript ahead of a new response. */
   clearAssistantTranscript: () => void;
+  /**
+   * Mark the displayed exchange as finished (see {@link LiveVoiceState.turnClosed}).
+   * Called when the session re-arms for the next utterance.
+   */
+  closeTurn: () => void;
   setInputAmplitude: (amplitude: number) => void;
   /** Transition to `failed` with a message and a failure kind (default `session`). */
   fail: (message: string, kind?: "mic" | "session") => void;
@@ -130,14 +164,27 @@ export type LiveVoiceStore = LiveVoiceState & LiveVoiceActions;
 
 const INITIAL_STATE: LiveVoiceState = {
   state: "idle",
+  engine: "cascade",
   partialTranscript: "",
   finalTranscript: "",
   assistantTranscript: "",
+  turnClosed: false,
   inputAmplitude: 0,
   error: null,
   failureKind: null,
   cards: [],
 };
+
+/**
+ * The fields a new turn starts from. Applied lazily by the transcript setters
+ * the moment something arrives while the previous exchange is closed, so the
+ * finished exchange stays on screen until its replacement actually exists.
+ */
+const OPEN_TURN = {
+  turnClosed: false,
+  finalTranscript: "",
+  assistantTranscript: "",
+} as const;
 
 /** Build a `LiveVoiceCard` from a `card` server frame, defaulting opaque data. */
 function cardFromFrame(frame: LiveVoiceCardServerFrame): LiveVoiceCard {
@@ -155,11 +202,34 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
   ...INITIAL_STATE,
 
   setState: (state) => set({ state }),
-  setPartialTranscript: (partialTranscript) => set({ partialTranscript }),
-  setFinalTranscript: (finalTranscript) => set({ finalTranscript }),
+  setEngine: (engine) => set({ engine }),
+  // The three transcript writers below all open a new turn when the previous
+  // exchange is closed, so whichever of them the engine happens to send first
+  // (the cascade leads with `stt_*`, the realtime engine can lead with a
+  // delta) starts the turn cleanly instead of extending the last one.
+  setPartialTranscript: (partialTranscript) =>
+    set((s) =>
+      s.turnClosed && partialTranscript.length > 0
+        ? { ...OPEN_TURN, partialTranscript }
+        : { partialTranscript },
+    ),
+  setFinalTranscript: (finalTranscript) =>
+    set((s) =>
+      s.turnClosed ? { ...OPEN_TURN, finalTranscript } : { finalTranscript },
+    ),
   appendAssistantTranscript: (delta) =>
-    set((s) => ({ assistantTranscript: s.assistantTranscript + delta })),
-  clearAssistantTranscript: () => set({ assistantTranscript: "" }),
+    set((s) =>
+      s.turnClosed
+        ? // A reply arriving with no new user transcript still starts a new
+          // turn: replace the finished reply rather than growing it. Keeping
+          // the previous answer as a prefix is what made Cue appear to answer
+          // a question it was never asked.
+          { turnClosed: false, assistantTranscript: delta }
+        : { assistantTranscript: s.assistantTranscript + delta },
+    ),
+  clearAssistantTranscript: () =>
+    set({ assistantTranscript: "", turnClosed: false }),
+  closeTurn: () => set({ turnClosed: true }),
   setInputAmplitude: (inputAmplitude) => set({ inputAmplitude }),
   fail: (message, kind = "session") =>
     set({ state: "failed", error: message, failureKind: kind }),

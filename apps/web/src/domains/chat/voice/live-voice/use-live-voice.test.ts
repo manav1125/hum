@@ -53,6 +53,7 @@ class FakeClient {
     conversationId?: string;
     fullDuplex?: boolean;
     engine?: "cascade" | "gemini-live";
+    persona?: string;
   } | null = null;
   sentAudio: ArrayBuffer[] = [];
   pttReleaseCount = 0;
@@ -83,6 +84,7 @@ class FakeClient {
     conversationId?: string;
     fullDuplex?: boolean;
     engine?: "cascade" | "gemini-live";
+    persona?: string;
   }): Promise<void> {
     this.connectArgs = args;
   }
@@ -312,6 +314,7 @@ describe("full turn", () => {
       // The speech-native engine is opt-in; the cascaded pipeline (which keeps
       // tools + memory) is what a default session asks for.
       engine: "cascade",
+      persona: "companion",
     });
 
     await act(async () => {
@@ -683,6 +686,152 @@ describe("full-duplex", () => {
     expect(h.client.sentAudio.length).toBe(sentBefore + 1);
   });
 
+  // -------------------------------------------------------------------------
+  // Turn boundaries. Regression: the ONLY thing that ever reset the assistant
+  // transcript was the server's `thinking` frame, which the cascade sends and
+  // the realtime engine does not. On the realtime engine every reply was
+  // therefore appended to the previous one — replies ran together with no
+  // separator, and each new turn opened by repeating the answer to the
+  // PREVIOUS question, which is the worst part: Cue appeared to answer a
+  // question it was never asked.
+  // -------------------------------------------------------------------------
+
+  /** Drive one full-duplex turn: user utterance → reply text → tts → drain. */
+  async function driveTurn(
+    h: ReturnType<typeof renderController>,
+    opts: { seq: number; turnId: string; user?: string; reply: string },
+  ) {
+    if (opts.user !== undefined) {
+      act(() => {
+        h.client.emit("sttFinal", {
+          type: "stt_final",
+          seq: opts.seq,
+          text: opts.user as string,
+        });
+      });
+    }
+    act(() => {
+      h.client.emit("assistantTextDelta", {
+        type: "assistant_text_delta",
+        seq: opts.seq + 1,
+        text: opts.reply,
+      });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: opts.seq + 2,
+        mimeType: "audio/pcm",
+        sampleRate: 24000,
+        dataBase64: "AAAA",
+      });
+    });
+    await act(async () => {
+      h.client.emit("ttsDone", {
+        type: "tts_done",
+        seq: opts.seq + 3,
+        turnId: opts.turnId,
+      });
+      h.player.finishPlayback();
+      await Promise.resolve();
+    });
+  }
+
+  test("a reply never carries the previous turn's answer, even with no `thinking` frame", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    await driveTurn(h, {
+      seq: 2,
+      turnId: "t1",
+      user: "Hello, can you hear me?",
+      reply: "Loud and clear! How can I help today?",
+    });
+    expect(h.view.result.current.assistantTranscript).toBe(
+      "Loud and clear! How can I help today?",
+    );
+
+    await driveTurn(h, {
+      seq: 10,
+      turnId: "t2",
+      user: "How much does the architect cost?",
+      reply: "It's $40 a month.",
+    });
+
+    // Not "Loud and clear! How can I help today?It's $40 a month."
+    expect(h.view.result.current.assistantTranscript).toBe("It's $40 a month.");
+    expect(h.view.result.current.finalTranscript).toBe(
+      "How much does the architect cost?",
+    );
+  });
+
+  test("a reply that arrives before any new user transcript still opens a new turn", async () => {
+    // The realtime engine's input and output transcriptions race; a turn whose
+    // first frame is a delta must not extend the finished reply either.
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    await driveTurn(h, { seq: 2, turnId: "t1", user: "Hi", reply: "Hello!" });
+    await driveTurn(h, { seq: 10, turnId: "t2", reply: "Still here." });
+
+    expect(h.view.result.current.assistantTranscript).toBe("Still here.");
+  });
+
+  test("deltas within one turn still accumulate", async () => {
+    // The turn boundary must not degrade into "last delta wins" — streaming a
+    // reply chunk by chunk is the normal case.
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    act(() => {
+      h.client.emit("assistantTextDelta", {
+        type: "assistant_text_delta",
+        seq: 2,
+        text: "I can help ",
+      });
+      h.client.emit("assistantTextDelta", {
+        type: "assistant_text_delta",
+        seq: 3,
+        text: "with a bunch of things.",
+      });
+    });
+    expect(h.view.result.current.assistantTranscript).toBe(
+      "I can help with a bunch of things.",
+    );
+  });
+
+  test("a turn that ends without ever speaking still re-arms the mic", async () => {
+    // An utterance that transcribes to nothing (a cough, a door) is closed by
+    // the daemon with a bare `tts_done` — no thinking, no audio. Ignoring that
+    // left the session stuck in `transcribing` with the mic gate shut: alive on
+    // the socket, unable to hear another word.
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    // Drive the automatic push-to-talk release: speech, then trailing silence.
+    act(() => {
+      h.getCapture().pushAmplitude(0.2);
+      h.getCapture().pushChunk(pcmChunk(200));
+      h.getCapture().pushAmplitude(0);
+      h.getCapture().pushChunk(pcmChunk(1200));
+    });
+    expect(h.view.result.current.state).toBe("transcribing");
+    expect(h.client.pttReleaseCount).toBe(1);
+
+    await act(async () => {
+      h.client.emit("ttsDone", { type: "tts_done", seq: 5, turnId: "t1" });
+      await Promise.resolve();
+    });
+
+    expect(h.view.result.current.state).toBe("listening");
+
+    // And the mic gate really did re-open.
+    const sentBefore = h.client.sentAudio.length;
+    act(() => {
+      h.getCapture().pushAmplitude(0.1);
+      h.getCapture().pushChunk(pcmChunk(20));
+    });
+    expect(h.client.sentAudio.length).toBe(sentBefore + 1);
+  });
+
   test("stop() still tears down a full-duplex session", async () => {
     const h = renderController({ fullDuplex: true });
     await startListening(h);
@@ -710,6 +859,7 @@ describe("failure", () => {
       const err: LiveVoiceClientError = {
         reason: "protocol-error",
         message: "kaboom",
+        fatal: true,
       };
       h.client.emit("error", err);
     });
@@ -718,6 +868,35 @@ describe("failure", () => {
     expect(h.view.result.current.error).toBe("kaboom");
     expect(h.client.closed).toBe(true);
     expect(h.getCapture().shutdownCount).toBe(1);
+  });
+
+  test("a non-fatal error frame leaves the session running", async () => {
+    // The daemon reports conditions it has already recovered from over the same
+    // `error` frame (a transcriber's transient poll error, say). Treating those
+    // as terminal is what dropped live conversations mid-sentence.
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    act(() => {
+      const err: LiveVoiceClientError = {
+        reason: "protocol-error",
+        code: "invalid_field",
+        message: "transcription poll failed",
+        fatal: false,
+      };
+      h.client.emit("error", err);
+    });
+
+    expect(h.view.result.current.state).toBe("listening");
+    expect(h.view.result.current.error).toBeNull();
+    expect(h.client.closed).toBe(false);
+    expect(h.getCapture().shutdownCount).toBe(0);
+
+    // And the session still works: the next turn drives the machine as usual.
+    act(() => {
+      h.client.emit("thinking", { type: "thinking", seq: 9, turnId: "t1" });
+    });
+    expect(h.view.result.current.state).toBe("thinking");
   });
 
   test("busy frame fails the session", async () => {
@@ -888,10 +1067,12 @@ describe("reconnect on unexpected drop", () => {
       h.clients[h.clients.length - 1].emit("closed", undefined);
       await new Promise((r) => setTimeout(r, 50));
     });
-    // Bounded clients (initial + at most MAX reconnects), and it ends up idle
-    // rather than looping forever.
+    // Bounded clients (initial + at most MAX reconnects), and it gives up with
+    // an explanation rather than looping forever OR silently resetting to idle
+    // (which is how a dropped session read as "voice randomly stops").
     expect(h.clients.length).toBeLessThanOrEqual(MAX_ATTEMPTS_PROBE + 1);
-    expect(h.view.result.current.state).toBe("idle");
+    expect(h.view.result.current.state).toBe("failed");
+    expect(h.view.result.current.error).toContain("reconnect");
   });
 
   test("a protocol error is terminal — no reconnect", async () => {
@@ -901,6 +1082,7 @@ describe("reconnect on unexpected drop", () => {
       h.clients[0].emit("error", {
         reason: "protocol-error",
         message: "server refused",
+        fatal: true,
       });
       h.clients[0].emit("closed", undefined);
       await new Promise((r) => setTimeout(r, 500));

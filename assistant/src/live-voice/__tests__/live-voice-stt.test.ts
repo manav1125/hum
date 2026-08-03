@@ -237,6 +237,100 @@ describe("LiveVoiceSession STT", () => {
     ]);
   });
 
+  // An utterance that transcribes to nothing (a cough, a door, background noise
+  // that tripped the client's automatic push-to-talk release) has no assistant
+  // turn to run — but the turn still has to be CLOSED. The transcriber was
+  // stopped by `ptt_release`, so a full-duplex session that just returned was
+  // alive on the socket and permanently deaf: no `tts_done`, no re-arm, and the
+  // call silently stopped working until the inactivity timeout killed it.
+  test("an empty transcript closes the turn and re-arms a full-duplex session", async () => {
+    /** Hears only silence: no partials, and no final on stop. */
+    class SilentTranscriber implements StreamingTranscriber {
+      readonly providerId = "deepgram" as const;
+      readonly boundaryId = "daemon-streaming" as const;
+      readonly audioChunks: Buffer[] = [];
+      private onEvent: ((event: SttStreamServerEvent) => void) | null = null;
+
+      async start(onEvent: (event: SttStreamServerEvent) => void) {
+        this.onEvent = onEvent;
+      }
+      sendAudio(audio: Buffer): void {
+        this.audioChunks.push(audio);
+      }
+      stop(): void {
+        this.onEvent?.({ type: "closed" });
+      }
+    }
+
+    const { context, frames } = createContext({ fullDuplex: true });
+    const transcribers: SilentTranscriber[] = [];
+    const startVoiceTurn = mock(async () => ({
+      turnId: "bridge-turn-1",
+      abort: mock(),
+    }));
+    const session = new LiveVoiceSession(context, {
+      resolveTranscriber: mock(async () => {
+        const t = new SilentTranscriber();
+        transcribers.push(t);
+        return t;
+      }),
+      startVoiceTurn,
+      emitMetrics: false,
+    });
+
+    await session.start();
+    await session.handleBinaryAudio(new Uint8Array([1, 2, 3]));
+    await session.handleClientFrame({ type: "ptt_release" });
+    // The transcriber's `closed` event is dispatched into an async handler, and
+    // re-arming resolves a fresh transcriber.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The turn is closed on the wire, so the client leaves `transcribing`.
+    expect(frames.some((frame) => frame.type === "tts_done")).toBe(true);
+
+    // And the session really can hear again: a second transcriber is armed and
+    // post-release audio reaches it.
+    expect(transcribers).toHaveLength(2);
+    await session.handleBinaryAudio(new Uint8Array([4, 5, 6]));
+    expect(transcribers[1]?.audioChunks.map((chunk) => [...chunk])).toEqual([
+      [4, 5, 6],
+    ]);
+  });
+
+  // A transcriber `error` event is explicitly non-terminal — providers like
+  // OpenAI Whisper emit one for a transient poll failure and keep streaming.
+  // The wire had no way to say so, so the client ended the call on a hiccup the
+  // daemon had already absorbed: live conversations dropped mid-sentence.
+  test("marks a recovered transcriber error non-fatal so the client keeps the session", async () => {
+    const { frames, session, transcriber } = createSessionWithTranscriber();
+
+    await session.start();
+    transcriber.emit({
+      type: "error",
+      category: "provider-error",
+      message: "poll failed",
+    });
+    // Transcriber events are dispatched into an async handler.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(frames.filter((frame) => frame.type === "error")).toEqual([
+      {
+        type: "error",
+        seq: 2,
+        code: "invalid_field",
+        message: "poll failed",
+        fatal: false,
+      },
+    ]);
+
+    // The session really is still running: audio still reaches the transcriber
+    // and the turn still completes.
+    await session.handleBinaryAudio(new Uint8Array([1, 2, 3]));
+    expect(transcriber.audioChunks.map((chunk) => [...chunk])).toEqual([
+      [1, 2, 3],
+    ]);
+  });
+
   test("retains transcriber handle when stop() throws so close() can clean up", async () => {
     class ThrowingStopTranscriber extends MockStreamingTranscriber {
       stopCalls = 0;
