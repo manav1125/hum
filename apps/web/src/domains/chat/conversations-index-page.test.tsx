@@ -96,6 +96,10 @@ mock.module("@/hooks/use-is-mobile", () => ({
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 
+const { CONVERSATION_LIST_PAGE_SIZE } = await import(
+  "@/utils/conversation-list-fetchers",
+);
+
 const { ConversationsIndexPage, buildFilters } =
   await import("./conversations-index-page");
 
@@ -195,6 +199,61 @@ describe("the index lists what the rail's five-row peek cannot", () => {
     expect(screen.getByTestId("pathname").textContent).toBe(
       "/assistant/conversations/c1",
     );
+  });
+});
+
+describe("a window is not a total, and it is not the end of the list", () => {
+  // Prod, the owner's account: this page would have said "150 conversations"
+  // while `?limit=500` returned 420 and the table held 1188 — the foreground
+  // list resolves page 0 and drains two more, and nothing here could ask for
+  // page 4. Conversation #200 was unreachable from the surface called "All
+  // conversations".
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      conversation(`c${i}`, `Thread ${i}`, {
+        lastMessageAt: Date.now() - i * 1000,
+      }),
+    );
+
+  test("at a page boundary the census hedges and offers the rest", async () => {
+    conversations = many(CONVERSATION_LIST_PAGE_SIZE + 10);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Thread 0")).toBeDefined();
+    });
+    expect(screen.getByText(/conversations so far ·/)).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Load older conversations" }),
+    ).toBeDefined();
+  });
+
+  test("once the continuation says there is no more, both go away", async () => {
+    conversations = many(CONVERSATION_LIST_PAGE_SIZE + 10);
+    renderPage();
+    const button = await screen.findByRole("button", {
+      name: "Load older conversations",
+    });
+    fireEvent.click(button);
+    // The mock's page reports no `hasMore`, i.e. this was the last page.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Load older conversations" }),
+      ).toBeNull();
+    });
+    // …and the hedge goes with it: the list is now provably whole.
+    expect(screen.queryByText(/so far/)).toBeNull();
+  });
+
+  test("a short list is the whole list — no hedge, no dead button", async () => {
+    conversations = many(3);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Thread 0")).toBeDefined();
+    });
+    expect(screen.queryByText(/so far/)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Load older conversations" }),
+    ).toBeNull();
   });
 });
 

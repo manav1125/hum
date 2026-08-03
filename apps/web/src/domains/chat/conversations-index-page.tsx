@@ -47,6 +47,15 @@
  * - **"N messages" per row.** `GET …/conversations` returns no message count
  *   and there is no bulk count endpoint. Not drawn — a plausible number is
  *   worse than none.
+ * - **A total.** Same gap, one level up, and this page had it wrong. The
+ *   census counted the rows in hand and said "N conversations" — but the rows
+ *   in hand are the foreground list's drained WINDOW (page 0 plus two more,
+ *   ~150), and there was no affordance to go past it. Prod, on the owner's
+ *   account: this page would have said 150 while `?limit=500` returned 420 and
+ *   the table held 1188, and conversation #200 was unreachable from here at
+ *   any scroll depth. The census now says "150 so far" whenever the window is
+ *   provably partial, and **Load older conversations** extends it — the same
+ *   `loadMoreConversations` continuation the phone's index has always used.
  * - **A quote on every row.** Message text is reachable only per-conversation
  *   (`GET …/messages?conversationId=`), so a preview column would be one
  *   request per row. The quote is therefore search's job, which is why search
@@ -57,9 +66,9 @@
  *   relation does not exist rather than letting the group chip pass for one.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
@@ -93,6 +102,10 @@ import {
   useConversationListQuery,
 } from "@/hooks/conversation-queries";
 import { useMobileLayout } from "@/hooks/use-is-mobile";
+import {
+  CONVERSATION_LIST_PAGE_SIZE,
+  loadMoreConversations,
+} from "@/utils/conversation-list-fetchers";
 import { ChatsIndexPage } from "@/mobile-v3/chats/chats-index-page";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import type { Conversation } from "@/types/conversation-types";
@@ -250,6 +263,7 @@ export function buildFilters(
 
 function AllConversationsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const assistantStateKind = useAssistantLifecycleStore(
     (s) => s.assistantState.kind,
@@ -287,6 +301,25 @@ function AllConversationsPage() {
     () => conversations.filter((c) => c.archivedAt == null),
     [conversations],
   );
+
+  // Is the list in hand the whole list? Page 0 asks for PAGE_SIZE rows and
+  // returns min(pageSize, total), so holding fewer than a page proves there
+  // was no second one. At or above it the window has unknown depth — which is
+  // why the census below hedges and the control at the foot exists.
+  const [moreState, setMoreState] = useState<{
+    busy: boolean;
+    exhausted: boolean;
+  }>({ busy: false, exhausted: false });
+  const windowMaybePartial =
+    conversations.length >= CONVERSATION_LIST_PAGE_SIZE &&
+    !moreState.exhausted;
+  const loadOlder = useCallback(() => {
+    if (!assistantId) return;
+    setMoreState((s) => ({ ...s, busy: true }));
+    loadMoreConversations(queryClient, assistantId)
+      .then(({ hasMore }) => setMoreState({ busy: false, exhausted: !hasMore }))
+      .catch(() => setMoreState((s) => ({ ...s, busy: false })));
+  }, [assistantId, queryClient]);
 
   const [filterId, setFilterId] = useState("all");
   const filters = useMemo(
@@ -353,7 +386,12 @@ function AllConversationsPage() {
                 ? "Reading your conversations…"
                 : total === 0
                   ? "Nothing here yet."
-                  : `${total} ${total === 1 ? "conversation" : "conversations"} · ${thisWeek} this week`}
+                  : // "so far" when the window is provably partial: the number
+                    // is what has been loaded, and the control at the foot of
+                    // the list is how the rest arrives. Saying "N
+                    // conversations" of a capped window is the same fake total
+                    // the phone's menu was printing.
+                    `${total} ${total === 1 ? "conversation" : "conversations"}${windowMaybePartial ? " so far" : ""} · ${thisWeek} this week`}
           </p>
         </div>
         <label
@@ -492,6 +530,21 @@ function AllConversationsPage() {
             ))
           )}
         </ListCard>
+
+        {/* The rest of the history. The foreground list resolves page 0 and
+            drains two more, so this page holds ~150 rows of an account that
+            may have thousands — and until now nothing here could ask for the
+            next page, which made every older conversation unreachable from
+            the surface named "All conversations". Hidden once the
+            continuation reports there is no more, so it never becomes a
+            button that does nothing. */}
+        {!typing && !isLoading && !isError && windowMaybePartial ? (
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <QuietButton onClick={loadOlder} disabled={moreState.busy}>
+              {moreState.busy ? "Loading…" : "Load older conversations"}
+            </QuietButton>
+          </div>
+        ) : null}
 
         {/*
           The honest line. v16 D3 asks for a `▤` *thing* chip per row and an

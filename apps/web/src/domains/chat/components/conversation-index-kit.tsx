@@ -488,24 +488,33 @@ export function StateBlock({
   );
 }
 
-/** A quiet text button — used by the empty and error states. */
+/**
+ * A quiet text button — used by the empty and error states, and by the
+ * list's "Load older conversations" continuation, which is why it takes
+ * `disabled`: a request already in flight must not be fired twice by an
+ * impatient second tap.
+ */
 export function QuietButton({
   children,
   onClick,
+  disabled,
 }: {
   children: ReactNode;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       style={{
         fontSize: 12,
         fontWeight: 600,
         padding: "7px 13px",
         borderRadius: 8,
-        cursor: "pointer",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.6 : 1,
         color: C.surface,
         background: C.ink,
         border: `1px solid ${C.ink}`,
