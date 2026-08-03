@@ -32195,6 +32195,132 @@ paths:
           schema:
             type: string
           description: Conversation ID (optional)
+  /v1/people/memory/bulk:
+    post:
+      operationId: people_memory_bulk_post
+      summary: What Cue remembers about many contacts, in one call
+      description: >-
+        Read contact memory for up to 100 contacts in a single request, so a People list costs one call per page instead
+        of one per card. Read-only despite the verb: the id list belongs in a body, not a query string.
+
+
+        Every contact comes back with an explicit status — `learned`, `empty` (we looked, there is nothing yet) or
+        `unavailable` (we could not look: the read failed, or no contact has that id). The third state exists because
+        most people genuinely have nothing learned, so a failure that renders as an absence is invisible. `total`
+        reports the real row count when `memory` is capped.
+
+
+        Requests over 100 ids are rejected with 400, never truncated.
+      tags:
+        - people
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  maxContacts:
+                    type: number
+                    description: Ids this endpoint accepts per call (the cap that rejects)
+                  maxRowsPerContact:
+                    type: number
+                    description: Rows returned per contact before `memory` is capped
+                  contacts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        contactId:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                            - learned
+                            - empty
+                            - unavailable
+                          description:
+                            learned = rows follow; empty = we looked and there is nothing yet; unavailable = we could NOT look (read
+                            failed, or no such contact). Never render `unavailable` as 'nothing learned yet'.
+                        memory:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              contactId:
+                                type: string
+                              statement:
+                                type: string
+                              kind:
+                                type: string
+                              source:
+                                type: string
+                              sourceRef:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                              confidence:
+                                type: number
+                              createdAt:
+                                type: number
+                              lastSeenAt:
+                                type: number
+                            required:
+                              - id
+                              - contactId
+                              - statement
+                              - kind
+                              - source
+                              - sourceRef
+                              - confidence
+                              - createdAt
+                              - lastSeenAt
+                            additionalProperties: false
+                          description: Newest-seen first, capped per contact. Empty unless `learned`.
+                        total:
+                          type: number
+                          description: Rows this contact actually has; `memory` may be a prefix
+                        reason:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Why we could not look. Only set when status is `unavailable`.
+                      required:
+                        - contactId
+                        - status
+                        - memory
+                        - total
+                        - reason
+                      additionalProperties: false
+                    description: One entry per distinct requested id, in the order given
+                required:
+                  - ok
+                  - maxContacts
+                  - maxRowsPerContact
+                  - contacts
+                additionalProperties: false
+        "400":
+          description: contactIds missing, malformed, or over the cap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contactIds:
+                  type: array
+                  items:
+                    type: string
+                  description: Contact ids to read, at most 100. Duplicates collapse.
+              required:
+                - contactIds
+              additionalProperties: false
   /v1/people/memory/health:
     get:
       operationId: people_memory_health_get
@@ -40391,6 +40517,67 @@ paths:
           schema:
             type: string
           description: Conversation that owns the surface
+  /v1/system-tasks/usage-summary:
+    get:
+      operationId: systemtasks_usagesummary_get
+      summary: Get system task usage summaries
+      description:
+        "Return run counts and usage totals for the built-in system jobs (heartbeat, memory consolidation, memory
+        retrospective) over a time range. Totals cover the whole range, not a bounded page of runs: heartbeat alone
+        records several hundred runs a week, so a client summing a fetched run page would under-report a multi-day
+        window. Cost is attributed by `llm_usage_events.call_site`, which survives the ephemeral conversations
+        consolidation and retrospective runs use (their run rows are deleted once the run settles, so a conversation
+        join reports $0 for jobs that do spend). Every kind is always present; an unused job reports zeros."
+      tags:
+        - schedules
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summaries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind:
+                          type: string
+                          enum:
+                            - heartbeat
+                            - consolidation
+                            - retrospective
+                        runCount:
+                          type: number
+                        totalEstimatedCostUsd:
+                          type: number
+                        eventCount:
+                          type: number
+                      required:
+                        - kind
+                        - runCount
+                        - totalEstimatedCostUsd
+                        - eventCount
+                      additionalProperties: false
+                    description: System task usage summary rows
+                required:
+                  - summaries
+                additionalProperties: false
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Start epoch millis (required)
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: End epoch millis (required)
   /v1/tasks/dedupe:
     post:
       operationId: tasks_dedupe_post

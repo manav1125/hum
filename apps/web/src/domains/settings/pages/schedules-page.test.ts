@@ -247,10 +247,8 @@ function run(overrides: Partial<ScheduleRun> = {}): ScheduleRun {
 const readySystemTaskUsage = {
   status: "ready" as const,
   summary: {
-    scheduleId: "system-heartbeat",
     runCount: 2,
     totalEstimatedCostUsd: 0.42,
-    eventCount: 7,
   },
 };
 
@@ -684,10 +682,8 @@ describe("ScheduleRow", () => {
         usage: {
           status: "ready",
           summary: {
-            scheduleId: "schedule-123",
             runCount: 2,
             totalEstimatedCostUsd: 0.42,
-            eventCount: 7,
           },
         },
         onClick: () => {
@@ -717,10 +713,8 @@ describe("ScheduleRow", () => {
         usage: {
           status: "ready",
           summary: {
-            scheduleId: "schedule-123",
             runCount: 2,
             totalEstimatedCostUsd: 0.42,
-            eventCount: 7,
           },
         },
         onClick: () => {
@@ -752,10 +746,8 @@ describe("ScheduleRow", () => {
         usage: {
           status: "ready",
           summary: {
-            scheduleId: "schedule-123",
             runCount: 1,
             totalEstimatedCostUsd: 0.03,
-            eventCount: 1,
           },
         },
         onClick: () => {},
@@ -780,10 +772,8 @@ describe("ScheduleRow", () => {
         usage: {
           status: "ready",
           summary: {
-            scheduleId: "schedule-123",
             runCount: 0,
             totalEstimatedCostUsd: 0,
-            eventCount: 0,
           },
         },
         onClick: () => {},
@@ -805,10 +795,8 @@ describe("ScheduleRow", () => {
         usage: {
           status: "ready",
           summary: {
-            scheduleId: "schedule-123",
             runCount: 0,
             totalEstimatedCostUsd: 0,
-            eventCount: 0,
           },
         },
         onClick: () => {},
@@ -831,10 +819,8 @@ describe("ScheduleRow", () => {
         usage: {
           status: "ready",
           summary: {
-            scheduleId: "schedule-123",
             runCount: 1,
             totalEstimatedCostUsd: 0.01,
-            eventCount: 1,
           },
         },
         onClick: () => {},
@@ -858,10 +844,8 @@ describe("ScheduleRow", () => {
         usage: {
           status: "ready",
           summary: {
-            scheduleId: "schedule-123",
             runCount: 0,
             totalEstimatedCostUsd: 0,
-            eventCount: 0,
           },
         },
         onClick: () => {},
@@ -885,10 +869,8 @@ describe("ScheduleRow", () => {
         usage: {
           status: "ready",
           summary: {
-            scheduleId: "schedule-123",
             runCount: 0,
             totalEstimatedCostUsd: 0,
-            eventCount: 0,
           },
         },
         onClick: () => {},

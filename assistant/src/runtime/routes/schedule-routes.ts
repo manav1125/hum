@@ -38,7 +38,10 @@ import {
   setScheduleRunConversationId,
   updateSchedule,
 } from "../../schedule/schedule-store.js";
-import { getScheduleUsageSummaries } from "../../schedule/schedule-usage-store.js";
+import {
+  getScheduleUsageSummaries,
+  getSystemTaskUsageSummaries,
+} from "../../schedule/schedule-usage-store.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { parseEpochMillisRange } from "./epoch-millis-range.js";
@@ -112,6 +115,13 @@ const scheduleRunSchema = z.object({
 
 const scheduleUsageSummarySchema = z.object({
   scheduleId: z.string(),
+  runCount: z.number(),
+  totalEstimatedCostUsd: z.number(),
+  eventCount: z.number(),
+});
+
+const systemTaskUsageSummarySchema = z.object({
+  kind: z.enum(["heartbeat", "consolidation", "retrospective"]),
   runCount: z.number(),
   totalEstimatedCostUsd: z.number(),
   eventCount: z.number(),
@@ -509,6 +519,11 @@ function handleScheduleUsageSummary(queryParams: Record<string, string>) {
   return { summaries: getScheduleUsageSummaries(range) };
 }
 
+function handleSystemTaskUsageSummary(queryParams: Record<string, string>) {
+  const range = parseEpochMillisRange(queryParams);
+  return { summaries: getSystemTaskUsageSummaries(range) };
+}
+
 // ---------------------------------------------------------------------------
 // Shared route definitions (HTTP + IPC)
 // ---------------------------------------------------------------------------
@@ -572,6 +587,49 @@ export const ROUTES: RouteDefinition[] = [
     }),
     handler: ({ queryParams }: RouteHandlerArgs) =>
       handleScheduleUsageSummary(queryParams ?? {}),
+  },
+  {
+    operationId: "getSystemTaskUsageSummary",
+    endpoint: "system-tasks/usage-summary",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Get system task usage summaries",
+    description:
+      "Return run counts and usage totals for the built-in system jobs " +
+      "(heartbeat, memory consolidation, memory retrospective) over a time " +
+      "range. Totals cover the whole range, not a bounded page of runs: " +
+      "heartbeat alone records several hundred runs a week, so a client " +
+      "summing a fetched run page would under-report a multi-day window. " +
+      "Cost is attributed by `llm_usage_events.call_site`, which survives " +
+      "the ephemeral conversations consolidation and retrospective runs use " +
+      "(their run rows are deleted once the run settles, so a conversation " +
+      "join reports $0 for jobs that do spend). Every kind is always " +
+      "present; an unused job reports zeros.",
+    tags: ["schedules"],
+    queryParams: [
+      {
+        name: "from",
+        type: "integer",
+        required: true,
+        description: "Start epoch millis (required)",
+      },
+      {
+        name: "to",
+        type: "integer",
+        required: true,
+        description: "End epoch millis (required)",
+      },
+    ],
+    responseBody: z.object({
+      summaries: z
+        .array(systemTaskUsageSummarySchema)
+        .describe("System task usage summary rows"),
+    }),
+    handler: ({ queryParams }: RouteHandlerArgs) =>
+      handleSystemTaskUsageSummary(queryParams ?? {}),
   },
   // Must stay after literal `schedules/*` GET siblings (e.g. usage-summary):
   // the router matches in declaration order and `:id` would shadow them.

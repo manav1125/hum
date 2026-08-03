@@ -2,6 +2,7 @@ import type {
   SchedulesByIdRunsGetResponse,
   SchedulesGetResponse,
   SchedulesUsagesummaryGetResponse,
+  SystemtasksUsagesummaryGetResponse,
 } from "@/generated/daemon/types.gen";
 
 export type Schedule = SchedulesGetResponse["schedules"][number] & {
@@ -27,5 +28,8 @@ export type ScheduleRun = SchedulesByIdRunsGetResponse["runs"][number] & {
 export type ScheduleUsageSummaryResponse = SchedulesUsagesummaryGetResponse;
 export type ScheduleUsageSummary =
   ScheduleUsageSummaryResponse["summaries"][number];
+
+export type SystemTaskUsageSummary =
+  SystemtasksUsagesummaryGetResponse["summaries"][number];
 
 export type SystemTaskKind = "heartbeat" | "consolidation" | "retrospective";

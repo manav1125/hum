@@ -111,6 +111,15 @@ export function assistantScheduleUsageSummaryQueryKey(
     : (["schedule-usage-summary", assistantId] as const);
 }
 
+export function assistantSystemTaskUsageSummaryQueryKey(
+  assistantId: string | null | undefined,
+  tz?: string | null,
+) {
+  return tz
+    ? (["system-task-usage-summary", assistantId, tz] as const)
+    : (["system-task-usage-summary", assistantId] as const);
+}
+
 export const CLIENT_FLAG_QUERY_KEY = ["client-feature-flag-values"] as const;
 
 export const ASSISTANT_FLAG_VALUES_QUERY_KEY =

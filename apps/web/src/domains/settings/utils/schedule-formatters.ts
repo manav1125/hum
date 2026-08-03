@@ -3,6 +3,7 @@ import type {
   ScheduleRun,
   ScheduleUsageSummary,
   SystemTaskKind,
+  SystemTaskUsageSummary,
 } from "@/domains/settings/types/schedules";
 import type {
   ConsolidationConfigGetResponse,
@@ -10,9 +11,15 @@ import type {
 } from "@/generated/daemon/types.gen";
 import type { TagTone } from "@vellumai/design-library/components/tag";
 
-import { fetchScheduleUsageSummary } from "@/domains/settings/api/schedules";
+import {
+  fetchScheduleUsageSummary,
+  fetchSystemTaskUsageSummary,
+} from "@/domains/settings/api/schedules";
 import { resolveScheduleUsageWindow } from "@/domains/settings/utils/schedule-usage-window";
-import { assistantScheduleUsageSummaryQueryKey } from "@/lib/sync/query-tags";
+import {
+  assistantScheduleUsageSummaryQueryKey,
+  assistantSystemTaskUsageSummaryQueryKey,
+} from "@/lib/sync/query-tags";
 
 // ---------------------------------------------------------------------------
 // Timestamp / duration / cost formatting
@@ -130,8 +137,6 @@ export const SYSTEM_TASK_URL_IDS = {
   consolidation: "system-consolidation",
   retrospective: "system-memory-retrospective",
 } as const satisfies Record<SystemTaskKind, string>;
-
-export const SYSTEM_TASK_STATS_RUN_LIMIT = 100;
 
 export function systemTaskKindFromUrlId(
   scheduleId: string | undefined,
@@ -296,10 +301,31 @@ export function pastOneTimeStatus(schedule: Schedule): PastOneTimeStatus {
 // Usage summary helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * The usage fields a schedule row actually renders. Structural rather than
+ * tied to one response type so both aggregates — per-schedule
+ * (`schedules/usage-summary`) and per-system-job
+ * (`system-tasks/usage-summary`) — can feed the same row.
+ */
+export interface ScheduleRowUsageSummary {
+  runCount: number;
+  totalEstimatedCostUsd: number;
+}
+
 export type ScheduleRowUsage =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ready"; summary: ScheduleUsageSummary };
+  | { status: "ready"; summary: ScheduleRowUsageSummary };
+
+/**
+ * Fallback for a system job the server reported no row for. Distinct from
+ * `{ status: "error" }`: zero is a real answer (the job never ran in the
+ * window), whereas an error must render as `--` and never as a number.
+ */
+export const ZERO_ROW_USAGE_SUMMARY: ScheduleRowUsageSummary = {
+  runCount: 0,
+  totalEstimatedCostUsd: 0,
+};
 
 export function scheduleUsageSummaryQueryOptions(
   assistantId: string | undefined,
@@ -333,25 +359,23 @@ export function zeroScheduleUsageSummary(
   };
 }
 
-export function summarizeRunsForUsage(
-  scheduleId: string,
-  runs: ScheduleRun[] | undefined,
-  range: { from: number; to: number },
-): ScheduleUsageSummary {
-  const runsInRange = (runs ?? []).filter((run) => {
-    const startedAt = run.startedAt ?? run.createdAt;
-    return startedAt >= range.from && startedAt <= range.to;
-  });
-
+export function systemTaskUsageQueryOptions(
+  assistantId: string | undefined,
+  tz: string,
+  enabled = true,
+) {
   return {
-    scheduleId,
-    runCount: runsInRange.length,
-    totalEstimatedCostUsd: runsInRange.reduce((total, run) => {
-      const cost = run.estimatedCostUsd;
-      return typeof cost === "number" && Number.isFinite(cost)
-        ? total + cost
-        : total;
-    }, 0),
-    eventCount: 0,
+    queryKey: assistantSystemTaskUsageSummaryQueryKey(assistantId, tz),
+    queryFn: () => {
+      if (!assistantId) {
+        return Promise.resolve<SystemTaskUsageSummary[]>([]);
+      }
+      return fetchSystemTaskUsageSummary(
+        assistantId,
+        resolveScheduleUsageWindow(tz),
+      );
+    },
+    enabled,
+    staleTime: 10_000,
   };
 }

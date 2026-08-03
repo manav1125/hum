@@ -3,11 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchConsolidationConfig,
-  fetchConsolidationRuns,
   fetchHeartbeatConfig,
-  fetchHeartbeatRuns,
   fetchRetrospectiveConfig,
-  fetchRetrospectiveRuns,
   runConsolidationNow,
   runHeartbeatNow,
   updateHeartbeatConfig,
@@ -20,11 +17,9 @@ import type { Options } from "@/generated/daemon/sdk.gen";
 import type { HeartbeatConfigGetData } from "@/generated/daemon/types.gen";
 import {
   type ScheduleRowUsage,
-  SYSTEM_TASK_STATS_RUN_LIMIT,
-  SYSTEM_TASK_URL_IDS,
-  summarizeRunsForUsage,
+  systemTaskUsageQueryOptions,
+  ZERO_ROW_USAGE_SUMMARY,
 } from "@/domains/settings/utils/schedule-formatters";
-import { resolveScheduleUsageWindow } from "@/domains/settings/utils/schedule-usage-window";
 import { captureError } from "@/lib/sentry/capture-error";
 import { toast } from "@vellumai/design-library/components/toast";
 
@@ -85,128 +80,48 @@ export function useSystemTasks(assistantId: string | undefined, tz: string) {
   });
 
   // -------------------------------------------------------------------------
-  // Stats queries (for usage display in list view)
+  // Usage stats (server-side aggregate)
   // -------------------------------------------------------------------------
 
+  // One server aggregate for all three jobs rather than a client-side sum over
+  // fetched runs. Heartbeat records several hundred runs a week, so summing a
+  // page of them produced a figure covering under two days while the caption
+  // read "(7d)" — and consolidation runs on ephemeral conversations that are
+  // deleted once the run settles, so its cost was missing from the page
+  // entirely. Both are fixed by asking the server for the window's total.
   const {
-    data: heartbeatRunsForStats,
-    isLoading: isHeartbeatStatsLoading,
-    isError: isHeartbeatStatsError,
-    refetch: refetchHeartbeatStats,
-  } = useQuery({
-    queryKey: [
-      "system-task-runs-summary",
-      assistantId,
-      "heartbeat",
-      SYSTEM_TASK_STATS_RUN_LIMIT,
-    ],
-    queryFn: () =>
-      fetchHeartbeatRuns(assistantId!, SYSTEM_TASK_STATS_RUN_LIMIT).then(
-        (page) => page.runs,
-      ),
-    enabled: !!assistantId && heartbeatConfig != null,
-    staleTime: 10_000,
-  });
+    data: systemTaskUsage,
+    isLoading: isSystemUsageLoading,
+    isError: isSystemUsageError,
+    refetch: refetchSystemUsage,
+  } = useQuery(systemTaskUsageQueryOptions(assistantId, tz, !!assistantId));
 
-  const {
-    data: consolidationRunsForStats,
-    isLoading: isConsolidationStatsLoading,
-    isError: isConsolidationStatsError,
-    refetch: refetchConsolidationStats,
-  } = useQuery({
-    queryKey: [
-      "system-task-runs-summary",
-      assistantId,
-      "consolidation",
-      SYSTEM_TASK_STATS_RUN_LIMIT,
-    ],
-    queryFn: () =>
-      fetchConsolidationRuns(assistantId!, SYSTEM_TASK_STATS_RUN_LIMIT).then(
-        (page) => page.runs,
-      ),
-    enabled: !!assistantId && consolidationConfig?.available === true,
-    staleTime: 10_000,
-  });
+  const usageForKind = useCallback(
+    (kind: SystemTaskKind): ScheduleRowUsage => {
+      if (isSystemUsageLoading) return { status: "loading" };
+      if (isSystemUsageError) return { status: "error" };
+      return {
+        status: "ready",
+        summary:
+          systemTaskUsage?.find((s) => s.kind === kind) ??
+          ZERO_ROW_USAGE_SUMMARY,
+      };
+    },
+    [isSystemUsageError, isSystemUsageLoading, systemTaskUsage],
+  );
 
-  const {
-    data: retrospectiveRunsForStats,
-    isLoading: isRetrospectiveStatsLoading,
-    isError: isRetrospectiveStatsError,
-    refetch: refetchRetrospectiveStats,
-  } = useQuery({
-    queryKey: [
-      "system-task-runs-summary",
-      assistantId,
-      "retrospective",
-      SYSTEM_TASK_STATS_RUN_LIMIT,
-    ],
-    queryFn: () =>
-      fetchRetrospectiveRuns(assistantId!, SYSTEM_TASK_STATS_RUN_LIMIT).then(
-        (page) => page.runs,
-      ),
-    enabled: !!assistantId && retrospectiveConfig?.available === true,
-    staleTime: 10_000,
-  });
-
-  // -------------------------------------------------------------------------
-  // Derived usage stats
-  // -------------------------------------------------------------------------
-
-  const systemStatsRange = useMemo(() => resolveScheduleUsageWindow(tz), [tz]);
-
-  const heartbeatUsage: ScheduleRowUsage = useMemo(() => {
-    if (isHeartbeatStatsLoading) return { status: "loading" };
-    if (isHeartbeatStatsError) return { status: "error" };
-    return {
-      status: "ready",
-      summary: summarizeRunsForUsage(
-        SYSTEM_TASK_URL_IDS.heartbeat,
-        heartbeatRunsForStats,
-        systemStatsRange,
-      ),
-    };
-  }, [
-    heartbeatRunsForStats,
-    isHeartbeatStatsError,
-    isHeartbeatStatsLoading,
-    systemStatsRange,
-  ]);
-
-  const consolidationUsage: ScheduleRowUsage = useMemo(() => {
-    if (isConsolidationStatsLoading) return { status: "loading" };
-    if (isConsolidationStatsError) return { status: "error" };
-    return {
-      status: "ready",
-      summary: summarizeRunsForUsage(
-        SYSTEM_TASK_URL_IDS.consolidation,
-        consolidationRunsForStats,
-        systemStatsRange,
-      ),
-    };
-  }, [
-    consolidationRunsForStats,
-    isConsolidationStatsError,
-    isConsolidationStatsLoading,
-    systemStatsRange,
-  ]);
-
-  const retrospectiveUsage: ScheduleRowUsage = useMemo(() => {
-    if (isRetrospectiveStatsLoading) return { status: "loading" };
-    if (isRetrospectiveStatsError) return { status: "error" };
-    return {
-      status: "ready",
-      summary: summarizeRunsForUsage(
-        SYSTEM_TASK_URL_IDS.retrospective,
-        retrospectiveRunsForStats,
-        systemStatsRange,
-      ),
-    };
-  }, [
-    retrospectiveRunsForStats,
-    isRetrospectiveStatsError,
-    isRetrospectiveStatsLoading,
-    systemStatsRange,
-  ]);
+  const heartbeatUsage = useMemo(
+    () => usageForKind("heartbeat"),
+    [usageForKind],
+  );
+  const consolidationUsage = useMemo(
+    () => usageForKind("consolidation"),
+    [usageForKind],
+  );
+  const retrospectiveUsage = useMemo(
+    () => usageForKind("retrospective"),
+    [usageForKind],
+  );
 
   // -------------------------------------------------------------------------
   // Running state + timeout cleanup
@@ -250,10 +165,6 @@ export function useSystemTasks(assistantId: string | undefined, tz: string) {
         kind === "heartbeat" ? runHeartbeatNow : runConsolidationNow;
       const refetchConfig =
         kind === "heartbeat" ? refetchHeartbeat : refetchConsolidation;
-      const refetchStats =
-        kind === "heartbeat"
-          ? refetchHeartbeatStats
-          : refetchConsolidationStats;
       const successMsg =
         kind === "heartbeat" ? "Heartbeat started." : "Consolidation queued.";
       const skipMsg =
@@ -266,7 +177,7 @@ export function useSystemTasks(assistantId: string | undefined, tz: string) {
         const result = await runFn(assistantId);
         void refetchConfig();
         scheduleDelayedInvalidation(kind);
-        void refetchStats();
+        void refetchSystemUsage();
         if (result.ran) {
           toast.success(successMsg);
         } else {
@@ -282,9 +193,8 @@ export function useSystemTasks(assistantId: string | undefined, tz: string) {
     [
       assistantId,
       refetchConsolidation,
-      refetchConsolidationStats,
       refetchHeartbeat,
-      refetchHeartbeatStats,
+      refetchSystemUsage,
       scheduleDelayedInvalidation,
     ],
   );
@@ -321,16 +231,12 @@ export function useSystemTasks(assistantId: string | undefined, tz: string) {
     void refetchHeartbeat();
     void refetchConsolidation();
     void refetchRetrospective();
-    void refetchHeartbeatStats();
-    void refetchConsolidationStats();
-    void refetchRetrospectiveStats();
+    void refetchSystemUsage();
   }, [
     refetchConsolidation,
-    refetchConsolidationStats,
     refetchHeartbeat,
-    refetchHeartbeatStats,
     refetchRetrospective,
-    refetchRetrospectiveStats,
+    refetchSystemUsage,
   ]);
 
   // -------------------------------------------------------------------------

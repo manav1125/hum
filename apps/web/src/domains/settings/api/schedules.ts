@@ -20,6 +20,7 @@ import {
   schedulesByIdTogglePost,
   schedulesUsagesummaryGet,
   schedulesPost,
+  systemtasksUsagesummaryGet,
 } from "@/generated/daemon/sdk.gen";
 import type {
   ConsolidationConfigGetResponse,
@@ -40,6 +41,7 @@ import type {
   Schedule,
   ScheduleRun,
   ScheduleUsageSummary,
+  SystemTaskUsageSummary,
 } from "@/domains/settings/types/schedules";
 
 export { ApiError };
@@ -152,6 +154,33 @@ export async function fetchScheduleUsageSummary(
     throw new ApiError(
       response.status,
       extractErrorMessage(error, response, "Failed to load schedule usage."),
+    );
+  }
+  return data?.summaries ?? [];
+}
+
+/**
+ * Server-side usage aggregate for the built-in system jobs over `range`.
+ *
+ * Deliberately a server aggregate rather than a client-side sum over fetched
+ * runs: heartbeat records several hundred runs a week, so any page size the
+ * client could reasonably fetch covers a fraction of a 7-day window and the
+ * resulting figure would be smaller than the period its caption names.
+ */
+export async function fetchSystemTaskUsageSummary(
+  assistantId: string,
+  range: ScheduleUsageSummaryRange,
+): Promise<SystemTaskUsageSummary[]> {
+  const { data, error, response } = await systemtasksUsagesummaryGet({
+    path: { assistant_id: assistantId },
+    query: { from: range.from, to: range.to },
+    throwOnError: false,
+  });
+  assertHasResponse(response, error, "Failed to load system task usage.");
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      extractErrorMessage(error, response, "Failed to load system task usage."),
     );
   }
   return data?.summaries ?? [];
