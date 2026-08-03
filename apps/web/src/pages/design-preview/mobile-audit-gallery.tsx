@@ -423,6 +423,17 @@ const CONTACT_MEMORY = [
     createdAt: NOW - 40 * DAY,
     lastSeenAt: NOW,
   },
+  {
+    id: "cm-4",
+    contactId: "c-2",
+    statement: "Decides the renewal, and cares about per-seat pricing above all",
+    kind: "fact",
+    source: "from_conversation",
+    sourceRef: null,
+    confidence: 0.9,
+    createdAt: NOW - 60 * DAY,
+    lastSeenAt: NOW,
+  },
 ];
 
 /** Two rules you told Cue, two things it worked out. */
@@ -552,7 +563,9 @@ const PREVIEW_ARRIVALS = Array.from({ length: 200 }, (_, i) => ({
   sourceContext: null,
   disposition: i % 2 === 0 ? "filed" : "surfaced",
   reason: null,
-  decidedBy: "model",
+  // A realistic mix: mostly rules, a fail-open tail, a few real verdicts —
+  // the shape production actually has (246 rule / 156 fallback / 14 model).
+  decidedBy: i % 7 === 0 ? "fallback" : i % 11 === 0 ? "model" : "rule",
   ruleId: null,
   confidence: null,
   workItemId: i % 2 === 0 ? null : `wi-${i}`,
@@ -981,6 +994,16 @@ const FIXTURES: [RegExp, () => unknown][] = [
         ? "the extraction budget expired before the model replied"
         : null,
     }),
+  ],
+  // Per contact, so the harness shows all four "what Cue has learned"
+  // outcomes side by side instead of one of them four times.
+  [
+    /\/contacts\/c-1\/memory$/,
+    () => ({ ok: true, memory: CONTACT_MEMORY }),
+  ],
+  [
+    /\/contacts\/c-2\/memory$/,
+    () => ({ ok: true, memory: [CONTACT_MEMORY[3]] }),
   ],
   [/\/contacts\/[^/]+\/memory$/, () => ({ ok: true, memory: [] })],
   [
@@ -1642,7 +1665,9 @@ const SCREENS: Screen[] = [
     route: "/assistant/people",
     element: <Mv3PeoplePage />,
     tabBar: true,
-    overflow: true,
+    // No `overflow` — `/assistant/people` is not one of `corner-chrome`'s
+    // MV3_OVERFLOW_SURFACES, and a harness that paints chrome production
+    // doesn't paint is worse than no harness.
   },
   {
     key: "person",

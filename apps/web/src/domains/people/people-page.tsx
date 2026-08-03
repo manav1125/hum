@@ -31,7 +31,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ContactPayload } from "@/domains/contacts/types";
@@ -46,6 +46,8 @@ import {
 import type { ContactsByIdDossierGetResponse } from "@/generated/daemon/types.gen";
 import { postChatMessage } from "@/domains/chat/api/messages";
 import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
+import { Mv3PeoplePage } from "@/mobile-v3/people/mv3-people-page";
+import { Mv3PersonPage } from "@/mobile-v3/people/mv3-person-page";
 import { routes } from "@/utils/routes";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 
@@ -225,7 +227,30 @@ function ExtractionHealthNotice({ assistantId }: { assistantId: string }) {
   );
 }
 
+/**
+ * People — one page, two shapes.
+ *
+ * The phone gets design's v22 **M3** (cards, relationship state tinting the
+ * border) and v24 **F4** (one person), which are different enough from the
+ * desktop dossier to be their own components rather than a responsive squeeze.
+ * Desktop keeps the master–detail split below, unchanged.
+ *
+ * The branch is a thin wrapper so the desktop body's hook order never changes
+ * across a breakpoint flip, and `useMobileLayout` (not `useIsMobile`) decides:
+ * a 720px Electron chat pop-out is a narrow window, not a phone, and taking
+ * the phone branch there would leave a back chevron as the only way out of a
+ * surface a pointer can drive perfectly well.
+ */
 export function PeoplePage() {
+  const isPhone = useMobileLayout();
+  const { contactId } = useParams();
+  if (isPhone) {
+    return contactId ? <Mv3PersonPage /> : <Mv3PeoplePage />;
+  }
+  return <PeoplePageDesktop />;
+}
+
+function PeoplePageDesktop() {
   const assistantId = useActiveAssistantId();
   // `useMobileLayout`, not `useIsMobile`: the branch below is STRUCTURAL — it
   // suppresses auto-selection and swaps the master–detail split for a
@@ -248,7 +273,12 @@ export function PeoplePage() {
   // Capture "now" once at mount so relative-time rendering stays pure.
   const [now] = useState(() => Date.now());
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // `/assistant/people/:contactId` preselects that person in the split, so a
+  // link minted on the phone (frame F4) opens the same person on desktop.
+  const { contactId: routeContactId } = useParams();
+  const [selectedId, setSelectedId] = useState<string | null>(
+    routeContactId ?? null,
+  );
 
   const contacts = useMemo(() => {
     // Relationship memory is about other people — exclude the assistant's own

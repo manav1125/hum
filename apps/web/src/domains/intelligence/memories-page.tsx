@@ -20,7 +20,7 @@ import {
 import { memoryitemsGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 import { formatFriendlyDate } from "@/utils/format-date";
 
-import { Mv3MemoryPage } from "@/mobile-v3/you/memory-page";
+import { Mv3MemoryV24Page } from "@/mobile-v3/memory/mv3-memory-page-v24";
 
 import { useMemoryItemsQuery } from "./memories/hooks/use-memory-items-query";
 import {
@@ -71,13 +71,20 @@ type KindFilter = "all" | MemoryType;
  * Routed under `<ActiveAssistantGate>`, so `useActiveAssistantId()` is safe.
  */
 export function MemoriesPage() {
-  // MOBILE — the mobile-v3 Memory screen (spec frame 10). Branch in a thin
-  // wrapper so the desktop body's hooks never change count across a
-  // breakpoint flip. Desktop keeps the center-column + provenance-rail
-  // layout untouched.
+  // MOBILE — the mobile-v3 Memory screen. Now design's v24 **F6** (your rules
+  // first, quoted, then what Cue inferred this week with evidence), which
+  // supersedes the earlier frame-10 screen at `mobile-v3/you/memory-page`.
+  //
+  // It is swapped HERE rather than added at a second URL: Memory already had
+  // one route, and this codebase has twice had to clean up two pages with the
+  // same name at two URLs (see `routes.memoryPeople`).
+  //
+  // Branch in a thin wrapper so the desktop body's hooks never change count
+  // across a breakpoint flip. Desktop keeps the center-column +
+  // provenance-rail layout untouched.
   const isMobile = useMobileLayout();
   if (isMobile) {
-    return <Mv3MemoryPage />;
+    return <Mv3MemoryV24Page />;
   }
   return <MemoriesPageDesktop />;
 }
