@@ -33,6 +33,7 @@ import {
   ArrowUp,
   AudioLines,
   ChevronLeft,
+  LibraryBig,
   MoreHorizontal,
   Plus,
   SlidersHorizontal,
@@ -68,8 +69,11 @@ import {
 } from "@/domains/chat/components/chat-composer/slash-command-catalog";
 import { useTextPopup } from "@/domains/chat/components/chat-composer/use-text-popup";
 import { useComposerStore } from "@/domains/chat/composer-store";
+import { useConversationThing } from "@/domains/chat/partner/use-conversation-thing";
 import { goBackWithFallback } from "@/domains/chat/utils/conversation-navigation";
-import { useVisibleViewport } from "@/hooks/use-visible-viewport";
+import { PhoneChatFrame } from "@/mobile-v3/chats/phone-chat-frame";
+import { composerFieldHeight } from "@/mobile-v3/chats/phone-keyboard";
+import { usePhoneKeyboard } from "@/mobile-v3/chats/use-phone-keyboard";
 import type { ConversationStarter } from "@/domains/chat/utils/conversation-starters";
 import { DEFAULT_EMPTY_STATE_GREETING } from "@/domains/chat/utils/empty-state-constants";
 import {
@@ -77,9 +81,15 @@ import {
   workitemsGetOptions,
   workitemsGetQueryKey,
 } from "@/generated/daemon/@tanstack/react-query.gen";
+import { SpawnedWorkSlot } from "@/domains/chat/components/spawned-work-slot";
 import { AuroraBackdrop } from "@/mobile-v3/aurora-backdrop";
-import { CueRing } from "@/mobile-v3/cue-ring";
 import { FailureCard } from "@/mobile-v3/failure-card";
+import { ComposerAffordance } from "@/mobile-v3/chats/composer-affordance";
+import { ComposerCreateEntry } from "@/mobile-v3/chats/composer-create-entry";
+import {
+  LibraryReferenceSheet,
+  withReference,
+} from "@/mobile-v3/chats/library-reference-sheet";
 import { GlassCard } from "@/mobile-v3/glass-card";
 import { microLabel } from "@/mobile-v3/mv3-kit";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
@@ -170,6 +180,16 @@ const MCHAT_TRANSCRIPT_THEME = `
 }
 `;
 
+/**
+ * Composer field metrics. The 16px floor is a build rule (anything smaller
+ * triggers iOS focus-zoom, which moves the window — the exact thing G3
+ * forbids); 1.4 is the line-height it renders at, and 20 is the field's own
+ * vertical padding. Five of these lines is the growth cap (spec 7).
+ */
+const COMPOSER_FONT_SIZE_PX = 16;
+const COMPOSER_LINE_HEIGHT_PX = Math.round(COMPOSER_FONT_SIZE_PX * 1.4);
+const COMPOSER_FIELD_PADDING_PX = 20;
+
 /** "11:42"-style time for the failure card's header. */
 function clockLabel(epochMs: number | undefined): string | undefined {
   if (!epochMs) return undefined;
@@ -225,41 +245,6 @@ export interface MobileChatViewProps {
   voiceInterim?: string;
 
   assistantId: string | null;
-}
-
-/** The header mark: the Cue ring in a small squircle chip + presence dot. */
-function HeaderMark() {
-  return (
-    <span
-      style={{
-        position: "relative",
-        width: 34,
-        height: 34,
-        borderRadius: 11,
-        background: "var(--mv3-chip-bg)",
-        border: "1px solid var(--mv3-card-border)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-      }}
-    >
-      <CueRing size={20} stroke="var(--mv3-text)" />
-      <span
-        aria-hidden
-        style={{
-          position: "absolute",
-          right: -2,
-          bottom: -2,
-          width: 10,
-          height: 10,
-          borderRadius: "50%",
-          background: "var(--mv3-green)",
-          border: "2px solid var(--mv3-bg)",
-        }}
-      />
-    </span>
-  );
 }
 
 /**
@@ -398,17 +383,37 @@ export function MobileChatView({
 }: MobileChatViewProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const viewport = useVisibleViewport();
-  const keyboardHeight = viewport?.keyboardHeight ?? 0;
-  const keyboardOpen = keyboardHeight > 0;
   const [focused, setFocused] = useState(false);
   const inputElRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // THE KEYBOARD (v25 · G3). The window does not move; the thread's height is
+  // the only thing that changes. All of the geometry — including the "has an
+  // ancestor already absorbed the keyboard?" question that made the previous
+  // version lift the composer twice — lives in `usePhoneKeyboard`, and the
+  // column that consumes it is `PhoneChatFrame`. Nothing in this file
+  // translates, scrolls the window, or reserves a keyboard by hand.
+  const handleKeyboardDismiss = useCallback(() => {
+    inputElRef.current?.blur();
+  }, []);
+  const {
+    frame,
+    shellRef,
+    headerRef,
+    composerRef,
+    dragHandlers,
+  } = usePhoneKeyboard({ onDismiss: handleKeyboardDismiss });
+  const keyboardOpen = frame.keyboardOpen;
 
   // Power-feature sheets (composer settings ⋅ conversation actions) — the
   // v3-skinned mounts of the desktop menus (mobile-chat-menus.tsx).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+
+  // ▦ Library opens a sheet over this thread (G6). ✎ Create owns its own
+  // open state inside ComposerCreateEntry — see that file for why the Create
+  // sheet cannot be mounted from this domain.
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const activeConversationId = useConversationStore.use.activeConversationId();
 
@@ -445,14 +450,22 @@ export function MobileChatView({
     staleTime: 15_000,
   });
   const runningCount = (runningQuery.data?.items ?? []).length;
-  // Frame 37: while the in-thread voice session is alive the header status
-  // becomes "voice active in this chat" (microlabel blue), superseding the
-  // working-on-N line.
+
+  // ── The thing this conversation belongs to (`▤ Renew Acme`). Derived from
+  // the work this thread actually spawned — never invented; a thread that has
+  // filed nothing, or filed into two things, shows no chip. See
+  // `useConversationThing`.
+  const thing = useConversationThing(assistantId, activeConversationId);
+
+  // The header's second line, in priority order. The thing chip is the one
+  // design specified (it is what makes output file itself, and what tells you
+  // which conversation you're in); the live lines supersede it only while
+  // something is genuinely happening, because a live signal beats a static one.
   const statusLine = threadVoiceOpen
     ? "voice active in this chat"
     : runningCount > 0
       ? `working on ${runningCount} ${runningCount === 1 ? "thing" : "things"}`
-      : (conversationTitle ?? null);
+      : null;
 
   // ── Failed runs for THIS conversation → FailureCard (frame 29's chat use).
   const failedQuery = useQuery({
@@ -509,11 +522,6 @@ export function MobileChatView({
     },
     [assistantId],
   );
-
-  // Keyboard-aware composer: when the soft keyboard opens, lift the pinned
-  // composer to sit directly above it. `useVisibleViewport` already
-  // normalises iOS Safari vs. WKWebView.
-  const composerLift = keyboardOpen ? keyboardHeight : 0;
 
   const trimmed = input.trim();
   const canSend = trimmed.length > 0 && !sendDisabled;
@@ -575,12 +583,18 @@ export function MobileChatView({
     [handleSend, slash.show, slash.items, slash.selectedIndex, handleSlashSelect],
   );
 
-  // Auto-grow the textarea up to a few lines.
+  // Spec 7 — the field grows to five lines, then scrolls internally. The
+  // thread shrinks to pay for it (the frame's flex column does that on its
+  // own); the header and the composer's own chrome do not move.
   useEffect(() => {
     const el = inputElRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${composerFieldHeight(
+      el.scrollHeight,
+      COMPOSER_LINE_HEIGHT_PX,
+      COMPOSER_FIELD_PADDING_PX,
+    )}px`;
   }, [input]);
 
   const handleBack = useCallback(() => {
@@ -610,52 +624,109 @@ export function MobileChatView({
       : "var(--mv3-glass-border)";
   const showSend = focused || trimmed.length > 0 || canStopGenerating;
 
-  return (
+  // ── HEADER (spec 5) — title + thing chip + actions, one line, pinned.
+  //
+  // It compacts rather than disappearing: with the keyboard up the vertical
+  // padding halves and the status-bar inset is no longer paid (the notch is
+  // above a viewport that has already been resized), so the line stays put
+  // while the thread gets the room. It NEVER scrolls off, because it is not
+  // inside a scroller — see PhoneChatFrame.
+  //
+  // Three elements, not design's four. The frame draws ☰ · title · avatar;
+  // on this route the ☰ corner chrome does not render (`overflowVisible` is
+  // exact-match on the tab landings), so the leading slot is the ‹ back that
+  // is the screen's only chevron exit, and the trailing slot is ⋯ — the
+  // conversation's actions. An avatar here would be a fourth element whose
+  // destination (the ⓶ screen) is one back-swipe away.
+  const header = (
     <div
-      data-mv3
-      className="cue-mchat"
       style={{
-        flex: 1,
-        minHeight: 0,
         display: "flex",
-        flexDirection: "column",
-        position: "relative",
-        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
-        // next to overflow-y:hidden) forbids programmatic scroll: `hidden`
-        // still let focus / streaming autoscroll drift `scrollLeft` sideways
-        // and stick (P1: the 546px aurora overhang). The aurora is
-        // paint-contained, so engines without `clip` degrade safely.
-        overflow: "clip",
+        alignItems: "center",
+        gap: 6,
+        padding: keyboardOpen
+          ? "2px 20px 6px"
+          : "calc(4px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 20px 12px",
+        borderBottom: "1px solid var(--mv3-line)",
         background: "var(--mv3-bg)",
-        color: "var(--mv3-text)",
-        fontFamily: "var(--mv3-font)",
+        transition: "padding 0.25s cubic-bezier(0.42, 0, 0.58, 1)",
       }}
     >
-      <style dangerouslySetInnerHTML={{ __html: MCHAT_TRANSCRIPT_THEME }} />
-
-      <AuroraBackdrop />
-
-      {/* HEADER — ‹ back + ring chip + "Cue" / live status (frame 8).
-          Top padding carries the iOS status-bar inset — the mobile chat
-          route renders edge-to-edge (chat-layout's <main> adds no inset),
-          so without this the header sits under the clock/notch. */}
-      <div
+      <button
+        type="button"
+        onClick={handleBack}
+        aria-label="Back"
         style={{
-          flexShrink: 0,
           display: "flex",
           alignItems: "center",
-          gap: 11,
-          padding:
-            "calc(4px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 20px 12px",
-          borderBottom: "1px solid var(--mv3-line)",
-          position: "relative",
-          zIndex: 2,
+          justifyContent: "center",
+          width: 44,
+          height: 44,
+          border: "none",
+          background: "transparent",
+          color: "var(--mv3-micro)",
+          cursor: "pointer",
+          padding: 0,
+          marginLeft: -14,
+          flexShrink: 0,
+          WebkitTapHighlightColor: "transparent",
         }}
       >
+        <ChevronLeft size={22} />
+      </button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: "var(--mv3-text)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {conversationTitle?.trim() || "Cue"}
+        </div>
+        {/* The thing chip — `▤ Renew Acme`. Real link or nothing; a live line
+            supersedes it while something is actually happening. */}
+        {statusLine ? (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--mv3-micro)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {statusLine}
+          </div>
+        ) : thing ? (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--mv3-teal-text)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span aria-hidden>{thing.emoji ?? "▤"}</span> {thing.title}
+          </div>
+        ) : null}
+      </div>
+      {/* ⋯ — conversation actions (v3 sheet mount of the desktop header
+          menu). Only meaningful once the conversation exists. */}
+      {activeConversationId ? (
         <button
           type="button"
-          onClick={handleBack}
-          aria-label="Back"
+          onClick={() => {
+            haptic.light();
+            setActionsOpen(true);
+          }}
+          aria-label="Conversation actions"
+          aria-haspopup="dialog"
+          aria-expanded={actionsOpen}
           style={{
             display: "flex",
             alignItems: "center",
@@ -667,94 +738,32 @@ export function MobileChatView({
             color: "var(--mv3-micro)",
             cursor: "pointer",
             padding: 0,
-            marginLeft: -14,
+            marginRight: -12,
+            flexShrink: 0,
             WebkitTapHighlightColor: "transparent",
           }}
         >
-          <ChevronLeft size={22} />
+          <MoreHorizontal size={20} aria-hidden />
         </button>
-        <HeaderMark />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: "var(--mv3-text)",
-            }}
-          >
-            Cue
-          </div>
-          {statusLine ? (
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--mv3-micro)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {statusLine}
-            </div>
-          ) : null}
-        </div>
-        {/* ⋯ — conversation actions (v3 sheet mount of the desktop header
-            menu). Only meaningful once the conversation exists. */}
-        {activeConversationId ? (
-          <button
-            type="button"
-            onClick={() => {
-              haptic.light();
-              setActionsOpen(true);
-            }}
-            aria-label="Conversation actions"
-            aria-haspopup="dialog"
-            aria-expanded={actionsOpen}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 44,
-              height: 44,
-              border: "none",
-              background: "transparent",
-              color: "var(--mv3-micro)",
-              cursor: "pointer",
-              padding: 0,
-              marginRight: -12,
-              flexShrink: 0,
-              WebkitTapHighlightColor: "transparent",
-            }}
-          >
-            <MoreHorizontal size={20} aria-hidden />
-          </button>
-        ) : null}
-      </div>
+      ) : null}
+    </div>
+  );
 
-      {/* THREAD — v3 greeting while empty; otherwise the reused live
-          transcript (streamed output + tool/step chips + subagents +
-          surfaces + confirmations all preserved, retinted via .cue-mchat). */}
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-          position: "relative",
-          zIndex: 2,
-        }}
-      >
-        {isEmptyConversation ? (
-          <GreetingState
-            greeting={greeting}
-            starters={starters}
-            onSelectStarter={onSelectStarter}
-          />
-        ) : (
-          <Transcript ref={transcriptRef} {...transcriptProps} />
-        )}
-      </div>
+  // ── THREAD — v3 greeting while empty; otherwise the reused live transcript
+  // (streamed output + tool/step chips + subagents + surfaces + confirmations
+  // all preserved, retinted via .cue-mchat).
+  const thread = isEmptyConversation ? (
+    <GreetingState
+      greeting={greeting}
+      starters={starters}
+      onSelectStarter={onSelectStarter}
+    />
+  ) : (
+    <Transcript ref={transcriptRef} {...transcriptProps} />
+  );
 
+  const dock = (
+    <>
       {/* LIVE ACTIVITY — the "Cue is genuinely working" block pinned above
           the composer while a turn is in flight: current step + counter +
           elapsed + latest-steps mini-stream + the long-silence "Check
@@ -795,6 +804,17 @@ export function MobileChatView({
           {/* Quiet error surface — vision degrade card + generic failed-turn
               card. */}
           <MobileTurnErrorCard />
+          {/* LONG WORK LEAVES THE CHAT (§2). Anything over ~30s becomes a
+              task with a live line rather than a spinner, and this strip is
+              where that line lives — "you started this here", with its real
+              status and, once finished, where to read it. It was already
+              built and tested (`partner/long-work.test.tsx`) but only
+              rendered on the desktop path via ChatBody, so on the phone a
+              long-running request left the thread saying nothing at all.
+              Zero props by design: it reads the active assistant and
+              conversation from their stores, and renders null when this
+              conversation has spawned nothing. */}
+          <SpawnedWorkSlot />
         </div>
       ) : null}
 
@@ -859,26 +879,30 @@ export function MobileChatView({
           />
         </div>
       ) : null}
+    </>
+  );
 
-      {/* COMPOSER — v3 glass field + "+" + mic/send (frames 8 + 13b). Hidden
-          while the voice bar is showing (frame 37); the ⌨ flip brings it back
-          with the session still alive. */}
-      <div
-        style={{
-          display: threadVoiceOpen && !threadVoiceKeyboard ? "none" : undefined,
-          flexShrink: 0,
-          padding: "10px 16px",
-          paddingBottom: keyboardOpen
-            ? 10
-            : "calc(10px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
-          position: "relative",
-          zIndex: 5,
-          transform: composerLift
-            ? `translateY(-${composerLift}px)`
-            : undefined,
-          transition: "transform .18s ease",
-        }}
-      >
+  // ── COMPOSER — v3 glass field + the four affordances (frames G1/G2).
+  //
+  // Its bottom inset is owned by PhoneChatFrame: with the keyboard up the
+  // composer sits on the keys, with it down it sits on the home indicator.
+  // Nothing here translates. The old `translateY(-keyboardHeight)` is the bug
+  // design named — it moved the composer over the newest message instead of
+  // taking the room from the thread, and it stacked with the root layout's own
+  // viewport resize.
+  const composer = (
+    <div
+      style={{
+        display: threadVoiceOpen && !threadVoiceKeyboard ? "none" : undefined,
+        // No safe-area inset here. The app shell already pads its bottom by
+        // it while the keyboard is down (root-layout), and the tab bar claws
+        // that padding back and repaints it as its own ground when it is
+        // present — so adding it a third time here paid for the home
+        // indicator twice on a device and never showed up in a browser, where
+        // the inset is 0.
+        padding: "10px 16px",
+      }}
+    >
         {voiceInterim ? (
           <div
             style={{
@@ -970,15 +994,18 @@ export function MobileChatView({
             ))}
           </div>
         ) : null}
+        {/* THE COMPOSER, AND ITS FOUR MODES (v25 · G1/G6).
+            Field on top; ＋ attach · ✎ Create · ▦ Library · mic underneath.
+            All four are states of THIS composer — same thread, same thing
+            chip — which is why none of them is a tab. */}
         <div
           style={{
             display: "flex",
-            alignItems: "flex-end",
-            gap: 6,
+            flexDirection: "column",
             background: "var(--mv3-glass)",
             border: `1px solid ${composerBorder}`,
-            borderRadius: 24,
-            padding: "4px 4px 4px 17px",
+            borderRadius: 22,
+            padding: "10px 12px 6px 15px",
             backdropFilter: "blur(24px)",
             WebkitBackdropFilter: "blur(24px)",
             boxShadow: "var(--mv3-glass-shadow)",
@@ -996,144 +1023,123 @@ export function MobileChatView({
             onBlur={() => setFocused(false)}
             disabled={typingDisabled}
             rows={1}
-            placeholder="Message Cue…"
+            placeholder="Ask, or tell Cue what to take on"
             style={{
-              flex: 1,
+              width: "100%",
               resize: "none",
               border: "none",
               outline: "none",
               background: "transparent",
               color: "var(--mv3-text)",
-              // ≥16px (build rules): prevents iOS focus-zoom.
-              fontSize: 16,
+              // ≥16px (build rules): anything smaller triggers iOS focus-zoom,
+              // which moves the window — the exact thing G3 forbids.
+              fontSize: COMPOSER_FONT_SIZE_PX,
               lineHeight: 1.4,
               fontFamily: "inherit",
-              padding: "10px 0",
-              maxHeight: 120,
+              padding: "0 0 4px",
+              // Spec 7 — five lines, then the FIELD scrolls. Nothing else moves.
+              maxHeight:
+                COMPOSER_LINE_HEIGHT_PX * 5 + COMPOSER_FIELD_PADDING_PX,
               minWidth: 0,
             }}
           />
 
-          {/* Tune — composer settings (model profile + autonomy threshold),
-              the v3 sheet mount of the desktop ComposerSettingsMenu. */}
-          {assistantId ? (
-            <button
-              type="button"
-              onClick={() => {
-                haptic.light();
-                setSettingsOpen(true);
-              }}
-              aria-label="Conversation settings"
-              aria-haspopup="dialog"
-              aria-expanded={settingsOpen}
-              style={{
-                width: 44,
-                height: 44,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "none",
-                background: "transparent",
-                padding: 0,
-                cursor: "pointer",
-                flexShrink: 0,
-                color: "var(--mv3-muted)",
-                WebkitTapHighlightColor: "transparent",
-              }}
-            >
-              <SlidersHorizontal size={17} aria-hidden />
-            </button>
-          ) : null}
-
-          {/* "+" — attach (hidden picker into the shared composer store). */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={handlePickFiles}
-            style={{ display: "none" }}
-            aria-hidden
-            tabIndex={-1}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              haptic.light();
-              fileInputRef.current?.click();
-            }}
-            aria-label="Add attachment"
+          <div
             style={{
-              width: 44,
-              height: 44,
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              border: "none",
-              background: "transparent",
-              padding: 0,
-              cursor: "pointer",
-              flexShrink: 0,
-              WebkitTapHighlightColor: "transparent",
+              gap: 7,
+              marginTop: 6,
+              paddingTop: 6,
+              borderTop: "1px solid var(--mv3-line)",
             }}
           >
-            <span
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                background: "var(--mv3-btn2-bg)",
-                border: "1px solid var(--mv3-btn2-border)",
-                color: "var(--mv3-muted)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+            {/* ＋ attach (hidden picker into the shared composer store). */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handlePickFiles}
+              style={{ display: "none" }}
+              aria-hidden
+              tabIndex={-1}
+            />
+            <ComposerAffordance
+              label="Add attachment"
+              onPress={() => fileInputRef.current?.click()}
             >
               <Plus size={16} aria-hidden />
-            </span>
-          </button>
+            </ComposerAffordance>
 
-          {/* Voice orb entry (frame 37) — starts a live-voice session bound
-              to THIS conversation. Distinct from the dictation mic below;
-              gated on the voice-mode flag like the desktop overlay entry. */}
-          {canThreadVoice && !threadVoiceOpen ? (
-            <button
-              type="button"
-              onClick={handleStartThreadVoice}
-              aria-label="Talk in this chat (voice)"
-              style={{
-                width: 44,
-                height: 44,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "none",
-                background: "transparent",
-                padding: 0,
-                cursor: "pointer",
-                flexShrink: 0,
-                WebkitTapHighlightColor: "transparent",
-              }}
-            >
-              <span
+            {/* ✎ Create — a sheet over the composer, not a destination. */}
+            <ComposerCreateEntry />
+
+            {/* ▦ Library — pick a file to reference in what you're saying. */}
+            {assistantId ? (
+              <ComposerAffordance
+                label="Reference a file from your library"
+                expanded={libraryOpen}
+                onPress={() => setLibraryOpen(true)}
+              >
+                <LibraryBig size={15} aria-hidden />
+              </ComposerAffordance>
+            ) : null}
+
+            {/* Tune — composer settings (model profile + autonomy threshold),
+                the v3 sheet mount of the desktop ComposerSettingsMenu. */}
+            {assistantId ? (
+              <ComposerAffordance
+                label="Conversation settings"
+                expanded={settingsOpen}
+                onPress={() => setSettingsOpen(true)}
+              >
+                <SlidersHorizontal size={15} aria-hidden />
+              </ComposerAffordance>
+            ) : null}
+
+            <span style={{ flex: 1 }} />
+
+            {/* ◎ Voice — the mark IS the mic (frame G5). A live session bound
+                to THIS conversation; spoken turns land in this thread. */}
+            {canThreadVoice && !threadVoiceOpen && !showSend ? (
+              <button
+                type="button"
+                onClick={handleStartThreadVoice}
+                aria-label="Talk in this chat (voice)"
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  background: "var(--mv3-btn2-bg)",
-                  border: "1px solid var(--mv3-btn2-border)",
-                  color: "var(--mv3-micro)",
+                  width: 44,
+                  height: 44,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  marginRight: -4,
+                  WebkitTapHighlightColor: "transparent",
                 }}
               >
-                <AudioLines size={16} aria-hidden />
-              </span>
-            </button>
-          ) : null}
+                <span
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: "50%",
+                    background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "var(--mv3-plus-shadow)",
+                  }}
+                >
+                  <AudioLines size={16} aria-hidden />
+                </span>
+              </button>
+            ) : null}
 
-          {showSend ? (
+            {showSend ? (
             <button
               type="button"
               onClick={handleSend}
@@ -1228,8 +1234,32 @@ export function MobileChatView({
               />
             </div>
           )}
+          </div>
         </div>
-      </div>
+    </div>
+  );
+
+  return (
+    <PhoneChatFrame
+      frame={frame}
+      shellRef={shellRef}
+      headerRef={headerRef}
+      composerRef={composerRef}
+      dragHandlers={dragHandlers}
+      header={header}
+      thread={thread}
+      dock={dock}
+      composer={composer}
+      className="cue-mchat"
+      shellProps={{ "data-mv3": true }}
+      style={{
+        background: "var(--mv3-bg)",
+        color: "var(--mv3-text)",
+        fontFamily: "var(--mv3-font)",
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: MCHAT_TRANSCRIPT_THEME }} />
+      <AuroraBackdrop />
 
       {/* POWER-FEATURE SHEETS — portal into #viewport-overlays (SheetShell). */}
       {assistantId ? (
@@ -1245,6 +1275,22 @@ export function MobileChatView({
         open={actionsOpen}
         onClose={() => setActionsOpen(false)}
       />
-    </div>
+
+
+      {/* ▦ LIBRARY — pick a file to reference in what you're saying. Leads
+          with what this conversation itself made. */}
+      {assistantId ? (
+        <LibraryReferenceSheet
+          open={libraryOpen}
+          onClose={() => setLibraryOpen(false)}
+          assistantId={assistantId}
+          conversationId={activeConversationId}
+          onPick={(reference) => {
+            setInput(withReference(input, reference));
+            inputElRef.current?.focus();
+          }}
+        />
+      ) : null}
+    </PhoneChatFrame>
   );
 }
