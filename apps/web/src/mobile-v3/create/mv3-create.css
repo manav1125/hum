@@ -78,6 +78,13 @@
 }
 
 .mv3c-grabber {
+  /* The grabber is a `<span>`, so without this it is an inline box: width,
+     height and the auto margins are all ignored and the pill renders at zero
+     size. Measured on an iPhone 16, `.mv3c-grabstrip` was 0px tall — the
+     sheet's only detent control (tap to expand, drag to resize) had no visible
+     handle and no hit area at all. `SheetShell` and `work-kit`'s `Grabber`
+     both set this; this one was the copy that lost it. */
+  display: block;
   width: 40px;
   height: 5px;
   border-radius: 99px;
@@ -434,12 +441,30 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 13px 18px 0;
   display: flex;
   flex-direction: column;
-  /* Bottom-anchored: short flows sit against the footer, not floating at top. */
-  justify-content: flex-end;
   gap: 9px;
+}
+
+/* Bottom-anchored: short flows sit against the footer, not floating at top.
+ *
+ * This is `margin-top: auto` on the first item and NOT `justify-content:
+ * flex-end` on the scroller, which is what it used to be. In a scroll
+ * container, flex-end distributes the overflow off the TOP, and scrollTop
+ * cannot go negative — so once the flow grew past the sheet, its opening lines
+ * were painted above the sheet's own edge with no way to scroll back to them.
+ * Measured on an iPhone 16: the first bubble sat at y = -559 with
+ * `scrollTop === 0` and a maximum of 642, i.e. 642px of the conversation
+ * outside the app and unreachable. That is the "Create scrolls beyond the app
+ * boundaries" report.
+ *
+ * An auto margin does the same job honestly: it absorbs the free space when
+ * the content is short, and resolves to zero the moment there is none, which
+ * leaves the scroller's origin where the browser can reach it. */
+.mv3c-flow > *:first-child {
+  margin-top: auto;
 }
 
 .mv3c-flow::-webkit-scrollbar {
