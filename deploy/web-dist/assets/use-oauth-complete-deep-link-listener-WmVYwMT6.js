@@ -1,0 +1,1 @@
+import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{W as t}from"./design-library-B1b70XPK.js";import{t as n}from"./native-deep-link-CO8AYQko.js";var r=e(t(),1);function i(e){(0,r.useEffect)(()=>{let t=t=>{e(t.detail)};return window.addEventListener(n,t),()=>{window.removeEventListener(n,t)}},[e])}export{i as t};
