@@ -31,25 +31,87 @@ import {
 } from "@/domains/onboarding/prechat";
 import { DEFAULT_GROUP_ID } from "@/domains/onboarding/prechat-names";
 import { useOnboardingStore } from "@/domains/onboarding/onboarding-store";
+import { DayOneState } from "@/mobile-v3/states/day-one-state";
 import { useAuthStore } from "@/stores/auth-store";
+import { useConversationStore } from "@/stores/conversation-store";
+import { usePendingDeepLinkStore } from "@/stores/pending-deep-link-store";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { persistConsentForUser } from "@/utils/onboarding-cleanup";
 import { routes } from "@/utils/routes";
 import { haptic } from "@/utils/haptics";
 
+import {
+  applyConsentScopes,
+  DEFAULT_CONSENT_SCOPES,
+  persistConsentScopes,
+  type ConsentScopeId,
+  type ConsentScopes,
+} from "./consent-scopes";
 import { GravityStyles, OrbitalSystem } from "./gravity-kit";
 import { markSelfHostIntroComplete } from "./intro-state";
 
-type IntroStep = "arrived" | "consent" | "names";
+type IntroStep = "arrived" | "consent" | "names" | "dayOne";
+
+/**
+ * A fresh draft conversation id — a plain UUID, mirroring
+ * `domains/chat/utils/conversation-selection.createDraftConversationId`,
+ * inlined so onboarding stays free of a cross-domain import into chat
+ * (CONVENTIONS.md; the Intelligence and Library surfaces inline the same).
+ */
+function newDraftConversationId(): string {
+  return typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 export function SelfHostIntro() {
   const navigate = useNavigate();
   const [step, setStep] = useState<IntroStep>("arrived");
+  const user = useAuthStore((s) => s.user);
 
-  const finish = () => {
+  /**
+   * v28 · K3 — day one ends by PRODUCING THE FIRST THING, not by landing on an
+   * empty deck. The answer is parked on the pending deep-link store and a fresh
+   * thread is opened with it in the composer: a prefill, never an auto-send, so
+   * the first model turn is still something the user pressed.
+   */
+  const finish = (firstThing?: string) => {
     markSelfHostIntroComplete();
+    if (firstThing) {
+      usePendingDeepLinkStore.getState().setPendingComposerMessage(firstThing);
+      const draftId = newDraftConversationId();
+      useConversationStore.getState().setActiveConversationId(draftId);
+      void haptic.success();
+      void navigate(routes.conversation(draftId), { replace: true });
+      return;
+    }
     void haptic.success();
     void navigate(routes.assistant, { replace: true });
   };
+
+  // Day one is a full-bleed screen with its own bottom-anchored composer — it
+  // does not sit on the intro's glass card, which is sized for a form.
+  if (step === "dayOne") {
+    return (
+      <div
+        data-gv
+        data-intro-step={step}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "var(--gv-bg)",
+          color: "var(--gv-text)",
+          fontFamily: "var(--gv-font)",
+        }}
+      >
+        <GravityStyles />
+        <DayOneState
+          name={displayNameOf(user)}
+          onAnswer={(answer) => finish(answer)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -98,7 +160,9 @@ export function SelfHostIntro() {
           {step === "consent" ? (
             <ConsentStep onNext={() => setStep("names")} />
           ) : null}
-          {step === "names" ? <NamesStep onDone={finish} /> : null}
+          {step === "names" ? (
+            <NamesStep onDone={() => setStep("dayOne")} />
+          ) : null}
         </div>
       </div>
     </div>
@@ -154,102 +218,232 @@ function displayNameOf(
 
 /* ────────────────────────── 2 · terms & data ─────────────────────────── */
 
+/**
+ * The three cards (M8).
+ *
+ * Each card's body says what the capability PERMITS, in the terms the user
+ * will meet it in — not a category name. "Draft and prepare" is only honest if
+ * it also says that everything it produces waits for review, and "Send and
+ * spend" is only honest if it says the money part out loud.
+ *
+ * The two legal consents (terms, AI-provider processing) did not go away: they
+ * are the same two facts, stated once under the cards where the button is,
+ * rather than as two more switches that look optional next to three that
+ * aren't. Accepting still writes both through `persistConsentForUser`.
+ */
+const CONSENT_CARDS: Array<{
+  id: ConsentScopeId;
+  glyph: string;
+  title: string;
+  body: string;
+  /** The stated norm. Only the third card has one, and it is a fact. */
+  norm?: string;
+  tone: "ok" | "hold";
+}> = [
+  {
+    id: "read_organise",
+    glyph: "✓",
+    title: "Read and organise",
+    body: "Watch the sources you connect, file what arrives, and surface what needs you. Nothing is read until you connect a source.",
+    tone: "ok",
+  },
+  {
+    id: "draft_prepare",
+    glyph: "✎",
+    title: "Draft and prepare",
+    body: "Write replies, build documents, do research. Everything it produces waits for your review — nothing is delivered on its own.",
+    tone: "ok",
+  },
+  {
+    id: "send_spend",
+    glyph: "‖",
+    title: "Send and spend",
+    body: "Off to start. With this off, Cue stops and asks you before anything leaves — an email, a message, a payment — every single time.",
+    norm: "Most people leave this off for the first week.",
+    tone: "hold",
+  },
+];
+
 function ConsentStep({ onNext }: { onNext: () => void }) {
-  const [tos, setTos] = useState(false);
-  const [ai, setAi] = useState(false);
+  const [scopes, setScopes] = useState<ConsentScopes>({
+    ...DEFAULT_CONSENT_SCOPES,
+  });
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const setTosAccepted = useOnboardingStore.getState().setTosAccepted;
   const setAiDataConsent = useOnboardingStore.getState().setAiDataConsent;
 
   const accept = () => {
+    const userId = useAuthStore.getState().user?.id ?? null;
     setTosAccepted(true);
     setAiDataConsent(true);
     // Same per-user device keys the platform funnel writes, so a later build
     // that DOES run the platform gate does not re-prompt this user.
-    persistConsentForUser(useAuthStore.getState().user?.id ?? null, true, true);
+    persistConsentForUser(userId, true, true);
+    // …and the three capabilities, both as device keys and as the autonomy
+    // policy map the daemon actually enforces.
+    persistConsentScopes(userId, scopes);
+    void applyConsentScopes(assistantId, scopes);
     void haptic.light();
     onNext();
   };
 
   return (
     <div>
-      <IntroTitle>Before we start</IntroTitle>
-      <IntroBody>
-        Two things Cue needs you to agree to, in plain terms.
-      </IntroBody>
+      <IntroTitle>What Cue may do for you</IntroTitle>
+      <IntroBody>You can change any of this later in Guardrails.</IntroBody>
 
-      <ConsentRow
-        checked={tos}
-        onChange={setTos}
-        id="cue-consent-tos"
-        label="I accept Cue's terms of use and privacy policy."
-      />
-      <ConsentRow
-        checked={ai}
-        onChange={setAi}
-        id="cue-consent-ai"
-        label="I understand my conversations are sent to third-party AI providers to generate replies."
-      />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 9,
+          marginTop: 18,
+        }}
+      >
+        {CONSENT_CARDS.map((card) => (
+          <ConsentCard
+            key={card.id}
+            card={card}
+            on={scopes[card.id]}
+            onToggle={(next) => {
+              void haptic.light();
+              setScopes((prev) => ({ ...prev, [card.id]: next }));
+            }}
+          />
+        ))}
+      </div>
 
       <div style={{ marginTop: 18 }}>
-        <IntroPrimary disabled={!tos || !ai} onClick={accept}>
-          Agree and continue
-        </IntroPrimary>
+        <IntroPrimary onClick={accept}>Continue</IntroPrimary>
       </div>
-      {!tos || !ai ? (
-        <p
-          role="status"
-          style={{
-            display: "flex",
-            gap: 8,
-            margin: "12px 0 0",
-            fontSize: 13,
-            lineHeight: 1.5,
-            color: "var(--gv-muted)",
-          }}
-        >
-          <span aria-hidden>‖</span>
-          <span>
-            Both boxes are required — Cue will not proceed without them.
-          </span>
-        </p>
-      ) : null}
+
+      <p
+        style={{
+          margin: "12px 0 0",
+          fontSize: 11.5,
+          lineHeight: 1.55,
+          color: "var(--gv-muted)",
+          textAlign: "center",
+        }}
+      >
+        Continuing accepts Cue&apos;s terms and privacy policy, and that your
+        conversations are sent to third-party AI providers to generate replies.
+      </p>
     </div>
   );
 }
 
-function ConsentRow({
-  id,
-  label,
-  checked,
-  onChange,
+function ConsentCard({
+  card,
+  on,
+  onToggle,
 }: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
+  card: (typeof CONSENT_CARDS)[number];
+  on: boolean;
+  onToggle: (next: boolean) => void;
 }) {
+  const labelId = `cue-scope-${card.id}`;
+  // Off is expressed by the switch, the ‖ glyph AND the copy — never by colour
+  // alone, and never by dimming the card. The explanatory sentence is the only
+  // thing that says why this one is off, so it stays at full strength.
+  const border =
+    card.tone === "hold"
+      ? "rgba(224,166,75,.35)"
+      : "rgba(111,214,154,.30)";
+  const glyphBg =
+    card.tone === "hold" ? "rgba(224,166,75,.15)" : "rgba(111,214,154,.15)";
+  const glyphColor =
+    card.tone === "hold" ? "var(--gv-hold-text)" : "var(--gv-ok)";
+
   return (
-    <label
-      htmlFor={id}
+    <div
       style={{
-        display: "flex",
-        gap: 11,
-        alignItems: "flex-start",
-        marginTop: 16,
-        fontSize: 14,
-        lineHeight: 1.55,
-        cursor: "pointer",
+        background: "var(--gv-surface)",
+        border: `1px solid ${border}`,
+        borderRadius: 16,
+        padding: "13px 14px",
       }}
     >
-      <input
-        id={id}
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
-      />
-      <span>{label}</span>
-    </label>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span
+          aria-hidden
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 8,
+            background: glyphBg,
+            color: glyphColor,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 11,
+            flexShrink: 0,
+          }}
+        >
+          {card.glyph}
+        </span>
+        <span
+          id={labelId}
+          style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}
+        >
+          {card.title}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-labelledby={labelId}
+          onClick={() => onToggle(!on)}
+          style={{
+            width: 44,
+            height: 26,
+            flexShrink: 0,
+            borderRadius: 99,
+            border: on ? "none" : "1px solid var(--gv-border)",
+            background: on ? "var(--gv-ok-fill)" : "var(--gv-track)",
+            position: "relative",
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              position: "absolute",
+              top: 3,
+              left: on ? 21 : 3,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: on ? "#FFFFFF" : "var(--gv-muted)",
+              transition: "left .18s ease",
+            }}
+          />
+        </button>
+      </div>
+      <p
+        style={{
+          margin: "8px 0 0",
+          fontSize: 12.5,
+          lineHeight: 1.55,
+          color: "var(--gv-body)",
+        }}
+      >
+        {card.body}
+      </p>
+      {card.norm ? (
+        <p
+          style={{
+            margin: "7px 0 0",
+            fontSize: 11.5,
+            lineHeight: 1.5,
+            color: "var(--gv-hold-text)",
+          }}
+        >
+          {card.norm}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -284,7 +478,8 @@ function NamesStep({ onDone }: { onDone: () => void }) {
       <IntroTitle>Names</IntroTitle>
       <IntroBody>
         What should Cue call you, and what should you call it? Both are optional
-        — you can change them later.
+        — you can change them later. One question after this, then you&apos;re
+        in.
       </IntroBody>
 
       <IntroField
@@ -303,7 +498,7 @@ function NamesStep({ onDone }: { onDone: () => void }) {
       />
 
       <div style={{ marginTop: 20 }}>
-        <IntroPrimary onClick={save}>Start using Cue</IntroPrimary>
+        <IntroPrimary onClick={save}>Continue</IntroPrimary>
       </div>
     </div>
   );

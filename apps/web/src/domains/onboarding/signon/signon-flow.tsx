@@ -30,7 +30,15 @@
  * way in when HQ is down entirely; hiding it would trade a rare ugly screen
  * for a rare unrecoverable one.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   connectedSelfHostInstance,
@@ -47,6 +55,7 @@ import {
   prefersReducedMotion,
   type GravityMode,
 } from "./gravity-kit";
+import { PhoneSignonSheet, useCoarsePointer } from "./phone-signon-sheet";
 import {
   INSTANCE_DOMAIN,
   instanceUrlFromAddress,
@@ -128,6 +137,92 @@ export function SignonFlow({
 
   const mode: GravityMode = gravityModeFor(step);
 
+  // Design's R5: at phone width the glass card becomes a bottom sheet with the
+  // orbit scaling above it. Gated on POINTER TYPE, never width — a 440px
+  // Electron window is not a phone, and that exact confusion has shipped here
+  // before (see `useMobileLayout`).
+  const phone = useCoarsePointer();
+
+  const screens = (
+    <>
+      {step === "signin" ? (
+        <SignInScreen
+          instance={instance}
+          busy={busy}
+          notice={notice}
+          fallbackUrl={fallbackUrl}
+          onSubmit={(value) => {
+            setEmail(value);
+            void send(value);
+          }}
+          onUseAddress={() => {
+            setNotice(null);
+            setFallbackUrl(null);
+            setStep("address");
+          }}
+        />
+      ) : null}
+
+      {step === "check" ? (
+        <CheckEmailScreen
+          email={email}
+          busy={busy}
+          notice={notice}
+          onResend={() => void send(email)}
+          onChangeEmail={() => {
+            setNotice(null);
+            setStep("signin");
+          }}
+        />
+      ) : null}
+
+      {step === "address" ? (
+        <AddressScreen
+          onBack={() => setStep("signin")}
+          notice={notice}
+          setNotice={setNotice}
+        />
+      ) : null}
+
+      {step === "expired" ? (
+        <ExpiredScreen
+          onSendNew={() => {
+            setNotice(null);
+            setStep("signin");
+          }}
+        />
+      ) : null}
+
+      {step === "notfound" ? (
+        <NotFoundScreen
+          email={email}
+          message={notice}
+          onEdit={() => setStep("signin")}
+        />
+      ) : null}
+
+      {step === "offline" ? (
+        <OfflineScreen
+          onRetry={() => {
+            setNotice(null);
+            setStep(email ? "check" : "signin");
+          }}
+        />
+      ) : null}
+    </>
+  );
+
+  // Where a swipe-back lands, per screen. `null` where there is nowhere to go:
+  // attaching the gesture anyway would swallow a swipe and answer it with
+  // nothing, which reads as a broken screen rather than a screen with no exit.
+  const back: (() => void) | null =
+    step === "check" || step === "address" || step === "notfound"
+      ? () => {
+          setNotice(null);
+          setStep("signin");
+        }
+      : null;
+
   return (
     <div
       data-gv
@@ -147,7 +242,7 @@ export function SignonFlow({
         background: step === "splash" ? "var(--gv-bg-deep)" : "var(--gv-bg)",
         color: "var(--gv-text)",
         fontFamily: "var(--gv-font)",
-        padding: "32px 20px",
+        padding: phone && step !== "splash" ? 0 : "32px 20px",
         transition: "background .6s ease",
       }}
     >
@@ -161,76 +256,30 @@ export function SignonFlow({
             setStep("signin");
           }}
         />
+      ) : phone ? (
+        <PhoneLayout.Provider value={true}>
+          <PhoneSignonSheet mode={mode} onBack={back}>
+            {screens}
+          </PhoneSignonSheet>
+        </PhoneLayout.Provider>
       ) : (
-        <SheetScreen mode={mode}>
-          {step === "signin" ? (
-            <SignInScreen
-              instance={instance}
-              busy={busy}
-              notice={notice}
-              fallbackUrl={fallbackUrl}
-              onSubmit={(value) => {
-                setEmail(value);
-                void send(value);
-              }}
-              onUseAddress={() => {
-                setNotice(null);
-                setFallbackUrl(null);
-                setStep("address");
-              }}
-            />
-          ) : null}
-
-          {step === "check" ? (
-            <CheckEmailScreen
-              email={email}
-              busy={busy}
-              notice={notice}
-              onResend={() => void send(email)}
-              onChangeEmail={() => {
-                setNotice(null);
-                setStep("signin");
-              }}
-            />
-          ) : null}
-
-          {step === "address" ? (
-            <AddressScreen
-              onBack={() => setStep("signin")}
-              notice={notice}
-              setNotice={setNotice}
-            />
-          ) : null}
-
-          {step === "expired" ? (
-            <ExpiredScreen
-              onSendNew={() => {
-                setNotice(null);
-                setStep("signin");
-              }}
-            />
-          ) : null}
-
-          {step === "notfound" ? (
-            <NotFoundScreen
-              email={email}
-              message={notice}
-              onEdit={() => setStep("signin")}
-            />
-          ) : null}
-
-          {step === "offline" ? (
-            <OfflineScreen
-              onRetry={() => {
-                setNotice(null);
-                setStep(email ? "check" : "signin");
-              }}
-            />
-          ) : null}
-        </SheetScreen>
+        <SheetScreen mode={mode}>{screens}</SheetScreen>
       )}
     </div>
   );
+}
+
+/**
+ * Whether the screens are rendering inside M7's bottom sheet.
+ *
+ * The screens themselves are shared — this is the one thing they need to know,
+ * because a sheet already carries the brand block above it and a second centred
+ * "Welcome" underneath it is the same sentence twice.
+ */
+const PhoneLayout = createContext(false);
+
+function usePhoneLayout(): boolean {
+  return useContext(PhoneLayout);
 }
 
 /* ────────────────────────────── S · splash ───────────────────────────── */
@@ -388,15 +437,18 @@ function SheetScreen({
 }
 
 function Title({ children }: { children: React.ReactNode }) {
+  const phone = usePhoneLayout();
   return (
     <h1
       style={{
         margin: 0,
-        fontSize: 27,
-        lineHeight: 1.12,
+        // In the sheet the title is a section heading, not a hero — the hero is
+        // the orbit in the strip above it (M7: 16px, left).
+        fontSize: phone ? 17 : 27,
+        lineHeight: phone ? 1.3 : 1.12,
         fontWeight: 600,
         letterSpacing: "-.025em",
-        textAlign: "center",
+        textAlign: phone ? "left" : "center",
       }}
     >
       {children}
@@ -405,14 +457,15 @@ function Title({ children }: { children: React.ReactNode }) {
 }
 
 function Body({ children }: { children: React.ReactNode }) {
+  const phone = usePhoneLayout();
   return (
     <p
       style={{
-        margin: "12px 0 0",
-        fontSize: 14.5,
+        margin: phone ? "6px 0 0" : "12px 0 0",
+        fontSize: phone ? 13 : 14.5,
         lineHeight: 1.6,
         color: "var(--gv-muted)",
-        textAlign: "center",
+        textAlign: phone ? "left" : "center",
       }}
     >
       {children}
@@ -562,6 +615,7 @@ function SignInScreen({
 }) {
   const [value, setValue] = useState("");
   const [invalid, setInvalid] = useState(false);
+  const phone = usePhoneLayout();
 
   return (
     <form
@@ -581,15 +635,26 @@ function SignInScreen({
         onSubmit(value.trim());
       }}
     >
-      <Title>
-        Welcome.
-        <br />
-        This one&apos;s yours.
-      </Title>
-      <Body>
-        Your private Cue is waiting. Enter your email and we&apos;ll send a
-        secure sign-in link.
-      </Body>
+      {phone ? (
+        <>
+          <Title>Sign in</Title>
+          <Body>
+            Enter your email and we&apos;ll send a secure sign-in link.
+          </Body>
+        </>
+      ) : (
+        <>
+          <Title>
+            Welcome.
+            <br />
+            This one&apos;s yours.
+          </Title>
+          <Body>
+            Your private Cue is waiting. Enter your email and we&apos;ll send a
+            secure sign-in link.
+          </Body>
+        </>
+      )}
       {instance ? (
         <p
           style={{
@@ -693,6 +758,26 @@ function SignInScreen({
           Enter your Cue address instead
         </QuietButton>
       </div>
+
+      {phone ? (
+        // M7's closing line. Design: "the last line does real work — 'Cue reads
+        // nothing until you connect a source' is the objection an alpha user
+        // has at exactly this moment." It is also true: sources are connected
+        // after the consent step, and nothing is read before that.
+        <p
+          style={{
+            margin: "10px 0 0",
+            fontSize: 10.5,
+            lineHeight: 1.5,
+            textAlign: "center",
+            color: "var(--gv-muted)",
+          }}
+        >
+          By continuing you agree to the terms.
+          <br />
+          Cue reads nothing until you connect a source.
+        </p>
+      ) : null}
     </form>
   );
 }

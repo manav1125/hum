@@ -12,6 +12,8 @@ import { overflowVisible } from "@/mobile-v3/corner-chrome";
 import { LiveActivityBridge } from "@/mobile-v3/live-activity-bridge";
 import { Mv3OverflowMenu } from "@/mobile-v3/overflow-menu";
 import { OfflineTakeover } from "@/mobile-v3/offline-takeover";
+import { Mv3PullSearch } from "@/mobile-v3/states/pull-search";
+import { flushPendingConsentScopes } from "@/domains/onboarding/signon/consent-scopes";
 import {
   clearPendingWorkspaceMode,
   readPendingWorkspaceMode,
@@ -193,6 +195,15 @@ export function RootLayout() {
       .catch(() => {
         /* daemon unreachable — retried on the next activation */
       });
+  }, [assistantId, isAssistantActive]);
+
+  // M8's three consent cards park their autonomy-policy map when the daemon
+  // was not reachable while the user answered. Flush it here rather than lose
+  // it: the parked map is the one that holds `send: "ask"`, so dropping it
+  // would silently restore the gateway's `send: "auto"` default.
+  useEffect(() => {
+    if (!assistantId || !isAssistantActive) return;
+    void flushPendingConsentScopes(assistantId);
   }, [assistantId, isAssistantActive]);
 
   // Keep the browser favicon in sync with the assistant's avatar across
@@ -382,6 +393,12 @@ export function RootLayout() {
           only; no-ops until an assistant is active, and never over the
           onboarding funnel (it manages its own connection states). */}
       {isMobile && !pathname.includes("/onboarding/") && <OfflineTakeover />}
+
+      {/* v28 · K4 — pull down from ANY screen to search. Mounted here for the
+          same reason the takeover is: the gesture is global, so it cannot live
+          inside one tab. Never over the onboarding funnel, which owns its own
+          gestures. */}
+      {isMobile && !pathname.includes("/onboarding/") && <Mv3PullSearch />}
 
       {/* Portal target for mobile overlays that use `position: fixed`. */}
       <div id="viewport-overlays" />

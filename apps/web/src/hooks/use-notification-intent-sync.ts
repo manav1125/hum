@@ -17,6 +17,7 @@
  */
 
 import { useBusSubscription } from "@/hooks/use-bus-subscription";
+import { decideAndRecordPush } from "@/mobile-v3/states/push-budget";
 import {
   extractConversationId,
   postLocalNotification,
@@ -58,6 +59,26 @@ export function useNotificationIntentSync(assistantId: string | null): void {
         useConversationStore.getState().activeConversationId &&
       window.location.pathname.startsWith("/assistant/conversations/")
     ) {
+      if (assistantId && event.deliveryId) {
+        void sendNotificationIntentAck(assistantId, event.deliveryId, true);
+      }
+      return;
+    }
+
+    // v28 · K2 — the interruption budget. Corrections and time-critical
+    // approvals are always delivered (design: "unless something breaks", and a
+    // cap that could swallow an expiring approval would be worse than noise);
+    // only the ambient tier is held for the brief. See
+    // `mobile-v3/states/push-budget.ts` for what this does and does not cover —
+    // remote APNs pushes are composed by the daemon and never reach this code.
+    const decision = decideAndRecordPush({
+      sourceEventName: event.sourceEventName,
+      title: event.title,
+      body: event.body,
+    });
+    if (!decision.deliver) {
+      // Acked, not dropped: the daemon's delivery audit records that this
+      // device saw it, and the item itself is untouched and still in the app.
       if (assistantId && event.deliveryId) {
         void sendNotificationIntentAck(assistantId, event.deliveryId, true);
       }

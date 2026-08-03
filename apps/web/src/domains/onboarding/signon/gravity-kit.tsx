@@ -69,8 +69,20 @@ export const GRAVITY_KEYFRAMES = `
   --gv-border:#2A2A35; --gv-text:#F4F4F6; --gv-muted:#9A9AA8;
   --gv-accent:#3D6EE8; --gv-accent-text:#8FA9F2; --gv-on-accent:#FFFFFF;
   --gv-error:#E5675B; --gv-ok:#5FD08A;
+  /* M8's consent cards. --gv-body is card copy: a real muted-on-dark stop, NOT
+     an opacity wrapper over --gv-text. Design's rule is that explanatory copy
+     stays at full strength and receding happens by token, never by dimming the
+     container. --gv-hold-text is the amber TEXT leg (the fill leg #B4770F fails
+     as small copy on light); --gv-ok-fill is a ground under a white knob, so it
+     takes the text stop of its hue on both themes. */
+  --gv-body:#C9C9D4; --gv-hold-text:#E0A64B;
+  --gv-ok-fill:#277E41; --gv-track:rgba(255,255,255,.14);
   --gv-glass:rgba(255,255,255,.045); --gv-glass-line:rgba(255,255,255,.10);
   --gv-aurora:rgba(61,110,232,.30);
+  /* M7's bottom sheet. Opaque, not glass: the orbit passes BEHIND its top edge
+     as it scales, and a translucent sheet would show the mark through the
+     fields it is supposed to have made room for. */
+  --gv-sheet:rgba(20,23,32,.98); --gv-grabber:rgba(255,255,255,.22);
   --gv-font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   --gv-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
 }
@@ -79,8 +91,11 @@ export const GRAVITY_KEYFRAMES = `
   --gv-border:#E2E2E8; --gv-text:#17171C; --gv-muted:#6A6A76;
   --gv-accent:#3D6EE8; --gv-accent-text:#2B53C4; --gv-on-accent:#FFFFFF;
   --gv-error:#C4372B; --gv-ok:#277E41;
+  --gv-body:#3A3A44; --gv-hold-text:#8A5A08;
+  --gv-ok-fill:#277E41; --gv-track:rgba(23,23,28,.12);
   --gv-glass:rgba(23,23,28,.035); --gv-glass-line:rgba(23,23,28,.10);
   --gv-aurora:rgba(61,110,232,.18);
+  --gv-sheet:#FFFFFF; --gv-grabber:rgba(23,23,28,.18);
 }
 @keyframes gvSpin{to{transform:rotate(360deg)}}
 @keyframes gvSpinR{to{transform:rotate(-360deg)}}

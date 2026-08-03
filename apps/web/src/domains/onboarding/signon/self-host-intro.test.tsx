@@ -46,9 +46,9 @@ mock.module("@/domains/onboarding/prechat", () => ({
 
 const { SelfHostIntro } = await import("./self-host-intro");
 const { isSelfHostIntroComplete } = await import("./intro-state");
+const { readConsentScopes } = await import("./consent-scopes");
 const { useOnboardingStore } =
   await import("@/domains/onboarding/onboarding-store");
-const { routes } = await import("@/utils/routes");
 
 beforeEach(() => {
   localStorage.clear();
@@ -93,48 +93,79 @@ describe("the honest landing", () => {
   });
 });
 
-describe("consent is blocking, and it is recorded where the rest of the app reads it", () => {
-  test("the continue button stays disabled until BOTH boxes are ticked", () => {
+describe("M8 · three cards, and send-and-spend is off", () => {
+  function reachConsent() {
     render(<SelfHostIntro />);
     advance("Continue");
+  }
 
-    const submit = () =>
-      screen.getByRole("button", {
-        name: "Agree and continue",
-      }) as HTMLButtonElement;
-    expect(submit().disabled).toBe(true);
-
-    fireEvent.click(screen.getByLabelText(/terms of use/));
-    expect(submit().disabled).toBe(true);
-
-    fireEvent.click(screen.getByLabelText(/third-party AI providers/));
-    expect(submit().disabled).toBe(false);
+  test("all three are on screen, as switches, with the norm stated", () => {
+    reachConsent();
+    expect(screen.getByRole("switch", { name: "Read and organise" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Draft and prepare" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Send and spend" })).toBeTruthy();
+    expect(
+      screen.getByText("Most people leave this off for the first week."),
+    ).toBeTruthy();
   });
 
-  test("accepting writes both the in-memory flags and the per-user device keys", () => {
+  test("the two safe ones are on and the consequential one is off", () => {
+    reachConsent();
+    const state = (name: string) =>
+      screen.getByRole("switch", { name }).getAttribute("aria-checked");
+    expect(state("Read and organise")).toBe("true");
+    expect(state("Draft and prepare")).toBe("true");
+    expect(state("Send and spend")).toBe("false");
+  });
+
+  test("the copy says what each card actually permits", () => {
+    reachConsent();
+    // Draft is only honest if it also says the output waits.
+    expect(screen.getByText(/waits for your review/)).toBeTruthy();
+    // Send is only honest if it says the money part out loud.
+    expect(screen.getByText(/a payment — every single time/)).toBeTruthy();
+  });
+
+  test("continuing writes exactly the three scopes, send-and-spend false", () => {
     currentUser = { id: "user-1" };
-    render(<SelfHostIntro />);
+    reachConsent();
     advance("Continue");
-    fireEvent.click(screen.getByLabelText(/terms of use/));
-    fireEvent.click(screen.getByLabelText(/third-party AI providers/));
-    advance("Agree and continue");
+
+    const scopes = readConsentScopes("user-1");
+    expect(scopes).toEqual({
+      read_organise: true,
+      draft_prepare: true,
+      send_spend: false,
+    });
+  });
+
+  test("…and still records the legal consent through the existing writer", () => {
+    currentUser = { id: "user-1" };
+    reachConsent();
+    advance("Continue");
 
     expect(useOnboardingStore.getState().tosAccepted).toBe(true);
     expect(useOnboardingStore.getState().aiDataConsent).toBe(true);
     expect(persistConsentMock).toHaveBeenCalledWith("user-1", true, true);
   });
+
+  test("turning send-and-spend on is possible, and only by moving that switch", () => {
+    currentUser = { id: "user-1" };
+    reachConsent();
+    fireEvent.click(screen.getByRole("switch", { name: "Send and spend" }));
+    advance("Continue");
+    expect(readConsentScopes("user-1").send_spend).toBe(true);
+  });
 });
 
-describe("names, then into the app", () => {
+describe("names, then day one", () => {
   function reachNames() {
     render(<SelfHostIntro />);
-    advance("Continue");
-    fireEvent.click(screen.getByLabelText(/terms of use/));
-    fireEvent.click(screen.getByLabelText(/third-party AI providers/));
-    advance("Agree and continue");
+    advance("Continue"); // arrived
+    advance("Continue"); // consent
   }
 
-  test("the whole arc ends by navigating into the app and marking itself done", () => {
+  test("names still park through the same pre-chat writers", () => {
     reachNames();
     fireEvent.change(screen.getByLabelText("YOU ARE"), {
       target: { value: "Ada" },
@@ -142,38 +173,43 @@ describe("names, then into the app", () => {
     fireEvent.change(screen.getByLabelText("CUE IS"), {
       target: { value: "Cue" },
     });
-    advance("Start using Cue");
+    advance("Continue");
 
     expect(setPendingAssistantNameMock).toHaveBeenCalledWith("Cue");
     expect(setPendingPreChatContextMock).toHaveBeenCalledWith(
       expect.objectContaining({ userName: "Ada", assistantName: "Cue" }),
     );
-    expect(navigateMock).toHaveBeenCalledWith(routes.assistant, {
-      replace: true,
-    });
-    // And it never runs again on this device.
-    expect(isSelfHostIntroComplete()).toBe(true);
-  });
-
-  test("names are optional — skipping them still gets you in", () => {
-    reachNames();
-    advance("Start using Cue");
-
-    expect(setPendingAssistantNameMock).not.toHaveBeenCalled();
-    expect(navigateMock).toHaveBeenCalledWith(routes.assistant, {
-      replace: true,
-    });
-    expect(isSelfHostIntroComplete()).toBe(true);
   });
 
   test("it parks no interests the user never stated", () => {
     reachNames();
-    advance("Start using Cue");
+    advance("Continue");
     const ctx = setPendingPreChatContextMock.mock.calls[0]?.[0] as {
       tools: string[];
       tasks: string[];
     };
     expect(ctx.tools).toEqual([]);
     expect(ctx.tasks).toEqual([]);
+  });
+
+  test("day one asks one question rather than showing an empty deck", () => {
+    reachNames();
+    advance("Continue");
+    expect(screen.getByText(/Let's start with one thing\./)).toBeTruthy();
+    expect(screen.getByText("Raise money")).toBeTruthy();
+    expect(screen.getByText(/Nothing's connected yet/)).toBeTruthy();
+  });
+
+  test("answering it opens a thread carrying the answer, and the arc is done", () => {
+    reachNames();
+    advance("Continue");
+    fireEvent.click(screen.getByText("Ship something"));
+
+    expect(navigateMock).toHaveBeenCalled();
+    const [to, opts] = navigateMock.mock.calls.at(-1) as [string, unknown];
+    expect(to).toContain("/assistant/conversations/");
+    expect(opts).toEqual({ replace: true });
+    // …and it never runs again on this device.
+    expect(isSelfHostIntroComplete()).toBe(true);
   });
 });
