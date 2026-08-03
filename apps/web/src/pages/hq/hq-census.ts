@@ -196,6 +196,17 @@ export interface HqLaneReading {
    * from, so it can never carry a number the lane did not query.
    */
   readonly detail: string;
+  /**
+   * A second, quieter sentence the surface must show wherever it shows the
+   * lane — the valve's honesty note.
+   *
+   * It is separate from {@link detail} because the two have different homes.
+   * `detail` is the rail tile's body, and needs-you has no rail tile; its
+   * caveat has to reach GLANCE, where the lane is nothing but a number. Folding
+   * this into `detail` is how "57 need you" spent a render looking like a
+   * valve-filtered 57 when the valve had never judged one of them.
+   */
+  readonly caveat: string | null;
   /** The door this lane opens when you leave HQ for it. */
   readonly href: string;
   readonly glance: GlanceSlot;
@@ -241,9 +252,34 @@ export interface WatcherReading {
   readonly lastPollAt: number | null;
 }
 
+/**
+ * What the volume valve is doing, right now, over ALL open work.
+ *
+ * Both densities read these off the census, which is the whole answer to "wire
+ * the strip to a filtered count and the rail to an unfiltered one and the hinge
+ * breaks": there is one source, and it is this.
+ */
+export interface ValveFacts {
+  /** Where the owner set the control. */
+  stop: "everything" | "needs_you" | "only_urgent";
+  /** Open work the valve is holding back. Still in Work, a stop-change away. */
+  held: number;
+  /**
+   * Of what IS in front of you, how many are there only because the valve has
+   * never sized them up. Unknown is the loudest band by design, so this number
+   * means the valve is doing LESS than the lane suggests — never more.
+   */
+  unbanded: number;
+}
+
 export interface HqCensusInput {
   /** The one needs-you number, computed once by the page (invariant 2). */
   needsYou: LaneState<number>;
+  /**
+   * The valve's own census. `unavailable` while it has not answered — a valve
+   * we could not read must not render as a valve that is holding nothing.
+   */
+  valve: LaneState<ValveFacts>;
   /** Open missions (achieved ones excluded by the caller). */
   missions: LaneState<Mission[]>;
   /** Queued work items. */
@@ -271,6 +307,22 @@ function needsYouDetail(n: number): string {
   return `${n} ${n === 1 ? "thing needs" : "things need"} you.`;
 }
 
+/**
+ * The sentence that stops an unfiltered lane passing for a filtered one.
+ *
+ * `unbanded` items are in front of you because the valve has never sized them
+ * up, not because it decided they mattered. Saying so is the difference between
+ * "the valve chose these six" and "the valve has not looked at five of these
+ * six" — and only one of those is true on the day it ships.
+ */
+function unbandedNote(v: ValveFacts, shown: number): string | null {
+  if (v.unbanded <= 0) return null;
+  if (shown > 0 && v.unbanded >= shown) {
+    return `The valve hasn't sized ${shown === 1 ? "this one" : "any of these"} up yet — ${shown === 1 ? "it's" : "they're"} loud by default`;
+  }
+  return `${v.unbanded} of ${shown} not sized up by the valve yet`;
+}
+
 function missionsDetail(missions: Mission[]): string {
   const total = missions.length;
   if (total === 0) return "No missions yet — Cue still catches what comes in.";
@@ -287,6 +339,20 @@ function holdingDetail(items: HqWorkItem[]): string {
   const queued = `${n} queued`;
   if (held === 0) return `${queued} — none of them are waiting on you.`;
   return `${queued} · ${held} waiting on a word from you.`;
+}
+
+/**
+ * What the valve is holding back, appended to the holding lane.
+ *
+ * It is stated rather than counted into the number above it, because the two
+ * are different sets: the stat is work Cue has queued to DO, and this is work
+ * the valve has decided not to interrupt you with. Folding them would produce
+ * one number that answers neither question. The door is All work, which asks
+ * for no stop and therefore shows every one of them.
+ */
+function valveHeldNote(v: ValveFacts): string | null {
+  if (v.held <= 0) return null;
+  return `${v.held} more held back — in Work, nothing lost`;
 }
 
 function filedDetail(a: ArrivalsSummary & { windowHours: number }): string {
@@ -375,6 +441,22 @@ function detailOf<T>(
   return state.kind === "known" ? sentence(state.payload) : state.reason;
 }
 
+/**
+ * A valve fact about this lane, or null — only ever when the valve answered.
+ *
+ * A valve we could not read contributes nothing, exactly like every other
+ * unqueried number on this surface: `?? 0` here would have every first paint
+ * claim the valve is holding nothing back.
+ */
+function valveNote(
+  valve: LaneState<ValveFacts>,
+  note: (facts: ValveFacts) => string | null,
+): string | null {
+  if (valve.kind !== "known") return null;
+  const extra = note(valve.payload);
+  return extra ? `${extra}.` : null;
+}
+
 function toneFor(stat: LaneStat, hot: (n: number) => LaneTone): LaneTone {
   return stat.kind === "count" ? hot(stat.value) : "neutral";
 }
@@ -406,6 +488,14 @@ export function buildHqCensus(input: HqCensusInput): HqCensus {
       tone: toneFor(needsYouStat, (n) => (n > 0 ? "attention" : "good")),
       stat: needsYouStat,
       detail: detailOf(input.needsYou, needsYouDetail),
+      // The lane is post-valve, so it has to be able to say when the valve has
+      // not actually judged what is in it — and to say it on GLANCE, where the
+      // lane is a bare number with nowhere else to put the truth.
+      caveat: valveNote(input.valve, (v) =>
+        needsYouStat.kind === "count" && needsYouStat.value > 0
+          ? unbandedNote(v, needsYouStat.value)
+          : null,
+      ),
       href: routes.reviewQueue,
       glance: GLANCE_SLOT.needs_you,
       deck: DECK_SLOT.needs_you,
@@ -418,6 +508,7 @@ export function buildHqCensus(input: HqCensusInput): HqCensus {
       tone: toneFor(blockedStat, (n) => (n > 0 ? "alarm" : "neutral")),
       stat: blockedStat,
       detail: detailOf(input.missions, missionsDetail),
+      caveat: null,
       href: routes.allWork,
       glance: GLANCE_SLOT.blocked,
       deck: DECK_SLOT.blocked,
@@ -430,6 +521,7 @@ export function buildHqCensus(input: HqCensusInput): HqCensus {
       tone: "neutral",
       stat: holdingStat,
       detail: detailOf(input.holding, holdingDetail),
+      caveat: valveNote(input.valve, valveHeldNote),
       href: routes.allWork,
       glance: GLANCE_SLOT.holding,
       deck: DECK_SLOT.holding,
@@ -446,6 +538,7 @@ export function buildHqCensus(input: HqCensusInput): HqCensus {
       tone: "neutral",
       stat: filedStat,
       detail: detailOf(input.arrivals, filedDetail),
+      caveat: null,
       href: routes.allWork,
       glance: GLANCE_SLOT.filed,
       deck: DECK_SLOT.filed,
@@ -458,6 +551,7 @@ export function buildHqCensus(input: HqCensusInput): HqCensus {
       tone: "neutral",
       stat: inMotionStat,
       detail: detailOf(input.inMotion, inMotionDetail),
+      caveat: null,
       href: routes.allWork,
       glance: GLANCE_SLOT.in_motion,
       deck: DECK_SLOT.in_motion,
@@ -473,6 +567,7 @@ export function buildHqCensus(input: HqCensusInput): HqCensus {
           : toneFor(watchingStat, (n) => (n > 0 ? "good" : "attention")),
       stat: watchingStat,
       detail: detailOf(input.watching, watchingDetail),
+      caveat: null,
       href: routes.automations,
       glance: GLANCE_SLOT.watching,
       deck: DECK_SLOT.watching,

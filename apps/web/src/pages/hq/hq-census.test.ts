@@ -20,6 +20,8 @@
 
 import { describe, expect, test } from "bun:test";
 
+import { routes } from "@/utils/routes";
+
 import { known, unavailable } from "./hq-tiers";
 import type { HqSchedule, HqWorkItem, Mission } from "./use-missions";
 import {
@@ -72,6 +74,7 @@ function schedule(nextRunAt: number): HqSchedule {
 function input(over: Partial<HqCensusInput> = {}): HqCensusInput {
   return {
     needsYou: known(0),
+    valve: known({ stop: "needs_you" as const, held: 0, unbanded: 0 }),
     missions: known([]),
     holding: known([]),
     arrivals: known({ total: 0, filed: 0, kept: 0, windowHours: 24 }),
@@ -219,7 +222,100 @@ describe("never a fake number", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3 · The sentences, where the label is half the honesty
+// 3 · The volume valve
+// ---------------------------------------------------------------------------
+
+describe("the volume valve", () => {
+  test("an unfiltered lane cannot masquerade as a filtered one", () => {
+    // The shipping-day shape: 6 in front of you, and the valve has never sized
+    // up 5 of them. They are loud because they are unknown, not because the
+    // valve judged them urgent — and the lane has to say which.
+    const census = buildHqCensus(
+      input({
+        needsYou: known(6),
+        valve: known({ stop: "needs_you", held: 37, unbanded: 5 }),
+      }),
+    );
+    expect(census.needs_you.detail).toBe("6 things need you.");
+    // The caveat is a SEPARATE field so it can reach Glance, where the lane is
+    // nothing but a number in the footer strip.
+    expect(census.needs_you.caveat).toBe(
+      "5 of 6 not sized up by the valve yet.",
+    );
+  });
+
+  test("a wholly unsized lane says so plainly, not as a fraction", () => {
+    const census = buildHqCensus(
+      input({
+        needsYou: known(131),
+        valve: known({ stop: "needs_you", held: 0, unbanded: 131 }),
+      }),
+    );
+    expect(census.needs_you.caveat).toContain("hasn't sized any of these up");
+    expect(census.needs_you.caveat).toContain("loud by default");
+  });
+
+  test("held work is stated with a door, never folded into the count", () => {
+    const census = buildHqCensus(
+      input({
+        holding: known([workItem("a"), workItem("b")]),
+        valve: known({ stop: "needs_you", held: 37, unbanded: 0 }),
+      }),
+    );
+    // The stat stays the queued count: "what Cue has to do" and "what the
+    // valve is holding back from you" are different sets, and one number
+    // cannot answer both.
+    expect(census.holding.stat).toEqual({ kind: "count", value: 2 });
+    expect(census.holding.detail).toBe(
+      "2 queued — none of them are waiting on you.",
+    );
+    expect(census.holding.caveat).toBe(
+      "37 more held back — in Work, nothing lost.",
+    );
+    // The door goes to the surface that asks for no stop, so the 37 are there.
+    expect(census.holding.href).toBe(routes.allWork);
+  });
+
+  test("a valve that has not answered contributes NOTHING, not a zero", () => {
+    const census = buildHqCensus(
+      input({
+        needsYou: known(6),
+        holding: known([workItem("a")]),
+        valve: unavailable("Still reading your volume valve…"),
+      }),
+    );
+    expect(census.needs_you.detail).toBe("6 things need you.");
+    expect(census.holding.detail).toBe(
+      "1 queued — none of them are waiting on you.",
+    );
+    // Specifically: it must not have invented "0 held back" or "0 unsized".
+    expect(census.holding.caveat).toBeNull();
+    expect(census.needs_you.caveat).toBeNull();
+  });
+
+  test("a fully-sized, nothing-held valve stays quiet rather than boasting", () => {
+    const census = buildHqCensus(
+      input({
+        needsYou: known(2),
+        valve: known({ stop: "needs_you", held: 0, unbanded: 0 }),
+      }),
+    );
+    expect(census.needs_you.detail).toBe("2 things need you.");
+    expect(census.needs_you.caveat).toBeNull();
+  });
+
+  test("every lane carries a caveat field, so none can silently omit one", () => {
+    const census = buildHqCensus(
+      input({ valve: known({ stop: "needs_you", held: 12, unbanded: 3 }) }),
+    );
+    for (const id of HQ_LANE_IDS) {
+      expect(census[id]).toHaveProperty("caveat");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4 · The sentences, where the label is half the honesty
 // ---------------------------------------------------------------------------
 
 describe("lane sentences", () => {

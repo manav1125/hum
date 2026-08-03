@@ -200,6 +200,30 @@ export function HqGlance({
             {more} more need you ›
           </Link>
         ) : null}
+
+        {/*
+          The valve's caveat about THIS lane.
+
+          On Glance, needs-you is a bare number in the footer strip, so without
+          this line "57 need you" reads as a valve-filtered 57 — when in fact
+          the valve may not have judged a single one of them. An unfiltered lane
+          passing for a filtered one is the most flattering lie a filter can
+          tell, and it is the one this line exists to stop.
+        */}
+        {census.needs_you.caveat ? (
+          <div
+            data-slot="hq-glance-caveat"
+            style={{
+              marginTop: 9,
+              fontSize: 11.5,
+              color: C.amberText,
+              maxWidth: 460,
+              lineHeight: 1.45,
+            }}
+          >
+            {census.needs_you.caveat}
+          </div>
+        ) : null}
       </div>
 
       <GlanceStrip cells={stripCells(census)} onOpen={onOpenLane} />

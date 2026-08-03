@@ -53,6 +53,7 @@ const MISSIONS = [
 function censusInput(over: Partial<HqCensusInput> = {}): HqCensusInput {
   return {
     needsYou: known(6),
+    valve: known({ stop: "needs_you" as const, held: 0, unbanded: 0 }),
     missions: known(MISSIONS),
     holding: known([]),
     arrivals: known({ total: 18, filed: 12, kept: 6, windowHours: 24 }),
@@ -75,8 +76,8 @@ const MOVE = {
 
 const NO_MOVE = { hasMove: false, actions: [] } as unknown as NextMove;
 
-function reviewItem(id: string): HqWorkItem {
-  return { id, title: id, projectId: null } as unknown as HqWorkItem;
+function reviewItem(id: string, over: Partial<HqWorkItem> = {}): HqWorkItem {
+  return { id, title: id, projectId: null, ...over } as unknown as HqWorkItem;
 }
 
 function mount(node: React.ReactNode) {
@@ -152,6 +153,30 @@ describe("Glance", () => {
     expect(
       container.querySelector('[data-slot="hq-glance-subline"]')!.textContent,
     ).toContain("1 running");
+  });
+
+  /**
+   * The defect this exists for was found by looking at the page: on Glance,
+   * needs-you is a bare number in the footer strip, so the valve's "I have not
+   * judged any of these" note had nowhere to appear and 57 unfiltered items
+   * read exactly like 57 filtered ones.
+   */
+  test("the valve's caveat reaches GLANCE, where the lane is only a number", () => {
+    const { container } = glance({
+      needsYou: known(57),
+      valve: known({ stop: "needs_you" as const, held: 37, unbanded: 57 }),
+    });
+    const caveat = container.querySelector('[data-slot="hq-glance-caveat"]')!;
+    expect(caveat).not.toBeNull();
+    expect(caveat.textContent).toContain("hasn't sized any of these up");
+  });
+
+  test("a valve with nothing to caveat adds no line", () => {
+    const { container } = glance({
+      needsYou: known(6),
+      valve: known({ stop: "needs_you" as const, held: 0, unbanded: 0 }),
+    });
+    expect(container.querySelector('[data-slot="hq-glance-caveat"]')).toBeNull();
   });
 
   test("no move and nothing needing you is a statement, not a blank", () => {
@@ -232,6 +257,69 @@ describe("Deck", () => {
     const block = container.querySelector('[data-slot="hq-needs-you"]')!;
     expect(block.textContent).toContain("Nothing needs you");
     expect(block.textContent).toContain("NEEDS YOU · 0");
+  });
+
+  /**
+   * Design's "the holding count shrinks on its own" is a property of this
+   * control calling the valve, not of the rules. A ✕ that only removed a row
+   * would look identical and teach nothing.
+   */
+  test("the ✕ teaches the valve about the stream, and only when it can", () => {
+    const teachable = deck([
+      reviewItem("one", {
+        sourceContext: JSON.stringify({ sender: "noreply@example.com" }),
+        sourceType: "gmail",
+      } as Partial<HqWorkItem>),
+    ]);
+    expect(
+      teachable.container.querySelector('[data-slot="hq-not-relevant"]'),
+    ).not.toBeNull();
+    cleanup();
+
+    // Nothing to teach about — no sender, no channel. The control is absent
+    // rather than present and inert.
+    const unteachable = deck([
+      reviewItem("one", {
+        sourceContext: null,
+        sourceType: null,
+      } as Partial<HqWorkItem>),
+    ]);
+    expect(
+      unteachable.container.querySelector('[data-slot="hq-not-relevant"]'),
+    ).toBeNull();
+  });
+
+  test("the valve's caveat reaches the Deck's needs-you block too", () => {
+    const { container } = mount(
+      <HqDeckSurface
+        assistantId="a"
+        greeting="Good evening."
+        deliveredSentence="Today so far: 1 done."
+        census={buildHqCensus(
+          censusInput({
+            needsYou: known(57),
+            valve: known({ stop: "needs_you" as const, held: 37, unbanded: 57 }),
+          }),
+        )}
+        missions={MISSIONS}
+        move={NO_MOVE}
+        needsYouCount={57}
+        approvals={[]}
+        reviewItems={[reviewItem("one")]}
+        missionsByProjectId={new Map()}
+        focus={null}
+        onFocusConsumed={() => {}}
+      />,
+    );
+    const block = container.querySelector('[data-slot="hq-needs-you"]')!;
+    expect(
+      block.querySelector('[data-slot="hq-lane-caveat"]')!.textContent,
+    ).toContain("hasn't sized any of these up");
+    // And the held-back number reaches its own tile, with All work as the door.
+    const holding = container.querySelector('[data-hq-lane="holding"]')!;
+    expect(
+      holding.querySelector('[data-slot="hq-lane-caveat"]')!.textContent,
+    ).toContain("37 more held back");
   });
 
   test("the rail is present and is not a second scroll region", () => {

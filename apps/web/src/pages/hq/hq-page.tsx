@@ -73,6 +73,7 @@ import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
 import { readPausedApprovals } from "./paused-approvals";
+import { useValveState, valveLaneState } from "./use-valve";
 import { HqFirstRun, useHqFirstRun } from "./hq-firstrun";
 import { CompanyPanel } from "./company-panel";
 import {
@@ -348,10 +349,34 @@ export function HqPage() {
     [liveMissions, abandonedMissions],
   );
   const { projects } = useProjects(assistantId);
-  const review = useHqWorkItems(assistantId, "awaiting_review");
-  const running = useHqWorkItems(assistantId, "running");
-  const queued = useHqWorkItems(assistantId, "pending");
+  /**
+   * The lanes, POST-VALVE.
+   *
+   * Every read that feeds the census asks for `stop: "saved"`, so the strip and
+   * the rail are filtered by the same valve at the same stop — which is the
+   * whole of "pick one source". Wiring one view to a filtered count and the
+   * other to a raw one is the single way the hinge could break, and it is not
+   * reachable from here: there is one set of reads and one census built from
+   * them.
+   *
+   * `markSeen` rides on the review read and NOWHERE else. It records that these
+   * items reached the owner, which is what later lets already-seen work rest —
+   * so it belongs on the read that renders HQ and on no count, poll or preview.
+   * The daemon's write is idempotent (it only stamps bands whose `surfacedAt`
+   * is still null), so the 60s safety-net poll cannot burn a second appearance.
+   *
+   * `done` is deliberately NOT valved: the valve governs what interrupts, and
+   * nothing finished interrupts anybody. Filtering the receipts would make Cue
+   * look like it had done less work than it did.
+   */
+  const review = useHqWorkItems(assistantId, "awaiting_review", {
+    stop: "saved",
+    markSeen: true,
+  });
+  const running = useHqWorkItems(assistantId, "running", { stop: "saved" });
+  const queued = useHqWorkItems(assistantId, "pending", { stop: "saved" });
   const done = useHqWorkItems(assistantId, "done");
+  const valve = useValveState(assistantId);
   const { schedules, isError: schedulesError } = useHqSchedules(assistantId);
   /**
    * Drives the watching lane and the "not set up" / "broken" states. Read from
@@ -573,8 +598,13 @@ export function HqPage() {
           failing: failingWatchers.map(asReading),
         });
 
+  // The valve's own census, over ALL open work. `valveLaneState` is where the
+  // "a pending read is not a zero" rule lives, so it cannot be forgotten here.
+  const valveState = valveLaneState(valve);
+
   const censusInput: HqCensusInput = {
     needsYou: needsYouState,
+    valve: valveState,
     missions: missionsState,
     holding: holdingState,
     arrivals: arrivalsState,

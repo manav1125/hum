@@ -34,17 +34,36 @@ import { HqRail } from "./hq-lane-ui";
 import { C, MicroLabel, serif } from "./hq-kit";
 import { NextMoveCard, type NextMove } from "./hq-modules";
 import { PausedNeedsYouRow, type PausedApproval } from "./paused-approvals";
+import { feedbackSubject, useValveFeedback } from "./use-valve";
 import type { HqWorkItem, Mission } from "./use-missions";
 
-/** One needs-you row — the compact form the centre column can hold three of. */
+/**
+ * One needs-you row — the compact form the centre column can hold three of.
+ *
+ * The ✕ is not a hide button. It posts `dismissed` to the valve against the
+ * item's SENDER or CHANNEL, which is the only feedback that can compound:
+ * teaching Cue that one particular email did not matter teaches it nothing,
+ * because that email will never arrive again. Design's promise that "the
+ * holding count shrinks on its own" is a property of this call existing, not of
+ * the rules — which is why the control and the call are the same gesture rather
+ * than a control with a call bolted beside it.
+ *
+ * It is offered only when there is a subject to teach about. A ✕ that quietly
+ * taught nothing would be worse than no ✕ at all: the owner would spend
+ * dismissals believing they were training a filter that never heard them.
+ */
 function NeedsYouRow({
   item,
   mission,
+  assistantId,
 }: {
   item: HqWorkItem;
   mission: Mission | null;
+  assistantId: string;
 }) {
   const navigate = useNavigate();
+  const feedback = useValveFeedback(assistantId);
+  const subject = feedbackSubject(item);
   const open = () => {
     haptic.light();
     navigate(
@@ -52,6 +71,14 @@ function NeedsYouRow({
         ? routes.conversation(item.lastRunConversationId)
         : routes.reviewQueue,
     );
+  };
+  const notRelevant = () => {
+    if (!subject) return;
+    haptic.light();
+    feedback.mutate({
+      path: { assistant_id: assistantId },
+      body: { ...subject, signal: "dismissed" },
+    });
   };
   return (
     <div
@@ -107,6 +134,33 @@ function NeedsYouRow({
       >
         Review
       </button>
+      {subject ? (
+        <button
+          type="button"
+          data-slot="hq-not-relevant"
+          aria-label={`Not relevant — teach Cue about this ${subject.subjectKind}`}
+          title={
+            feedback.isSuccess
+              ? "Noted — Cue will let this sender through more quietly."
+              : `Not relevant. Cue lowers this ${subject.subjectKind}'s score.`
+          }
+          disabled={feedback.isPending || feedback.isSuccess}
+          onClick={notRelevant}
+          style={{
+            fontSize: 12,
+            lineHeight: 1,
+            // Never colour alone: the mark itself changes on success.
+            color: feedback.isSuccess ? C.greenText : C.t3,
+            background: "none",
+            border: "none",
+            padding: "6px 2px",
+            cursor: feedback.isPending || feedback.isSuccess ? "default" : "pointer",
+            flexShrink: 0,
+          }}
+        >
+          {feedback.isSuccess ? "✓" : "✕"}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -121,6 +175,7 @@ function NeedsYouRow({
 function NeedsYouBlock({
   assistantId,
   count,
+  caveat,
   approvals,
   items,
   missionsByProjectId,
@@ -128,6 +183,8 @@ function NeedsYouBlock({
 }: {
   assistantId: string;
   count: number | null;
+  /** The valve's honesty note about this lane — see `HqLaneReading.caveat`. */
+  caveat: string | null;
   approvals: PausedApproval[];
   items: HqWorkItem[];
   missionsByProjectId: Map<string, Mission>;
@@ -149,6 +206,7 @@ function NeedsYouBlock({
     rows.push(
       <NeedsYouRow
         key={item.id}
+        assistantId={assistantId}
         item={item}
         mission={
           item.projectId
@@ -219,6 +277,19 @@ function NeedsYouBlock({
           <div style={{ marginTop: -1 }}>{rows}</div>
         )}
       </div>
+      {caveat ? (
+        <div
+          data-slot="hq-lane-caveat"
+          style={{
+            fontSize: 11,
+            color: C.amberText,
+            marginTop: 7,
+            lineHeight: 1.45,
+          }}
+        >
+          {caveat}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -316,6 +387,7 @@ export function HqDeckSurface({
         <NeedsYouBlock
           assistantId={assistantId}
           count={needsYouCount}
+          caveat={census.needs_you.caveat}
           approvals={approvals}
           items={reviewItems}
           missionsByProjectId={missionsByProjectId}

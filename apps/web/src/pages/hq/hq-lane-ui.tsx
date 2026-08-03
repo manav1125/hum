@@ -387,6 +387,21 @@ function RailTile({
       >
         {reading.detail}
       </div>
+      {/* The valve's honesty note. Rendered wherever the lane is, because a
+          lane the valve has not judged must not read as one it has. */}
+      {reading.caveat ? (
+        <div
+          data-slot="hq-lane-caveat"
+          style={{
+            fontSize: 10,
+            color: C.amberText,
+            marginTop: 5,
+            lineHeight: 1.45,
+          }}
+        >
+          {reading.caveat}
+        </div>
+      ) : null}
       {children}
     </section>
   );

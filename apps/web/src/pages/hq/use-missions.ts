@@ -256,17 +256,55 @@ export function usePutCompanyProfile(assistantId: string) {
 export function useHqWorkItems(
   assistantId: string,
   status?: "pending" | "running" | "awaiting_review" | "done" | "failed",
+  /**
+   * The volume valve (C1), opt-in per call site.
+   *
+   * **Omitted means no filtering at all**, and that default is the whole
+   * safety story: every existing caller — All work, the review queue, the
+   * project boards, the phone's mission detail — keeps seeing every item
+   * exactly as before, so the held-back work has a real door and this hook
+   * cannot quietly shrink a list somebody is relying on.
+   *
+   * `markSeen` records that the returned items reached the owner, which is
+   * what later lets already-seen work rest. It belongs ONLY on the read that
+   * renders HQ: a poll, a count or a prefetch must not burn an item's one
+   * guaranteed appearance. The daemon's write is idempotent (it only stamps a
+   * band whose `surfacedAt` is still null), so HQ's 60s safety-net poll is
+   * harmless — but a second call site would not be.
+   */
+  valve?: {
+    stop?: "saved" | "everything" | "needs_you" | "only_urgent";
+    markSeen?: boolean;
+  },
 ) {
   const query = useQuery({
     ...workitemsGetOptions({
       path: { assistant_id: assistantId },
-      query: status ? { status } : {},
+      query: {
+        ...(status ? { status } : {}),
+        ...(valve?.stop ? { stop: valve.stop } : {}),
+        ...(valve?.markSeen ? { markSeen: "true" as const } : {}),
+      },
     }),
     refetchInterval: SAFETY_NET_MS,
     staleTime: 15_000,
   });
   return {
     items: query.data?.items ?? [],
+    /**
+     * How many the valve held back. `null` when no stop was requested — a
+     * caller that did not ask must not be handed a zero, because "nothing was
+     * held" and "I never filtered" are different facts and only one of them is
+     * a claim about the owner's work.
+     */
+    held: valve?.stop ? (query.data?.held ?? null) : null,
+    /**
+     * Of the items returned, how many are here only because the valve has
+     * never sized them up. High means LESS filtering is happening than the
+     * count suggests — never more. Surfaces must say so rather than let a
+     * full lane pass for a filtered one.
+     */
+    unbanded: valve?.stop ? (query.data?.unbanded ?? null) : null,
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
