@@ -28,15 +28,10 @@
  * Capture stays reachable through the tab bar's + (Create) — the v3 design
  * moves capture there, so Today carries no capture bar.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
-import {
-  confirmPostMutation,
-  pendinginteractionsGetOptions,
-  pendinginteractionsGetQueryKey,
-} from "@/generated/daemon/@tanstack/react-query.gen";
 import { client } from "@/generated/daemon/client.gen";
 import { relativeTime } from "@/domains/activity/theme";
 import {
@@ -68,6 +63,15 @@ import {
 } from "@/pages/hq/use-missions";
 
 import { buildMv3Lanes, Mv3TierRail } from "./mv3-lanes";
+import { Mv3DayStrip } from "./mv3-day-strip";
+import { Mv3GoingQuietRows, Mv3UnreadableRows } from "./mv3-hq-rows";
+import {
+  Mv3PausedRunLine,
+  Mv3PausedRunRow,
+  usePausedRuns,
+} from "./mv3-paused-run";
+import { capDeck, isCapped, needsYouLabel } from "./needs-you-deck";
+import type { PausedRun } from "../approval-sheet";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
@@ -127,12 +131,6 @@ const CHIP_COLORS = [
   "var(--mv3-violet)",
   "var(--mv3-teal)",
 ];
-
-interface PendingInteraction {
-  requestId: string;
-  kind?: string | null;
-  toolName?: string | null;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Cards                                                                      */
@@ -237,78 +235,17 @@ function NextMoveV3({
   );
 }
 
-/** NEEDS YOUR OK — a real pending approval, amber, Approve/Deny. */
-function NeedsOkV3({
-  assistantId,
-  interaction,
-  delay,
-}: {
-  assistantId: string;
-  interaction: PendingInteraction;
-  delay: number;
-}) {
-  const queryClient = useQueryClient();
-  const key = pendinginteractionsGetQueryKey({
-    path: { assistant_id: assistantId },
-  });
-  const decide = useMutation({
-    ...confirmPostMutation(),
-    onSuccess: () => {
-      haptic.success();
-      void queryClient.invalidateQueries({ queryKey: key });
-    },
-  });
-  const title = interaction.toolName ?? interaction.kind ?? "Approval required";
-  return (
-    <GlassCard tint="amber" style={rise(delay)}>
-      <div style={{ ...microLabel, color: "var(--mv3-amber)" }}>
-        ‖ Needs your OK
-      </div>
-      <div style={{ ...cardTitle, fontSize: 15.5 }}>{title}</div>
-      <div style={{ ...cardBody, fontSize: 12.5 }}>
-        Cue paused for your decision before it continues.
-      </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
-        <button
-          type="button"
-          className="cue-pressable"
-          disabled={decide.isPending}
-          onClick={() => {
-            haptic.medium();
-            decide.mutate({
-              path: { assistant_id: assistantId },
-              body: { requestId: interaction.requestId, decision: "allow" },
-            });
-          }}
-          style={{
-            ...primaryBtn,
-            background: "var(--mv3-amber)",
-            color: "var(--mv3-amber-btn-text)",
-            boxShadow: "none",
-            opacity: decide.isPending ? 0.6 : 1,
-          }}
-        >
-          Approve
-        </button>
-        <button
-          type="button"
-          className="cue-pressable"
-          disabled={decide.isPending}
-          onClick={() => {
-            haptic.medium();
-            decide.mutate({
-              path: { assistant_id: assistantId },
-              body: { requestId: interaction.requestId, decision: "deny" },
-            });
-          }}
-          style={{ ...secondaryBtn, color: "var(--mv3-muted)" }}
-        >
-          Deny
-        </button>
-      </div>
-    </GlassCard>
-  );
-}
+/*
+ * There used to be a `NeedsOkV3` card here: an inline **Approve** beside a
+ * **Deny**, 8px apart, on a card whose body might read "£4,200 to Mafai Ma".
+ *
+ * Design was asked inline-or-sheet and answered *neither* (v22 R4). The row now
+ * leads with a single **Review** that opens `../approval-sheet` — see
+ * `./mv3-paused-run`, which owns both. Nothing on this screen can approve a
+ * stopped run any more; the sheet is the only door, and it is the only place
+ * with room for the amount, the recipient and the fact that it can't be
+ * recalled.
+ */
 
 /** REVIEW READY — an awaiting_review work item, violet. */
 function ReviewV3({
@@ -361,9 +298,9 @@ function ReviewV3({
           onClick={open}
           style={{
             ...primaryBtn,
-            background: "var(--mv3-violet-fill)",
+            background: "var(--mv3-violet-on-fill)",
             boxShadow:
-              "0 12px 26px -10px color-mix(in srgb, #7F77DD 50%, transparent)",
+              "0 12px 26px -10px color-mix(in srgb, var(--mv3-violet-on-fill) 50%, transparent)",
           }}
         >
           Review
@@ -372,9 +309,6 @@ function ReviewV3({
     </GlassCard>
   );
 }
-
-/** Review cards shown inline on Today before "See all" takes over. */
-const REVIEW_SHOWN_MAX = 2;
 
 /**
  * "Review ready · N / See all N ›" strip (UAT P1-3): when more deliverables
@@ -424,17 +358,27 @@ function ReviewSeeAllStrip({ total }: { total: number }) {
 /**
  * Tier 1 · Needs you — the lane, not a single card.
  *
- * At 390px the lane is a stack: the next move, any paused approvals, then the
- * review cards, under one header carrying the number. **The headline IS the
- * number** (v8 M2), and at zero it says so out loud — "0 need you" is a real
- * number, not a hidden absence, and hiding the lane on a quiet morning is
- * exactly how a calm deck and a broken query come to look identical.
+ * At 390px the lane is a stack under one header carrying the number. **The
+ * headline IS the number** (v8 M2), and at zero it says so out loud — "0 need
+ * you" is a real number, not a hidden absence, and hiding the lane on a quiet
+ * morning is exactly how a calm deck and a broken query come to look identical.
+ *
+ * **The order inside the stack is load-bearing.** Paused runs sort above
+ * everything: unlike a draft awaiting review, NOTHING continues until they are
+ * answered. Then the next move, then the review cards. The cap is applied to
+ * that ordered list, so the three cards you get are always the three that
+ * matter most — a cap over a badly ordered list quietly hides a stopped run.
+ *
+ * **The deck never grows.** Three cards, and above three the header reads
+ * `3 of N` with a door to the rest. `N` is `glanceCount`, computed once by
+ * HqPage and handed to both surfaces — never a count of the cards this screen
+ * happened to build.
  */
 function NeedsYouV3({
   assistantId,
   move,
   moveLoading,
-  approvals,
+  pausedRuns,
   review,
   count,
   leavingId,
@@ -443,15 +387,81 @@ function NeedsYouV3({
   assistantId: string;
   move: NextMove;
   moveLoading: boolean;
-  approvals: PendingInteraction[];
+  /** Runs stopped at a checkpoint. Sorted first — nothing continues. */
+  pausedRuns: PausedRun[];
   review: HqWorkItem[];
   count: number;
   leavingId: string | null;
   onDismiss: (item: HqWorkItem) => void;
 }) {
+  const navigate = useNavigate();
   let slot = 0;
   const nextDelay = () => 0.1 + 0.15 * slot++;
   if (move.hasMove) slot = 1; // NextMove takes .1 itself
+
+  // The ordered stack, built before it is capped.
+  const stack: { key: string; node: React.ReactNode }[] = [];
+  pausedRuns.forEach((run, i) => {
+    stack.push({
+      key: `paused:${run.requestId}`,
+      node:
+        i === 0 ? (
+          // The lead one gets the amber card and the full-width Review; the
+          // rest are compact rows through the same single door.
+          <Mv3PausedRunRow
+            assistantId={assistantId}
+            run={run}
+            style={rise(0.1)}
+          />
+        ) : (
+          <Mv3PausedRunLine assistantId={assistantId} run={run} />
+        ),
+    });
+  });
+  if (moveLoading && !move.hasMove) {
+    stack.push({
+      key: "move-skeleton",
+      // Reserve the Next-move slot while the pick computes so the card
+      // streaming in later never shoves the Review cards down mid-read.
+      node: (
+        <div
+          aria-hidden
+          style={{
+            height: 96,
+            borderRadius: 18,
+            background: "var(--mv3-btn2-bg)",
+            border: "1px solid var(--mv3-line)",
+            opacity: 0.55,
+          }}
+        />
+      ),
+    });
+  } else if (move.hasMove) {
+    stack.push({
+      key: "move",
+      node: <NextMoveV3 assistantId={assistantId} move={move} />,
+    });
+  }
+  for (const item of review) {
+    stack.push({
+      key: `review:${item.id}`,
+      node: (
+        <ReviewV3
+          item={item}
+          delay={nextDelay()}
+          leaving={leavingId === item.id}
+          onDismiss={() => onDismiss(item)}
+        />
+      ),
+    });
+  }
+
+  const shown = capDeck(stack);
+  const capped = isCapped(count);
+  const hiddenReview = review.length - shown.filter((s) =>
+    s.key.startsWith("review:"),
+  ).length;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div
@@ -465,13 +475,35 @@ function NeedsYouV3({
         <span
           style={{
             ...microLabel,
-            color: count > 0 ? "var(--mv3-amber)" : "var(--mv3-muted)",
+            color: count > 0 ? "var(--mv3-amber-text)" : "var(--mv3-muted)",
           }}
         >
-          ‖ Needs you · {count}
+          ‖ Needs you · {needsYouLabel(count)}
         </span>
+        {capped ? (
+          <button
+            type="button"
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              navigate(routes.reviewQueue);
+            }}
+            style={{
+              marginLeft: "auto",
+              fontFamily: mv3Mono,
+              fontSize: 11,
+              color: "var(--mv3-micro)",
+              background: "none",
+              border: "none",
+              padding: "4px 0",
+              cursor: "pointer",
+            }}
+          >
+            Triage the rest ›
+          </button>
+        ) : null}
       </div>
-      {count === 0 && approvals.length === 0 ? (
+      {count === 0 && pausedRuns.length === 0 ? (
         <GlassCard blur={false} style={rise(0.1)}>
           <div
             style={{
@@ -489,41 +521,10 @@ function NeedsYouV3({
           </div>
         </GlassCard>
       ) : null}
-      {moveLoading && !move.hasMove ? (
-        // Reserve the Next-move slot while the pick computes so the card
-        // streaming in later never shoves the Review cards down mid-read.
-        <div
-          aria-hidden
-          style={{
-            height: 96,
-            borderRadius: 18,
-            background: "var(--mv3-btn2-bg)",
-            border: "1px solid var(--mv3-line)",
-            opacity: 0.55,
-          }}
-        />
-      ) : (
-        <NextMoveV3 assistantId={assistantId} move={move} />
-      )}
-      {approvals.slice(0, 2).map((interaction) => (
-        <NeedsOkV3
-          key={interaction.requestId}
-          assistantId={assistantId}
-          interaction={interaction}
-          delay={nextDelay()}
-        />
-      ))}
-      {review.length > REVIEW_SHOWN_MAX ? (
-        <ReviewSeeAllStrip total={review.length} />
-      ) : null}
-      {review.slice(0, REVIEW_SHOWN_MAX).map((item) => (
-        <ReviewV3
-          key={item.id}
-          item={item}
-          delay={nextDelay()}
-          leaving={leavingId === item.id}
-          onDismiss={() => onDismiss(item)}
-        />
+      {/* The review index door, when the cap swallowed review cards. */}
+      {hiddenReview > 0 ? <ReviewSeeAllStrip total={review.length} /> : null}
+      {shown.map((entry) => (
+        <Fragment key={entry.key}>{entry.node}</Fragment>
       ))}
     </div>
   );
@@ -1071,17 +1072,17 @@ export function Mv3Today({
   // One-tap ✕ dismiss on review cards, with the shared 5s undo pill.
   const { dismiss, gone, leavingId, toastNode } = useDismissTask(assistantId);
 
-  // Real pending approvals (same source as the HQ board's Needs-you lane).
-  const interactionsQuery = useQuery({
-    ...pendinginteractionsGetOptions({ path: { assistant_id: assistantId } }),
-    refetchInterval: 60_000,
-    staleTime: 10_000,
-  });
-  const approvals = (interactionsQuery.data?.interactions ??
-    []) as PendingInteraction[];
+  /**
+   * Runs stopped at a checkpoint — the same source as the HQ board's needs-you
+   * lane, with the tool input fetched for the ones on screen so the sheet can
+   * state the amount and the recipient rather than guess at them.
+   */
+  const paused = usePausedRuns(assistantId);
 
-  // Stamped once per mount — reading the clock during render is impure.
+  // Stamped once per mount — reading the clock during render is impure. The
+  // day strip's segments would otherwise slide on every unrelated re-render.
   const [hour] = useState(() => new Date().getHours());
+  const [nowMs] = useState(() => Date.now());
   /**
    * The delivered count, minted from the lane's own answer. `Queried` cannot be
    * built from a literal, so the sentence physically cannot claim a number the
@@ -1138,7 +1139,7 @@ export function Mv3Today({
    */
   const everyLaneEmpty =
     !move.hasMove &&
-    approvals.length === 0 &&
+    paused.runs.length === 0 &&
     reviewShown.length === 0 &&
     running.length === 0 &&
     cameIn.length === 0 &&
@@ -1187,7 +1188,7 @@ export function Mv3Today({
           assistantId={assistantId}
           move={move}
           moveLoading={moveLoading}
-          approvals={approvals}
+          pausedRuns={paused.runs}
           review={reviewShown}
           count={count}
           leavingId={leavingId}
@@ -1204,7 +1205,17 @@ export function Mv3Today({
   // reads the same roster for the line half.
   const { cards: tierCards } = laneSlotsFor(lanes);
 
-  if (orbitEmpty && !interactionsQuery.isLoading) {
+  /**
+   * Everything the deck already holds, handed to the `⌗` scan purely so it can
+   * skip a round-trip per item it can already see. An optimisation and nothing
+   * more: an un-comprehended item is excluded from every one of these list
+   * reads, so it can never appear here and a partial set can never drop a `⌗`.
+   */
+  const knownWorkItemIds = new Set(
+    [...review, ...cameIn, ...running, ...done].map((item) => item.id),
+  );
+
+  if (orbitEmpty && !paused.isLoading) {
     // Keep the undo pill alive if dismissing the last card emptied the orbit.
     return (
       <>
@@ -1487,10 +1498,37 @@ export function Mv3Today({
         */}
         <div style={{ padding: "4px 16px 104px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {/*
+              C1's order, top to bottom: day strip · paused run · needs-you ·
+              going-quiet person · ⌗ couldn't-read · delivered · Tier-3 lines.
+              The paused run leads the needs-you stack (nothing continues until
+              it is answered), which is why it is not a separate slot here.
+            */}
+            <Mv3DayStrip
+              day={day}
+              unavailable={dayUnavailable}
+              nowMs={nowMs}
+              style={rise(0.06)}
+            />
             {tierCards.map((slot) => (
-              <div key={slot.id} data-lane={slot.id}>
-                {slot.node}
-              </div>
+              <Fragment key={slot.id}>
+                <div data-lane={slot.id}>{slot.node}</div>
+                {slot.id === "needs_you" ? (
+                  <>
+                    {/* The People prompt, relocated. Named people beat a badge
+                        that can only ever say a number. */}
+                    <Mv3GoingQuietRows
+                      waiting={waiting}
+                      unavailable={waitingUnavailable}
+                    />
+                    {/* What Cue read and could not name. Neutral, no tint. */}
+                    <Mv3UnreadableRows
+                      assistantId={assistantId}
+                      knownWorkItemIds={knownWorkItemIds}
+                    />
+                  </>
+                ) : null}
+              </Fragment>
             ))}
             {/* The rail — four lines, always present, carrying the same
                 honest statements desktop shows, including "0 need you". */}
