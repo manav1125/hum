@@ -70,6 +70,25 @@ export interface LiveVoiceCard {
   turnId?: string;
 }
 
+/**
+ * One finished spoken exchange of the CURRENT session, in the order it happened.
+ *
+ * Only surfaces with no conversation behind them need this. Inside a chat thread
+ * the thread itself is the record — persisted voice turns carry the durable
+ * `voiceTurn` marker and are drawn there — so drawing this list as well would
+ * put every finished turn on screen twice, which is the bug 45104f5e2d fixed.
+ * The full-screen voice surface covers the thread completely, so for it this
+ * list IS the conversation, and no duplication is possible.
+ */
+export interface LiveVoiceTurn {
+  /** Stable key for rendering; monotonic within a session. */
+  id: number;
+  /** What the user said (the finalized transcript). */
+  user: string;
+  /** What Cue answered. */
+  assistant: string;
+}
+
 export interface LiveVoiceState {
   /** Current phase of the session lifecycle. */
   state: LiveVoiceSessionState;
@@ -123,6 +142,12 @@ export interface LiveVoiceState {
    * exchange; the running history lives in the persisted chat thread.
    */
   cards: LiveVoiceCard[];
+  /**
+   * The exchanges this session has already finished, oldest first — appended by
+   * {@link LiveVoiceActions.closeTurn}. See {@link LiveVoiceTurn} for who may
+   * draw it (only surfaces that hide the thread).
+   */
+  turns: LiveVoiceTurn[];
 }
 
 export interface LiveVoiceActions {
@@ -138,7 +163,8 @@ export interface LiveVoiceActions {
   clearAssistantTranscript: () => void;
   /**
    * Mark the displayed exchange as finished (see {@link LiveVoiceState.turnClosed}).
-   * Called when the session re-arms for the next utterance.
+   * Called when the session re-arms for the next utterance. A closed exchange
+   * that actually said something is also pushed onto {@link LiveVoiceState.turns}.
    */
   closeTurn: () => void;
   setInputAmplitude: (amplitude: number) => void;
@@ -173,6 +199,7 @@ const INITIAL_STATE: LiveVoiceState = {
   error: null,
   failureKind: null,
   cards: [],
+  turns: [],
 };
 
 /**
@@ -229,7 +256,23 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
     ),
   clearAssistantTranscript: () =>
     set({ assistantTranscript: "", turnClosed: false }),
-  closeTurn: () => set({ turnClosed: true }),
+  closeTurn: () =>
+    set((s) => {
+      if (s.turnClosed) return { turnClosed: true };
+      const user = s.finalTranscript.trim();
+      const assistant = s.assistantTranscript.trim();
+      // A turn that said nothing (a cough the daemon closed without an answer)
+      // is not an exchange; recording it would put an empty pair of bubbles in
+      // the full-screen transcript.
+      if (!user && !assistant) return { turnClosed: true };
+      return {
+        turnClosed: true,
+        turns: [
+          ...s.turns,
+          { id: (s.turns.at(-1)?.id ?? 0) + 1, user, assistant },
+        ],
+      };
+    }),
   setInputAmplitude: (inputAmplitude) => set({ inputAmplitude }),
   fail: (message, kind = "session") =>
     set({ state: "failed", error: message, failureKind: kind }),

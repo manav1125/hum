@@ -16,6 +16,23 @@ export interface ComposerKeyDownPolicy {
 }
 
 /**
+ * Is there anything to send? An attachment on its own counts — "here, look at
+ * this" is how a photo gets sent, and on a phone it is the common case.
+ *
+ * Split out because the two ways to send diverged. {@link shouldSubmitOnEnter}
+ * has always honoured attachments, but the mobile composer's tap-to-send gate
+ * was written as `input.trim().length > 0` alone, so picking a file and tapping
+ * send did nothing at all — no send, no error, no explanation. Both paths call
+ * this now, so a future change cannot move one without the other.
+ */
+export function hasSomethingToSend(policy: {
+  input: string;
+  canSendAttachments: boolean;
+}): boolean {
+  return policy.input.trim().length > 0 || policy.canSendAttachments;
+}
+
+/**
  * Pure-logic mirror of the textarea `onKeyDown` policy. Returns whether the
  * Enter keypress should submit the form. The production handler delegates to
  * this helper to keep behavior in lockstep.
@@ -57,7 +74,7 @@ export function shouldSubmitOnEnter(
   if (policy.cmdEnterMode) {
     if (!event.metaKey && !event.ctrlKey) return "ignore";
   }
-  const hasContent = policy.input.trim() || policy.canSendAttachments;
+  const hasContent = hasSomethingToSend(policy);
   if (
     hasContent &&
     !policy.sendDisabled &&

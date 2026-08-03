@@ -60,7 +60,10 @@ const { MobileThreadVoice } =
  * Mount the strip, then apply `drive` to the store and let it re-render.
  * Returns the rendered view for querying.
  */
-function renderStrip(drive: () => void) {
+function renderStrip(
+  drive: () => void,
+  props: Partial<React.ComponentProps<typeof MobileThreadVoice>> = {},
+) {
   let view!: ReturnType<typeof render>;
   act(() => {
     view = render(
@@ -70,6 +73,7 @@ function renderStrip(drive: () => void) {
         keyboardMode={false}
         onFlipToKeyboard={() => {}}
         onEnded={() => {}}
+        {...props}
       />,
     );
   });
@@ -144,5 +148,110 @@ describe("what the strip does carry", () => {
     expect(
       view.queryByText(/I can help with a bunch of things/),
     ).not.toBeNull();
+  });
+});
+
+// The report: "when in voice mode and the convo drops ... nothing happens".
+// The ⌨ flip hid the whole bar, failure row included, so a session that died
+// while the user was typing said nothing at all — and the composer kept showing
+// the live orb chip and the header kept reading "voice active in this chat".
+describe("a dead session cannot pretend to be alive", () => {
+  test("the failure is shown even after the ⌨ flip to typing", () => {
+    const view = renderStrip(
+      () => {
+        useLiveVoiceStore
+          .getState()
+          .fail("Voice disconnected and couldn't reconnect.", "session");
+      },
+      { keyboardMode: true },
+    );
+
+    expect(
+      view.queryByText(/Voice disconnected and couldn't reconnect\./),
+    ).not.toBeNull();
+    expect(view.queryByRole("button", { name: "Try again" })).not.toBeNull();
+  });
+
+  test("a healthy session still hides the bar behind the ⌨ flip", () => {
+    const view = renderStrip(
+      () => {
+        useLiveVoiceStore.getState().setState("listening");
+      },
+      { keyboardMode: true },
+    );
+
+    expect(view.queryByLabelText("End voice session")).toBeNull();
+  });
+});
+
+// "i think we should go to full screen voice mode as an option somewhere - i do
+// like the real life voice mode like chat back and forth ... lets find a way to
+// do both?" — same session, two presentations.
+describe("full screen shows the call, not a typing surface", () => {
+  test("it draws the whole exchange, including the cascade's, and this session's earlier turns", () => {
+    const view = renderStrip(
+      () => {
+        const s = useLiveVoiceStore.getState();
+        // The cascade — the engine the strip deliberately stays out of the way
+        // of, because the thread streams it. Full screen covers the thread, so
+        // if it deferred in the same way it would show nothing at all.
+        s.setEngine("cascade");
+        s.setFinalTranscript("What's on my plate today?");
+        s.appendAssistantTranscript("Three things — want them in order?");
+        s.closeTurn();
+        s.setFinalTranscript("Yes please.");
+        s.appendAssistantTranscript("Starting with the Acme renewal.");
+        s.setState("speaking");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+
+    expect(view.queryByText(/What's on my plate today\?/)).not.toBeNull();
+    expect(view.queryByText(/Three things — want them in order\?/)).not.toBeNull();
+    expect(view.queryByText(/Yes please\./)).not.toBeNull();
+    expect(view.queryByText(/Starting with the Acme renewal\./)).not.toBeNull();
+  });
+
+  test("a closed turn is drawn once, not twice", () => {
+    const view = renderStrip(
+      () => {
+        const s = useLiveVoiceStore.getState();
+        s.setFinalTranscript("Remind me to call Sam.");
+        s.appendAssistantTranscript("Saved it.");
+        s.closeTurn();
+        s.setState("listening");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+
+    expect(view.queryAllByText(/Remind me to call Sam\./)).toHaveLength(1);
+    expect(view.queryAllByText(/Saved it\./)).toHaveLength(1);
+  });
+
+  test("there is no text composer on it — no textbox and no send", () => {
+    const view = renderStrip(
+      () => {
+        useLiveVoiceStore.getState().setState("listening");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+
+    expect(view.queryByRole("textbox")).toBeNull();
+    expect(view.queryByLabelText("Send message")).toBeNull();
+    // …and the way back into the thread is on screen, so it is not a trap.
+    expect(
+      view.queryByLabelText("Back to the conversation"),
+    ).not.toBeNull();
+  });
+
+  test("the inline bar offers the way in", () => {
+    const view = renderStrip(
+      () => {
+        useLiveVoiceStore.getState().setState("listening");
+      },
+      { onToggleFullScreen: () => {} },
+    );
+
+    expect(view.queryByLabelText("Full-screen voice")).not.toBeNull();
   });
 });

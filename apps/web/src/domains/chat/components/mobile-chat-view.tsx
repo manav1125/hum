@@ -62,12 +62,14 @@ import {
   ThreadVoiceActiveChip,
   VOICE_BUBBLE_LOOK,
 } from "@/domains/chat/components/mobile-thread-voice";
+import { useLiveVoiceStore } from "@/domains/chat/voice/live-voice/live-voice-store";
 import {
   SLASH_PREFIX_RE,
   filteredCommands,
   selectedInputText,
   type SlashCommand,
 } from "@/domains/chat/components/chat-composer/slash-command-catalog";
+import { hasSomethingToSend } from "@/domains/chat/components/chat-composer/chat-composer-utils";
 import { useTextPopup } from "@/domains/chat/components/chat-composer/use-text-popup";
 import {
   HEADER_CONTROL,
@@ -77,7 +79,11 @@ import {
   HEADER_TRAILING_PULL,
 } from "@/components/nav/conversation-header-metrics";
 import { RecentThreadsSheet } from "@/components/nav/recent-threads-sheet";
-import { useComposerStore } from "@/domains/chat/composer-store";
+import {
+  selectUploadedIds,
+  selectUploadingCount,
+  useComposerStore,
+} from "@/domains/chat/composer-store";
 import { useConversationThing } from "@/domains/chat/partner/use-conversation-thing";
 import { goBackWithFallback } from "@/domains/chat/utils/conversation-navigation";
 import { PhoneChatFrame } from "@/mobile-v3/chats/phone-chat-frame";
@@ -456,6 +462,10 @@ export function MobileChatView({
     setThreadVoiceKeyboard(false);
     setThreadVoiceFullScreen(false);
   }, []);
+  // Read-only: MobileThreadVoice owns the one live-voice controller; this is
+  // just the phase, so the header and the composer's orb chip can stop claiming
+  // a session that has already failed.
+  const liveVoicePhase = useLiveVoiceStore.use.state();
   const handleToggleThreadVoiceFullScreen = useCallback(() => {
     setThreadVoiceFullScreen((open) => {
       // Coming back down from full screen lands on the voice bar, never on the
@@ -488,8 +498,15 @@ export function MobileChatView({
   // design specified (it is what makes output file itself, and what tells you
   // which conversation you're in); the live lines supersede it only while
   // something is genuinely happening, because a live signal beats a static one.
+  //
+  // "voice active" has to mean active. A dropped session left the panel open
+  // with the phase at `failed`, and this line went on announcing a call that
+  // had already died — so the one place the user looks to see whether Cue is
+  // listening was the place that lied to them.
   const statusLine = threadVoiceOpen
-    ? "voice active in this chat"
+    ? liveVoicePhase === "failed"
+      ? "voice ended — tap Try again"
+      : "voice active in this chat"
     : runningCount > 0
       ? `working on ${runningCount} ${runningCount === 1 ? "thing" : "things"}`
       : null;
@@ -550,8 +567,25 @@ export function MobileChatView({
     [assistantId],
   );
 
+  // An attachment on its own IS a message — "here, look at this" is how people
+  // send a photo. This composer required text as well, so picking a file and
+  // tapping send did nothing at all: no send, no error, no explanation. Same
+  // policy as the desktop composer's `canSendAttachments`, including the wait
+  // for uploads to finish (sending an id that isn't stored yet drops the file).
+  const attachmentsUploadingCount = useMemo(
+    () => selectUploadingCount(chatAttachments),
+    [chatAttachments],
+  );
+  const canSendAttachments = useMemo(
+    () =>
+      attachmentsUploadingCount === 0 &&
+      selectUploadedIds(chatAttachments).length > 0,
+    [attachmentsUploadingCount, chatAttachments],
+  );
+
   const trimmed = input.trim();
-  const canSend = trimmed.length > 0 && !sendDisabled;
+  const canSend =
+    hasSomethingToSend({ input, canSendAttachments }) && !sendDisabled;
 
   const handleSend = useCallback(() => {
     if (canStopGenerating) {
@@ -649,7 +683,11 @@ export function MobileChatView({
     focused || keyboardOpen
       ? "var(--mv3-accent)"
       : "var(--mv3-glass-border)";
-  const showSend = focused || trimmed.length > 0 || canStopGenerating;
+  // A ready attachment reveals the send circle even with the composer blurred
+  // and empty — otherwise the one control that would send the file is the one
+  // control that isn't on screen.
+  const showSend =
+    focused || trimmed.length > 0 || canSendAttachments || canStopGenerating;
 
   // ── HEADER (spec 5) — title + thing chip + actions, one line, pinned.
   //
@@ -1274,11 +1312,14 @@ export function MobileChatView({
                 )}
               </span>
             </button>
-          ) : threadVoiceOpen ? (
+          ) : threadVoiceOpen && liveVoicePhase !== "failed" ? (
             /* Voice session alive but the user flipped to typing (⌨) — the
                mic slot becomes the "voice active" orb chip that returns to
                the voice bar. Dictation is unavailable during a live session
-               (single audio owner), so it can't collide. */
+               (single audio owner), so it can't collide.
+               A FAILED session drops back to the plain mic: a glowing blue orb
+               over a call that has already died is the chip promising
+               something it cannot deliver. */
             <ThreadVoiceActiveChip
               onClick={() => {
                 haptic.light();

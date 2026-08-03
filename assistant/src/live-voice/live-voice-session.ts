@@ -525,14 +525,17 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       );
       await this.drainOutboundFrames();
     } catch (err) {
-      await this.sendFrame({
-        type: "error",
-        code: LiveVoiceProtocolErrorCode.InvalidAudioPayload,
-        message: `Live voice audio could not be sent to transcription: ${errorMessage(
+      // This transcriber is the thing that broke, so it cannot carry the next
+      // utterance — drop it here and let the turn close resolve a fresh one.
+      stopTranscriberBestEffort(this.transcriber);
+      this.transcriber = null;
+      await this.failTurnKeepingSession(
+        `Live voice audio could not be sent to transcription: ${errorMessage(
           err,
         )}`,
-      });
-      await this.finalizePendingTurn("audio_error");
+        "audio_error",
+        LiveVoiceProtocolErrorCode.InvalidAudioPayload,
+      );
     }
   }
 
@@ -881,11 +884,19 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
             }
             activeTurn.assistantCompleted = true;
             if (msg.type === "generation_cancelled") {
-              void this.finalizeAssistantTurn(
-                activeTurn,
-                "cancelled",
-                "generation_cancelled",
-              );
+              // A cancelled generation is the quietest way a call died: no
+              // error frame at all, no `tts_done`, no re-arm — the session just
+              // stopped hearing, mid-conversation, with nothing on screen to
+              // say so. Close the turn so the floor comes back to the user.
+              void (async () => {
+                await this.finalizeAssistantTurn(
+                  activeTurn,
+                  "cancelled",
+                  "generation_cancelled",
+                );
+                if (this.isTerminal) return;
+                await this.endTurnWithoutAnswer("generation_cancelled");
+              })();
               return;
             }
             activeTurn.assistantMessageId = msg.messageId ?? null;
@@ -948,14 +959,18 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
             return;
           }
           void (async () => {
-            await this.sendFrame({
-              type: "error",
-              code: LiveVoiceProtocolErrorCode.InvalidField,
-              message,
-            });
             const currentTurn = this.activeAssistantTurn;
-            if (currentTurn?.token !== token) return;
-            await this.finalizeAssistantTurn(currentTurn, "cancelled", "error");
+            if (currentTurn?.token === token) {
+              await this.finalizeAssistantTurn(
+                currentTurn,
+                "cancelled",
+                "error",
+              );
+            }
+            // The brain failed this ONE turn. Say so, then hand the floor back
+            // — killing the whole call over a single bad turn is what the user
+            // experiences as the conversation dropping out.
+            await this.failTurnKeepingSession(message, "error");
           })();
         },
       });
@@ -975,14 +990,10 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       if (!this.isActiveAssistantTurn(token)) return;
 
       this.activeAssistantTurn = null;
-      await this.sendFrame({
-        type: "error",
-        code: LiveVoiceProtocolErrorCode.InvalidField,
-        message: `Live voice assistant turn could not be started: ${errorMessage(
-          err,
-        )}`,
-      });
-      await this.finalizePendingTurn("assistant_start_error");
+      await this.failTurnKeepingSession(
+        `Live voice assistant turn could not be started: ${errorMessage(err)}`,
+        "assistant_start_error",
+      );
     }
   }
 
@@ -1150,11 +1161,17 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
           await ttsAudioFrames;
         } catch (err) {
           if (!this.isForwardingTts(token)) return;
+          // Already recovered from, right here: this segment's failure is
+          // swallowed by the queue's own `.catch`, so `completeTtsForTurn` —
+          // which is chained onto the same queue — still finalizes the turn,
+          // still sends `tts_done`, and still re-arms listening. The session
+          // never noticed; only the client did, and it hung up.
           await this.sendFrame(
             {
               type: "error",
               code: LiveVoiceProtocolErrorCode.InvalidField,
               message: `Live voice TTS failed: ${errorMessage(err)}`,
+              fatal: false,
             },
             () => this.isForwardingTts(token),
           );
@@ -1326,6 +1343,35 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     if (this.fullDuplex) {
       await this.beginNextListeningTurn();
     }
+  }
+
+  /**
+   * A TURN failed — the session did not. Report the failure and then close the
+   * turn the way a completed one closes, so the call keeps its floor.
+   *
+   * Every turn-level failure used to end the whole conversation, twice over.
+   * The `error` frame carried no severity, so the client tore the session down
+   * on it; and even a client that ignored the frame was left deaf, because the
+   * turn ended without a `tts_done` — the only signal that moves the client out
+   * of transcribing/thinking and re-opens its mic gate — and without re-arming
+   * the transcriber the daemon had already stopped at `ptt_release`. One bad
+   * turn (the brain erroring, a run being cancelled, an assistant turn that
+   * could not start) therefore read as "voice randomly drops out".
+   *
+   * `fatal: false` is honest here only BECAUSE of the close: {@link
+   * beginNextListeningTurn} resolves a brand-new transcriber, so the session
+   * genuinely can hear again — and when that re-arm itself fails it sends its
+   * own fatal error via `failStartupSoft`. This is not a blanket downgrade of
+   * error severity: a failure the daemon cannot recover from still says so.
+   */
+  private async failTurnKeepingSession(
+    message: string,
+    reason: string,
+    code: LiveVoiceProtocolErrorCode = LiveVoiceProtocolErrorCode.InvalidField,
+  ): Promise<void> {
+    if (this.isTerminal) return;
+    await this.sendFrame({ type: "error", code, message, fatal: false });
+    await this.endTurnWithoutAnswer(reason);
   }
 
   private async finalizePendingTurn(reason: string): Promise<void> {

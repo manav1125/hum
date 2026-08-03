@@ -37,11 +37,18 @@
  *  · gemini-live — the realtime engine writes the turn to the thread only when
  *    it completes and broadcasts nothing meanwhile, so for it the strip IS the
  *    live view of the exchange, until the turn closes and the thread takes over.
+ *
+ * FULL SCREEN — `fullScreen` swaps the strip + bar for {@link VoiceFullScreen},
+ * the same session with the chat screen taken away. It is a change of
+ * presentation only: this component stays mounted and stays the single
+ * controller, so expanding or collapsing mid-sentence touches neither the
+ * socket nor the mic. Full screen has no thread behind it, so unlike the strip
+ * it draws the whole call — see that file.
  */
 
 import { useCallback, useEffect, useState } from "react";
 
-import { Keyboard, Mic, MicOff, X } from "lucide-react";
+import { Expand, Keyboard, Mic, MicOff, X } from "lucide-react";
 
 import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router";
 import type { Surface } from "@/domains/chat/types/types";
@@ -50,6 +57,8 @@ import {
   useLiveVoiceStore,
   type LiveVoiceCard,
 } from "@/domains/chat/voice/live-voice/live-voice-store";
+import { VOICE_BUBBLE_LOOK } from "@/domains/chat/voice/live-voice/voice-bubble-look";
+import { VoiceFullScreen } from "@/domains/chat/voice/voice-fullscreen";
 import { haptic } from "@/utils/haptics";
 
 // ---------------------------------------------------------------------------
@@ -57,20 +66,13 @@ import { haptic } from "@/utils/haptics";
 // ---------------------------------------------------------------------------
 
 /**
- * The frame-37 voice "look" (surface + type treatment), split from the
- * strip-local layout below so MobileChatView can retint PERSISTED voice turns
- * (wire `voiceTurn`) in the reused transcript with the exact same values —
- * single source, no drift between live and reloaded voice bubbles.
+ * The frame-37 voice "look" lives in the voice module ({@link
+ * import("@/domains/chat/voice/live-voice/voice-bubble-look")}) so the live
+ * strip, MobileChatView's reloaded transcript, and the full-screen surface all
+ * draw a spoken turn from one set of values. Re-exported here because
+ * MobileChatView has always imported it from this file.
  */
-export const VOICE_BUBBLE_LOOK = {
-  background: "rgba(61,110,232,.2)",
-  border: "1px solid rgba(61,110,232,.35)",
-  borderRadius: "18px 18px 6px 18px",
-  fontSize: 13.5,
-  lineHeight: 1.45,
-  fontStyle: "italic",
-  color: "#C7D6F5",
-} as const;
+export { VOICE_BUBBLE_LOOK };
 
 /** Voice user bubble — italic 🎙, blue tint (frame 37). */
 const VOICE_BUBBLE: React.CSSProperties = {
@@ -144,6 +146,12 @@ export interface MobileThreadVoiceProps {
   onFlipToKeyboard: () => void;
   /** Session fully over (✕, or a failure dismissed) — parent unmounts us. */
   onEnded: () => void;
+  /** Present the SAME session full screen instead of as a strip + bar. */
+  fullScreen?: boolean;
+  /** Expand ⤢ / collapse ⌄ — presentation only; the session is untouched. */
+  onToggleFullScreen?: () => void;
+  /** Conversation title, shown in the full-screen header. */
+  conversationTitle?: string | null;
 }
 
 export function MobileThreadVoice({
@@ -152,6 +160,9 @@ export function MobileThreadVoice({
   keyboardMode,
   onFlipToKeyboard,
   onEnded,
+  fullScreen = false,
+  onToggleFullScreen,
+  conversationTitle,
 }: MobileThreadVoiceProps) {
   const {
     state,
@@ -168,6 +179,7 @@ export function MobileThreadVoice({
   const cards = useLiveVoiceStore.use.cards();
   const engine = useLiveVoiceStore.use.engine();
   const turnClosed = useLiveVoiceStore.use.turnClosed();
+  const turns = useLiveVoiceStore.use.turns();
 
   // Cards are display-only here (Slice 1 parity with the Voice tab — actions
   // don't round-trip on the live-voice channel yet).
@@ -220,10 +232,48 @@ export function MobileThreadVoice({
     setMuted(!muted);
   }, [setMuted, muted]);
 
+  const handleExpand = useCallback(() => {
+    haptic.light();
+    onToggleFullScreen?.();
+  }, [onToggleFullScreen]);
+
   const handleRetry = useCallback(() => {
     haptic.light();
     void start(assistantId, conversationId);
   }, [start, assistantId, conversationId]);
+
+  // FULL SCREEN — the same session, the chat screen taken away. There is no
+  // thread behind it, so the "don't redraw what the thread already has"
+  // reasoning above does not apply here: it draws the whole open exchange for
+  // BOTH engines, on top of the session's finished turns.
+  if (fullScreen) {
+    return (
+      <VoiceFullScreen
+        title={conversationTitle ?? null}
+        turns={turns}
+        // `turnClosed` means this exchange has already been appended to
+        // `turns`; drawing it as the open one too would show it twice.
+        currentUser={
+          turnClosed
+            ? ""
+            : [finalTranscript, partialTranscript]
+                .filter(Boolean)
+                .join(" ")
+                .trim()
+        }
+        currentAssistant={turnClosed ? "" : assistantTranscript.trim()}
+        cards={cards}
+        state={state}
+        muted={muted}
+        error={error}
+        failureKind={failureKind}
+        onCollapse={onToggleFullScreen ?? (() => {})}
+        onEnd={handleEnd}
+        onToggleMute={handleOrbTap}
+        onRetry={handleRetry}
+      />
+    );
+  }
 
   const hasStrip =
     currentUser.length > 0 ||
@@ -278,9 +328,15 @@ export function MobileThreadVoice({
         </div>
       ) : null}
 
-      {/* VOICE BAR — orb · waveform · ⌨ · ✕ (frame 37). Hidden while the user
-          is typing (⌨ flip); the session stays alive. */}
-      {!keyboardMode ? (
+      {/* VOICE BAR — orb · waveform · ⤢ · ⌨ · ✕ (frame 37). Hidden while the
+          user is typing (⌨ flip); the session stays alive.
+          A FAILED session is the exception and always shows: the ⌨ flip used to
+          hide the failure row along with the bar, so a call that died while the
+          user was typing said nothing at all — while the header still read
+          "voice active in this chat" and the composer still showed the live orb
+          chip. Two surfaces claiming a session that was already dead is the
+          "it just drops out" report with no way to notice or recover. */}
+      {!keyboardMode || failed ? (
         <div style={{ flexShrink: 0, padding: "10px 16px 0" }}>
           {failed ? (
             /* Quiet failure row — plain words, retry + end. No red (v3 rule:
@@ -469,6 +525,31 @@ export function MobileThreadVoice({
                           ? "listening"
                           : ""}
               </span>
+
+              {/* ⤢ — the same session, full screen. Presentation only. */}
+              {onToggleFullScreen ? (
+                <button
+                  type="button"
+                  onClick={handleExpand}
+                  aria-label="Full-screen voice"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    color: "var(--mv3-muted)",
+                    cursor: "pointer",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  <Expand size={16} aria-hidden />
+                </button>
+              ) : null}
 
               {/* ⌨ — back to typing WITHOUT ending the session. */}
               <button
