@@ -50,6 +50,29 @@
   --mv3-green-text: #277e41; /* already 4.6:1 — unchanged, named for symmetry */
   --mv3-teal-text: #0a6a6a;
 
+  /* ── The `-on-fill` legs ──────────────────────────────────────────────
+   *
+   * BACKGROUND values for a control that carries WHITE TEXT. Not decoration:
+   * a coloured fill under white text is a TEXT context, so it takes the text
+   * stop of its hue, never the bright one. `--mv3-violet-fill` (#7f77dd)
+   * under white measured 3.76:1 and shipped that way on the phone's Approve
+   * button.
+   *
+   * This naming is the structural fix design asked for after eight
+   * recurrences of one failure class. The pairs read as what they are —
+   * `--mv3-violet-fill` is a glyph/ring/border value and `--mv3-violet-on-fill`
+   * is a ground under white — so the wrong one is wrong at the callsite rather
+   * than three contrast checks later. `mv3-contrast-tokens.test.ts` fails the
+   * build if a bright leg reappears under white text.
+   *
+   * Same on both themes: white text needs the same ground either way. */
+  --mv3-accent-on-fill: #2b53c4;
+  --mv3-amber-on-fill: #8a5a08;
+  --mv3-violet-on-fill: #534ab7;
+  --mv3-teal-on-fill: #0a6a6a;
+  --mv3-green-on-fill: #277e41;
+  --mv3-fail-on-fill: #a63a2f;
+
   /* Glass cards (frame 12 card stack). */
   --mv3-card: rgba(255, 255, 255, 0.85);
   --mv3-card-border: rgba(0, 0, 0, 0.06);

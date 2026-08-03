@@ -478,7 +478,7 @@ export function Mv3MissionDetail({ missionId }: { missionId: string }) {
                 width: 20,
                 height: 20,
                 borderRadius: 7,
-                background: "var(--mv3-violet-fill)",
+                background: "var(--mv3-violet-on-fill)",
                 color: "#fff",
                 fontSize: 10,
                 display: "flex",

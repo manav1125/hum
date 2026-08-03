@@ -484,7 +484,7 @@ export function ReviewIndexPage() {
               onClick={() => void archiveStale()}
               style={{
                 flex: 1,
-                background: "var(--mv3-violet-fill)",
+                background: "var(--mv3-violet-on-fill)",
                 color: "#fff",
                 border: "none",
                 borderRadius: 14,

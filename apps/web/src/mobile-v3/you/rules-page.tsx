@@ -426,7 +426,7 @@ function MakeRuleSheetV3({
               width: 24,
               height: 24,
               borderRadius: 8,
-              background: "var(--mv3-accent)",
+              background: "var(--mv3-accent-on-fill)",
               color: "#fff",
               fontSize: 12,
               display: "flex",
