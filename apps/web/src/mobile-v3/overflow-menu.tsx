@@ -57,15 +57,23 @@ import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
+import { openMv3Create } from "@/mobile-v3/create";
+
 import { microLabel } from "./mv3-kit";
 import { SheetShell } from "./sheet-shell";
 import { useCueCounts } from "./you/use-cue-counts";
 
-// The Create sheet — lazy so the create catalogs don't ride in every route's
-// bundle; only fetched the first time Create is chosen.
-const CreateSheet = lazy(() =>
-  import("@/domains/create/create-sheet").then((m) => ({
-    default: m.CreateSheet,
+// The phone's Create sheet — v27's spine, lazy so the create catalogs don't
+// ride in every route's bundle.
+//
+// This used to mount `@/domains/create/create-sheet`, the DESKTOP sheet, which
+// is a different surface with a different routing rule and no detents. The
+// phone flow shipped without an entry point and this row went on quietly
+// opening the old one, so the only door to Create on a phone led somewhere
+// design did not draw.
+const Mv3CreateSheet = lazy(() =>
+  import("@/mobile-v3/create").then((m) => ({
+    default: m.Mv3CreateSheet,
   })),
 );
 
@@ -342,7 +350,8 @@ export function Mv3OverflowMenu() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [addTasksOpen, setAddTasksOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
+  // `createMounted` only controls the lazy import; the sheet's own store owns
+  // whether it is showing.
   const [createMounted, setCreateMounted] = useState(false);
 
   // The button's initial. Same source as the ⓶ screen's header — never a
@@ -414,7 +423,7 @@ export function Mv3OverflowMenu() {
           assistantId={assistantId}
           onCreate={() => {
             setCreateMounted(true);
-            setCreateOpen(true);
+            openMv3Create();
           }}
         />
       ) : null}
@@ -429,9 +438,12 @@ export function Mv3OverflowMenu() {
         />
       ) : null}
 
+      {/* The v27 sheet reads its own store rather than taking `open` — the
+          composer's ✎ and this row are two doors onto one flow, and a second
+          source of truth for "is Create open" is how they would drift. */}
       {createMounted ? (
         <Suspense fallback={null}>
-          <CreateSheet open={createOpen} onClose={() => setCreateOpen(false)} />
+          <Mv3CreateSheet />
         </Suspense>
       ) : null}
     </>
