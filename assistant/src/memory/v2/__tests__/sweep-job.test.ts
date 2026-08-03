@@ -42,7 +42,9 @@ import type {
   ToolUseContent,
 } from "../../../providers/types.js";
 
+const loggerActual = await import("../../../util/logger.js");
 mock.module("../../../util/logger.js", () => ({
+  ...loggerActual,
   getLogger: () => makeMockLogger(),
 }));
 
@@ -54,7 +56,10 @@ const providerCalls: Array<{
   userText: string;
 }> = [];
 
+const providerActual =
+  await import("../../../providers/provider-send-message.js");
 mock.module("../../../providers/provider-send-message.js", () => ({
+  ...providerActual,
   getConfiguredProvider: async () => providerStub,
   userMessage: (text: string) => ({
     role: "user" as const,

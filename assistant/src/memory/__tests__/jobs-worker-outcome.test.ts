@@ -31,7 +31,9 @@ import { makeMockLogger } from "../../__tests__/helpers/mock-logger.js";
 import { DEFAULT_CONFIG } from "../../config/defaults.js";
 import type { AssistantConfig } from "../../config/types.js";
 
+const loggerActual = await import("../../util/logger.js");
 mock.module("../../util/logger.js", () => ({
+  ...loggerActual,
   getLogger: () => makeMockLogger(),
 }));
 
