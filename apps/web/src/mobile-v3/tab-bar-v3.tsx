@@ -21,13 +21,15 @@
  *        a real active state, the fastest route back to talking, and it
  *        pulses while agents are working. One element doing three jobs
  *        instead of one doing none.
+ *   v9.3 makes the tap a NEW conversation, everywhere. See {@link MarkTab}.
  *
  * Everything else moved by frequency of use, not by importance:
  *   · Voice — a mode, not a place. Long-press ◉ here; a mic in the composer
  *     is the primary affordance (that half lives in the chat composer).
  *   · Search and batch capture — ☰, top-left (`Mv3OverflowMenu`).
- *   · People, conversations and Your Cue — the avatar, top-right.
- *   · Config — the ⓶ screen, one press of the mark from home.
+ *   · People, conversations and Your Cue — the avatar, top-right, and that
+ *     menu's `All of Your Cue` row is the ⓶ screen's door. It is NOT the
+ *     mark's job any more, and it never depended on the mark.
  * Two of the old five slots went to things touched weekly or less, which is
  * precisely what was squeezing the actual work.
  *
@@ -53,11 +55,11 @@ import { useLocation, useNavigate } from "react-router";
 
 import {
   MOBILE_TAB_ORDER,
-  YOUR_CUE_DOOR,
   primaryDestination,
   tabLabel,
   type PrimaryDestination,
 } from "@/components/nav/nav-model";
+import { navigateToNewConversation } from "@/domains/chat/utils/conversation-navigation";
 import { useSoftKeyboardOpen } from "@/hooks/use-soft-keyboard-open";
 
 import { useNavCounts } from "@/components/nav/use-nav-counts";
@@ -210,21 +212,56 @@ function TabItem({
 }
 
 /**
- * The centre mark — home tab, working-indicator, config door and voice
- * shortcut in one.
+ * The centre mark — home tab, working-indicator and voice shortcut in one.
  *
- * Tap          → the conversation surface (`/assistant` resumes the last
- *                thread).
- * Tap at home  → the ⓶ screen (v24 F2): what Cue is doing, and how it is set
- *                up. This is the brief's *"You / config → the ⓶ screen (press
- *                the mark when already home)"*, and it is what pays for the
- *                third tab slot the config door no longer occupies.
- * Hold         → Voice. Voice stopped being a tab because it is a mode, not a
- *                place; this keeps it one gesture away from the thumb's home.
+ * Tap   → a NEW conversation, from every state including inside one.
+ * Hold  → Voice. Voice stopped being a tab because it is a mode, not a
+ *         place; this keeps it one gesture away from the thumb's home.
  *
- * A tap at home used to be a no-op — a navigation to the route you were
- * already on. That is the shape design rejected in v9: *"asked 'what does the
- * C point to?', the answer was nothing."*
+ * ## Why the tap is "new", and how that squares with the design
+ *
+ * The owner, on a phone: *"the centre C doesn't point anywhere. It should go
+ * to a new conversation."* Two earlier passes both answered a narrower
+ * question than the one he was asking:
+ *
+ *   v9    hung a decorative `+` here whose tap at home was a navigation to
+ *         the route you were already on — a no-op.
+ *   v9.2  kept the destination and spent the at-home tap on the ⓶ screen.
+ *         That removed the no-op but bought Your Cue a door it did not need
+ *         and left the ROUTINE tap — the one from Today or Work — landing on
+ *         whatever conversation you happened to leave open. Resuming a stale
+ *         thread is the shape the owner reads as "doesn't point anywhere":
+ *         the mark does something different on every press and none of it is
+ *         the thing he wanted.
+ *
+ * Design's two lines reconcile exactly, and nothing has to be overruled:
+ * *"the centre mark IS the home tab — real destination, real active state"*
+ * (v22 §1) is about the SLOT — it still resolves a route, it still lights on
+ * the conversation surface, `matchTalk` is unchanged. *"⌘N / Talk to Cue"* is
+ * about the ACTION, and this is the phone's ⌘N. One destination, one gesture,
+ * one outcome, from every state.
+ *
+ * It routes through {@link navigateToNewConversation} rather than a local
+ * draft id so the phone's mark and desktop's ⌘N are provably the same action
+ * — subagent panel reset, viewer back to chat, composer focused.
+ *
+ * ## What happened to the ⓶ door
+ *
+ * Nothing that depended on this. `Mv3OverflowMenu`'s ⓶ button (top-right,
+ * every primary landing — HQ, Work and the chats index) carries an **All of
+ * Your Cue** row that navigates to `routes.yourCue`, which on a phone renders
+ * the ⓶ screen. That row predates this change and is unchanged by it;
+ * `components/nav/your-cue-reachable.test.tsx` fails if it ever goes away.
+ * The mark's at-home gesture was a SECOND path to one destination, i.e. the
+ * duplication this navigation keeps removing — and a gesture is the worst of
+ * the two paths to leave a whole destination standing on.
+ *
+ * The mark no longer lights on the ⓶ stack either. It used to, so the bar
+ * would not render three dim tabs on Your Cue — but a lit tab is a claim that
+ * pressing it brought you here and pressing it returns you, and from Your Cue
+ * this one now starts a conversation instead. Your Cue is chrome-reached, not
+ * tab-reached; "no tab selected" is the honest state, and a false one is
+ * worse than a dim one.
  *
  * `pulsing` is driven by real running work items — never by "something might
  * be happening". A pulse that lies is worse than no pulse.
@@ -238,13 +275,7 @@ function MarkTab({
 }) {
   const navigate = useNavigate();
   const destination = primaryDestination("talk");
-  const atHome = destination.match(pathname);
-  // The mark stays lit across the whole ⓶ stack — the screen it opens and
-  // every leaf pushed from it. Without this the bar renders three dim tabs on
-  // Your Cue, which is the "nothing is selected" state the phone shipped for
-  // days on a different surface.
-  const inCueStack = YOUR_CUE_DOOR.match(pathname);
-  const active = atHome || inCueStack;
+  const active = destination.match(pathname);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firedLongPress = useRef(false);
 
@@ -268,11 +299,10 @@ function MarkTab({
   return (
     <button
       type="button"
-      aria-label={
-        atHome
-          ? "Your Cue — what Cue is doing and how it's set up (hold for voice)"
-          : `${destination.label} (hold for voice)`
-      }
+      // One label, every state — because it is now one action in every state.
+      // It names the destination design gave the slot AND what the press
+      // does, so the mark cannot read as pointing at nothing.
+      aria-label={`${destination.label} — new conversation (hold for voice)`}
       aria-current={active ? "page" : undefined}
       className="cue-pressable"
       onPointerDown={onPressStart}
@@ -286,9 +316,9 @@ function MarkTab({
           firedLongPress.current = false;
           return;
         }
-        haptic.light();
-        // Already home → the ⓶ screen. Anywhere else → home.
-        navigate(active ? routes.yourCue : destination.to);
+        // A fresh thread, focused composer — the same call desktop's ⌘N
+        // makes. It taps its own haptic, so this must not double it.
+        navigateToNewConversation(navigate);
       }}
       style={{
         // Raised, filled, and 46px across — the treatment every frame in v22,

@@ -16,6 +16,21 @@
  * ONGOING row instead of competing with the professional deck. Tapping it
  * flips the filter to Personal, which is where the row's contents live.
  *
+ * **A roll-up may never hide more things than it leaves showing** — see
+ * {@link rollUpFits}. C2's ruling is a ranking decision: personal work must
+ * not *compete* with the professional deck. It presumes a deck to compete
+ * with. On the owner's own account there is one professional thing and four
+ * personal ones, so the roll-up was collapsing 4 of 5 and the surface answered
+ * a header reading "5 things" with a single card — *"Things doesn't show all
+ * the projects the user has in their account, it just shows one."* Nothing was
+ * filtered and nothing was missing; the deck had simply been rolled up into
+ * the footnote. Below the threshold the collapse still does its job; at or
+ * above it, the footnote WAS the account, and the cards come back.
+ *
+ * When it does roll up, the row leads with its thing count, so the header's
+ * "5 things" and the rows underneath can be added up on sight rather than
+ * taken on faith.
+ *
  * DATA MAPPING — nothing invented:
  *   · `useProjects` (GET /projects, incl. per-project stats)  → cards + tallies
  *   · `useHqWorkItems`                                        → live agent line
@@ -76,6 +91,23 @@ function inLens(project: ProjectView, lens: Lens): boolean {
   // an unlabelled thing is work until someone says otherwise, and hiding it
   // behind a filter nobody set would lose it.
   return bucket !== "personal";
+}
+
+/**
+ * May the personal roll-up collapse these things?
+ *
+ * The rule is one line and it is deliberately not a tuned threshold: **a
+ * roll-up may never hide more things than it leaves showing.** Equal is
+ * allowed (the deck still stands on its own); outnumbered is not, because at
+ * that point the row is no longer a footnote under a deck — it *is* the deck,
+ * wearing one line instead of N cards, and the header's count has nothing
+ * beneath it to agree with.
+ *
+ * `deck` is the professional/uncategorised remainder, i.e. what is left on
+ * screen as cards if the collapse happens.
+ */
+export function rollUpFits(personal: number, deck: number): boolean {
+  return personal > 0 && personal <= deck;
 }
 
 /** Honest per-project posture, derived from the live stats rollup. */
@@ -400,10 +432,27 @@ export function Mv3Projects() {
 
   // "Personal as one Ongoing row" (C2): while no lens is set, personal things
   // are held out of the deck and roll up into a single row beneath it.
-  const rollUpPersonal = lens === "all" && segment === "active";
+  //
+  // Only while the roll-up is a footnote, though. `rollUpFits` refuses the
+  // collapse once personal things outnumber the deck they were meant not to
+  // compete with — otherwise the row swallows the account and the header's
+  // thing count has nothing under it to agree with.
+  const personalCandidates = useMemo(
+    () =>
+      lens === "all" && segment === "active"
+        ? active.filter((p) => !inLens(p, "professional"))
+        : [],
+    [active, lens, segment],
+  );
+  const rollUpPersonal = rollUpFits(
+    personalCandidates.length,
+    active.length - personalCandidates.length,
+  );
+  // Memoised rather than a bare ternary: an empty literal is a new array every
+  // render, and the open-tally below depends on this identity.
   const personal = useMemo(
-    () => (rollUpPersonal ? active.filter((p) => !inLens(p, "professional")) : []),
-    [active, rollUpPersonal],
+    () => (rollUpPersonal ? personalCandidates : []),
+    [rollUpPersonal, personalCandidates],
   );
 
   const inScope = useMemo(
@@ -427,19 +476,29 @@ export function Mv3Projects() {
     return [...inScope].sort((a, b) => rank(a) - rank(b));
   }, [inScope]);
 
-  // The roll-up row's own honest summary — real open counts, or the titles.
+  // The roll-up row's own honest summary.
+  //
+  // The THING COUNT leads, and it is never dropped. The header one screen-inch
+  // above says "5 things"; if the row that holds four of them opens with "37
+  // open", the two numbers are about different nouns and the surface reads as
+  // showing one thing out of five. Leading with "4 things" is what lets the
+  // header and the rows be added up on sight. The open tally follows when
+  // there is one, and the titles only ever fill the tail.
   const personalOpen = useMemo(
-    () =>
-      personal.reduce((sum, p) => sum + (p.stats?.counts.open ?? 0), 0),
+    () => personal.reduce((sum, p) => sum + (p.stats?.counts.open ?? 0), 0),
     [personal],
   );
-  const personalLine =
+  const personalLine = [
+    `${personal.length} ${personal.length === 1 ? "thing" : "things"}`,
     personalOpen > 0
-      ? `${personalOpen} open · ${personal.length} ${personal.length === 1 ? "thing" : "things"}`
+      ? `${personalOpen} open`
       : personal
           .slice(0, 3)
           .map((p) => p.title)
-          .join(" · ");
+          .join(", ") || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   // The filter is only worth showing when it can change what you see.
   const lensActive = lens !== "all" || segment !== "active";

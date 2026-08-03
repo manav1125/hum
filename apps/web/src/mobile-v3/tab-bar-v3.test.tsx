@@ -2,18 +2,29 @@
  * The phone's three tabs.
  *
  * What's actually at risk here is the shape of the bar, not its pixels: the
- * centre slot spent two design iterations as a `+` that pointed at nothing,
- * and the fix was to make it a real destination with a real active state that
- * also reports whether agents are working. So: three tabs, the mark in the
- * middle, one badge, and a pulse that is driven by running work rather than
- * by optimism.
+ * centre slot spent three design iterations pointing at nothing, at the route
+ * you were already on, and then at two different places depending on where you
+ * pressed it. So the tests below fix the thing that kept moving — **one press,
+ * one outcome, from every state, and it is a new conversation** — alongside
+ * three tabs, the mark in the middle, one badge, and a pulse driven by running
+ * work rather than by optimism.
+ *
+ * Your Cue's reachability is NOT asserted here, because the mark is no longer
+ * its door: see `components/nav/your-cue-reachable.test.tsx`, which drives the
+ * ⓶ menu that is.
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { createElement } from "react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 
 const ASSISTANT_ID = "asst-1";
 const okResponse = { response: new Response(), error: undefined };
@@ -42,6 +53,15 @@ mock.module("@/stores/resolved-assistants-store", () => ({
 
 const { TabBarV3 } = await import("./tab-bar-v3");
 
+/** Reports where the router actually is, so "it navigates" is observable. */
+function LocationProbe() {
+  return createElement(
+    "div",
+    { "data-testid": "path" },
+    useLocation().pathname,
+  );
+}
+
 function renderBar(pathname = "/assistant/hq") {
   return render(
     createElement(
@@ -55,9 +75,19 @@ function renderBar(pathname = "/assistant/hq") {
         MemoryRouter,
         { initialEntries: [pathname] },
         createElement(TabBarV3),
+        createElement(LocationProbe),
       ),
     ),
   );
+}
+
+function currentPath(): string {
+  return screen.getByTestId("path").textContent ?? "";
+}
+
+/** The mark, by the only part of its label that never moves. */
+function mark(): HTMLElement {
+  return screen.getByLabelText(/hold for voice/);
 }
 
 afterEach(() => {
@@ -102,7 +132,7 @@ describe("the bar's shape", () => {
     // Voice stopped being a tab because it is a mode, not a place. It cannot
     // therefore become invisible.
     renderBar();
-    expect(screen.getByLabelText("Talk to Cue (hold for voice)")).toBeDefined();
+    expect(mark().getAttribute("aria-label")).toContain("hold for voice");
   });
 });
 
@@ -111,9 +141,8 @@ describe("active state", () => {
     ["/assistant/hq", "HQ"],
     ["/assistant/projects", "Work"],
     ["/assistant/projects/proj-1", "Work"],
-    // At home the mark's own label changes (it opens the ⓶ screen there), so
-    // this row matches the part that never moves.
     ["/assistant", /hold for voice/],
+    ["/assistant/conversations/abc", /hold for voice/],
   ])("%s marks %s current", (pathname, label: string | RegExp) => {
     renderBar(pathname);
     expect(screen.getByLabelText(label).getAttribute("aria-current")).toBe(
@@ -133,41 +162,63 @@ describe("active state", () => {
   test("the centre slot is a real destination, not a no-op", () => {
     // v9's floating mark pointed at nothing. This asserts it points somewhere.
     renderBar("/assistant");
-    expect(
-      screen.getByLabelText(/hold for voice/).getAttribute("aria-current"),
-    ).toBe("page");
+    expect(mark().getAttribute("aria-current")).toBe("page");
   });
 
-  test("the mark stays lit across the whole ⓶ stack", () => {
-    // Otherwise Your Cue renders three dim tabs and nothing selected, which
-    // is the "nav that looked like decoration" bug this branch already had.
+  test("the mark does NOT claim Your Cue any more", () => {
+    // It used to light here so the bar wouldn't render three dim tabs. But a
+    // lit tab claims "this press brought you here and returns you", and from
+    // Your Cue this press now starts a conversation. Your Cue is reached from
+    // the ⓶ chrome, not from a tab, so no tab selected is the honest state.
     renderBar("/assistant/your-cue");
     const nav = screen.getByRole("navigation", { name: "Primary" });
     const current = [...nav.querySelectorAll("button")].filter(
       (b) => b.getAttribute("aria-current") === "page",
     );
-    expect(current).toHaveLength(1);
-    // It is the MARK that is lit, and from here a tap goes back home — so
-    // its label is the plain destination, not the ⓶ one.
-    expect(current[0]!.getAttribute("aria-label")).toContain("hold for voice");
+    expect(current).toHaveLength(0);
   });
 });
 
-describe("pressing the mark at home", () => {
-  test("it stops being a no-op and opens the ⓶ screen", () => {
-    // At home the mark used to navigate to the route you were already on.
-    // Design's rule for the centre slot: it must point at something.
-    renderBar("/assistant");
-    const mark = screen.getByLabelText(/hold for voice/);
-    expect(mark.getAttribute("aria-label")).toContain("Your Cue");
-    expect(mark.getAttribute("aria-label")).toContain(
-      "what Cue is doing and how it",
-    );
+describe("pressing the mark", () => {
+  // The owner's report: "the centre C doesn't point anywhere. It should go to
+  // a new conversation." What made it read that way was that the answer moved
+  // — at home it opened the ⓶ screen, elsewhere it resumed whatever thread
+  // was last open. These fix ONE outcome from every state.
+  test.each([
+    ["from Today", "/assistant/hq"],
+    ["from Work", "/assistant/projects"],
+    ["from the chats index", "/assistant/conversations"],
+    ["from home", "/assistant"],
+    ["from inside a conversation", "/assistant/conversations/existing-abc"],
+  ])("%s it opens a new conversation", (_name, from) => {
+    renderBar(from);
+    fireEvent.click(mark());
+    const after = currentPath();
+    // A real conversation route, and NOT the one we were already on — the
+    // v9 failure mode was a navigation to the current route.
+    expect(after.startsWith("/assistant/conversations/")).toBe(true);
+    expect(after).not.toBe(from);
   });
 
-  test("anywhere else it still says where it goes", () => {
+  test("two presses are two different threads, never a no-op", () => {
+    renderBar("/assistant/hq");
+    fireEvent.click(mark());
+    const first = currentPath();
+    fireEvent.click(mark());
+    expect(currentPath()).not.toBe(first);
+  });
+
+  test("its label says both where it goes and what the press does", () => {
+    // One label in every state, because it is one action in every state.
+    renderBar("/assistant");
+    expect(mark().getAttribute("aria-label")).toBe(
+      "Talk to Cue — new conversation (hold for voice)",
+    );
+    cleanup();
     renderBar("/assistant/projects");
-    expect(screen.getByLabelText("Talk to Cue (hold for voice)")).toBeDefined();
+    expect(mark().getAttribute("aria-label")).toBe(
+      "Talk to Cue — new conversation (hold for voice)",
+    );
   });
 });
 
@@ -225,10 +276,10 @@ describe("surfaces that own their own dock", () => {
   test("a conversation keeps it too — hiding is about the keyboard, not the route", () => {
     // This asserted the opposite until v25 · G3 #4 was read properly. The
     // rule is "hides while typing, returns on dismiss"; a route predicate
-    // hides it while typing AND for the rest of the day. Since `/assistant`
-    // resolves into a conversation, that left no mark to press at home — and
-    // the mark is this phone's only door to Your Cue, so a whole destination
-    // was unreachable because a route was standing in for the keyboard.
+    // hides it while typing AND for the rest of the day. It matters more now
+    // than it did then: the mark lands you in a conversation, so a bar that
+    // vanished there would leave the surface you spend the day on with no
+    // way back to Today or Work except the browser's own back.
     renderBar("/assistant/conversations/abc");
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeDefined();
   });
