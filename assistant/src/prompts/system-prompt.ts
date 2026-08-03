@@ -601,6 +601,15 @@ export function readPromptFile(path: string): string | null {
  * context. The guardian persona fold is what callers used to do manually
  * by passing `userPersona: resolveGuardianPersona()` — folding it in here
  * removes the duplicated dance at every call site.
+ *
+ * Deliberately does NOT fold in `IDENTITY_DISCRETION_SECTION`. Every caller
+ * here is a constrained generation task (extract facts, rank starters,
+ * decide whether to notify) that is never asked who it is, and the two
+ * user-facing ones truncate this context hard (2 000 chars for starters) —
+ * a ~1.5 KB rule would evict most of SOUL.md from their budget to guard a
+ * question they cannot be asked. Surfaces that *can* be asked build their
+ * prompt through `buildSystemPrompt`, where the bundled
+ * `08-identity-discretion` section always renders.
  */
 export function buildCoreIdentityContext(): string | null {
   const parts: string[] = [];
