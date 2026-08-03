@@ -16,7 +16,6 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import {
   AuroraBackdrop,
-  LargeTitleHeader,
   StateChip,
   cardBody,
   microLabel,
@@ -31,6 +30,7 @@ import {
   ParkedCoachline,
   ParkedMark,
   RunNowButton,
+  WorkHeader,
   dueLabel,
   isAutoFiled,
   isParked,
@@ -44,7 +44,6 @@ import { routes } from "@/utils/routes";
 import { Mv3AddTasksSheet } from "./mv3-add-tasks-sheet";
 import { Mv3TaskSheet } from "./mv3-task-sheet";
 import { useProjects } from "./use-projects";
-import { Mv3WorkViewTabs } from "./work-views";
 
 type Grouping = "status" | "thing" | "due";
 
@@ -334,9 +333,21 @@ export function Mv3AllWork() {
       }}
     >
       <AuroraBackdrop />
-      <LargeTitleHeader
-        title="Everything"
-        scrollRef={scrollRef}
+
+      <div
+        style={{
+          height:
+            "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px)",
+          flexShrink: 0,
+        }}
+      />
+
+      {/* Everything wears C2's header — same title, same counts line, same
+          one segmented control — because the two views are the same data and
+          a different header would say they were not. */}
+      <WorkHeader
+        assistantId={assistantId}
+        current="everything"
         trailing={
           <button
             type="button"
@@ -347,14 +358,13 @@ export function Mv3AllWork() {
               setAddOpen(true);
             }}
             style={{
-              width: 44,
-              height: 44,
-              margin: "-5px -8px -5px 0",
-              borderRadius: "50%",
-              border: "none",
-              background: "transparent",
+              width: 34,
+              height: 34,
+              borderRadius: 10,
+              border: "1px solid var(--mv3-btn2-border)",
+              background: "var(--mv3-btn2-bg)",
               color: "var(--mv3-micro)",
-              fontSize: 20,
+              fontSize: 16,
               lineHeight: 1,
               cursor: "pointer",
               display: "flex",
@@ -363,6 +373,7 @@ export function Mv3AllWork() {
               WebkitTapHighlightColor: "transparent",
               padding: 0,
               fontFamily: "inherit",
+              flexShrink: 0,
             }}
           >
             ＋
@@ -370,19 +381,17 @@ export function Mv3AllWork() {
         }
       />
 
-      {/* Things / Everything — the same switcher desktop renders, from the
-          same declaration, so the phone can never end up in a view the other
-          platform has no way back out of. */}
-      <Mv3WorkViewTabs current="everything" />
-
-      {/* Group-by segment pills — the desktop toggle, in v3 grammar. */}
+      {/* Group-by segment pills — the desktop toggle, in v3 grammar. The flat
+          ledger KEEPS its grouping at 390: it is the fallback for when Things
+          doesn't hold what you want, and an ungrouped wall of 31 rows answers
+          "where is it" worse than the deck you just left. */}
       <div
         role="radiogroup"
         aria-label="Group by"
         style={{
           display: "flex",
           gap: 7,
-          padding: "10px 22px 10px",
+          padding: "10px 18px 10px",
           flexShrink: 0,
           position: "relative",
           zIndex: 2,

@@ -7,8 +7,12 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 
+import { WORK_VIEWS, type WorkView } from "@/components/nav/nav-model";
+import { useNavCounts } from "@/components/nav/use-nav-counts";
 import { workitemsByIdRunPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
+import { useNeedsYouBadge } from "@/hooks/use-needs-you-badge";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { rateLimitRetry } from "@/utils/rate-limit-retry";
@@ -494,6 +498,184 @@ export function BackRow({
       {trailing ? (
         <span style={{ marginLeft: "auto" }}>{trailing}</span>
       ) : null}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Work's header chrome (v23 C2/C3)                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Work's three views as ONE segmented control — Things · Everything · Library
+ * (v23 C2, and the R1 revision that put Library here).
+ *
+ * Library stopped being a destination and became Work's third view: desktop
+ * already reads that way, and Library IS work output, so it belongs inside the
+ * tab called Work rather than competing with it. Three segments is the phone's
+ * ceiling — anything else (the Professional/Personal filter) goes to a sheet.
+ *
+ * The segments are rendered from {@link WORK_VIEWS}, the same declaration
+ * desktop's switcher reads, so a view cannot exist on one platform that the
+ * other has no way into or out of.
+ *
+ * COLOUR: the frame draws the selected segment as white on the bright blue
+ * gradient. At 11.5px that is a TEXT context, so it takes the accent's
+ * `-on-fill` leg — the standing rule from v23's contrast finding, and the one
+ * `mv3-contrast-tokens.test.ts` enforces.
+ */
+export function WorkSegmented({
+  current,
+  onPick,
+}: {
+  current: WorkView;
+  /** Optional interception; by default each segment navigates. */
+  onPick?: (view: WorkView) => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <div
+      role="tablist"
+      aria-label="Work views"
+      style={{
+        display: "flex",
+        gap: 3,
+        background: "var(--mv3-token-well)",
+        border: "1px solid var(--mv3-token-well-border)",
+        borderRadius: 11,
+        padding: 3,
+      }}
+    >
+      {WORK_VIEWS.map((view) => {
+        const selected = view.key === current;
+        return (
+          <button
+            key={view.key}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              if (onPick) onPick(view.key);
+              else navigate(view.to);
+            }}
+            style={{
+              flex: 1,
+              minHeight: 34,
+              textAlign: "center",
+              fontSize: 11.5,
+              fontWeight: selected ? 600 : 400,
+              // White on the accent's text leg — never the bright value.
+              color: selected ? "#fff" : "var(--mv3-muted)",
+              background: selected
+                ? "var(--mv3-accent-on-fill)"
+                : "transparent",
+              border: "none",
+              borderRadius: 9,
+              padding: "7px 0",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {view.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Work's counts line — "5 things · 31 open · 3 need you" (C2).
+ *
+ * Every leg is a real count off the same two fetches the rail's badges read
+ * ({@link useNavCounts} / {@link useNeedsYouBadge}), so the headline and the
+ * badge cannot disagree — a bug this codebase has already had to fix once.
+ * Legs that are zero are dropped rather than printed: "0 need you" is noise,
+ * and a row of zeros is the fake precision the rules refuse.
+ */
+export function WorkCountsLine({
+  assistantId,
+  /** Replaces the whole line — the Library view says what it made instead. */
+  override,
+}: {
+  assistantId: string | null;
+  override?: string;
+}) {
+  const counts = useNavCounts(assistantId);
+  const needsYou = useNeedsYouBadge(assistantId);
+  const parts: string[] = [];
+  if (!override) {
+    parts.push(`${counts.things} ${counts.things === 1 ? "thing" : "things"}`);
+    if (counts.everything > 0) parts.push(`${counts.everything} open`);
+    if (needsYou.count > 0) parts.push(`${needsYou.count} need you`);
+  }
+  return (
+    <div
+      style={{
+        fontSize: 11,
+        color: "var(--mv3-muted)",
+        marginTop: 3,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {override ?? parts.join(" · ")}
+    </div>
+  );
+}
+
+/**
+ * The Work header block: title, counts line, segmented control — the three
+ * rows C2 and C3 share above the scroller, so the three views cannot drift
+ * apart at the top of the screen.
+ */
+export function WorkHeader({
+  assistantId,
+  current,
+  countsOverride,
+  trailing,
+}: {
+  assistantId: string | null;
+  current: WorkView;
+  countsOverride?: string;
+  /** Right-hand affordance on the title row (filter, ＋, search). */
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding: "0 18px 8px",
+        flexShrink: 0,
+        position: "relative",
+        zIndex: 2,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1
+            style={{
+              fontSize: 23,
+              fontWeight: 700,
+              letterSpacing: "-0.6px",
+              margin: 0,
+              color: "var(--mv3-text)",
+            }}
+          >
+            Work
+          </h1>
+          <WorkCountsLine
+            assistantId={assistantId}
+            override={countsOverride}
+          />
+        </div>
+        {trailing ?? null}
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <WorkSegmented current={current} />
+      </div>
     </div>
   );
 }

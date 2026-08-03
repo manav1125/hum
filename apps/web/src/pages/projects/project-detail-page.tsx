@@ -17,7 +17,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { C, mono, serif } from "@/domains/activity/theme";
 import { useActivitySync } from "@/hooks/use-activity-sync";
-import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
+import { useIsMobile, usePhoneLayout } from "@/hooks/use-is-mobile";
 import { dismissLeave } from "@/mobile-v3/undo-toast";
 import {
   AssessmentSignal,
@@ -177,7 +177,7 @@ function BoardRow({
  * (Mv3ProjectDetail); desktop keeps this serif board byte-identical below.
  */
 export function ProjectDetailPage() {
-  const isMobile = useMobileLayout();
+  const isMobile = usePhoneLayout();
   return isMobile ? <Mv3ProjectDetail /> : <ProjectDetailPageDesktop />;
 }
 

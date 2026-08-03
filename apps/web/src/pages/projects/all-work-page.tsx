@@ -28,7 +28,7 @@ import {
   type WorkItemView,
 } from "@/domains/activity/use-work-items";
 import { useActivitySync } from "@/hooks/use-activity-sync";
-import { useMobileLayout } from "@/hooks/use-is-mobile";
+import { usePhoneLayout } from "@/hooks/use-is-mobile";
 import { dismissLeave } from "@/mobile-v3/undo-toast";
 import { fullPatchBody, isAutoFiled } from "@/mobile-v3/work-kit";
 import { AssessmentSignal, holdReason } from "@/pages/hq/assessment-kit";
@@ -91,7 +91,7 @@ const DUE_ORDER = ["Overdue", "Today", "This week", "Later", "No date"];
  * list below byte-identical — the same split projects-page.tsx uses.
  */
 export function AllWorkPage() {
-  const isMobile = useMobileLayout();
+  const isMobile = usePhoneLayout();
   return isMobile ? <Mv3AllWork /> : <AllWorkPageDesktop />;
 }
 

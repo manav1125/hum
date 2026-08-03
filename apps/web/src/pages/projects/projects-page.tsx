@@ -31,12 +31,12 @@
 
 import { Pin, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { readWorkView } from "@/components/nav/nav-model";
 import { C, mono, relativeTime, serif } from "@/domains/activity/theme";
-import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
+import { useIsMobile, usePhoneLayout } from "@/hooks/use-is-mobile";
 import { HqStyle, MicroLabel } from "@/pages/hq/hq-kit";
 import { useHqWorkItems } from "@/pages/hq/use-missions";
 import { routes } from "@/utils/routes";
@@ -45,6 +45,7 @@ import { AllWorkPage } from "./all-work-page";
 import { GoalTag, MissionTag } from "./item-card";
 import { DoorwayLine, WorkViewTabs, describeWorkers } from "./work-views";
 import { Mv3Projects } from "./mv3-projects";
+import { Mv3WorkLibrary } from "./mv3-work-library";
 import { NewProjectModal } from "./new-project-modal";
 import {
   CATEGORY_LABEL,
@@ -428,9 +429,18 @@ export function ProjectCard({
 export function ProjectsPage() {
   const [searchParams] = useSearchParams();
   const view = readWorkView(searchParams);
-  const isMobile = useMobileLayout();
+  // The phone gate is POINTER-based, not width-based: a 720px desktop window
+  // matches the breakpoint but has no thumb, and that exact confusion already
+  // cost the People page its list.
+  const isPhone = usePhoneLayout();
   if (view === "everything") return <AllWorkPage />;
-  return isMobile ? <Mv3Projects /> : <ProjectsPageDesktop />;
+  if (view === "library") {
+    // Library became Work's third view on the phone (v23 R1 revised). On a
+    // pointer device the Library destination is still the full desktop
+    // surface — one redirect, never a blank third segment.
+    return isPhone ? <Mv3WorkLibrary /> : <Navigate to={routes.library.root} replace />;
+  }
+  return isPhone ? <Mv3Projects /> : <ProjectsPageDesktop />;
 }
 
 function ProjectsPageDesktop() {

@@ -1,21 +1,29 @@
 /**
- * Mv3Projects — the mobile v3 Projects list (spec frame 6): "every project is
- * a living system". Replaces the MOBILE rendering of ProjectsPage only;
- * desktop keeps the serif B1 deck untouched.
+ * Mv3Projects — Work / Things (v23 C2), the phone's default Work view.
  *
- * Layout (spec-verbatim): "Projects" large title → segment pills → project
- * cards, each carrying a corner mini-orbit (moving = agents active, still =
- * quiet), a status microlabel (ON TRACK · JUL 31 / ‖ NEEDS YOU / QUIET), the
- * live agent line off the project's running work items, and one CTA when it
- * needs you. "+ Tell Cue what you're working on" is conversational (routes to
- * the + Create surface), not a form.
+ * Header (C2): "Work" · the counts line ("5 things · 31 open · 3 need you") ·
+ * the ONE segmented control, Things · Everything · Library. Three segments is
+ * the phone's ceiling, so the Professional/Personal filter and the Active/Done
+ * split both moved into a sheet behind the ⚟ button rather than becoming a
+ * second and third row of pills.
+ *
+ * Body: cards carrying a corner mini-orbit (moving = agents active, still =
+ * quiet), a status microlabel, the live agent line off the running work items,
+ * and the doorway counts line with who is on it — a row is a doorway, not a
+ * tile.
+ *
+ * "Personal as one Ongoing row" (C2): personal things collapse to a single
+ * ONGOING row instead of competing with the professional deck. Tapping it
+ * flips the filter to Personal, which is where the row's contents live.
  *
  * DATA MAPPING — nothing invented:
  *   · `useProjects` (GET /projects, incl. per-project stats)  → cards + tallies
- *   · `useHqWorkItems(assistantId, "running")`                → live agent line
- *   · segments: Active = status "active", Done = status "archived". The
- *     design's third "Someday" segment has NO backing project state, so it is
- *     omitted rather than faked.
+ *   · `useHqWorkItems`                                        → live agent line
+ *   · `categoryBucket(project.category)`                      → the P/P filter
+ *   · Active = status "active", Done = status "archived". The design's
+ *     "Someday" segment has NO backing project state, so it is omitted rather
+ *     than faked, and the frame's "recurring" flavour of ONGOING has no
+ *     backing field either — only the Personal roll-up lives there.
  */
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -25,18 +33,24 @@ import { useActivitySync } from "@/hooks/use-activity-sync";
 import {
   AuroraBackdrop,
   GlassCard,
-  LargeTitleHeader,
+  SheetShell,
   cardBody,
   microLabel,
   rise,
 } from "@/mobile-v3";
-import { MiniBars, shortDate } from "@/mobile-v3/work-kit";
+import {
+  MiniBars,
+  WorkHeader,
+  sectionMicro,
+  shortDate,
+} from "@/mobile-v3/work-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 import { Mv3NewProjectSheet } from "./mv3-new-project-sheet";
-import { Mv3WorkViewTabs, describeWorkers } from "./work-views";
+import { categoryBucket } from "./project-kit";
+import { describeWorkers } from "./work-views";
 import {
   useArchivedProjects,
   useProjects,
@@ -44,6 +58,25 @@ import {
 } from "./use-projects";
 
 type Segment = "active" | "done";
+
+/** The Professional/Personal lens the C2 filter sheet sets. */
+type Lens = "all" | "professional" | "personal";
+
+const LENS_LABEL: Record<Lens, string> = {
+  all: "Everything",
+  professional: "Professional",
+  personal: "Personal",
+};
+
+function inLens(project: ProjectView, lens: Lens): boolean {
+  if (lens === "all") return true;
+  const bucket = categoryBucket(project.category);
+  if (lens === "personal") return bucket === "personal";
+  // "Professional" holds the professional bucket and anything uncategorised —
+  // an unlabelled thing is work until someone says otherwise, and hiding it
+  // behind a filter nobody set would lose it.
+  return bucket !== "personal";
+}
 
 /** Honest per-project posture, derived from the live stats rollup. */
 function postureOf(p: ProjectView): "needs_you" | "on_track" | "quiet" {
@@ -308,6 +341,9 @@ export function Mv3Projects() {
   useActivitySync(assistantId, true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [segment, setSegment] = useState<Segment>("active");
+  // C2: the Professional/Personal lens lives in a sheet, not a fourth pill.
+  const [lens, setLens] = useState<Lens>("all");
+  const [filterOpen, setFilterOpen] = useState(false);
   // Structured new-project sheet (spec frame 42); the sheet itself keeps the
   // "Just tell Cue instead ›" escape to the conversational + Create surface.
   const [newOpen, setNewOpen] = useState(false);
@@ -361,6 +397,23 @@ export function Mv3Projects() {
   }, [allItems.items]);
 
   const shown = segment === "active" ? active : archived;
+
+  // "Personal as one Ongoing row" (C2): while no lens is set, personal things
+  // are held out of the deck and roll up into a single row beneath it.
+  const rollUpPersonal = lens === "all" && segment === "active";
+  const personal = useMemo(
+    () => (rollUpPersonal ? active.filter((p) => !inLens(p, "professional")) : []),
+    [active, rollUpPersonal],
+  );
+
+  const inScope = useMemo(
+    () =>
+      shown.filter((p) =>
+        rollUpPersonal ? inLens(p, "professional") : inLens(p, lens),
+      ),
+    [shown, lens, rollUpPersonal],
+  );
+
   // Needs-you projects float first, then live ones — the eye lands on the
   // card that needs a decision (frame 6 orders exactly this way).
   const ordered = useMemo(() => {
@@ -371,13 +424,25 @@ export function Mv3Projects() {
       if (posture === "on_track") return 2;
       return 3;
     };
-    return [...shown].sort((a, b) => rank(a) - rank(b));
-  }, [shown]);
+    return [...inScope].sort((a, b) => rank(a) - rank(b));
+  }, [inScope]);
 
-  const segments: Array<{ key: Segment; label: string }> = [
-    { key: "active", label: `Active · ${active.length}` },
-    { key: "done", label: "Done" },
-  ];
+  // The roll-up row's own honest summary — real open counts, or the titles.
+  const personalOpen = useMemo(
+    () =>
+      personal.reduce((sum, p) => sum + (p.stats?.counts.open ?? 0), 0),
+    [personal],
+  );
+  const personalLine =
+    personalOpen > 0
+      ? `${personalOpen} open · ${personal.length} ${personal.length === 1 ? "thing" : "things"}`
+      : personal
+          .slice(0, 3)
+          .map((p) => p.title)
+          .join(" · ");
+
+  // The filter is only worth showing when it can change what you see.
+  const lensActive = lens !== "all" || segment !== "active";
 
   return (
     <div
@@ -395,57 +460,56 @@ export function Mv3Projects() {
       }}
     >
       <AuroraBackdrop />
-      <LargeTitleHeader title="Work" scrollRef={scrollRef} />
 
-      {/* Things / Everything — the same two views desktop renders. */}
-      <Mv3WorkViewTabs current="things" />
-
-      {/* Segment pills (frame 6). */}
       <div
-        role="radiogroup"
-        aria-label="Thing filter"
         style={{
-          display: "flex",
-          gap: 7,
-          padding: "10px 22px 10px",
+          height:
+            "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px)",
           flexShrink: 0,
-          position: "relative",
-          zIndex: 2,
         }}
-      >
-        {segments.map((s) => {
-          const selected = segment === s.key;
-          return (
-            <button
-              key={s.key}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              className="cue-pressable"
-              onClick={() => {
-                haptic.light();
-                setSegment(s.key);
-              }}
-              style={{
-                fontSize: 12.5,
-                fontWeight: selected ? 600 : 400,
-                color: selected ? "var(--mv3-bg)" : "var(--mv3-muted)",
-                background: selected ? "var(--mv3-text)" : "var(--mv3-btn2-bg)",
-                border: selected
-                  ? "1px solid transparent"
-                  : "1px solid var(--mv3-btn2-border)",
-                borderRadius: 99,
-                padding: "7px 15px",
-                minHeight: 34,
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
+      />
+
+      {/* C2's header: title · counts · the one segmented control. */}
+      <WorkHeader
+        assistantId={assistantId}
+        current="things"
+        trailing={
+          <button
+            type="button"
+            aria-label={`Filter things — showing ${LENS_LABEL[lens]}, ${segment === "active" ? "active" : "done"}`}
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              setFilterOpen(true);
+            }}
+            style={{
+              minHeight: 34,
+              padding: "0 11px",
+              borderRadius: 10,
+              background: lensActive
+                ? "var(--mv3-text)"
+                : "var(--mv3-btn2-bg)",
+              border: lensActive
+                ? "1px solid transparent"
+                : "1px solid var(--mv3-btn2-border)",
+              color: lensActive ? "var(--mv3-bg)" : "var(--mv3-muted)",
+              fontSize: 11.5,
+              fontWeight: lensActive ? 600 : 400,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
+          >
+            ⚟{" "}
+            {lensActive
+              ? segment === "done"
+                ? "Done"
+                : LENS_LABEL[lens]
+              : "Filter"}
+          </button>
+        }
+      />
 
       <div
         ref={scrollRef}
@@ -470,6 +534,11 @@ export function Mv3Projects() {
             </div>
           ) : (
             <>
+              {ordered.length > 0 && rollUpPersonal ? (
+                <div style={{ ...sectionMicro, padding: "2px 6px 0" }}>
+                  Finishing
+                </div>
+              ) : null}
               {ordered.map((p, i) => (
                 <ProjectCardV3
                   key={p.id}
@@ -490,8 +559,97 @@ export function Mv3Projects() {
                 >
                   {segment === "done"
                     ? "Nothing archived yet."
-                    : "A thing is whatever you’re trying to get done — a deal, a launch, a raise. Name one, or tell Cue what you’re working on."}
+                    : lens === "personal"
+                      ? "Nothing personal filed yet — a thing becomes personal when you file it that way."
+                      : "A thing is whatever you’re trying to get done — a deal, a launch, a raise. Name one, or tell Cue what you’re working on."}
                 </div>
+              ) : null}
+
+              {/* ONGOING — C2's ruling: Personal is ONE row, not a competing
+                  deck. Tapping it flips the lens to Personal, which is where
+                  its contents actually live. The frame's other Ongoing
+                  flavour (a recurring thing) has no backing field on a
+                  project, so nothing is invented to fill the section. */}
+              {personal.length > 0 ? (
+                <>
+                  <div style={{ ...sectionMicro, padding: "8px 6px 0" }}>
+                    Ongoing
+                  </div>
+                  <button
+                    type="button"
+                    className="cue-pressable"
+                    aria-label={`Personal — ${personal.length} ${personal.length === 1 ? "thing" : "things"}`}
+                    onClick={() => {
+                      haptic.light();
+                      setLens("personal");
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 11,
+                      width: "100%",
+                      textAlign: "left",
+                      background: "var(--mv3-card)",
+                      border: "1px solid var(--mv3-card-border)",
+                      borderRadius: 16,
+                      padding: "11px 13px",
+                      minHeight: 52,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      ...rise(0.5),
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 11,
+                        background:
+                          "color-mix(in srgb, var(--mv3-teal) 15%, transparent)",
+                        color: "var(--mv3-teal)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 13,
+                        flexShrink: 0,
+                      }}
+                    >
+                      ⌂
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "var(--mv3-text)",
+                        }}
+                      >
+                        Personal
+                      </span>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 10.5,
+                          color: "var(--mv3-faint)",
+                          marginTop: 2,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {personalLine}
+                      </span>
+                    </span>
+                    <span
+                      aria-hidden
+                      style={{ color: "var(--mv3-faint)", fontSize: 15 }}
+                    >
+                      ›
+                    </span>
+                  </button>
+                </>
               ) : null}
 
               {/* Add — opens the structured new-project sheet (frame 42). */}
@@ -553,6 +711,107 @@ export function Mv3Projects() {
         open={newOpen}
         onClose={() => setNewOpen(false)}
       />
+
+      {/* C2: "three segments is the phone's ceiling" — so the lens and the
+          active/done split live here rather than as more rows of pills. */}
+      <SheetShell
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        label="Filter things"
+      >
+        <div
+          style={{ fontSize: 17, fontWeight: 700, color: "var(--mv3-text)" }}
+        >
+          Show me
+        </div>
+        <div style={{ ...sectionMicro, margin: "16px 0 8px" }}>Kind</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {(["all", "professional", "personal"] as const).map((key) => (
+            <FilterRow
+              key={key}
+              label={LENS_LABEL[key]}
+              selected={lens === key}
+              onPick={() => {
+                setLens(key);
+                setFilterOpen(false);
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ ...sectionMicro, margin: "18px 0 8px" }}>State</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {(
+            [
+              { key: "active" as Segment, label: `Active · ${active.length}` },
+              { key: "done" as Segment, label: "Done" },
+            ]
+          ).map((s) => (
+            <FilterRow
+              key={s.key}
+              label={s.label}
+              selected={segment === s.key}
+              onPick={() => {
+                setSegment(s.key);
+                setFilterOpen(false);
+              }}
+            />
+          ))}
+        </div>
+      </SheetShell>
     </div>
+  );
+}
+
+/** One row of the filter sheet — a glyph carries the selection, not colour. */
+function FilterRow({
+  label,
+  selected,
+  onPick,
+}: {
+  label: string;
+  selected: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className="cue-pressable"
+      onClick={() => {
+        haptic.light();
+        onPick();
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        width: "100%",
+        minHeight: 48,
+        borderRadius: 12,
+        padding: "12px 14px",
+        textAlign: "left",
+        fontSize: 14,
+        fontFamily: "inherit",
+        background: "var(--mv3-btn2-bg)",
+        border: selected
+          ? "1px solid var(--mv3-micro)"
+          : "1px solid var(--mv3-btn2-border)",
+        color: "var(--mv3-text)",
+        fontWeight: selected ? 600 : 400,
+        cursor: "pointer",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 16,
+          color: selected ? "var(--mv3-micro)" : "var(--mv3-faint)",
+        }}
+      >
+        {selected ? "✓" : "·"}
+      </span>
+      {label}
+    </button>
   );
 }

@@ -42,6 +42,10 @@ import {
   rise,
 } from "@/mobile-v3";
 import { Mv3AssessmentMark } from "@/mobile-v3/assessment-mv3";
+import { Mv3LibrarySheet } from "@/mobile-v3/library/library-sheet";
+import { useLibraryOutputs } from "@/mobile-v3/library/use-library-outputs";
+import { useOpenLibraryEntry } from "@/mobile-v3/library/use-open-entry";
+import { kindGlyph } from "@/mobile-v3/library/library-model";
 import { SwipeArchiveRow } from "@/mobile-v3/swipe-archive-row";
 import { dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
 import {
@@ -73,6 +77,7 @@ import {
   useProjects,
   type ProjectView,
 } from "./use-projects";
+import { describeWorkers } from "./work-views";
 import { useQuickAddTask } from "./use-quick-add";
 
 /** Human line for a work-item trail event (status transitions, honest). */
@@ -787,6 +792,11 @@ export function Mv3ProjectDetail() {
   // The knowledge pane, so a `blocked` verdict that wants a file has a real
   // place to send you instead of a button that goes nowhere.
   const knowledgeRef = useRef<HTMLDivElement>(null);
+  // The charter editor, so the header's read-only quote has somewhere to go.
+  const briefRef = useRef<HTMLDivElement>(null);
+  // Library's second door (v24 F1) — the sheet rises over this screen and
+  // leads with THIS thing's files, so "where's that file" costs no place.
+  const [libraryOpen, setLibraryOpen] = useState(false);
   // The project ⋯ menu (rename / archive / delete).
   const [menuOpen, setMenuOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -834,6 +844,37 @@ export function Mv3ProjectDetail() {
   );
 
   const parkedCount = useMemo(() => queued.filter(isParked).length, [queued]);
+
+  // MADE FOR THIS (C4) — the thing's own deliverables off `GET /outputs`,
+  // which is the only list carrying `projectId`. Not a guess from filenames.
+  const library = useLibraryOutputs(assistantId);
+  const madeForThis = useMemo(
+    () => library.entries.filter((e) => e.projectId === projectId),
+    [library.entries, projectId],
+  );
+  const thingTitleOf = useMemo(() => {
+    const map = new Map(projects.map((p) => [p.id, p.title]));
+    return (id: string | null) => (id ? (map.get(id) ?? null) : null);
+  }, [projects]);
+  const { openEntry, previewModal } = useOpenLibraryEntry(assistantId);
+
+  // The right rail's context, compressed to tappable lines (C4). Only legs
+  // backed by a real field are drawn — the frame's spend leg has no endpoint
+  // at project scale, and a made-up "$2.40" is exactly the fake number the
+  // rules forbid, so it is omitted rather than approximated.
+  const people = useMemo(
+    () =>
+      describeWorkers(
+        items
+          .filter((i) => i.status !== "done" && i.status !== "failed")
+          .map((i) => i.assignee),
+      ).filter((name) => name !== "Cue"),
+    [items],
+  );
+  const doneElsewhere = useMemo(
+    () => items.filter((i) => i.completedElsewhere).length,
+    [items],
+  );
 
   // The single-project GET omits `stats`, so the ring + goal line derive
   // from the board items themselves (the same rows the sheet renders).
@@ -1021,6 +1062,43 @@ export function Mv3ProjectDetail() {
             </b>
           </div>
         </div>
+
+        {/* The charter, verbatim (C4) — desktop's first column opens on it,
+            so the phone does too. It is the thing's own `context` field, the
+            same text the runner reads into every run's preamble; tapping
+            scrolls to the editor rather than opening a second copy of it. */}
+        {project?.context?.trim() ? (
+          <button
+            type="button"
+            className="cue-pressable"
+            aria-label="Edit this thing's charter"
+            onClick={() => {
+              haptic.light();
+              briefRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }}
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              background: "var(--mv3-chip-bg)",
+              border: "none",
+              borderRadius: 11,
+              padding: "9px 11px",
+              marginTop: 10,
+              fontSize: 11.5,
+              lineHeight: 1.5,
+              fontStyle: "italic",
+              color: "var(--mv3-muted)",
+              fontFamily: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            “{project.context.trim()}”
+          </button>
+        ) : null}
       </div>
 
       {/* The sheet — the work rides an iOS sheet (grabber, blur, 28px). */}
@@ -1257,6 +1335,136 @@ export function Mv3ProjectDetail() {
               </div>
             ) : null}
 
+            {/* MADE FOR THIS (C4) — the artefact strip, and Library's second
+                door. The last tile opens the sheet scoped to this thing, so
+                "where's that file" never costs you this screen. */}
+            {madeForThis.length > 0 ? (
+              <div style={{ marginTop: 4 }}>
+                <div
+                  style={{
+                    ...microLabel,
+                    fontSize: 9.5,
+                    letterSpacing: "0.11em",
+                    color: "var(--mv3-violet-text)",
+                    padding: "0 2px 7px",
+                  }}
+                >
+                  Made for this · {madeForThis.length}
+                </div>
+                <div style={{ display: "flex", gap: 7 }}>
+                  {madeForThis.slice(0, 3).map((entry) => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className="cue-pressable"
+                      aria-label={`Open ${entry.title}`}
+                      onClick={() => {
+                        haptic.light();
+                        openEntry(entry);
+                      }}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        padding: 0,
+                        borderRadius: 11,
+                        overflow: "hidden",
+                        border: "1px solid var(--mv3-card-border)",
+                        background: "var(--mv3-card)",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        aria-hidden
+                        style={{
+                          display: "flex",
+                          height: 44,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 16,
+                          color: "var(--mv3-muted)",
+                          background: "var(--mv3-token-well)",
+                        }}
+                      >
+                        {kindGlyph(entry.kind)}
+                      </span>
+                      <span
+                        style={{
+                          display: "block",
+                          padding: "6px 8px",
+                          fontSize: 9,
+                          fontWeight: 600,
+                          color: "var(--mv3-text)",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {entry.title}
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="cue-pressable"
+                    aria-label="Open the Library for this thing"
+                    onClick={() => {
+                      haptic.light();
+                      setLibraryOpen(true);
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      borderRadius: 11,
+                      border: "1px solid var(--mv3-card-border)",
+                      background: "var(--mv3-card)",
+                      color: "var(--mv3-muted)",
+                      fontSize: 11,
+                      fontFamily: "inherit",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {madeForThis.length > 3
+                      ? `+${madeForThis.length - 3}`
+                      : "▦"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* The right rail's context as tappable lines (C4). */}
+            {people.length > 0 || done.length > 0 ? (
+              <div
+                style={{
+                  borderTop: "1px solid var(--mv3-line)",
+                  marginTop: 6,
+                  paddingTop: 4,
+                }}
+              >
+                {people.length > 0 ? (
+                  <ContextLine
+                    glyph="👤"
+                    text={people.slice(0, 3).join(", ")}
+                    onOpen={() => navigate(routes.people)}
+                  />
+                ) : null}
+                {done.length > 0 ? (
+                  <ContextLine
+                    glyph="✓"
+                    text={`${done.length} done${doneElsewhere > 0 ? ` · ${doneElsewhere} done elsewhere` : ""}`}
+                    onOpen={() => navigate(routes.workView("everything"))}
+                  />
+                ) : null}
+                {library.entries.length > 0 ? (
+                  <ContextLine
+                    glyph="▦"
+                    text={`${madeForThis.length} made for this · Library`}
+                    onOpen={() => setLibraryOpen(true)}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
             {/* First-run coaching — one quiet line, once per session. */}
             <ParkedCoachline
               surface="project-detail"
@@ -1413,12 +1621,14 @@ export function Mv3ProjectDetail() {
                 `context` field and its knowledge store, both of which the
                 runner reads into every run's preamble. Delays capped so the
                 pane never waits out a long row stagger. */}
-            <Mv3ProjectBrief
-              assistantId={assistantId}
-              projectId={projectId}
-              brief={project?.context ?? null}
-              delay={Math.min(nextDelay(), 0.7)}
-            />
+            <div ref={briefRef}>
+              <Mv3ProjectBrief
+                assistantId={assistantId}
+                projectId={projectId}
+                brief={project?.context ?? null}
+                delay={Math.min(nextDelay(), 0.7)}
+              />
+            </div>
             {/* Wrapped so a `blocked` verdict's "Attach it to this project"
                 has a real destination to scroll to (see knowledgeRef). */}
             <div ref={knowledgeRef}>
@@ -1429,52 +1639,98 @@ export function Mv3ProjectDetail() {
               />
             </div>
 
-            {/* Ask about this project… — opens a fresh conversation (no
-                project-scoped chat exists yet; noted for the coordinator). */}
-            <button
-              type="button"
-              className="cue-pressable"
-              onClick={() => {
-                haptic.light();
-                navigate(routes.conversations);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                background: "var(--mv3-card)",
-                border: "1px solid var(--mv3-card-border)",
-                borderRadius: 16,
-                padding: "12px 15px",
-                marginTop: 2,
-                minHeight: 48,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                textAlign: "left",
-              }}
-            >
-              <CueRing
-                size={18}
-                stroke="var(--mv3-micro)"
-                strokeWidth={46}
-                dotRadius={34}
-              />
-              <span style={{ fontSize: 13.5, color: "var(--mv3-faint)" }}>
-                Ask about this project…
-              </span>
-              <span
-                aria-hidden
-                style={{
-                  marginLeft: "auto",
-                  fontSize: 14,
-                  color: "var(--mv3-faint)",
-                }}
-              >
-                ◎
-              </span>
-            </button>
           </div>
         </div>
+      </div>
+
+      {/* Ask-Cue is DOCKED (C4) — the phone's equivalent of the rail's search
+          box. It used to be the last row of the scroll, which meant the one
+          affordance that is always relevant was the one you had to scroll
+          past everything to reach. It sits below 60% of the viewport, where
+          the thumb already is. */}
+      <div
+        style={{
+          flexShrink: 0,
+          padding:
+            "7px 14px calc(9px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
+          position: "relative",
+          zIndex: 3,
+        }}
+      >
+        <button
+          type="button"
+          className="cue-pressable"
+          onClick={() => {
+            haptic.light();
+            navigate(routes.conversations);
+          }}
+          style={{
+            display: "flex",
+            width: "100%",
+            alignItems: "center",
+            gap: 9,
+            background: "var(--mv3-glass)",
+            border: "1px solid var(--mv3-glass-border)",
+            backdropFilter: "blur(18px)",
+            WebkitBackdropFilter: "blur(18px)",
+            borderRadius: 20,
+            padding: "10px 13px",
+            minHeight: 48,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            textAlign: "left",
+          }}
+        >
+          <CueRing
+            size={16}
+            stroke="var(--mv3-micro)"
+            strokeWidth={48}
+            dotRadius={36}
+          />
+          <span
+            style={{
+              fontSize: 12.5,
+              color: "var(--mv3-faint)",
+              flex: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {project ? `Ask about ${project.title}…` : "Ask about this…"}
+          </span>
+          {/* ▦ — the composer's Library door (F1), scoped to this thing. */}
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label="Open the Library"
+            onClick={(e) => {
+              e.stopPropagation();
+              haptic.light();
+              setLibraryOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                setLibraryOpen(true);
+              }
+            }}
+            style={{
+              width: 34,
+              height: 34,
+              margin: "-6px -4px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              color: "var(--mv3-micro)",
+              cursor: "pointer",
+            }}
+          >
+            ▦
+          </span>
+        </button>
       </div>
 
       <Mv3TaskSheet
@@ -1495,7 +1751,79 @@ export function Mv3ProjectDetail() {
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
       />
+      <Mv3LibrarySheet
+        assistantId={assistantId}
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        contextProjectId={projectId}
+        contextProjectTitle={project?.title ?? null}
+        thingTitleOf={thingTitleOf}
+      />
+      {previewModal}
       {toastNode}
     </div>
+  );
+}
+
+/** One of C4's three context lines — glyph · fact · chevron, all tappable. */
+function ContextLine({
+  glyph,
+  text,
+  onOpen,
+}: {
+  glyph: string;
+  text: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="cue-pressable"
+      onClick={() => {
+        haptic.light();
+        onOpen();
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        width: "100%",
+        minHeight: 44,
+        padding: "4px 2px",
+        background: "none",
+        border: "none",
+        textAlign: "left",
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 14,
+          fontSize: 9.5,
+          color: "var(--mv3-faint)",
+          textAlign: "center",
+        }}
+      >
+        {glyph}
+      </span>
+      <span
+        style={{
+          fontSize: 11,
+          color: "var(--mv3-muted)",
+          flex: 1,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {text}
+      </span>
+      <span aria-hidden style={{ fontSize: 10, color: "var(--mv3-micro)" }}>
+        ›
+      </span>
+    </button>
   );
 }

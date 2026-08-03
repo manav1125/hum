@@ -48,3 +48,51 @@ export function useIsMobile(): boolean {
 export function useMobileLayout(): boolean {
   return useIsMobile() && !isElectron();
 }
+
+/* -------------------------------------------------------------------------- */
+/* The phone gate — pointer type, not viewport width                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether the primary pointer is coarse — i.e. a finger.
+ *
+ * Reactive (a mouse can be attached to a tablet mid-session), unlike the
+ * one-shot `isPointerCoarse()` in utils/pointer.ts.
+ */
+const COARSE_POINTER_QUERY = "(pointer: coarse)";
+
+function subscribeCoarse(onChange: () => void): () => void {
+  const mql = window.matchMedia(COARSE_POINTER_QUERY);
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+}
+
+function getCoarseSnapshot(): boolean {
+  return window.matchMedia(COARSE_POINTER_QUERY).matches;
+}
+
+export function usePointerCoarse(): boolean {
+  return useSyncExternalStore(subscribeCoarse, getCoarseSnapshot);
+}
+
+/**
+ * "Am I on a phone?" — narrow AND touch-first AND not the desktop app.
+ *
+ * {@link useMobileLayout} answers a width question with a platform guard, and
+ * width alone has already cost this codebase a surface: a 720px desktop
+ * window is not a phone, but it matched the breakpoint, and the People page
+ * rendered its touch-only rendering and lost its list. A resized window, a
+ * side-by-side split and two presses of Cmd+ all cross 767px; none of them
+ * grow a finger.
+ *
+ * Use this for anything that assumes touch — swipe-back, swipe-reveal,
+ * long-press, sheets that expect a thumb. Keep {@link useMobileLayout} for
+ * questions that really are about width.
+ */
+export function usePhoneLayout(): boolean {
+  // Both hooks run unconditionally — `&&` would short-circuit the second one
+  // and change the hook order between renders.
+  const narrow = useIsMobile();
+  const coarse = usePointerCoarse();
+  return narrow && coarse && !isElectron();
+}

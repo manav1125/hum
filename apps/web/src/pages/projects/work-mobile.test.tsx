@@ -6,10 +6,11 @@
  * views (`Mv3Projects` / `Mv3AllWork`), and "the two platforms agree" is a
  * claim about what the user sees, not about a shared constant.
  *
- * The width gate itself (`useMobileLayout` — narrow AND not Electron) is
- * covered in `hooks/use-is-mobile.test.tsx`, including the case that has
- * bitten before: a 440px Electron window must render the DESKTOP flow. Here
- * the gate is forced so the phone rendering is exercised directly.
+ * The gate itself (`usePhoneLayout` — narrow AND a COARSE POINTER AND not
+ * Electron) is covered in `hooks/use-is-mobile.test.tsx`, including the two
+ * cases that have bitten before: a 440px Electron window and a 720px desktop
+ * browser window must both render the DESKTOP flow. Here the gate is forced
+ * so the phone rendering is exercised directly.
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
@@ -80,6 +81,25 @@ const WORK_ITEMS = [
   },
 ];
 
+/** What Cue made — the only list carrying both `projectId` and `agent`. */
+const OUTPUTS = [
+  {
+    id: "out-1",
+    workItemId: "wi-1",
+    missionId: null,
+    projectId: "proj-acme",
+    attachmentId: null,
+    externalUrl: null,
+    kind: "deck",
+    title: "Acme one-pager v2",
+    why: null,
+    agent: "Ops",
+    reviewState: "approved",
+    createdAt: Date.now() - 86_400_000,
+    attachment: null,
+  },
+];
+
 const sdkActual = await import("@/generated/daemon/sdk.gen");
 mock.module("@/generated/daemon/sdk.gen", () => ({
   ...sdkActual,
@@ -89,6 +109,10 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
   })),
   workitemsGet: mock(async () => ({
     data: { items: WORK_ITEMS },
+    ...okResponse,
+  })),
+  outputsGet: mock(async () => ({
+    data: { outputs: OUTPUTS },
     ...okResponse,
   })),
 }));
@@ -101,13 +125,16 @@ mock.module("@/hooks/use-activity-sync", () => ({
   useActivitySync: () => undefined,
 }));
 
-// Force the phone branch. The real gate is a viewport query AND a platform
-// check; both are tested at source in hooks/use-is-mobile.test.tsx.
+// Force the phone branch. The real gate is a viewport query AND a pointer
+// query AND a platform check; all three are tested at source in
+// hooks/use-is-mobile.test.tsx.
 const isMobileActual = await import("@/hooks/use-is-mobile");
 mock.module("@/hooks/use-is-mobile", () => ({
   ...isMobileActual,
   useIsMobile: () => true,
+  usePointerCoarse: () => true,
   useMobileLayout: () => true,
+  usePhoneLayout: () => true,
 }));
 
 const { ProjectsPage } = await import("./projects-page");
@@ -167,8 +194,8 @@ describe("Work on the phone", () => {
     });
   });
 
-  test.each(["", "?view=everything"])(
-    "%p carries the same Things/Everything switcher desktop has",
+  test.each(["", "?view=everything", "?view=library"])(
+    "%p carries the same three-view switcher desktop has",
     async (search) => {
       renderWork(search);
       await waitFor(() => {
@@ -176,10 +203,27 @@ describe("Work on the phone", () => {
           screen.getByRole("tablist", { name: "Work views" }),
         ).toBeDefined();
       });
+      // Exactly three — v23 states three is the phone's ceiling, and a
+      // fourth would put the tab bar's mark off-centre all over again.
+      expect(screen.getAllByRole("tab")).toHaveLength(3);
       expect(screen.getByRole("tab", { name: /Things/ })).toBeDefined();
       expect(screen.getByRole("tab", { name: /Everything/ })).toBeDefined();
+      expect(screen.getByRole("tab", { name: /Library/ })).toBeDefined();
     },
   );
+
+  test("?view=library keeps Library's gallery form, filed inside Work", async () => {
+    // The R1 revision: Library stopped being a tab and became Work's third
+    // view — "filed, not demoted". It must still be a wall of real output,
+    // and each card must still name the agent and the thing.
+    renderWork("?view=library");
+    await waitFor(() => {
+      expect(screen.getByText("Acme one-pager v2")).toBeDefined();
+    });
+    expect(screen.getByText(/◆ Ops · Renew Acme/)).toBeDefined();
+    // The header line carries the argument, off a real count.
+    expect(screen.getByText(/1 thing Cue made/)).toBeDefined();
+  });
 
   test("the ledger is reachable ONLY through that switcher", async () => {
     // The phone used to carry a separate "All work ›" row at the bottom of

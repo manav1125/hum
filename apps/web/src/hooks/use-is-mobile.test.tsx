@@ -17,12 +17,24 @@ mock.module("@/runtime/is-electron", () => ({
   isElectron: () => mockIsElectron,
 }));
 
-const { useIsMobile, useMobileLayout } = await import("@/hooks/use-is-mobile");
+const { useIsMobile, useMobileLayout, usePhoneLayout } = await import(
+  "@/hooks/use-is-mobile"
+);
 
-/** Pin the viewport-match answer without a real layout engine. */
-function setViewportMatches(matches: boolean) {
+/**
+ * Pin the media-query answers without a real layout engine. Width and pointer
+ * are answered separately, because the whole point of `usePhoneLayout` is that
+ * they are different questions.
+ */
+function setMedia({
+  narrow,
+  coarse = narrow,
+}: {
+  narrow: boolean;
+  coarse?: boolean;
+}) {
   window.matchMedia = ((query: string) => ({
-    matches,
+    matches: query.includes("pointer") ? coarse : narrow,
     media: query,
     onchange: null,
     addEventListener: () => {},
@@ -31,6 +43,10 @@ function setViewportMatches(matches: boolean) {
     removeListener: () => {},
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
+}
+
+function setViewportMatches(matches: boolean) {
+  setMedia({ narrow: matches });
 }
 
 const originalMatchMedia = window.matchMedia;
@@ -62,5 +78,39 @@ describe("useMobileLayout (B6)", () => {
     expect(renderHook(() => useMobileLayout()).result.current).toBe(false);
     mockIsElectron = true;
     expect(renderHook(() => useMobileLayout()).result.current).toBe(false);
+  });
+});
+
+/**
+ * The narrower gate: a 720px desktop window matches the breakpoint and has no
+ * thumb. The People page rendered its touch-only layout there and lost its
+ * list — width answered a question only the pointer can answer.
+ */
+describe("usePhoneLayout — pointer type, not viewport width", () => {
+  test("a narrow window with a MOUSE is not a phone", () => {
+    setMedia({ narrow: true, coarse: false });
+    mockIsElectron = false;
+    // The width question still says yes; the phone question says no.
+    expect(renderHook(() => useIsMobile()).result.current).toBe(true);
+    expect(renderHook(() => useMobileLayout()).result.current).toBe(true);
+    expect(renderHook(() => usePhoneLayout()).result.current).toBe(false);
+  });
+
+  test("a narrow window with a FINGER is a phone", () => {
+    setMedia({ narrow: true, coarse: true });
+    mockIsElectron = false;
+    expect(renderHook(() => usePhoneLayout()).result.current).toBe(true);
+  });
+
+  test("a touchscreen laptop is not a phone — width still has to agree", () => {
+    setMedia({ narrow: false, coarse: true });
+    mockIsElectron = false;
+    expect(renderHook(() => usePhoneLayout()).result.current).toBe(false);
+  });
+
+  test("the desktop app is never a phone, however narrow or touchy", () => {
+    setMedia({ narrow: true, coarse: true });
+    mockIsElectron = true;
+    expect(renderHook(() => usePhoneLayout()).result.current).toBe(false);
   });
 });

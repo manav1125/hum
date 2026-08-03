@@ -11,7 +11,7 @@
  *
  * Portals into `#viewport-overlays` (the root layout's fixed-overlay slot).
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
 import { haptic } from "@/utils/haptics";
@@ -138,21 +138,61 @@ export function SheetShell({
           animation: "mv3SheetIn .34s cubic-bezier(.2,.8,.2,1) both",
         }}
       >
-        {/* Grabber. */}
-        <span
-          aria-hidden
-          style={{
-            width: 40,
-            height: 5,
-            borderRadius: 99,
-            background: "var(--mv3-grabber)",
-            margin: "0 auto 14px",
-            flexShrink: 0,
-          }}
-        />
+        {/* Grabber — and the swipe-down dismissal it implies. A grabber that
+            cannot be grabbed is a decoration; v24 F1 states the contract
+            outright ("Swipe down to go back · nothing lost"). The gesture is
+            bound to this handle rather than the panel so it can never fight
+            the content's own scrolling. */}
+        <SheetGrabber onDismiss={onClose} />
         <div style={{ minHeight: 0, overflowY: "auto" }}>{children}</div>
       </div>
     </div>,
     host,
+  );
+}
+
+/** The 40×5 grabber, draggable: >56px down dismisses. */
+function SheetGrabber({ onDismiss }: { onDismiss: () => void }) {
+  const start = useRef<number | null>(null);
+  return (
+    <div
+      aria-hidden
+      onPointerDown={(e) => {
+        start.current = e.clientY;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (start.current == null) return;
+        if (e.clientY - start.current > 56) {
+          start.current = null;
+          haptic.light();
+          onDismiss();
+        }
+      }}
+      onPointerUp={() => {
+        start.current = null;
+      }}
+      onPointerCancel={() => {
+        start.current = null;
+      }}
+      style={{
+        flexShrink: 0,
+        padding: "2px 0 12px",
+        margin: "-2px 0 0",
+        touchAction: "none",
+        cursor: "grab",
+      }}
+    >
+      <span
+        style={{
+          display: "block",
+          width: 40,
+          height: 5,
+          borderRadius: 99,
+          background: "var(--mv3-grabber)",
+          margin: "0 auto",
+        }}
+      />
+    </div>
   );
 }

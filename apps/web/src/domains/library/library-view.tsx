@@ -31,7 +31,14 @@ import type { MediaSummary } from "@/types/media-types";
 import { LibraryEmptyState } from "@/domains/library/components/library-empty-state";
 import { LibraryGridSection } from "@/domains/library/components/library-grid-section";
 import { useLibraryData } from "@/domains/library/use-library-data";
-import { useMobileLayout } from "@/hooks/use-is-mobile";
+import { usePhoneLayout } from "@/hooks/use-is-mobile";
+import {
+  LibraryGrid,
+  LibrarySectionLabel,
+} from "@/mobile-v3/library/library-gallery";
+import { useLibraryOutputs } from "@/mobile-v3/library/use-library-outputs";
+import { useOpenLibraryEntry } from "@/mobile-v3/library/use-open-entry";
+import { useProjects } from "@/pages/projects/use-projects";
 import { formatFriendlyDate } from "@/utils/format-date";
 import { appsGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 import { appsByIdDeletePost } from "@/generated/daemon/sdk.gen";
@@ -135,7 +142,24 @@ export function LibraryView({
   const togglePin = usePinnedAppsStore.use.togglePin();
   const pinnedAppIds = usePinnedAppsStore.use.pinnedAppIds();
   const isDeploying = useDeployStore.use.isDeploying();
-  const isMobile = useMobileLayout();
+  // The phone rendering is POINTER-gated, not width-gated: a 720px desktop
+  // window matched the old breakpoint and got a touch-only layout, which is
+  // the exact bug that cost the People page its list.
+  const isMobile = usePhoneLayout();
+  // v23 C3: on a phone the Library leads with what Cue MADE — a card carrying
+  // the agent and the thing. Apps, documents and media (which carry neither
+  // field) keep their grid underneath, so the phone loses nothing.
+  const made = useLibraryOutputs(isMobile ? assistantId : null);
+  // Same query key the rail's counts already hold, so this costs no request.
+  const { projects } = useProjects(assistantId);
+  const madeThingTitleOf = useMemo(() => {
+    const map = new Map(projects.map((p) => [p.id, p.title]));
+    return (projectId: string | null) =>
+      projectId ? (map.get(projectId) ?? null) : null;
+  }, [projects]);
+  const { openEntry, previewModal: madePreviewModal } =
+    useOpenLibraryEntry(assistantId);
+  const [madeNow] = useState(() => Date.now());
 
   const {
     apps,
@@ -485,12 +509,30 @@ export function LibraryView({
           </div>
         ) : isMobile ? (
           /* MOBILE — 2-col branded-cover grid (no live-preview iframes). */
+          <div style={{ paddingBottom: 16 }}>
+            {/* What Cue made, with provenance on every card (C3). Only shown
+                on the All tab: the kind chips below filter apps/documents,
+                and silently ignoring them here would be a lying filter. */}
+            {activeFilter === "All" && made.entries.length > 0 ? (
+              <div style={{ marginBottom: 22 }}>
+                <LibrarySectionLabel>What Cue made</LibrarySectionLabel>
+                <LibraryGrid
+                  assistantId={assistantId}
+                  entries={made.entries.slice(0, 24)}
+                  thingTitleOf={madeThingTitleOf}
+                  now={madeNow}
+                  onOpen={openEntry}
+                />
+              </div>
+            ) : null}
+            {activeFilter === "All" && made.entries.length > 0 ? (
+              <LibrarySectionLabel>Apps &amp; files</LibrarySectionLabel>
+            ) : null}
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
               gap: 12,
-              paddingBottom: 16,
             }}
           >
             {[...tabPinnedApps, ...tabRecentApps].map((app) => (
@@ -518,6 +560,7 @@ export function LibraryView({
                 onOpen={handleOpenMedia}
               />
             ))}
+          </div>
           </div>
         ) : (
           <div className="flex flex-col gap-8">
@@ -582,6 +625,7 @@ export function LibraryView({
       </div>
 
       {previewModal}
+      {madePreviewModal}
 
       <DeployDialogs
         assistantId={assistantId}
