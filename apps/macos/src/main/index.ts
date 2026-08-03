@@ -46,6 +46,12 @@ import { resolveAppProtocolPath } from "./app-protocol";
 import { registerVellumAppProtocol } from "./vellumapp-protocol";
 import { planGatewayForward } from "./gateway-forward";
 import {
+  buildHqProxyResponse,
+  buildHqUnreachableResponse,
+  planHqForward,
+  resolveHqOrigin,
+} from "./hq-forward";
+import {
   fetchForwardPlanWithRetry,
   planPlatformForward,
 } from "./platform-forward";
@@ -253,6 +259,12 @@ const registerAppProtocol = (): void => {
     );
     if (proxied) return proxied;
 
+    // Sign-on's one HQ call (`/assistant/__hq/signin`). The renderer asks its
+    // own origin — no preflight — and main makes the cross-origin hop to HQ
+    // server-side, where CORS does not apply. See `hq-forward.ts`.
+    const hqProxied = await forwardHqRequest(request);
+    if (hqProxied) return hqProxied;
+
     // Platform API routes (`/v1/*`, `/_allauth/*`, `/accounts/*`) forward to
     // the cloud platform so managed mode works in packaged builds. Mirrors the
     // Vite dev-server proxy (`apps/web/vite.config.ts` server.proxy entries).
@@ -318,6 +330,62 @@ const forwardGatewayRequest = async (
         ...(plan.hasBody ? { duplex: "half" } : {}),
         redirect: "manual",
       });
+  }
+};
+
+/**
+ * Forward the sign-on screen's HQ call, or return `null` for everything else.
+ *
+ * The renderer's request is same-origin (`app://vellum.ai/assistant/__hq/signin`),
+ * so Chromium never preflights it; this hop to HQ happens in the main process,
+ * outside the browser's CORS model entirely. `planHqForward` owns the security
+ * decisions — one route, one method, our destination, our headers.
+ *
+ * PRIVACY: the request body carries the owner's email address. It is read only
+ * to hand it to HQ and is never logged; the log lines below carry a status code
+ * and nothing else.
+ */
+const forwardHqRequest = async (
+  request: GlobalRequest,
+): Promise<Response | null> => {
+  const plan = planHqForward(request, resolveHqOrigin(process.env));
+  if (plan.kind === "pass") return null;
+  if (plan.kind === "reject") {
+    return new Response(plan.message, { status: plan.status });
+  }
+
+  let body: string;
+  try {
+    body = await request.text();
+  } catch {
+    return buildHqUnreachableResponse();
+  }
+  // The sign-in payload is a single email address. Anything larger is not the
+  // request this route exists for.
+  if (body.length > 4096) {
+    return new Response("Payload Too Large", { status: 413 });
+  }
+
+  try {
+    const res = await net.fetch(plan.url, {
+      method: plan.method,
+      headers: plan.headers,
+      body,
+      redirect: "manual",
+      // Nothing about sign-on is cookie-authenticated, and the main process's
+      // cookie jar has no business riding along.
+      credentials: "omit",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await res.text();
+    return buildHqProxyResponse(
+      res.status,
+      text,
+      res.headers.get("content-type") ?? "application/json",
+    );
+  } catch (err) {
+    console.error("[hq-forward] net.fetch failed for POST /signin:", err);
+    return buildHqUnreachableResponse();
   }
 };
 

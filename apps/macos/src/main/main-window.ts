@@ -5,6 +5,7 @@ import { getRendererRootUrl } from "./app-config";
 import { resolveAllowedOrigin } from "./app-origin";
 import { decideNavigation } from "./auth-nav";
 import { type VellumCommand } from "./commands";
+import { installHqSigninBridge } from "./hq-signin-bridge";
 import { handle } from "./ipc";
 import { createWindow } from "./windows";
 import {
@@ -230,6 +231,12 @@ const createMainWindow = (): BrowserWindow => {
     browserWindow: { ...sizing, titleBarStyle: "hidden", show: false },
     navigation: { installGuard: installSameOriginNavigationGuard },
   });
+
+  // Sign-on runs before this install is connected to anything, when the
+  // renderer is at `app://vellum.ai` and its direct call to HQ dies on a CORS
+  // preflight. Point it at the main-process rail instead. No-ops once the
+  // owner has connected — see `hq-signin-bridge.ts`.
+  installHqSigninBridge(win);
 
   // Line the macOS traffic lights up with the renderer's inline title bar for
   // the main app; the compact onboarding / auth window keeps the system

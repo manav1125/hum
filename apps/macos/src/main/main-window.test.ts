@@ -166,6 +166,14 @@ mock.module("electron", () => ({
   shell: { openExternal: () => Promise.resolve() },
 }));
 
+// `hq-signin-bridge` (installed on every main window) logs whether its shim
+// took. Stub the logger rather than let `electron-log/main` initialize against
+// the electron stub above — it wants a real `ipcMain` and a real userData path,
+// neither of which this suite has any business providing.
+mock.module("./logger", () => ({
+  default: { info: () => undefined, warn: () => undefined, error: () => undefined },
+}));
+
 // What the mocked `restoreBounds()` returns. Defaults to a saved windowed
 // state; tests exercising the fresh-install maximized default or a saved
 // fullscreen session override it.
@@ -227,6 +235,21 @@ describe("ensureVisible", () => {
     ensureVisible();
     expect(constructed).toHaveLength(1);
     expect(constructed[0]?.stub.loadURL).toHaveBeenCalledTimes(1);
+  });
+
+  test("installs the HQ sign-in bridge on every window it creates", () => {
+    // Without this, the first-run sign-on screen (which runs at `app://`,
+    // before this install is connected to anything) POSTs to HQ cross-origin,
+    // dies on a CORS preflight, and tells the owner Cue's sign-in service is
+    // unreachable. See `hq-signin-bridge.ts`.
+    ensureVisible();
+    const events = (
+      constructed[0]?.stub.webContents.on.mock.calls as unknown as [
+        string,
+        unknown,
+      ][]
+    ).map(([event]) => event);
+    expect(events).toContain("dom-ready");
   });
 
   test("recreates after the previous window was destroyed", () => {
