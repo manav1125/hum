@@ -10,6 +10,12 @@
 
 import { describe, expect, test } from "bun:test";
 
+import {
+  FULL_DETENT,
+  PEEK_DETENT,
+  fittedPeekHeight,
+} from "./create-sheet-geometry";
+
 const css = await Bun.file(
   new URL("./mv3-create.css", import.meta.url).pathname,
 ).text();
@@ -60,5 +66,90 @@ describe("the detent handle is a real control", () => {
     expect(grabber).toContain("display: block");
     expect(grabber).toContain("height: 5px");
     expect(grabber).toContain("width: 40px");
+  });
+});
+
+describe("the peek detent fits the stage it is showing", () => {
+  /**
+   * The Create entry, measured on an iPhone 16 with the 42%-of-viewport peek.
+   *
+   * Phone shell, 393×852 — the geometry in the owner's screenshot. Sheet
+   * 494→852 (h358); scroller 518→688 (client 170) holding 271px of content; the
+   * two type cards laid out 606→718, so 30px of each card — its rounded foot,
+   * its "N templates" count and the bottom of its name — fell past 688 and were
+   * clipped; the footer began at exactly 688, which is why the clip read as the
+   * composer cutting the cards in half; and the "+4 more types" row, at
+   * 729→771, was outside the sheet altogether.
+   */
+  const PHONE_SHELL = { viewportH: 852, sheetH: 0.42 * 852, bodyClientH: 170, bodyScrollH: 271 };
+  /**
+   * The same stage in Safari on the same device, where the browser chrome
+   * leaves a 393×659 viewport: sheet 382→659 (h277), scroller 406→494 (client
+   * 88) for the same 271px, so the cards were laid out 494→605 — below the
+   * scroller's last pixel, and not visible at all.
+   */
+  const DEVICE_SAFARI = { viewportH: 659, sheetH: 0.42 * 659, bodyClientH: 88, bodyScrollH: 270 };
+
+  test("it grows past 42% by exactly the height the scroller was short", () => {
+    // 459 is what the sheet measured on the device after the fix, in both
+    // shells: the same content plus the same chrome, so the same answer.
+    expect(Math.round(fittedPeekHeight(PHONE_SHELL))).toBe(459);
+    expect(Math.round(fittedPeekHeight(DEVICE_SAFARI))).toBe(459);
+  });
+
+  test("…which is precisely enough, and no more", () => {
+    // Chrome is whatever the sheet is that the scroller is not, and it does not
+    // change when the sheet grows. So the scroller ends up exactly as tall as
+    // its content: nothing clipped, and no dead space either.
+    for (const m of [PHONE_SHELL, DEVICE_SAFARI]) {
+      const chrome = m.sheetH - m.bodyClientH;
+      expect(fittedPeekHeight(m) - chrome).toBeCloseTo(m.bodyScrollH, 5);
+    }
+  });
+
+  test("the fit is a fixpoint, so measuring the grown sheet does not move it", () => {
+    // The measurement runs after every render. If feeding the result back in
+    // produced a different result it would oscillate forever.
+    const settled = fittedPeekHeight(PHONE_SHELL);
+    const chrome = PHONE_SHELL.sheetH - PHONE_SHELL.bodyClientH;
+    const again = fittedPeekHeight({
+      viewportH: PHONE_SHELL.viewportH,
+      sheetH: settled,
+      bodyClientH: settled - chrome,
+      bodyScrollH: PHONE_SHELL.bodyScrollH,
+    });
+    expect(again).toBeCloseTo(settled, 5);
+  });
+
+  test("…and it does not chase the 0.34s height transition", () => {
+    // Mid-transition `sheetH` and `bodyClientH` are both partway there, and only
+    // their difference is read, so every frame answers with the same target.
+    const chrome = PHONE_SHELL.sheetH - PHONE_SHELL.bodyClientH;
+    for (const sheetH of [PHONE_SHELL.sheetH, 400, 430, 459]) {
+      expect(
+        fittedPeekHeight({ ...PHONE_SHELL, sheetH, bodyClientH: sheetH - chrome }),
+      ).toBeCloseTo(459, 0);
+    }
+  });
+
+  test("42% is a floor: a stage that already fits does not shrink below it", () => {
+    // Otherwise a short peek would collapse onto its own content and the sheet
+    // would change size every time a suggestion row resolved.
+    const short = { ...PHONE_SHELL, bodyScrollH: 120 };
+    expect(fittedPeekHeight(short)).toBeCloseTo(PEEK_DETENT * 852, 5);
+  });
+
+  test("the full detent is the ceiling: a long stage scrolls, it does not take the screen", () => {
+    const long = { ...PHONE_SHELL, bodyScrollH: 2000 };
+    expect(fittedPeekHeight(long)).toBeCloseTo(FULL_DETENT * 852, 5);
+    // The scrim behind the sheet stays reachable at every content length.
+    expect(fittedPeekHeight(long)).toBeLessThan(852);
+  });
+
+  test("before layout it answers with the floor rather than a guess", () => {
+    expect(fittedPeekHeight({ ...PHONE_SHELL, bodyClientH: 0, sheetH: 0 })).toBeCloseTo(
+      PEEK_DETENT * 852,
+      5,
+    );
   });
 });

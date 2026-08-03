@@ -27,9 +27,14 @@ import { haptic } from "@/utils/haptics";
 
 import "./mv3-create.css";
 
-/** The two snap points, as a fraction of viewport height. */
-export const PEEK_DETENT = 0.42;
-export const FULL_DETENT = 0.94;
+import {
+  FULL_DETENT,
+  PEEK_DETENT,
+  fittedPeekHeight,
+} from "./create-sheet-geometry";
+
+/** Re-exported so the sheet stays the one import site for its own geometry. */
+export { FULL_DETENT, PEEK_DETENT, fittedPeekHeight };
 
 /** Drag past this fraction below peek and the sheet dismisses. */
 const DISMISS_SLOP = 0.7;
@@ -101,7 +106,62 @@ export function CreateDetentSheet({
     };
   }, [open]);
 
-  const targetFraction = lockFull || detent === "full" ? FULL_DETENT : PEEK_DETENT;
+  /**
+   * The measured peek height, or null while it is unknown or irrelevant.
+   *
+   * It is cleared whenever the sheet leaves the peek detent, so every peek is
+   * measured afresh from the 42% floor and a stage that got shorter cannot
+   * inherit a taller stage's fit.
+   */
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [peekFitH, setPeekFitH] = useState<number | null>(null);
+
+  /** The measured containing block, with a sane fallback before first paint. */
+  const viewportH = useCallback(
+    () => containerH || (typeof window === "undefined" ? 800 : window.innerHeight),
+    [containerH],
+  );
+
+  const fitsPeek = open && !lockFull && detent === "peek";
+
+  /*
+   * Deliberately no dependency array.
+   *
+   * What the fit depends on is the laid-out height of the stage's content, and
+   * no prop of this component describes that: the stage is `children`, and its
+   * height moves when the composer's textarea grows, when a suggestion row
+   * resolves, or when a font finishes loading — none of which change an
+   * identity a dependency list could name. So it re-measures after every
+   * render, which is one layout read.
+   *
+   * The exhaustive-deps warning is about setState in a dep-less effect looping
+   * forever. It cannot here, for two independent reasons: `fittedPeekHeight` is
+   * a fixpoint (see its doc), so the second pass returns the first pass's
+   * answer; and the setter below only commits a change of more than a pixel, so
+   * sub-pixel jitter cannot ping-pong. Verified on an iPhone 16 — the sheet
+   * settles at 459px and stays there, including across peek→full→peek.
+   */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    if (!fitsPeek) {
+      setPeekFitH((prev) => (prev === null ? prev : null));
+      return;
+    }
+    // Mid-drag the height belongs to the finger.
+    if (dragHeight !== null) return;
+    const sheet = sheetRef.current;
+    const body = sheet?.querySelector<HTMLElement>(".mv3c-body");
+    if (!sheet || !body) return;
+    const next = Math.round(
+      fittedPeekHeight({
+        viewportH: viewportH(),
+        sheetH: sheet.getBoundingClientRect().height,
+        bodyClientH: body.clientHeight,
+        bodyScrollH: body.scrollHeight,
+      }),
+    );
+    setPeekFitH((prev) => (prev !== null && Math.abs(prev - next) <= 1 ? prev : next));
+  });
 
   // Escape closes, matching SheetShell.
   useEffect(() => {
@@ -118,11 +178,17 @@ export function CreateDetentSheet({
     if (!open) setDragHeight(null);
   }, [open]);
 
-  /** The measured containing block, with a sane fallback before first paint. */
-  const viewportH = useCallback(
-    () => containerH || (typeof window === "undefined" ? 800 : window.innerHeight),
-    [containerH],
+  /**
+   * Where each detent settles, in px. Peek is the measured fit when there is
+   * one — the drag has to start and snap where the sheet actually rests, or the
+   * first pixel of a drag jumps.
+   */
+  const fullH = useCallback(() => FULL_DETENT * viewportH(), [viewportH]);
+  const peekH = useCallback(
+    () => peekFitH ?? PEEK_DETENT * viewportH(),
+    [peekFitH, viewportH],
   );
+  const settledH = lockFull || detent === "full" ? fullH() : peekH();
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -130,11 +196,11 @@ export function CreateDetentSheet({
       e.currentTarget.setPointerCapture(e.pointerId);
       dragRef.current = {
         startY: e.clientY,
-        startH: targetFraction * viewportH(),
+        startH: settledH,
         locked: false,
       };
     },
-    [lockFull, targetFraction, viewportH],
+    [lockFull, settledH],
   );
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
@@ -167,21 +233,22 @@ export function CreateDetentSheet({
         }
         return;
       }
-      const fraction = height / viewportH();
-      if (fraction < PEEK_DETENT * DISMISS_SLOP) {
+      // The dismiss threshold stays tied to the 42% floor: how far you must
+      // drag to throw the sheet away must not depend on how much the stage
+      // inside it happens to contain.
+      if (height < PEEK_DETENT * viewportH() * DISMISS_SLOP) {
         haptic.light();
         onClose();
         return;
       }
-      // Snap to whichever detent the release is nearer.
+      // Snap to whichever detent the release is nearer — compared in px against
+      // where each detent actually rests, which for peek is the measured fit.
       const next: Detent =
-        Math.abs(fraction - FULL_DETENT) < Math.abs(fraction - PEEK_DETENT)
-          ? "full"
-          : "peek";
+        Math.abs(height - fullH()) < Math.abs(height - peekH()) ? "full" : "peek";
       haptic.light();
       onDetentChange(next);
     },
-    [dragHeight, detent, onClose, onDetentChange, viewportH],
+    [dragHeight, detent, onClose, onDetentChange, viewportH, fullH, peekH],
   );
 
   if (!open) return null;
@@ -189,7 +256,7 @@ export function CreateDetentSheet({
   // Always px — see the note on `containerH`. Before the first measurement the
   // sheet renders at its target fraction of the window, which is right in the
   // app and close enough for one frame anywhere else.
-  const height = `${Math.round(dragHeight ?? targetFraction * viewportH())}px`;
+  const height = `${Math.round(dragHeight ?? settledH)}px`;
 
   return (
     <div className="mv3c" data-mv3>
@@ -201,6 +268,7 @@ export function CreateDetentSheet({
         onClick={onClose}
       />
       <div
+        ref={sheetRef}
         role="dialog"
         aria-modal="true"
         aria-label={label}
