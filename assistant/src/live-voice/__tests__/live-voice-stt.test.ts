@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, mock, test } from "bun:test";
 
+import { initializeDb } from "../../memory/db-init.js";
 import type {
   StreamingTranscriber,
   SttStreamServerEvent,
@@ -18,6 +19,13 @@ import {
   type LiveVoiceClientStartFrame,
   type LiveVoiceServerFrame,
 } from "../protocol.js";
+
+// `LiveVoiceSession` ensures a `conversations` row on start — the first turn's
+// insert has a FOREIGN KEY to it — so these tests need a real schema. Without
+// one the start path throws "no such table: conversations", and because that
+// throw is caught upstream every assertion about transcription reads as a
+// transcription failure instead of as the missing table it is.
+initializeDb();
 
 const START_FRAME = {
   type: "start",

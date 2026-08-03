@@ -12,6 +12,7 @@ cue-mobile-final/
 ├── v24-mobile-final/            ← Library sheet, ⓶ screen, weekly, person, watching, memory
 ├── v25-chat-modes/              ← chat + create + voice + THE KEYBOARD SPEC
 ├── v27-create-flow/             ← Create end to end (entry → gallery → fill → build → done)
+├── v29-create-corrections/      ← READ BEFORE v27 — replaces J3/J4, adds N3, new figures invariant
 ├── v28-states/                  ← offline, push, day one, search, reach audit
 └── _rationale/                  ← explored-and-rejected options; not build targets
 ```
@@ -71,9 +72,9 @@ cue-mobile-final/
 ```
 
 **Six rules:**
-1. **Fill is never an empty form.** State what's known as a checkable block, ask only the gaps. If Cue knows everything, skip fill and build.
-2. **Building is narrated and non-blocking** — real thumbnails as they render, current-step line, live composer for redirects, "you can leave". Anything over 30s survives backgrounding.
-3. **Every artefact card says where it filed** — *"Filed onto Close the seed · in Library"*. That line is why Create lives in Cue.
+1. **Fill is never an empty form.** Cue states what it knows **with its sources labelled**, then asks the rest. If it knows everything, skip fill and build. *(v29 N1 — the earlier "a fifth of the typing" claim is withdrawn; Investor pitch asks five questions and that's correct.)*
+2. **Building is narrated and non-blocking** — a **step list that checks off** from real events, elapsed time, and "nothing to look at until then". No ordinal, no progressive thumbnails: neither exists. *(v29 N2)*
+3. **Every delivered artefact says where it filed** — *"Filed onto Close the seed · in Library"*. **On the delivered card, not the submit CTA** — it's a receipt, not a promise.
 4. **One adjacent offer after delivery**, only from what it touched. Two is nagging; unrelated is creepy.
 5. **Remix chips are type-specific** — Slides: shorter / different look / add a slide · Docs: tone / length / restructure · Images: restyle / variations / upscale.
 6. **Blank is first-class** — in the gallery grid, not below it.
@@ -137,17 +138,19 @@ iPad (a different layout problem, not a scaled phone) · Watch (needs its own in
 
 ---
 
-## 10 · The one open question
+## 10 · Closed — see v29
 
-**Create's per-type stage two.** I've drawn Slides as the pattern. For each of the other nine types I need:
+§10's open question is answered. **`metric` doesn't exist** (use `number`) · **Sheets/Canvas/Audio are chip-based by design** · **there is no prefill source, so the badge is withdrawn** · **style stays in the gallery** · **Preview is the template skeleton, renamed "See the outline"** · **App Builder is a provenance badge and stays off mobile.**
 
-1. **The field list and kinds** (chip-select, text, number, url, tags, metric)
-2. **Which fields pre-fill** from memory or connected sources
-3. Whether a **style/preset step** comes before or after the fields
-4. **What "Preview" actually renders** — a sample, the template skeleton, or a real generation
-5. **Is App Builder a type or a mode on Docs?** Desktop shows it as a badge on the templates header, which reads like neither.
+### NEW INVARIANT
+**Cue may draft words it hasn't been given. It may never draft numbers it hasn't been given.** Prose is inferable; measurements aren't. Frames model the honest case — supplied figures filled, unsupplied visibly blank. Applies everywhere a figure appears, not just Create.
 
-Everything else is specified.
+**Preview labels:** Slides & Docs → "See the outline" (real skeleton). All other types → "What's in it" (inputs and settings only).
+
+### Agreed with code
+**The typed fact store is roadmapped, and it's bigger than Create** — it's what lets People say "applied 14 times", lets a dashboard tile cite its source, and makes the numbers invariant **enforceable rather than instructed**. One store fixes three surfaces.
+
+**Elicit-set authoring order:** Video (9 templates, 0 sets) → Canvas → Audio. Images (4, 0) is an open question.
 
 ---
 
@@ -163,3 +166,4 @@ Everything else is specified.
 - Cue reports its own errors first, verbatim, first person. Red is reserved for this.
 - No colour-only state — every state carries a glyph: `‖ ◱ ✓ ↴ ◼ ○ ✨ ⧉`.
 - Provenance everywhere: every artefact, arrival and answer says where it came from and where it filed.
+- **Numbers are never invented.** Words may be drafted; figures may not. Unsupplied figures ship blank.
