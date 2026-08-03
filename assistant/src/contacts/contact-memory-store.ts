@@ -14,10 +14,10 @@
 
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { getDb, getSqliteFrom } from "../memory/db-connection.js";
-import { contactMemory } from "../memory/schema/index.js";
+import { contactMemory, contacts } from "../memory/schema/index.js";
 import { getLogger } from "../util/logger.js";
 import type {
   ContactMemory,
@@ -78,6 +78,142 @@ export function listContactMemory(contactId: string): ContactMemory[] {
     .orderBy(desc(contactMemory.lastSeenAt), desc(contactMemory.createdAt))
     .all()
     .map(parse);
+}
+
+// ── Bulk read (the People list's one call per page) ──────────────────
+
+/**
+ * Ids a single bulk read will accept. A list surface renders a page, so the
+ * bound is a page's worth of people with room to spare — the whole production
+ * roster (87 contacts) fits in one call, and a caller that wants more is
+ * asking for a scan, not a screen. Over the cap the route rejects rather than
+ * truncates: a silently shortened answer is indistinguishable from a set of
+ * contacts with nothing learned, which is the exact confusion this endpoint
+ * exists to end.
+ */
+export const CONTACT_MEMORY_BULK_MAX_CONTACTS = 100;
+
+/**
+ * Rows returned per contact. The card shows a three-line clamp and the busiest
+ * contact in production has 4 facts, so 12 is well past what any card renders;
+ * `total` carries the real count so a trimmed list is never mistaken for the
+ * whole of what Cue knows.
+ */
+export const CONTACT_MEMORY_BULK_MAX_ROWS_PER_CONTACT = 12;
+
+/**
+ * What happened for one contact in a bulk read. Three outcomes, never two:
+ *
+ *   `learned`      rows exist, and here they are.
+ *   `empty`        we looked, the contact is real, and there is nothing yet.
+ *   `unavailable`  we could NOT look — the read failed, or no such contact.
+ *
+ * Collapsing `unavailable` into `empty` is the bug that let a 697-job pipeline
+ * write nothing while every surface said "no memories yet". Callers must
+ * render the third case as a failure, not as an absence.
+ */
+export type ContactMemoryReadStatus = "learned" | "empty" | "unavailable";
+
+export interface ContactMemoryRead {
+  contactId: string;
+  status: ContactMemoryReadStatus;
+  /** Newest-seen first, at most `rowsPerContact`. Empty unless `learned`. */
+  memory: ContactMemory[];
+  /** Rows this contact actually has — `memory` may be a capped prefix. */
+  total: number;
+  /** Why we could not look, in plain language. Only set for `unavailable`. */
+  reason: string | null;
+}
+
+function unavailable(contactId: string, reason: string): ContactMemoryRead {
+  return { contactId, status: "unavailable", memory: [], total: 0, reason };
+}
+
+/**
+ * Memory for many contacts in one pass: one existence query and one memory
+ * query, regardless of how many ids are asked for.
+ *
+ * Ids are de-duplicated; the result carries one entry per distinct id, in the
+ * order given. A read that throws does not become an empty answer — every
+ * requested contact comes back `unavailable` with the reason, because "the
+ * query failed" and "this person has nothing" are different sentences.
+ */
+export function readContactMemoryForContacts(
+  contactIds: string[],
+  opts: { rowsPerContact?: number } = {},
+): ContactMemoryRead[] {
+  const rowsPerContact = Math.max(
+    1,
+    opts.rowsPerContact ?? CONTACT_MEMORY_BULK_MAX_ROWS_PER_CONTACT,
+  );
+  const ids = [...new Set(contactIds)];
+  if (ids.length === 0) return [];
+  if (ids.length > CONTACT_MEMORY_BULK_MAX_CONTACTS) {
+    // Callers validate first and reject; this guards the data layer against a
+    // caller that forgot, so the bound can't be lost by a new call site.
+    throw new Error(
+      `readContactMemoryForContacts: ${ids.length} ids exceeds the ${CONTACT_MEMORY_BULK_MAX_CONTACTS} cap`,
+    );
+  }
+
+  const db = getDb();
+  let known: Set<string>;
+  const byContact = new Map<string, ContactMemory[]>();
+  try {
+    known = new Set(
+      db
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(inArray(contacts.id, ids))
+        .all()
+        .map((row) => row.id),
+    );
+    const rows = db
+      .select()
+      .from(contactMemory)
+      .where(inArray(contactMemory.contactId, ids))
+      .orderBy(desc(contactMemory.lastSeenAt), desc(contactMemory.createdAt))
+      .all();
+    // A global sort by (lastSeenAt, createdAt) is also a valid per-contact
+    // sort, so grouping preserves newest-seen-first within each contact.
+    for (const row of rows) {
+      const parsed = parse(row);
+      const bucket = byContact.get(parsed.contactId);
+      if (bucket) bucket.push(parsed);
+      else byContact.set(parsed.contactId, [parsed]);
+    }
+  } catch (err) {
+    log.warn(
+      { err: String(err), contacts: ids.length },
+      "bulk contact-memory read failed; reporting every contact as unavailable",
+    );
+    return ids.map((id) =>
+      unavailable(id, "Cue couldn't read what it remembers"),
+    );
+  }
+
+  return ids.map((id) => {
+    if (!known.has(id)) {
+      return unavailable(id, "Cue has no contact with this id");
+    }
+    const rows = byContact.get(id) ?? [];
+    if (rows.length === 0) {
+      return {
+        contactId: id,
+        status: "empty",
+        memory: [],
+        total: 0,
+        reason: null,
+      };
+    }
+    return {
+      contactId: id,
+      status: "learned",
+      memory: rows.slice(0, rowsPerContact),
+      total: rows.length,
+      reason: null,
+    };
+  });
 }
 
 export function getContactMemory(id: string): ContactMemory | null {

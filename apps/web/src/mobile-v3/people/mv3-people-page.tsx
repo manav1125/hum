@@ -17,19 +17,27 @@
  * Everything, or it isn't drawn:
  *  · the roster            `contactsGet`
  *  · exchanges / last seen `contact.interactionCount` / `.lastInteraction`
- *  · what Cue has learned  `contactsByIdMemoryGet`, per rendered card
+ *  · what Cue has learned  `peopleMemoryBulkPost`, one call for the page
  *  · relationship state    derived in `people-data.ts` from real fields only —
  *                          "going quiet" ships, "you owe a reply" does not,
  *                          because no interaction carries a direction.
  *  · the header counts     the roster length and how many of the *rendered*
  *                          cards actually have learnings.
  *
- * ## Why cards fetch memory one at a time
+ * ## One call per page, not one per card
  *
- * There is no bulk contact-memory endpoint — `contactsByIdMemoryGet` is
- * per-contact. So the list pages in 15s and only fetches for what is on
- * screen. 78 parallel requests to fill a scroll list would be the wrong
- * trade; a `POST /contacts/memory?ids=` on the daemon would be the right fix.
+ * Memory used to be read per rendered card, which made the page size the N in
+ * an N+1 — the list paged at 15 to keep the request count down, and a surface
+ * whose whole argument is that it *accumulates* got smaller as it accumulated.
+ * `POST people/memory/bulk` reads a page in one request, so {@link PAGE} is a
+ * legibility decision now: 50 cards covers the owner's whole roster in two
+ * pages. The daemon caps a call at 100 ids and rejects anything larger, so a
+ * page grown past the cap is chunked, never trimmed.
+ *
+ * The bulk response carries a per-contact status, and the third one matters:
+ * `unavailable` ("we could not look") is zero rows on the wire exactly like
+ * `empty` ("we looked, there is nothing"). `learnedSummaryFromBulk` keeps them
+ * apart so a failed read can never render as "Cue hasn't learned anything".
  *
  * Red is not used for "going quiet" even though M3 draws it red: the global
  * invariant reserves red for Cue reporting its own failures. Amber carries the
@@ -38,12 +46,11 @@
 
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import type { ContactPayload } from "@/domains/contacts/types";
 import {
-  contactsByIdMemoryGetOptions,
   contactsGetOptions,
   peopleMemoryHealthGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -60,13 +67,21 @@ import {
   compactAgo,
   contactSubtitle,
   initials,
-  learnedSummary,
+  learnedSummaryFromBulk,
   relationshipState,
   type LearnedSummary,
 } from "./people-data";
+import { usePeopleMemory } from "./use-people-memory";
 
-/** How many cards render (and therefore fetch memory) per page. */
-const PAGE = 15;
+/**
+ * Cards per page. One bulk read covers the whole page, so this is a
+ * legibility number rather than a request budget: 50 is a real scroll session
+ * on a phone and covers the owner's 86-person roster in two pages. It sits
+ * under the daemon's 100-id cap (`MEMORY_BULK_MAX_CONTACTS`), so a first page
+ * is always a single request; larger pages (repeated "show more") chunk at the
+ * cap rather than being trimmed to fit it.
+ */
+const PAGE = 50;
 
 type Filter = "all" | "quiet" | "learned";
 
@@ -112,35 +127,37 @@ export function Mv3PeoplePage() {
 
   const page = useMemo(() => visible.slice(0, shown), [visible, shown]);
 
-  // Memory for exactly the cards on screen. Nothing prefetches 78 contacts.
-  const memoryQueries = useQueries({
-    queries: page.map((c) => ({
-      ...contactsByIdMemoryGetOptions({
-        path: { assistant_id: assistantId, id: c.id },
-      }),
-      enabled: Boolean(assistantId),
-      staleTime: 60_000,
-    })),
-  });
+  // Memory for exactly the cards on screen, in one call. Nothing prefetches
+  // the rest of the roster, and nothing fetches per card.
+  const pageIds = useMemo(() => page.map((c) => c.id), [page]);
+  const memory = usePeopleMemory(assistantId, pageIds);
 
-  // Not memoised: `useQueries` hands back a fresh array every render, so a
-  // dependency list here would either be a lie or an unmemoisable expression.
-  // This is at most PAGE (15) cheap object builds — measurably nothing next to
-  // the 15 network reads above it.
-  const summaries: LearnedSummary[] = page.map((c, i) => {
-    const q = memoryQueries[i];
-    return learnedSummary({
-      isLoading: q?.isLoading ?? true,
-      isError: q?.isError ?? false,
-      memory: q?.data?.memory,
-      // A failed health read is "unknown", never "healthy" — `undefined` is a
-      // third answer that `learnedSummary` respects.
-      degraded: healthQuery.isError ? undefined : healthQuery.data?.degraded,
-      degradedReason: healthQuery.data?.degradedReason,
-      interactionCount: c.interactionCount ?? 0,
-      displayName: c.displayName,
-    });
-  });
+  const summaries: LearnedSummary[] = useMemo(
+    () =>
+      page.map((c) =>
+        learnedSummaryFromBulk({
+          entry: memory.byContact.get(c.id),
+          isLoading: memory.isLoading,
+          isError: memory.isError,
+          // A failed health read is "unknown", never "healthy" — `undefined`
+          // is a third answer that `learnedSummary` respects.
+          degraded: healthQuery.isError
+            ? undefined
+            : healthQuery.data?.degraded,
+          degradedReason: healthQuery.data?.degradedReason,
+          interactionCount: c.interactionCount ?? 0,
+          displayName: c.displayName,
+        }),
+      ),
+    [
+      page,
+      memory.byContact,
+      memory.isLoading,
+      memory.isError,
+      healthQuery.isError,
+      healthQuery.data,
+    ],
+  );
 
   const learnedCount = summaries.filter((s) => s.status === "learned").length;
   const filtered =

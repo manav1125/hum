@@ -23,9 +23,12 @@ import {
 } from "../../contacts/contact-dossier-store.js";
 import { getContactMemoryHealth } from "../../contacts/contact-memory-extract-job.js";
 import {
+  CONTACT_MEMORY_BULK_MAX_CONTACTS,
+  CONTACT_MEMORY_BULK_MAX_ROWS_PER_CONTACT,
   forgetFact,
   isContactMemoryKind,
   listContactMemory,
+  readContactMemoryForContacts,
   rememberFact,
   updateContactMemory,
 } from "../../contacts/contact-memory-store.js";
@@ -47,6 +50,27 @@ const contactMemorySchema = z.object({
   confidence: z.number(),
   createdAt: z.number(),
   lastSeenAt: z.number(),
+});
+
+const contactMemoryReadSchema = z.object({
+  contactId: z.string(),
+  status: z
+    .enum(["learned", "empty", "unavailable"])
+    .describe(
+      "learned = rows follow; empty = we looked and there is nothing yet; " +
+        "unavailable = we could NOT look (read failed, or no such contact). " +
+        "Never render `unavailable` as 'nothing learned yet'.",
+    ),
+  memory: z
+    .array(contactMemorySchema)
+    .describe("Newest-seen first, capped per contact. Empty unless `learned`."),
+  total: z
+    .number()
+    .describe("Rows this contact actually has; `memory` may be a prefix"),
+  reason: z
+    .string()
+    .nullable()
+    .describe("Why we could not look. Only set when status is `unavailable`."),
 });
 
 const relationshipSchema = z.object({
@@ -134,6 +158,49 @@ function handleListMemory({ pathParams = {} }: RouteHandlerArgs) {
   const contactId = pathParams.id;
   requireContact(contactId);
   return { ok: true, memory: listContactMemory(contactId) };
+}
+
+/**
+ * Bulk memory read — one request for a page of People cards.
+ *
+ * A POST for a read is deliberate: the input is a list of ids, which belongs
+ * in a body rather than a query string, and the handler is side-effect free
+ * (the GET-idempotency rule constrains GETs; it does not make read-only POSTs
+ * illegal, and `contacts/search` / `tasks/list` already work this way).
+ *
+ * Over the cap this rejects instead of truncating. A truncated answer would
+ * come back as a set of contacts with no rows, which is exactly the shape of
+ * "nothing learned yet" — the caller would be told a falsehood in the one
+ * response format designed to prevent it.
+ */
+function handleBulkMemory({ body = {} }: RouteHandlerArgs) {
+  const raw = body.contactIds;
+  if (!Array.isArray(raw)) {
+    throw new BadRequestError("contactIds must be an array of contact ids");
+  }
+  if (raw.length > CONTACT_MEMORY_BULK_MAX_CONTACTS) {
+    throw new BadRequestError(
+      `contactIds has ${raw.length} entries; at most ${CONTACT_MEMORY_BULK_MAX_CONTACTS} may be read at once. ` +
+        "Ask for fewer — this request is rejected rather than truncated, because a short answer " +
+        "is indistinguishable from contacts with nothing learned.",
+    );
+  }
+  const ids: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string" || !value.trim()) {
+      throw new BadRequestError(
+        "contactIds must contain only non-empty contact id strings",
+      );
+    }
+    ids.push(value.trim());
+  }
+
+  return {
+    ok: true,
+    maxContacts: CONTACT_MEMORY_BULK_MAX_CONTACTS,
+    maxRowsPerContact: CONTACT_MEMORY_BULK_MAX_ROWS_PER_CONTACT,
+    contacts: readContactMemoryForContacts(ids),
+  };
 }
 
 function handleAddMemory({ pathParams = {}, body = {} }: RouteHandlerArgs) {
@@ -306,6 +373,53 @@ export const ROUTES: RouteDefinition[] = [
     }),
     additionalResponses: { "404": { description: "Contact not found" } },
     handler: handleListMemory,
+  },
+  {
+    operationId: "readContactMemoryBulk",
+    endpoint: "people/memory/bulk",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "What Cue remembers about many contacts, in one call",
+    description:
+      "Read contact memory for up to " +
+      `${CONTACT_MEMORY_BULK_MAX_CONTACTS} contacts in a single request, so a ` +
+      "People list costs one call per page instead of one per card. Read-only " +
+      "despite the verb: the id list belongs in a body, not a query string.\n\n" +
+      "Every contact comes back with an explicit status — `learned`, `empty` " +
+      "(we looked, there is nothing yet) or `unavailable` (we could not look: " +
+      "the read failed, or no contact has that id). The third state exists " +
+      "because most people genuinely have nothing learned, so a failure that " +
+      "renders as an absence is invisible. `total` reports the real row count " +
+      "when `memory` is capped.\n\n" +
+      `Requests over ${CONTACT_MEMORY_BULK_MAX_CONTACTS} ids are rejected with ` +
+      "400, never truncated.",
+    tags: ["people"],
+    requestBody: z.object({
+      contactIds: z
+        .array(z.string())
+        .describe(
+          `Contact ids to read, at most ${CONTACT_MEMORY_BULK_MAX_CONTACTS}. Duplicates collapse.`,
+        ),
+    }),
+    responseBody: z.object({
+      ok: z.boolean(),
+      maxContacts: z
+        .number()
+        .describe("Ids this endpoint accepts per call (the cap that rejects)"),
+      maxRowsPerContact: z
+        .number()
+        .describe("Rows returned per contact before `memory` is capped"),
+      contacts: z
+        .array(contactMemoryReadSchema)
+        .describe("One entry per distinct requested id, in the order given"),
+    }),
+    additionalResponses: {
+      "400": { description: "contactIds missing, malformed, or over the cap" },
+    },
+    handler: handleBulkMemory,
   },
   {
     operationId: "addContactMemory",

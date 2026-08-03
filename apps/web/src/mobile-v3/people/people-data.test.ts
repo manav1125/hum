@@ -18,8 +18,10 @@ import {
   compactAgo,
   daysSince,
   learnedSummary,
+  learnedSummaryFromBulk,
   provenanceLine,
   relationshipState,
+  type ContactMemoryReadEntry,
   type ContactMemoryRow,
 } from "./people-data";
 
@@ -55,7 +57,10 @@ describe("relationshipState — real fields only", () => {
 
   test("a one-off from weeks ago is not 'going quiet' — there is no relationship to fade", () => {
     const s = relationshipState(
-      { lastInteraction: NOW - 40 * DAY, interactionCount: QUIET_MIN_EXCHANGES - 1 },
+      {
+        lastInteraction: NOW - 40 * DAY,
+        interactionCount: QUIET_MIN_EXCHANGES - 1,
+      },
       NOW,
     );
     expect(s.id).not.toBe("quiet");
@@ -198,19 +203,142 @@ describe("learnedSummary — four outcomes that must not read the same", () => {
   });
 });
 
+describe("learnedSummaryFromBulk — three states that arrive as zero rows", () => {
+  const base = {
+    isLoading: false,
+    isError: false,
+    degraded: false as boolean | undefined,
+    degradedReason: null as string | null,
+    interactionCount: 12,
+    displayName: "Dana Whitman",
+  };
+
+  function entry(over: Partial<ContactMemoryReadEntry> = {}) {
+    return {
+      contactId: "c1",
+      status: "empty",
+      memory: [],
+      total: 0,
+      reason: null,
+      ...over,
+    } as ContactMemoryReadEntry;
+  }
+
+  test("`learned` renders the real rows", () => {
+    const s = learnedSummaryFromBulk({
+      ...base,
+      entry: entry({
+        status: "learned",
+        memory: [memory({ statement: "Handles the redlines" })],
+        total: 1,
+      }),
+    });
+    expect(s.status).toBe("learned");
+    if (s.status !== "learned") throw new Error("unreachable");
+    expect(s.prose).toBe("Handles the redlines.");
+  });
+
+  test("`empty` is the honest nothing-yet sentence", () => {
+    const s = learnedSummaryFromBulk({ ...base, entry: entry() });
+    expect(s.status).toBe("empty");
+  });
+
+  /**
+   * The whole reason the response carries a status: `empty` and `unavailable`
+   * are byte-identical apart from it. A summary that reads the rows instead of
+   * the status produces the wrong sentence here and nowhere else.
+   */
+  test("`unavailable` is a failure, never the nothing-yet sentence", () => {
+    const s = learnedSummaryFromBulk({
+      ...base,
+      entry: entry({
+        status: "unavailable",
+        reason: "Cue has no contact with this id",
+      }),
+    });
+    expect(s.status).toBe("error");
+    if (s.status !== "error") throw new Error("unreachable");
+    expect(s.sentence).toContain("couldn't look up");
+    expect(s.sentence).toContain("Cue has no contact with this id");
+    expect(s.sentence).not.toContain("hasn't learned anything");
+  });
+
+  test("`unavailable` outranks a degraded pipeline — we never got that far", () => {
+    const s = learnedSummaryFromBulk({
+      ...base,
+      degraded: true,
+      degradedReason: "the extraction budget expired",
+      entry: entry({ status: "unavailable", reason: null }),
+    });
+    expect(s.status).toBe("error");
+  });
+
+  test("a contact missing from a settled response is unavailable, not empty", () => {
+    const s = learnedSummaryFromBulk({ ...base, entry: undefined });
+    expect(s.status).toBe("error");
+  });
+
+  test("a contact missing while the read is still in flight is loading", () => {
+    const s = learnedSummaryFromBulk({
+      ...base,
+      isLoading: true,
+      entry: undefined,
+    });
+    expect(s.status).toBe("loading");
+  });
+
+  test("a failed read beats any per-contact verdict", () => {
+    const s = learnedSummaryFromBulk({
+      ...base,
+      isError: true,
+      entry: entry({ status: "empty" }),
+    });
+    expect(s.status).toBe("error");
+    if (s.status !== "error") throw new Error("unreachable");
+    expect(s.sentence).toContain("failed request");
+  });
+});
+
 describe("list helpers", () => {
   test("you and the assistant are not 'people Cue knows'", () => {
     const list = browsablePeople([
-      { id: "1", displayName: "A", role: "contact", interactionCount: 1, lastInteraction: 5, channels: [] },
-      { id: "2", displayName: "Me", role: "guardian", interactionCount: 9, lastInteraction: 9, channels: [] },
-      { id: "3", displayName: "Cue", role: "assistant", interactionCount: 9, lastInteraction: 9, channels: [] },
+      {
+        id: "1",
+        displayName: "A",
+        role: "contact",
+        interactionCount: 1,
+        lastInteraction: 5,
+        channels: [],
+      },
+      {
+        id: "2",
+        displayName: "Me",
+        role: "guardian",
+        interactionCount: 9,
+        lastInteraction: 9,
+        channels: [],
+      },
+      {
+        id: "3",
+        displayName: "Cue",
+        role: "assistant",
+        interactionCount: 9,
+        lastInteraction: 9,
+        channels: [],
+      },
     ] as never);
     expect(list.map((c) => c.id)).toEqual(["1"]);
   });
 
   test("every avatar ground is an -on-fill leg (these discs carry white text)", () => {
     const bright = ["#0e8c8c", "#3d6ee8", "#7f77dd", "#b4770f", "#c24e42"];
-    for (const name of ["Rachel Lieu", "Dana Whitman", "Sarah Chen", "Tom Beale", "Q"]) {
+    for (const name of [
+      "Rachel Lieu",
+      "Dana Whitman",
+      "Sarah Chen",
+      "Tom Beale",
+      "Q",
+    ]) {
       expect(bright).not.toContain(avatarGround(name).toLowerCase());
     }
   });

@@ -10,7 +10,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
 import { getContactInteractionsBounded } from "../../contacts/contact-dossier-store.js";
-import { extractContactMemoryFromConversation } from "../../contacts/contact-memory-store.js";
+import {
+  CONTACT_MEMORY_BULK_MAX_CONTACTS,
+  CONTACT_MEMORY_BULK_MAX_ROWS_PER_CONTACT,
+  extractContactMemoryFromConversation,
+  readContactMemoryForContacts,
+} from "../../contacts/contact-memory-store.js";
 import { computeRelationshipScore } from "../../contacts/contact-relationship-store.js";
 import { upsertContact } from "../../contacts/contact-store.js";
 import { getDb } from "../../memory/db-connection.js";
@@ -137,6 +142,150 @@ describe("contact memory CRUD", () => {
       headers: {},
     }) as { memory: unknown[] };
     expect(listed.memory).toHaveLength(1);
+  });
+});
+
+// ── Bulk memory read ─────────────────────────────────────────────────────
+
+describe("bulk contact memory", () => {
+  function bulk(contactIds: unknown) {
+    return route("people/memory/bulk", "POST").handler({
+      body: { contactIds },
+      headers: {},
+    }) as {
+      ok: boolean;
+      maxContacts: number;
+      maxRowsPerContact: number;
+      contacts: Array<{
+        contactId: string;
+        status: string;
+        memory: Array<{ statement: string }>;
+        total: number;
+        reason: string | null;
+      }>;
+    };
+  }
+
+  test("one call returns all three per-contact states, and never confuses them", () => {
+    const learned = makeContact({ displayName: "Ada Lovelace" });
+    const nothingYet = makeContact({ displayName: "Grace Hopper" });
+    route("contacts/:id/memory", "POST").handler({
+      pathParams: { id: learned.id },
+      body: { statement: "Prefers async updates" },
+      headers: {},
+    });
+
+    const out = bulk([learned.id, nothingYet.id, "no-such-contact"]);
+    expect(out.ok).toBe(true);
+    expect(out.contacts).toHaveLength(3);
+
+    // learned — real rows, real count.
+    expect(out.contacts[0]).toMatchObject({
+      contactId: learned.id,
+      status: "learned",
+      total: 1,
+      reason: null,
+    });
+    expect(out.contacts[0].memory[0].statement).toBe("Prefers async updates");
+
+    // empty — we looked, there is nothing. NOT an error.
+    expect(out.contacts[1]).toMatchObject({
+      contactId: nothingYet.id,
+      status: "empty",
+      total: 0,
+      reason: null,
+    });
+    expect(out.contacts[1].memory).toEqual([]);
+
+    // could-not-look — also zero rows, but a different answer entirely.
+    expect(out.contacts[2].status).toBe("unavailable");
+    expect(out.contacts[2].reason).toBeTruthy();
+    // The two zero-row outcomes must not be the same object shape-wise.
+    expect(out.contacts[2].status).not.toBe(out.contacts[1].status);
+  });
+
+  test("a failed read reports every contact unavailable, never empty", () => {
+    const contact = makeContact();
+    // Take the table away underneath the read — the natural shape of "the
+    // query threw". Restored below so the rest of the suite is unaffected.
+    const [{ sql }] = getDb().all(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='contact_memory'`,
+    ) as Array<{ sql: string }>;
+    getDb().run("DROP TABLE contact_memory");
+    try {
+      const out = bulk([contact.id]);
+      expect(out.contacts[0].status).toBe("unavailable");
+      // The mutation this guards: an implementation that swallowed the error
+      // and returned [] would say "empty" here, and the card would tell the
+      // owner Cue has learned nothing about a person it could not read.
+      expect(out.contacts[0].status).not.toBe("empty");
+      expect(out.contacts[0].reason).toBeTruthy();
+      expect(out.contacts[0].memory).toEqual([]);
+    } finally {
+      getDb().run(sql);
+    }
+  });
+
+  test("de-dupes ids and preserves the requested order", () => {
+    const a = makeContact({ displayName: "Ada Lovelace" });
+    const b = makeContact({ displayName: "Grace Hopper" });
+    const out = bulk([b.id, a.id, b.id]);
+    expect(out.contacts.map((c) => c.contactId)).toEqual([b.id, a.id]);
+  });
+
+  test("caps rows per contact but reports the true total", () => {
+    const contact = makeContact();
+    for (let i = 0; i < CONTACT_MEMORY_BULK_MAX_ROWS_PER_CONTACT + 3; i++) {
+      route("contacts/:id/memory", "POST").handler({
+        pathParams: { id: contact.id },
+        body: { statement: `Fact number ${i}` },
+        headers: {},
+      });
+    }
+    const out = bulk([contact.id]);
+    expect(out.contacts[0].memory).toHaveLength(
+      CONTACT_MEMORY_BULK_MAX_ROWS_PER_CONTACT,
+    );
+    expect(out.contacts[0].total).toBe(
+      CONTACT_MEMORY_BULK_MAX_ROWS_PER_CONTACT + 3,
+    );
+  });
+
+  test("rejects an oversized request instead of truncating it", () => {
+    const contact = makeContact();
+    const tooMany = Array.from(
+      { length: CONTACT_MEMORY_BULK_MAX_CONTACTS + 1 },
+      (_, i) => `contact-${i}`,
+    );
+    expect(() => bulk(tooMany)).toThrow(/at most 100/);
+
+    // Exactly at the cap is fine — the boundary is inclusive.
+    const atCap = Array.from(
+      { length: CONTACT_MEMORY_BULK_MAX_CONTACTS },
+      (_, i) => (i === 0 ? contact.id : `contact-${i}`),
+    );
+    expect(bulk(atCap).contacts).toHaveLength(CONTACT_MEMORY_BULK_MAX_CONTACTS);
+  });
+
+  test("rejects a malformed id list", () => {
+    expect(() => bulk("c1")).toThrow();
+    expect(() => bulk([""])).toThrow();
+    expect(() => bulk([42])).toThrow();
+  });
+
+  test("an empty list is a legitimate no-op, not an error", () => {
+    expect(bulk([]).contacts).toEqual([]);
+  });
+
+  test("the store itself refuses an over-cap read", () => {
+    expect(() =>
+      readContactMemoryForContacts(
+        Array.from(
+          { length: CONTACT_MEMORY_BULK_MAX_CONTACTS + 1 },
+          (_, i) => `contact-${i}`,
+        ),
+      ),
+    ).toThrow(/cap/);
   });
 });
 

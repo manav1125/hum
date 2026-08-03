@@ -41,12 +41,30 @@
  *   `degraded`  extraction runs and learns nothing — the daemon's own reason.
  *   `empty`     the pipeline is fine and there is genuinely nothing yet.
  *   `learned`   real statements, with real provenance.
+ *
+ * The list reads memory in bulk (`POST people/memory/bulk`, one call per
+ * page), and that response carries a per-contact `status` for the same reason:
+ * `empty` and `unavailable` are both zero rows on the wire, and only the
+ * status separates "we looked, there is nothing" from "we could not look".
+ * {@link learnedSummaryFromBulk} maps one slot of that response onto the four
+ * outcomes above.
  */
 
 import type { ContactPayload } from "@/domains/contacts/types";
-import type { ContactsByIdMemoryGetResponse } from "@/generated/daemon/types.gen";
+import type {
+  ContactsByIdMemoryGetResponse,
+  PeopleMemoryBulkPostResponse,
+} from "@/generated/daemon/types.gen";
 
 export type ContactMemoryRow = ContactsByIdMemoryGetResponse["memory"][number];
+
+/**
+ * One contact's slot in a bulk read. `status` is the daemon's own verdict:
+ * `learned` / `empty` / `unavailable`, where the last means *we could not
+ * look* — a failed read or an id the contact store doesn't have.
+ */
+export type ContactMemoryReadEntry =
+  PeopleMemoryBulkPostResponse["contacts"][number];
 
 const DAY_MS = 86_400_000;
 
@@ -102,7 +120,12 @@ export function relationshipState(
   const exchanges = contact.interactionCount ?? 0;
 
   if (days == null || exchanges <= 0) {
-    return { id: "new", label: "No exchanges yet", tone: "neutral", days: null };
+    return {
+      id: "new",
+      label: "No exchanges yet",
+      tone: "neutral",
+      days: null,
+    };
   }
   if (days >= QUIET_AFTER_DAYS && exchanges >= QUIET_MIN_EXCHANGES) {
     return {
@@ -174,6 +197,15 @@ export type LearnedSummary =
 export interface LearnedInput {
   isLoading: boolean;
   isError: boolean;
+  /**
+   * The daemon's per-contact verdict when the rows came from a bulk read.
+   * `unavailable` is "we could not look" and must never render as "nothing
+   * learned yet" — zero rows is the shape both outcomes share, and the status
+   * is the only thing that tells them apart.
+   */
+  readStatus?: ContactMemoryReadEntry["status"];
+  /** The daemon's own words for why it could not look. */
+  unavailableReason?: string | null;
   memory: ContactMemoryRow[] | undefined;
   /** `peopleMemoryHealth.degraded`. `undefined` = the health read itself failed. */
   degraded: boolean | undefined;
@@ -202,6 +234,16 @@ export function learnedSummary(input: LearnedInput): LearnedSummary {
   }
   if (input.isLoading) return { status: "loading" };
 
+  if (input.readStatus === "unavailable") {
+    const why = input.unavailableReason?.trim();
+    return {
+      status: "error",
+      sentence: `Cue couldn't look up what it knows about ${first}${
+        why ? ` — ${why}` : ""
+      }. This is a failed request, not an empty one: it hasn't learned nothing, it couldn't look.`,
+    };
+  }
+
   const rows = input.memory ?? [];
   if (rows.length === 0) {
     if (input.degraded === true) {
@@ -229,11 +271,70 @@ export function learnedSummary(input: LearnedInput): LearnedSummary {
   };
 }
 
+/**
+ * The same four outcomes, from one contact's slot in a bulk read.
+ *
+ * The case worth naming: a contact that was **requested and is missing from a
+ * successful response** is `unavailable`, not `empty`. We asked about them and
+ * got no answer back, which is a failure to look — reading it as "nothing
+ * learned" would invent a fact about a person out of a gap in a payload.
+ */
+export function learnedSummaryFromBulk(params: {
+  entry: ContactMemoryReadEntry | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  degraded: boolean | undefined;
+  degradedReason: string | null | undefined;
+  interactionCount: number;
+  displayName: string;
+}): LearnedSummary {
+  const { entry, isLoading, isError } = params;
+  const base = {
+    degraded: params.degraded,
+    degradedReason: params.degradedReason,
+    interactionCount: params.interactionCount,
+    displayName: params.displayName,
+  };
+
+  if (isError) {
+    return learnedSummary({
+      ...base,
+      isLoading: false,
+      isError: true,
+      memory: undefined,
+    });
+  }
+  if (isLoading) {
+    return learnedSummary({
+      ...base,
+      isLoading: true,
+      isError: false,
+      memory: undefined,
+    });
+  }
+  if (!entry) {
+    return learnedSummary({
+      ...base,
+      isLoading: false,
+      isError: false,
+      readStatus: "unavailable",
+      unavailableReason: "Cue answered without this person in the reply",
+      memory: undefined,
+    });
+  }
+  return learnedSummary({
+    ...base,
+    isLoading: false,
+    isError: false,
+    readStatus: entry.status,
+    unavailableReason: entry.reason,
+    memory: entry.memory,
+  });
+}
+
 /** Join real statements into a paragraph. Adds punctuation, never words. */
 export function asProse(statements: string[]): string {
-  return statements
-    .map((s) => (/[.!?]$/.test(s) ? s : `${s}.`))
-    .join(" ");
+  return statements.map((s) => (/[.!?]$/.test(s) ? s : `${s}.`)).join(" ");
 }
 
 /**
