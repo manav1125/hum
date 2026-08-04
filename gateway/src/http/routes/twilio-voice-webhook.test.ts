@@ -60,6 +60,24 @@ mock.module("../../voice/verification.js", () => ({
   gatherVerificationTwiml: () => "<Response/>",
 }));
 
+// Configurable caller record for the known-but-unverified pre-intercept.
+let callerRecord:
+  | {
+      contact: { id: string; displayName: string; role: string };
+      channel: { status: string; policy: string };
+    }
+  | undefined;
+
+const actualContactStore = await import("../../db/contact-store.js");
+mock.module("../../db/contact-store.js", () => ({
+  ...actualContactStore,
+  ContactStore: class {
+    getContactByPhoneNumber() {
+      return callerRecord;
+    }
+  },
+}));
+
 import { createTwilioVoiceWebhookHandler } from "./twilio-voice-webhook.js";
 import type { GatewayConfig } from "../../config.js";
 import type { ConfigFileCache } from "../../config-file-cache.js";
@@ -108,7 +126,7 @@ function makeVoiceRequest(
 /** Create a mock ConfigFileCache with phone number mappings. */
 function makeCachesWithPhoneNumbers(mapping?: Record<string, string>) {
   const phoneNumbers = mapping ?? {
-    "assistant-abc": "+15550001111",
+    "assistant-abc": "+14155550111",
     "assistant-xyz": "+15550002222",
   };
   const configFile = {
@@ -130,6 +148,7 @@ describe("twilio voice webhook handler", () => {
     lastForwardedParams = undefined;
     _lastForwardedOriginalUrl = undefined;
     forwardCalled = false;
+    callerRecord = undefined;
   });
 
   test("inbound call resolves assistant by To number and forwards to daemon", async () => {
@@ -139,8 +158,8 @@ describe("twilio voice webhook handler", () => {
     );
     const req = makeVoiceRequest({
       CallSid: "CA_inbound_1",
-      From: "+14155551234",
-      To: "+15550001111",
+      From: "+14155550134",
+      To: "+14155550111",
     });
 
     const res = await handler(req);
@@ -158,7 +177,7 @@ describe("twilio voice webhook handler", () => {
     );
     const req = makeVoiceRequest({
       CallSid: "CA_inbound_2",
-      From: "+14155551234",
+      From: "+14155550134",
       To: "+19999999999",
     });
 
@@ -182,7 +201,7 @@ describe("twilio voice webhook handler", () => {
     );
     const req = makeVoiceRequest({
       CallSid: "CA_inbound_fallback",
-      From: "+14155551234",
+      From: "+14155550134",
       To: "+19999999999",
     });
 
@@ -201,7 +220,7 @@ describe("twilio voice webhook handler", () => {
     const req = makeVoiceRequest(
       {
         CallSid: "CA_outbound_1",
-        From: "+15550001111",
+        From: "+14155550111",
         To: "+14155559999",
       },
       "?callSessionId=existing-session-id",
@@ -221,8 +240,8 @@ describe("twilio voice webhook handler", () => {
     const req = makeVoiceRequest(
       {
         CallSid: "CA_empty_session",
-        From: "+14155551234",
-        To: "+15550001111",
+        From: "+14155550134",
+        To: "+14155550111",
       },
       "?callSessionId=",
     );
@@ -241,7 +260,7 @@ describe("twilio voice webhook handler", () => {
     );
     const req = makeVoiceRequest({
       CallSid: "CA_inbound_3",
-      From: "+14155551234",
+      From: "+14155550134",
       To: "+15550002222",
     });
 
@@ -256,8 +275,8 @@ describe("twilio voice webhook handler", () => {
     const handler = createTwilioVoiceWebhookHandler(baseConfig);
     const req = makeVoiceRequest({
       CallSid: "CA_inbound_4",
-      From: "+14155551234",
-      To: "+15550001111",
+      From: "+14155550134",
+      To: "+14155550111",
     });
 
     const res = await handler(req);
@@ -277,13 +296,62 @@ describe("twilio voice webhook handler", () => {
     const handler = createTwilioVoiceWebhookHandler(configNoMappingWithDefault);
     const req = makeVoiceRequest({
       CallSid: "CA_inbound_5",
-      From: "+14155551234",
-      To: "+15550001111",
+      From: "+14155550134",
+      To: "+14155550111",
     });
 
     const res = await handler(req);
 
     expect(res.status).toBe(200);
+    expect(forwardCalled).toBe(true);
+  });
+
+  test("known-but-unverified caller gets the verification guidance TwiML", async () => {
+    callerRecord = {
+      contact: { id: "c-1", displayName: "Alice", role: "member" },
+      channel: { status: "unverified", policy: "allow" },
+    };
+    const handler = createTwilioVoiceWebhookHandler(
+      baseConfig,
+      makeCachesWithPhoneNumbers(),
+    );
+    const req = makeVoiceRequest({
+      CallSid: "CA_unverified_1",
+      From: "+14155550134",
+      To: "+14155550111",
+    });
+
+    const res = await handler(req);
+
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("has not been verified yet");
+    expect(forwardCalled).toBe(false);
+  });
+
+  test("an unverified caller whose channel policy is deny falls through to the runtime deny path", async () => {
+    // The guardian's explicit deny is a standing ruling: the caller must not
+    // hear a helpful verification script inviting them to verify and call
+    // back. Forwarding lets the runtime's member-policy-deny gate answer.
+    callerRecord = {
+      contact: { id: "c-1", displayName: "Alice", role: "member" },
+      channel: { status: "unverified", policy: "deny" },
+    };
+    const handler = createTwilioVoiceWebhookHandler(
+      baseConfig,
+      makeCachesWithPhoneNumbers(),
+    );
+    const req = makeVoiceRequest({
+      CallSid: "CA_denied_1",
+      From: "+14155550134",
+      To: "+14155550111",
+    });
+
+    const res = await handler(req);
+
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).not.toContain("has not been verified yet");
     expect(forwardCalled).toBe(true);
   });
 });

@@ -22,6 +22,23 @@ export interface ApprovalActionOption {
   label: string;
 }
 
+/** Outcome word per terminal guardian-request status on a resolved card. */
+const DECISION_STATUS_WORDS: Record<string, string> = {
+  approved: "Approved",
+  denied: "Denied",
+  expired: "Expired",
+  cancelled: "Cancelled",
+};
+
+/**
+ * The outcome word shown on a resolved guardian-request card, shared by every
+ * surface (in-app, Telegram); surfaces add only their own glyph vocabulary
+ * around it.
+ */
+export function resolveDecisionStatusWord(status: string): string {
+  return DECISION_STATUS_WORDS[status] ?? "Resolved";
+}
+
 /**
  * Map `GuardianDecisionAction[]` to `ApprovalActionOption[]` so channel
  * prompt payloads can be derived from the unified decision action set.

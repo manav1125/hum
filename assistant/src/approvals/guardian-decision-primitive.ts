@@ -48,6 +48,7 @@ import type { ApplyGuardianDecisionResult } from "../runtime/guardian-decision-t
 import { computeToolApprovalDigest } from "../security/tool-approval-digest.js";
 import { getLogger } from "../util/logger.js";
 import { mintGrantFromDecision } from "./approval-primitive.js";
+import { withdrawGuardianRequestCards } from "./guardian-card-withdrawal.js";
 import {
   type ActorContext,
   type ChannelDeliveryContext,
@@ -570,6 +571,27 @@ export async function applyCanonicalGuardianDecision(
     });
     grantMinted = grantResult.minted;
   }
+
+  // 6. Project the terminal status onto the request's approval cards on every
+  // surface it was delivered to (in-app, Telegram, ...). Fire-and-forget: the
+  // decision is already committed via CAS and withdrawal is a best-effort
+  // cosmetic projection, so awaiting its channel round-trips would only add
+  // latency to the decision response that interactive callers wait on. The
+  // projector never throws; the `.catch` is a defensive backstop.
+  void withdrawGuardianRequestCards({
+    request: resolved,
+    status: targetStatus,
+    originChannel: actorContext.channel,
+    // Tells the Telegram projection whether the origin chat is about to get
+    // the resolver's own guardian-facing reply (delivered by our caller), so
+    // it can skip its quoted status reply instead of duplicating it.
+    hasOriginGuardianReply: Boolean(resolverReplyText),
+  }).catch((err) => {
+    log.warn(
+      { err, requestId },
+      "Cross-surface card withdrawal failed (non-fatal)",
+    );
+  });
 
   log.info(
     {

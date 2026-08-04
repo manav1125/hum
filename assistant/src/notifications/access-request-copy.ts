@@ -373,6 +373,36 @@ export function buildAccessRequestContractText(
 // ── Seed content blocks (Surface-based rendering) ───────────────────────────
 
 /**
+ * `surfaceId` prefix for the in-app access-request approval card. The full id
+ * is `${prefix}-${requestId}` (see {@link buildAccessRequestSeedContentBlocks}).
+ * Single source of truth shared by the card builder below and by
+ * {@link approvalCardSurfaceId} so the withdrawal path can recompute the id.
+ */
+const ACCESS_REQUEST_SURFACE_PREFIX = "access-request";
+
+/**
+ * Resolve the `ui_surface` id for a guardian request's in-app approval card
+ * from its kind, or `null` for kinds that never render an approval card.
+ *
+ * The card is rendered once at notification time; when the request is later
+ * resolved from a different surface the withdrawal path recomputes the id here
+ * to complete that card. Keeping this beside the builder ensures the two stay
+ * in lockstep. Only `access_request` renders an in-app approval card today —
+ * guardian questions and tool-grant escalations seed plain text.
+ */
+export function approvalCardSurfaceId(
+  kind: string,
+  requestId: string,
+): string | null {
+  switch (kind) {
+    case "access_request":
+      return `${ACCESS_REQUEST_SURFACE_PREFIX}-${requestId}`;
+    default:
+      return null;
+  }
+}
+
+/**
  * Build structured content blocks for an access request notification seed
  * message. Produces a `ui_surface` card block that the web/macOS/iOS apps
  * render as an interactive card via `SurfaceRouter → CardSurface`, plus a
@@ -453,7 +483,7 @@ export function buildAccessRequestSeedContentBlocks(
 
   const surfaceBlock = {
     type: "ui_surface" as const,
-    surfaceId: `access-request-${p.requestId ?? "unknown"}`,
+    surfaceId: `${ACCESS_REQUEST_SURFACE_PREFIX}-${p.requestId ?? "unknown"}`,
     surfaceType: "card" as const,
     title: "Access Request",
     data: {
