@@ -4,6 +4,10 @@ import type { GatewayConfig } from "../../config.js";
 import type { CredentialCache } from "../../credential-cache.js";
 import { credentialKey } from "../../credential-key.js";
 import { StringDedupCache } from "../../dedup-cache.js";
+import {
+  appendFailedEmailAttachmentNotice,
+  ingestEmailAttachments,
+} from "../../email/attachments.js";
 import { normalizeEmailWebhook } from "../../email/normalize.js";
 import { verifyEmailWebhookSignature } from "../../email/verify.js";
 import { handleInbound } from "../../handlers/handle-inbound.js";
@@ -34,12 +38,12 @@ export function createEmailWebhookHandler(
       return Response.json({ error: "Method not allowed" }, { status: 405 });
     }
 
-    // Payload size guard
+    // Payload size guard. Email payloads carry inlined base64 attachments,
+    // so this route uses a larger ceiling than the generic webhook cap.
+    const maxBodyBytes =
+      config.maxEmailWebhookPayloadBytes ?? config.maxWebhookPayloadBytes;
     const contentLength = req.headers.get("content-length");
-    if (
-      contentLength &&
-      Number(contentLength) > config.maxWebhookPayloadBytes
-    ) {
+    if (contentLength && Number(contentLength) > maxBodyBytes) {
       tlog.warn({ contentLength }, "Email webhook payload too large");
       return Response.json({ error: "Payload too large" }, { status: 413 });
     }
@@ -51,7 +55,7 @@ export function createEmailWebhookHandler(
       return Response.json({ error: "Failed to read body" }, { status: 400 });
     }
 
-    if (Buffer.byteLength(rawBody) > config.maxWebhookPayloadBytes) {
+    if (Buffer.byteLength(rawBody) > maxBodyBytes) {
       tlog.warn(
         { bodyLength: Buffer.byteLength(rawBody) },
         "Email webhook payload too large",
@@ -137,7 +141,7 @@ export function createEmailWebhookHandler(
       return Response.json({ ok: true });
     }
 
-    const { event, eventId, recipientAddress } = normalized;
+    const { event, eventId, recipientAddress, attachments } = normalized;
 
     // Dedup by event ID
     if (!dedupCache.reserve(eventId)) {
@@ -179,6 +183,35 @@ export function createEmailWebhookHandler(
       return Response.json({ ok: true });
     }
 
+    // Ingest inline base64 attachments into the assistant's attachment store
+    // (which stores them in the conversation workspace) and forward the ids.
+    // A transient upload failure surfaces as 500 so the platform retries.
+    let attachmentIds: string[] | undefined;
+    try {
+      const ingested = await ingestEmailAttachments(config, attachments, tlog);
+      if (ingested.attachmentIds.length > 0) {
+        attachmentIds = ingested.attachmentIds;
+      }
+      event.message.content = appendFailedEmailAttachmentNotice(
+        event.message.content,
+        ingested.failedAttachmentNames,
+      );
+    } catch (err) {
+      const cbResponse = handleCircuitBreakerError(
+        err,
+        dedupCache,
+        eventId,
+        tlog,
+      );
+      if (cbResponse) return cbResponse;
+      tlog.error(
+        { err, eventId },
+        "Failed to ingest inbound email attachments",
+      );
+      dedupCache.unreserve(eventId);
+      return Response.json({ error: "Internal error" }, { status: 500 });
+    }
+
     // Forward to runtime
     try {
       const inReplyTo =
@@ -187,6 +220,7 @@ export function createEmailWebhookHandler(
         typeof payload.subject === "string" ? payload.subject : undefined;
 
       const result = await handleInbound(config, event, {
+        ...(attachmentIds ? { attachmentIds } : {}),
         transportMetadata: buildEmailTransportMetadata({
           senderAddress: event.actor.actorExternalId,
           recipientAddress: recipientAddress,

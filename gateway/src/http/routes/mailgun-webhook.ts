@@ -6,6 +6,10 @@ import type { CredentialCache } from "../../credential-cache.js";
 import { credentialKey } from "../../credential-key.js";
 import { recordDenialReplyIfAllowed } from "../../db/denial-reply-rate-limiter.js";
 import { StringDedupCache } from "../../dedup-cache.js";
+import {
+  appendFailedEmailAttachmentNotice,
+  ingestEmailAttachments,
+} from "../../email/attachments.js";
 import type { VellumEmailPayload } from "../../email/normalize.js";
 import {
   evaluateSenderAuthentication,
@@ -349,7 +353,12 @@ export function createMailgunWebhookHandler(
       return Response.json({ ok: true });
     }
 
-    const { event: gatewayEvent, eventId, recipientAddress } = normalized;
+    const {
+      event: gatewayEvent,
+      eventId,
+      recipientAddress,
+      attachments,
+    } = normalized;
 
     tlog.info(
       {
@@ -385,7 +394,20 @@ export function createMailgunWebhookHandler(
     // ── Forward to runtime ──────────────────────────────────────────
 
     try {
+      // Ingest inline base64 attachments into the assistant's attachment
+      // store (stored in the conversation workspace) and forward the ids. A
+      // transient upload failure throws into the catch below → 500 so the
+      // provider retries.
+      const ingested = await ingestEmailAttachments(config, attachments, tlog);
+      const attachmentIds =
+        ingested.attachmentIds.length > 0 ? ingested.attachmentIds : undefined;
+      gatewayEvent.message.content = appendFailedEmailAttachmentNotice(
+        gatewayEvent.message.content,
+        ingested.failedAttachmentNames,
+      );
+
       const result = await handleInbound(config, gatewayEvent, {
+        ...(attachmentIds ? { attachmentIds } : {}),
         transportMetadata: buildEmailTransportMetadata({
           senderAddress: gatewayEvent.actor.actorExternalId,
           recipientAddress,
