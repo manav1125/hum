@@ -108,9 +108,14 @@ import { UpdateNotSupportedError } from "./providers/driver.js";
 import {
   autoProvisionOnPayment,
   mintMagicLinkForCustomer,
+  parseInstanceSecrets,
   provisionCustomer,
   publicSiteBase,
 } from "./provisioning.js";
+import {
+  composioProjectsConfigured,
+  deleteCustomerProject,
+} from "./composio-projects.js";
 import { referralSummary, validateReferralCode } from "./referrals.js";
 import {
   getShareSkill,
@@ -1026,7 +1031,17 @@ export function createHandler(
             : "none",
       },
       connectors: {
-        composioKeyConfigured: !!process.env.HQ_COMPOSIO_API_KEY?.trim(),
+        composioKeyConfigured:
+          composioProjectsConfigured() ||
+          !!process.env.HQ_COMPOSIO_API_KEY?.trim(),
+        // "per_customer_project" = each instance gets its own Composio
+        // project key. "shared_org_key" = the legacy fleet-wide credential
+        // that can list/proxy every tenant's connected accounts.
+        composioIsolation: composioProjectsConfigured()
+          ? "per_customer_project"
+          : process.env.HQ_COMPOSIO_API_KEY?.trim()
+            ? "shared_org_key"
+            : "none",
       },
       instanceDefaults: {
         memoryMb: Number(process.env.HQ_FLY_VM_MEMORY_MB ?? 2048),
@@ -1626,10 +1641,47 @@ export function createHandler(
       });
     }
     await driver.destroy(instance.externalId);
+    await revokeComposioProject(instance);
     return json({
       ok: true,
       instance: redact(db.transitionInstance(instanceId, "deleted")),
     });
+  }
+
+  /**
+   * Tear down the customer's Composio project when their instance is
+   * destroyed. Deleting the container does not by itself invalidate the
+   * project key that was seeded into it, nor the upstream OAuth grants
+   * Cue holds on the customer's behalf — this does both (Composio revokes
+   * the connected accounts' upstream credentials via `revoke_on_delete`).
+   *
+   * Best-effort by design: teardown of the machine has already succeeded
+   * by the time we get here, and refusing to mark the instance deleted
+   * because Composio was unreachable would strand it in a live state. The
+   * failure is recorded loudly so an orphaned project is queryable rather
+   * than silent.
+   */
+  async function revokeComposioProject(instance: Instance): Promise<void> {
+    const projectId = parseInstanceSecrets(instance)?.composioProjectId;
+    if (!projectId) return; // legacy shared-key instance — nothing of its own
+    try {
+      await deleteCustomerProject(projectId);
+      db.recordEvent("composio_project_deleted", instance.customerId, {
+        instanceId: instance.id,
+        projectId,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[hq] Composio project ${projectId} delete FAILED for instance ` +
+          `${instance.id}: ${error} — the key stays live until it is removed`,
+      );
+      db.recordEvent("composio_project_delete_failed", instance.customerId, {
+        instanceId: instance.id,
+        projectId,
+        error,
+      });
+    }
   }
 }
 

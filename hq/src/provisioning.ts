@@ -18,10 +18,17 @@
  * provision):
  *   - Connector seeding (P0-2): writes /workspace/connectors.json
  *     ({composioApiKey, userId}) via driver.writeWorkspaceFile so the
- *     instance's "Connect Gmail" flow works out of the box. The Composio
- *     key is PLATFORM-level (one Composio project for the fleet); per-user
- *     isolation comes from userId = the HQ customer id, which scopes every
- *     Composio connected account to that customer.
+ *     instance's "Connect Gmail" flow works out of the box.
+ *
+ *     ISOLATION (2026-08-04). The seeded key is now the customer's OWN
+ *     Composio project key, minted by composio-projects.ts. Previously it
+ *     was one PLATFORM key shared by the whole fleet, and `userId` was
+ *     doing all the isolation work — but `user_id` is a partition label,
+ *     not an auth boundary, so that key could list and proxy every
+ *     tenant's connected accounts (verified: 176 accounts / 36 user_ids).
+ *     A per-customer project makes the credential itself the boundary.
+ *     If the mint fails we seed nothing rather than fall back — see
+ *     resolveComposioSeed().
  *   - Budget defaults (P0-3): flips every seeded agent to
  *     hardStopEnabled=true with a weekly capCents sized to the plan
  *     (monthly COGS / 4), via the instance's PATCH /v1/agents/{id} API
@@ -29,8 +36,13 @@
  *     with advisory-only budgets; managed instances get enforcement ON.
  *
  * Env contract (beyond secrets.ts / openrouter.ts):
- *   HQ_COMPOSIO_API_KEY         — platform Composio key seeded into every
- *                                 instance's connectors.json. Unset ⇒ the
+ *   HQ_COMPOSIO_ORG_API_KEY     — Composio ORG-owner key. Set ⇒ every new
+ *                                 instance gets its own Composio project
+ *                                 and a key scoped to it. Never leaves HQ.
+ *   HQ_COMPOSIO_API_KEY         — LEGACY shared platform key, used only
+ *                                 when the org key is unset. Cross-tenant
+ *                                 by construction; seeds are audited with
+ *                                 scope=shared_org_key. Both unset ⇒ the
  *                                 connectors_seed_skipped event fires and
  *                                 Gmail connect stays "not configured".
  *   HQ_BUDGET_HARD_STOP_DEFAULT — "0" opts OUT of enforcing budgets on new
@@ -39,6 +51,10 @@
  *                                 cents (default: plan monthly COGS / 4).
  */
 
+import {
+  composioProjectsConfigured,
+  createCustomerProject,
+} from "./composio-projects.js";
 import { sendEmail, welcomeEmail } from "./email.js";
 import type { Customer, HqDb, Instance } from "./db.js";
 import { firstNameOf, trackEvent } from "./klaviyo.js";
@@ -208,7 +224,13 @@ export async function provisionCustomer(
   // volume so "Connect Gmail" works from first boot. Best-effort with a
   // loud audit trail — a seed failure must not throw away a healthy
   // provision (the file can be re-seeded later via the driver).
-  await seedConnectors(deps, customer, instance.id, provisioned.externalId);
+  await seedConnectors(
+    deps,
+    customer,
+    instance.id,
+    provisioned.externalId,
+    secrets,
+  );
 
   // One-time guardian bootstrap: creates the guardian principal and gives
   // us its id, so magic links can be minted offline from now on.
@@ -254,25 +276,89 @@ export function buildConnectorsJson(
   return JSON.stringify({ composioApiKey, userId });
 }
 
+/**
+ * Resolve the Composio credential to seed for this customer.
+ *
+ * Preferred path: mint the customer their OWN Composio project and return
+ * that project's key. The key is then structurally unable to see another
+ * tenant's connected accounts, so isolation no longer depends on Cue
+ * remembering to attach `user_ids=<own>` to every call.
+ *
+ * FAIL-CLOSED. If HQ is configured to mint per-customer projects but the
+ * mint fails, we seed NOTHING and report it. Falling back to the shared
+ * org-wide key would silently reinstate the cross-tenant credential this
+ * change exists to remove — a connector that reports "not configured" is
+ * a visible, recoverable degradation; a quietly over-scoped key is not.
+ *
+ * Legacy path: when HQ_COMPOSIO_ORG_API_KEY is unset we keep today's
+ * behaviour (shared HQ_COMPOSIO_API_KEY) so existing deployments do not
+ * break on upgrade — but the seed is audited as `shared_org_key` so the
+ * remaining over-scoped instances are queryable rather than invisible.
+ */
+async function resolveComposioSeed(
+  deps: ProvisioningDeps,
+  customer: Customer,
+  instanceId: string,
+): Promise<
+  | { ok: true; apiKey: string; projectId?: string; scope: string }
+  | { ok: false; reason: string; error?: string }
+> {
+  const { db } = deps;
+
+  if (composioProjectsConfigured()) {
+    try {
+      const project = await createCustomerProject(customer.id, {
+        fetchImpl: deps.fetchImpl,
+      });
+      db.recordEvent("composio_project_created", customer.id, {
+        instanceId,
+        projectId: project.projectId,
+      });
+      return {
+        ok: true,
+        apiKey: project.apiKey,
+        projectId: project.projectId,
+        scope: "per_customer_project",
+      };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[hq/provisioning] Composio project mint FAILED for ${customer.email}: ` +
+          `${error} — seeding NOTHING (refusing to fall back to the org-wide key)`,
+      );
+      db.recordEvent("composio_project_create_failed", customer.id, {
+        instanceId,
+        error,
+      });
+      return { ok: false, reason: "project_mint_failed", error };
+    }
+  }
+
+  const sharedKey = process.env.HQ_COMPOSIO_API_KEY?.trim();
+  if (!sharedKey) {
+    console.warn(
+      `[hq/provisioning] no Composio key configured — connectors.json NOT seeded for ` +
+        `${customer.email}; Gmail/Calendar connect will report "not configured"`,
+    );
+    return { ok: false, reason: "no_composio_key" };
+  }
+  console.warn(
+    `[hq/provisioning] HQ_COMPOSIO_ORG_API_KEY unset — seeding the SHARED org-wide ` +
+      `Composio key for ${customer.email}. This credential can list and proxy every ` +
+      `tenant's connected accounts; set the org key to mint a per-customer project.`,
+  );
+  return { ok: true, apiKey: sharedKey, scope: "shared_org_key" };
+}
+
 async function seedConnectors(
   deps: ProvisioningDeps,
   customer: Customer,
   instanceId: string,
   externalId: string,
+  secrets: InstanceSecrets,
 ): Promise<void> {
   const { db, driver } = deps;
-  const composioApiKey = process.env.HQ_COMPOSIO_API_KEY?.trim();
-  if (!composioApiKey) {
-    console.warn(
-      `[hq/provisioning] HQ_COMPOSIO_API_KEY unset — connectors.json NOT seeded for ` +
-        `${customer.email}; Gmail/Calendar connect will report "not configured"`,
-    );
-    db.recordEvent("connectors_seed_skipped", customer.id, {
-      instanceId,
-      reason: "no_composio_key",
-    });
-    return;
-  }
+
   if (!driver.writeWorkspaceFile) {
     db.recordEvent("connectors_seed_skipped", customer.id, {
       instanceId,
@@ -280,15 +366,36 @@ async function seedConnectors(
     });
     return;
   }
+
+  const seed = await resolveComposioSeed(deps, customer, instanceId);
+  if (!seed.ok) {
+    db.recordEvent("connectors_seed_skipped", customer.id, {
+      instanceId,
+      reason: seed.reason,
+      ...(seed.error ? { error: seed.error } : {}),
+    });
+    return;
+  }
+
+  // Persist the project id BEFORE the workspace write. If the write dies
+  // we still hold the pointer needed to delete/rotate the project, so a
+  // mint can never orphan a live credential we can no longer reach.
+  if (seed.projectId) {
+    secrets.composioProjectId = seed.projectId;
+    db.updateInstanceSecrets(instanceId, JSON.stringify(secrets));
+  }
+
   try {
     await driver.writeWorkspaceFile(
       externalId,
       "connectors.json",
-      buildConnectorsJson(composioApiKey, customer.id),
+      buildConnectorsJson(seed.apiKey, customer.id),
     );
     db.recordEvent("connectors_seeded", customer.id, {
       instanceId,
       userId: customer.id,
+      scope: seed.scope,
+      ...(seed.projectId ? { projectId: seed.projectId } : {}),
     });
   } catch (err) {
     console.error(

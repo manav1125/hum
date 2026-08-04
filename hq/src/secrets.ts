@@ -47,6 +47,16 @@ export interface InstanceSecrets {
   gatewayJwt: string;
   /** Learned from guardian/init after first boot; needed to mint tokens. */
   guardianPrincipalId?: string;
+  /**
+   * The customer's own Composio project (`pr_…`), minted at seed time by
+   * composio-projects.ts. Recorded so teardown can delete the project and
+   * revoke its upstream OAuth grants, and so a suspected leak can be
+   * rotated without guessing which project belongs to whom.
+   *
+   * Absent on instances seeded before per-customer projects existed —
+   * those still hold the shared org-wide key and must be migrated.
+   */
+  composioProjectId?: string;
 }
 
 export function generateInstanceSecrets(): InstanceSecrets {
