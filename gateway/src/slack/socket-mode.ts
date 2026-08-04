@@ -2,6 +2,7 @@ import {
   buildSlackChannelLabelMap,
   buildSlackUserLabelMap,
 } from "@vellumai/slack-text";
+import { authorizeChannelCommand } from "../channel-command-authorization.js";
 import { getLogger } from "../logger.js";
 import { fetchImpl } from "../fetch.js";
 import type { GatewayConfig } from "../config.js";
@@ -410,6 +411,29 @@ export class SlackSocketModeClient {
       return true;
     }
 
+    // The mute command is consumed either way; detach + confirmation only
+    // run when the actor passes the fail-closed authorization gate. Denied
+    // actors get no reply (a reply would be a membership oracle).
+    void this.detachThreadIfAuthorized(event, channelId, threadTs);
+    return true;
+  }
+
+  private async detachThreadIfAuthorized(
+    event: SlackAppMentionEvent,
+    channelId: string,
+    threadTs: string,
+  ): Promise<void> {
+    const decision = await authorizeChannelCommand({
+      sourceChannel: "slack",
+      actorExternalId: event.user ?? "",
+      command: "mute",
+      logger: log,
+    });
+    if (!decision.allowed) {
+      // Silent deny — the gate has already logged the structured denial.
+      return;
+    }
+
     const detached = this.store.detachThread(threadTs, channelId);
     log.info(
       { channelId, threadTs, detached },
@@ -427,8 +451,6 @@ export class SlackSocketModeClient {
         );
       },
     );
-
-    return true;
   }
 
   private async sendSlackMuteConfirmation(

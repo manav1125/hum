@@ -79,6 +79,18 @@ mock.module("../verification/text-verification.js", () => ({
   tryTextVerificationIntercept: mock(async () => ({ intercepted: false })),
 }));
 
+// Channel-command authorization gate (mute/detach) reads contact_channels via
+// the IPC SQL proxy. Default to an active contact so existing mute flows stay
+// allowed; individual tests override to exercise fail-closed denials.
+const dbQueryMock = mock(() =>
+  Promise.resolve([{ status: "active", role: "contact" }]),
+);
+mock.module("../db/assistant-db-proxy.js", () => ({
+  assistantDbQuery: dbQueryMock,
+  assistantDbRun: mock(),
+  assistantDbExec: mock(),
+}));
+
 const { SlackSocketModeClient } = await import("../slack/socket-mode.js");
 const { clearChannelInfoCache, clearUserInfoCache, resolveSlackUser } =
   await import("../slack/normalize.js");
@@ -210,6 +222,9 @@ beforeEach(() => {
   clearUserInfoCache();
   clearChannelInfoCache();
   fetchMock = mock(async () => makeSlackUserResponse());
+  dbQueryMock.mockImplementation(() =>
+    Promise.resolve([{ status: "active", role: "contact" }]),
+  );
 });
 
 describe("SlackSocketModeClient thread tracking", () => {
@@ -291,6 +306,122 @@ describe("SlackSocketModeClient thread tracking", () => {
       await flushAsyncEventEmission();
 
       expect(emitted).toHaveLength(0);
+    } finally {
+      rawDb.close();
+    }
+  });
+
+  test("mute from a blocked actor is denied silently: thread stays tracked, no reply", async () => {
+    const { rawDb, store } = createSlackStore();
+    const emitted: NormalizedSlackEvent[] = [];
+    const client = createHarness(store, (event) => emitted.push(event));
+    const ws = makeOpenSocket();
+    const threadTs = "1700000000.000500";
+    const postBodies: Array<Record<string, unknown>> = [];
+
+    dbQueryMock.mockImplementation(() =>
+      Promise.resolve([{ status: "blocked", role: "contact" }]),
+    );
+
+    fetchMock = mock(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/chat.postMessage")) {
+        postBodies.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({ ok: true, ts: "1700000000.000600" }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return makeSlackUserResponse();
+    });
+
+    try {
+      store.trackThread(threadTs, "C-thread", 60_000);
+
+      client.handleMessage(
+        JSON.stringify({
+          envelope_id: "env-mute-blocked",
+          type: "events_api",
+          payload: {
+            event_id: "Ev-mute-blocked",
+            event: {
+              type: "app_mention",
+              user: "U-blocked",
+              text: "<@UBOT> mute",
+              ts: "1700000000.000510",
+              channel: "C-thread",
+              thread_ts: threadTs,
+            },
+          },
+        }),
+        ws,
+      );
+      await flushAsyncEventEmission();
+
+      // The command is consumed (not forwarded) but has no effect: the
+      // thread stays tracked and no reply is sent (a reply would be a
+      // membership oracle).
+      expect(emitted).toHaveLength(0);
+      expect(store.hasThread(threadTs)).toBe(true);
+      expect(postBodies).toEqual([]);
+    } finally {
+      rawDb.close();
+    }
+  });
+
+  test("mute is denied silently when the contact store errors", async () => {
+    const { rawDb, store } = createSlackStore();
+    const emitted: NormalizedSlackEvent[] = [];
+    const client = createHarness(store, (event) => emitted.push(event));
+    const ws = makeOpenSocket();
+    const threadTs = "1700000000.000700";
+    const postBodies: Array<Record<string, unknown>> = [];
+
+    dbQueryMock.mockImplementation(() =>
+      Promise.reject(new Error("assistant IPC unavailable")),
+    );
+
+    fetchMock = mock(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/chat.postMessage")) {
+        postBodies.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return makeSlackUserResponse();
+    });
+
+    try {
+      store.trackThread(threadTs, "C-thread", 60_000);
+
+      client.handleMessage(
+        JSON.stringify({
+          envelope_id: "env-mute-err",
+          type: "events_api",
+          payload: {
+            event_id: "Ev-mute-err",
+            event: {
+              type: "app_mention",
+              user: "U-mentioned",
+              text: "<@UBOT> mute",
+              ts: "1700000000.000710",
+              channel: "C-thread",
+              thread_ts: threadTs,
+            },
+          },
+        }),
+        ws,
+      );
+      await flushAsyncEventEmission();
+
+      expect(emitted).toHaveLength(0);
+      expect(store.hasThread(threadTs)).toBe(true);
+      expect(postBodies).toEqual([]);
     } finally {
       rawDb.close();
     }

@@ -36,6 +36,18 @@ mock.module("../../runtime/client.js", () => ({
   },
 }));
 
+// Channel-command authorization gate: default to an active contact so
+// gateway-terminal command flows (/new) stay allowed; individual tests
+// override to exercise fail-closed denials.
+const dbQueryMock = mock(() =>
+  Promise.resolve([{ status: "active", role: "contact" }]),
+);
+mock.module("../../db/assistant-db-proxy.js", () => ({
+  assistantDbQuery: dbQueryMock,
+  assistantDbRun: mock(),
+  assistantDbExec: mock(),
+}));
+
 mock.module("../../twilio/validate-webhook.js", () => ({
   validateTwilioWebhookRequest: async (req: Request) => {
     if (req.method !== "POST") {
@@ -152,6 +164,9 @@ describe("twilio sms webhook handler", () => {
     handleInboundMock.mockClear();
     sendSmsReplyMock.mockClear();
     resetConversationMock.mockClear();
+    dbQueryMock.mockImplementation(() =>
+      Promise.resolve([{ status: "active", role: "contact" }]),
+    );
   });
 
   test("forwards a valid inbound SMS as an sms event", async () => {
@@ -230,6 +245,29 @@ describe("twilio sms webhook handler", () => {
     expect(res.status).toBe(200);
     expect(handleInboundMock).not.toHaveBeenCalled();
     expect(resetConversationMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("/new from a blocked contact is denied silently: no reset, no reply", async () => {
+    dbQueryMock.mockImplementation(() =>
+      Promise.resolve([{ status: "blocked", role: "contact" }]),
+    );
+    const { handler } = createTwilioSmsWebhookHandler(baseConfig, testCaches);
+    const res = await handler(makeSmsRequest(smsParams({ Body: "/new" })));
+
+    expect(res.status).toBe(200);
+    expect(handleInboundMock).not.toHaveBeenCalled();
+    expect(resetConversationMock).not.toHaveBeenCalled();
+    expect(sendSmsReplyMock).not.toHaveBeenCalled();
+  });
+
+  test("/new from an unknown actor is denied silently", async () => {
+    dbQueryMock.mockImplementation(() => Promise.resolve([]));
+    const { handler } = createTwilioSmsWebhookHandler(baseConfig, testCaches);
+    const res = await handler(makeSmsRequest(smsParams({ Body: "/new" })));
+
+    expect(res.status).toBe(200);
+    expect(resetConversationMock).not.toHaveBeenCalled();
+    expect(sendSmsReplyMock).not.toHaveBeenCalled();
   });
 
   test("forwarding failure returns 500 so Twilio retries", async () => {

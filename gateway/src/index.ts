@@ -2181,6 +2181,7 @@ async function main() {
           handleNewCommand(
             config,
             "slack",
+            normalized.event.actor.actorExternalId,
             normalized.event.message.conversationExternalId,
             async (text) => {
               await fetchImpl("https://slack.com/api/chat.postMessage", {
