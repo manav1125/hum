@@ -83,6 +83,22 @@ function mockRiskWithSandboxAutoApprove(): void {
   mockRisk("low", { sandboxAutoApprove: true });
 }
 
+// Gateway-default per-category autonomy policies, mirroring the gateway's
+// SAFE_DEFAULT_POLICIES (gateway/src/http/routes/autonomy-policies.ts) as
+// served by the `get_autonomy_policies` IPC handler. Without this fixture the
+// reader's IPC call returns undefined and it falls back to its fail-closed
+// defaults (send/other → "ask"), which would turn every auto-allow path in
+// these tests into a prompt. These tests exercise the risk/threshold logic,
+// so they run against the gateway defaults a healthy install sees.
+const GATEWAY_DEFAULT_AUTONOMY_POLICIES = {
+  research: "auto",
+  draft: "auto",
+  send: "auto",
+  money: "ask",
+  delete: "ask",
+  other: "auto",
+} as const;
+
 let mockGuardianPersonaPath: string | null = null;
 
 // Spy on the namespace import rather than using `mock.module`. Bun's
@@ -99,6 +115,7 @@ const guardianPathSpy = spyOn(
 ).mockImplementation(() => mockGuardianPersonaPath);
 
 import * as envRegistry from "../config/env-registry.js";
+import { _clearAutonomyPolicyCacheForTesting } from "../permissions/autonomy-policy-reader.js";
 import {
   check,
   classifyRisk,
@@ -198,8 +215,15 @@ describe("Permission Checker", () => {
     mockRisk("low");
     // Default gateway threshold (interactive: low, autonomous: medium, headless: none)
     mockIpcResponse("get_global_thresholds", DEFAULT_GATEWAY_THRESHOLDS);
-    // Clear the gateway threshold cache so each test gets a fresh threshold read
+    // Default per-category autonomy policies (gateway defaults, not the
+    // reader's fail-closed fallback)
+    mockIpcResponse("get_autonomy_policies", {
+      policies: GATEWAY_DEFAULT_AUTONOMY_POLICIES,
+    });
+    // Clear the gateway threshold + autonomy policy caches so each test gets
+    // a fresh read
     _clearGlobalCacheForTesting();
+    _clearAutonomyPolicyCacheForTesting();
     // Reset trust-store state and risk classification cache between tests
     clearRiskCache();
     testConfig.skills = { load: { extraDirs: [] } };
