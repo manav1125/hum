@@ -24,6 +24,7 @@ import { useProjects } from "@/pages/projects/use-projects";
 import { routes } from "@/utils/routes";
 
 import {
+  ActivityBars,
   C,
   HERO_GRADIENT,
   HqStyle,
@@ -34,6 +35,7 @@ import {
   horizonLabel,
   mono,
   serif,
+  type RingStatus,
 } from "./hq-kit";
 import { DriftNudge, driftFromEvents } from "./drift-nudge";
 import { MissionDetailSkeleton } from "./hq-modules";
@@ -43,6 +45,7 @@ import {
   PausedState,
 } from "./mission-lifecycle";
 import { useMissionAchievedSummary } from "./use-mission-lifecycle";
+import { MissionValveChip } from "./valve-doors";
 import {
   humanizeEvent,
   ringStatusFor,
@@ -167,6 +170,22 @@ export function MissionDetailPage() {
           onShare={doShare}
           shared={shared}
         />
+        {/*
+          The valve chip rides the celebration too, because this is exactly
+          where design's "offers to reset when the mission completes" has to
+          land. An override left running against a finished goal is a rule
+          nobody can see and nobody remembers making — and the achieved screen
+          is the last time anyone opens this mission.
+        */}
+        <div
+          style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}
+        >
+          <MissionValveChip
+            assistantId={assistantId}
+            missionId={mission.id}
+            missionStatus={mission.status}
+          />
+        </div>
       </Shell>
     );
   }
@@ -333,6 +352,32 @@ export function MissionDetailPage() {
             </span>
           ) : null}
         </div>
+      </div>
+      {/*
+        Door 2 of the valve (design V2) — the per-mission override, on the
+        mission's own header.
+
+        It sits under the hero rather than inside it because the hero is a
+        fixed dark gradient and this chip's whole job is to be legible in two
+        states: quiet while the mission follows the global stop, amber the
+        moment it does not. Amber on that gradient is the exact muted-token
+        trap the ground/role tokens exist to prevent, and an override nobody
+        can see is worse than no override at all.
+      */}
+      <div
+        data-slot="mission-header-controls"
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "flex-end",
+          marginTop: 10,
+        }}
+      >
+        <MissionValveChip
+          assistantId={assistantId}
+          missionId={mission.id}
+          missionStatus={mission.status}
+        />
       </div>
       {cycleNote ? (
         <div
@@ -836,23 +881,37 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Big status ring for the dark hero (track reads on the gradient). */
-function DarkStatusRing({
-  status,
-}: {
-  status: "on_track" | "needs_you" | "blocked";
-}) {
+/**
+ * Big status ring for the dark hero (track reads on the gradient).
+ *
+ * Same arc language as {@link StatusRing} — the sweep IS the status (V3) — with
+ * the track drawn in white rather than the theme's sunken so it survives the
+ * fixed gradient. The two must not diverge: one mission drawn as a full ring
+ * here and a stub on the deck would be the product disagreeing with itself
+ * about the same goal.
+ */
+function DarkStatusRing({ status }: { status: RingStatus }) {
   const meta = RING_META[status];
   const size = 104;
   const stroke = 10;
   const r = size / 2 - stroke;
+  const circumference = 2 * Math.PI * r;
+  const dash =
+    meta.arc >= 1
+      ? undefined
+      : `${circumference * meta.arc} ${circumference * (1 - meta.arc)}`;
   return (
     <div
       role="img"
       aria-label={`Mission ${meta.label}`}
       style={{ position: "relative", width: size, height: size, flexShrink: 0 }}
     >
-      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+      <svg
+        viewBox={`0 0 ${size} ${size}`}
+        width={size}
+        height={size}
+        style={{ transform: "rotate(-90deg)" }}
+      >
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -869,6 +928,7 @@ function DarkStatusRing({
           stroke={meta.color}
           strokeWidth={stroke}
           strokeLinecap="round"
+          strokeDasharray={dash}
         />
       </svg>
       <div
@@ -883,7 +943,11 @@ function DarkStatusRing({
           color: meta.color,
         }}
       >
-        {meta.glyph}
+        {status === "moving" ? (
+          <ActivityBars color={meta.color} height={26} />
+        ) : (
+          meta.glyph
+        )}
       </div>
     </div>
   );

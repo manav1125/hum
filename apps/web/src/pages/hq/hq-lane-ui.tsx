@@ -37,7 +37,15 @@ import {
   type LaneTone,
 } from "./hq-census";
 import type { HqDensity } from "./hq-density";
-import { C, MicroLabel, RING_META, StatusRing, mono } from "./hq-kit";
+import {
+  C,
+  MicroLabel,
+  RING_META,
+  StatusRing,
+  mono,
+  type RingStatus,
+} from "./hq-kit";
+import { useMissionAchievedSummary } from "./use-mission-lifecycle";
 import { ringStatusFor, type Mission } from "./use-missions";
 
 /** Tone → the TEXT leg of each hue. Small copy never rides a fill leg. */
@@ -231,15 +239,26 @@ function StripCell({
 export function GlanceStrip({
   cells,
   onOpen,
+  valveDoor,
 }: {
   cells: HqLaneReading[];
   onOpen: (id: HqLaneId) => void;
+  /**
+   * The valve control, as a ⚙ at the END of the strip (design V2, door 1).
+   *
+   * Passed in rather than mounted here so `hq-lane-ui` keeps taking nothing but
+   * readings: the strip and the rail are two views of ONE census object, and a
+   * component in here that fetched its own state would be the first crack in
+   * that. Both densities are handed the same element from the page.
+   */
+  valveDoor?: ReactNode;
 }) {
   return (
     <div
       data-slot="hq-glance-strip"
       style={{
         display: "flex",
+        alignItems: "stretch",
         background: C.sunken,
         borderTop: `1px solid ${C.line}`,
       }}
@@ -248,10 +267,23 @@ export function GlanceStrip({
         <StripCell
           key={reading.id}
           reading={reading}
-          last={i === cells.length - 1}
+          last={i === cells.length - 1 && !valveDoor}
           onOpen={onOpen}
         />
       ))}
+      {valveDoor ? (
+        <div
+          data-slot="hq-strip-valve"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            padding: "0 10px",
+            borderLeft: `1px solid ${C.line}`,
+          }}
+        >
+          {valveDoor}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -267,59 +299,118 @@ export function GlanceStrip({
  * full-bleed rings hero: the portfolio's health reads in one tile instead of
  * one screen, and blocked-ness stops being drawn three times.
  */
-function MissionRings({ missions }: { missions: Mission[] }) {
-  const navigate = useNavigate();
+function MissionRings({
+  assistantId,
+  missions,
+}: {
+  assistantId: string;
+  missions: Mission[];
+}) {
   const shown = missions.slice(0, 4);
   if (shown.length === 0) return null;
   return (
     <div style={{ display: "flex", gap: 9, marginTop: 10 }}>
-      {shown.map((m) => {
-        const status = ringStatusFor(m);
-        return (
-          <button
-            key={m.id}
-            type="button"
-            className="cue-pressable"
-            title={`${m.title} — ${RING_META[status].label}`}
-            onClick={() => {
-              haptic.light();
-              navigate(routes.hqMission(m.id));
-            }}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              background: "none",
-              border: "none",
-              padding: 0,
-              font: "inherit",
-              cursor: "pointer",
-              textAlign: "center",
-            }}
-          >
-            <StatusRing status={status} size={38} stroke={4.5} />
-            <div
-              style={{
-                fontSize: 8.5,
-                color:
-                  status === "on_track" ? C.t3 : toneColorForRing(status),
-                marginTop: 4,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {m.title}
-            </div>
-          </button>
-        );
-      })}
+      {shown.map((m) => (
+        <MissionRing key={m.id} assistantId={assistantId} mission={m} />
+      ))}
     </div>
   );
 }
 
-function toneColorForRing(status: "on_track" | "needs_you" | "blocked"): string {
+/**
+ * One ring, its title, and — when blocked — how many cycles it has run.
+ *
+ * The cycle count is design's V3 requirement and the one number the ring is
+ * allowed to carry, because it is measured rather than modelled: the daemon
+ * counts distinct `cycleId`s in the mission's own event trail. It is fetched
+ * ONLY for a blocked mission, which is both the frame's rule and a cost one:
+ * the missions list does not carry it, so every count is a request, and a
+ * request per healthy ring would buy nothing.
+ *
+ * When that request has not landed the label is simply `BLOCKED` — exactly the
+ * unavailable twin design's own frame draws beside "BLOCKED 12c". A pending
+ * count renders as no count; it never renders as `0c`, which would say this
+ * mission has never run.
+ */
+function MissionRing({
+  assistantId,
+  mission,
+}: {
+  assistantId: string;
+  mission: Mission;
+}) {
+  const navigate = useNavigate();
+  const status = ringStatusFor(mission);
+  const blocked = status === "blocked";
+  const { summary } = useMissionAchievedSummary(
+    assistantId,
+    mission.id,
+    blocked,
+  );
+  const cycles = blocked && summary ? summary.cycles : null;
+  const stateLine = blocked
+    ? cycles == null
+      ? "BLOCKED"
+      : `BLOCKED ${cycles}c`
+    : RING_META[status].label.toUpperCase();
+  return (
+    <button
+      type="button"
+      className="cue-pressable"
+      title={`${mission.title} — ${RING_META[status].label}${cycles == null ? "" : ` · ${cycles} cycles run`}`}
+      onClick={() => {
+        haptic.light();
+        navigate(routes.hqMission(mission.id));
+      }}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        background: "none",
+        border: "none",
+        padding: 0,
+        font: "inherit",
+        cursor: "pointer",
+        textAlign: "center",
+      }}
+    >
+      <StatusRing status={status} size={38} stroke={4.5} />
+      <div
+        style={{
+          fontSize: 8.5,
+          color: status === "on_track" ? C.t3 : toneColorForRing(status),
+          marginTop: 4,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {mission.title}
+      </div>
+      {/* The state in words under every ring — no ring's meaning is carried by
+          its colour and sweep alone. */}
+      <div
+        data-slot="hq-ring-state"
+        style={{
+          fontFamily: mono,
+          fontSize: 7.5,
+          letterSpacing: "0.06em",
+          color: status === "on_track" ? C.t3 : toneColorForRing(status),
+          marginTop: 1,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {stateLine}
+      </div>
+    </button>
+  );
+}
+
+function toneColorForRing(status: RingStatus): string {
   if (status === "blocked") return C.dangerText;
   if (status === "needs_you") return C.amberText;
+  if (status === "moving") return C.blueText;
   return C.t3;
 }
 
@@ -415,14 +506,26 @@ function RailTile({
  * and HQ is back to being a mile of it.
  */
 export function HqRail({
+  assistantId,
   tiles,
   missions,
   focus,
+  valveDoor,
 }: {
+  assistantId: string;
   tiles: HqLaneReading[];
   /** Open missions — the rings. Blocked-ness is derived once, in the census. */
   missions: Mission[];
   focus: HqLaneId | null;
+  /**
+   * "Reaching you: Needs you ▾" — the rail's first row (design V2, door 1).
+   *
+   * It sits above the tiles because it is the sentence that qualifies all of
+   * them: the rail's numbers are what the valve let through, and a rail that
+   * showed them without saying so would let an unfiltered board pass for a
+   * filtered one. Same element the Glance strip is handed — one control.
+   */
+  valveDoor?: ReactNode;
 }) {
   return (
     <aside
@@ -442,6 +545,7 @@ export function HqRail({
         overflow: "hidden",
       }}
     >
+      {valveDoor}
       <MicroLabel style={{ fontSize: 9, letterSpacing: "0.12em" }}>
         Everything else · at a glance
       </MicroLabel>
@@ -452,7 +556,7 @@ export function HqRail({
           focused={focus === reading.id}
         >
           {reading.id === "blocked" ? (
-            <MissionRings missions={missions} />
+            <MissionRings assistantId={assistantId} missions={missions} />
           ) : null}
           {reading.id === "blocked" && blockedMissions(missions).length > 0 ? (
             <div

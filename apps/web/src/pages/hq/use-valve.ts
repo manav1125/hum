@@ -99,10 +99,16 @@ export function useValveFeedback(assistantId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     ...hqValveFeedbackPostMutation(),
-    onSettled: () =>
+    onSettled: () => {
       void queryClient.invalidateQueries({
         queryKey: hqValveGetQueryKey({ path: { assistant_id: assistantId } }),
-      }),
+      });
+      // …and what Guardrails says the ✕ has taught. Without this the policy
+      // page would keep reporting a demotion count taken before the dismissal
+      // that changed it — the surface whose entire job is to be the record of
+      // what you have taught, quietly a minute behind.
+      void queryClient.invalidateQueries({ queryKey: ["valve-teaching"] });
+    },
   });
 }
 

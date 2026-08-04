@@ -36,6 +36,7 @@ import {
 import { GlanceStrip } from "./hq-lane-ui";
 import { C, mono, serif } from "./hq-kit";
 import { NextMoveCard, type NextMove } from "./hq-modules";
+import { ValveDoor } from "./valve-doors";
 
 /**
  * The receipts line under the greeting.
@@ -226,7 +227,14 @@ export function HqGlance({
         ) : null}
       </div>
 
-      <GlanceStrip cells={stripCells(census)} onOpen={onOpenLane} />
+      {/* The valve's door on Glance: a ⚙ at the end of the strip, opening the
+          same control the rail carries in full. The strip is nothing but
+          numbers, so the label lives inside the menu rather than above it. */}
+      <GlanceStrip
+        cells={stripCells(census)}
+        onOpen={onOpenLane}
+        valveDoor={<ValveDoor assistantId={assistantId} compact />}
+      />
     </div>
   );
 }

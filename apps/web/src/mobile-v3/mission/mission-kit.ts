@@ -163,7 +163,14 @@ export function owningAgent(
   return best;
 }
 
-/** The mono microlabel: "MISSION · ON TRACK" (uppercased at render). */
+/**
+ * The mono microlabel: "MISSION · ON TRACK" (uppercased at render).
+ *
+ * `moving` is folded into the `on_track` TONE rather than given one of its
+ * own: the phone's tone set is a palette, not a state machine, and a fourth
+ * hue here would be a colour with no legend. The word still changes, so the
+ * distinction survives where it is carried — in the text.
+ */
 export function missionStatusLabel(mission: Mission): {
   text: string;
   tone: "on_track" | "needs_you" | "blocked" | "achieved";
@@ -176,8 +183,10 @@ export function missionStatusLabel(mission: Mission): {
       ? "paused"
       : ring === "on_track"
         ? "on track"
-        : ring === "needs_you"
-          ? "needs you"
-          : "blocked";
-  return { text: `Mission · ${leg}`, tone: ring };
+        : ring === "moving"
+          ? "moving"
+          : ring === "needs_you"
+            ? "needs you"
+            : "blocked";
+  return { text: `Mission · ${leg}`, tone: ring === "moving" ? "on_track" : ring };
 }

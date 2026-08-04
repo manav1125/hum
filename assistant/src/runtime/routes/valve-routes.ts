@@ -11,6 +11,8 @@
  *   · `PUT  hq/valve/missions/:missionId` — bump one mission while it is live.
  *   · `DELETE hq/valve/missions/:missionId` — drop that override.
  *   · `POST hq/valve/feedback`   — "not relevant" / "this mattered".
+ *   · `GET  hq/valve/feedback`   — what those ✕'s have actually taught, and how
+ *                                  many senders are demoted as a result.
  *   · `GET  hq/valve/health`     — the rule firing distribution, including the
  *                                  rules that have NEVER fired.
  *
@@ -41,6 +43,8 @@ import {
   countRuleFirings,
   getGlobalStop,
   GLOBAL_SCOPE,
+  LEARN_DOWN_THRESHOLD,
+  learnedDownSenders,
   listFeedback,
   listStops,
   missionIdFromScope,
@@ -376,6 +380,58 @@ export const ROUTES: RouteDefinition[] = [
       );
       return { taught: listFeedback(50) };
     },
+  },
+
+  {
+    operationId: "getValveTeaching",
+    endpoint: "hq/valve/feedback",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "What the ✕ has taught the valve",
+    description:
+      "The read half of `POST hq/valve/feedback`, so a policy surface can " +
+      "state what the dismissals have actually achieved without recording a " +
+      "dismissal to find out. `demotedSenders` is the count the banding rules " +
+      "genuinely use — the same `learnedDownSenders()` set, i.e. senders over " +
+      "the threshold whose dismissals still outnumber their keeps — not the " +
+      "length of the taught list, which includes subjects that were corrected " +
+      "once and subjects the owner has since taken back.",
+    tags: ["hq", "valve"],
+    responseBody: z.object({
+      demotedSenders: z
+        .number()
+        .int()
+        .describe(
+          "Senders the valve is currently quieting because of the ✕. This is the number a surface may claim as a result.",
+        ),
+      threshold: z
+        .number()
+        .int()
+        .describe(
+          "Dismissals of one sender required before anything is quieted. One ✕ is deliberately not enough.",
+        ),
+      taught: z
+        .array(
+          z.object({
+            subjectKind: z.string(),
+            subjectKey: z.string(),
+            dismissed: z.number().int(),
+            kept: z.number().int(),
+            lastSignalAt: z.number().int(),
+          }),
+        )
+        .describe(
+          "Every subject carrying a signal, most-dismissed first. Both counts are kept, so a sender taken back reads differently from one never corrected.",
+        ),
+    }),
+    handler: () => ({
+      demotedSenders: learnedDownSenders().size,
+      threshold: LEARN_DOWN_THRESHOLD,
+      taught: listFeedback(50),
+    }),
   },
 
   {

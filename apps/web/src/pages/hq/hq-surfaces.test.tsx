@@ -373,7 +373,18 @@ describe("Deck", () => {
   test("what design deleted is gone: no rings hero, no came-in rows", () => {
     const { container } = deck([reviewItem("one")]);
     expect(container.querySelector('[data-slot="hq-hero-card"]')).toBeNull();
-    expect(container.textContent).not.toContain("ON TRACK");
+    // The full-bleed rings HERO is what design deleted — not the word. v35's
+    // V3 puts the state in words under every rail ring precisely so no ring's
+    // meaning is carried by its colour and sweep alone, so "ON TRACK" now
+    // appears there by design and only there.
+    const stateLines = [
+      ...container.querySelectorAll('[data-slot="hq-ring-state"]'),
+    ];
+    expect(stateLines.length).toBeGreaterThan(0);
+    for (const node of container.querySelectorAll("*")) {
+      if (!/^ON TRACK$|^MOVING$|^BLOCKED/.test(node.textContent ?? "")) continue;
+      expect(node.closest('[data-hq-lane="blocked"]')).not.toBeNull();
+    }
     // "Came in" survives only as the rail tile's number and sentence.
     const cameIn = container.querySelector('[data-hq-lane="filed"]')!;
     expect(cameIn.querySelectorAll("li,[data-filing-row]")).toHaveLength(0);

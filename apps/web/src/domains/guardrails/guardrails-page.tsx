@@ -56,6 +56,7 @@ import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { Mv3LedgerPage } from "@/mobile-v3/you/ledger-page";
 import { Mv3RulesPage } from "@/mobile-v3/you/rules-page";
 import { AutonomyLedgerBand } from "@/domains/guardrails/autonomy-ledger-panel";
+import { ValveBand } from "@/domains/guardrails/valve-band";
 import {
   Mv3AgentScopesScreen,
   Mv3GuardrailsBar,
@@ -117,6 +118,14 @@ function GrStyle() {
         __html: [
           ":root{--gr-teal:#0E8C8C;}",
           '[data-theme="dark"],[data-theme="velvet"]{--gr-teal:#5FD0C8;}',
+          // Muted TEXT, named for its ground and its role (the v35 ruling
+          // that closed the ninth recurrence of the muted-token class).
+          // `--mv1-t3` is a chrome grey that dips under 4:1 on the dark
+          // canvas, and this band is nothing but small grey type.
+          // Values are design's: #6B6B60 light (5.4:1), #9A9AA8 dark (6.9:1)
+          // — never #8A8A7E / #A8A89C (grounds) and never #5B5B68.
+          ":root{--gr-muted-on-light:#6B6B60;--gr-muted-on-dark:#9A9AA8;--gr-muted:var(--gr-muted-on-light);}",
+          '[data-theme="dark"],[data-theme="velvet"]{--gr-muted:var(--gr-muted-on-dark);}',
         ].join("\n"),
       }}
     />
@@ -363,6 +372,19 @@ function GuardrailsBody({
           isMobile={isMobile}
           fresh={isFresh}
         />
+      </Band>
+      {/*
+        Door 3 of the volume valve (design V2). It sits directly under
+        CHECKPOINTS because it answers the same shape of question — what
+        reaches you, versus what Cue asks before doing — and above AGENT
+        SCOPES, which is about what Cue may touch rather than what you see.
+      */}
+      <Band
+        label="REACHING YOU"
+        sub="What interrupts you, and what waits in Work"
+        isMobile={isMobile}
+      >
+        <ValveBand assistantId={assistantId} />
       </Band>
       <Band
         label="AGENT SCOPES"

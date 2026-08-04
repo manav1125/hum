@@ -35,6 +35,7 @@ import { C, MicroLabel, serif } from "./hq-kit";
 import { NextMoveCard, type NextMove } from "./hq-modules";
 import { PausedNeedsYouRow, type PausedApproval } from "./paused-approvals";
 import { feedbackSubject, useValveFeedback } from "./use-valve";
+import { ValveDoor } from "./valve-doors";
 import type { HqWorkItem, Mission } from "./use-missions";
 
 /**
@@ -395,7 +396,13 @@ export function HqDeckSurface({
         />
       </div>
 
-      <HqRail tiles={railTiles(census)} missions={missions} focus={focus} />
+      <HqRail
+        assistantId={assistantId}
+        tiles={railTiles(census)}
+        missions={missions}
+        focus={focus}
+        valveDoor={<ValveDoor assistantId={assistantId} />}
+      />
     </div>
   );
 }

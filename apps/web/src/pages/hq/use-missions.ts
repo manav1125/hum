@@ -50,7 +50,24 @@ export type WorkspaceMode = "observe" | "assist" | "autonomous";
 
 const SAFETY_NET_MS = 60_000;
 
-/** Honest status ring for a mission, derived from its live rollup. */
+/**
+ * Honest status ring for a mission, derived from its live rollup.
+ *
+ * Four states, in descending order of what they demand from the owner. The
+ * order is the whole of the function: a mission can be several of these at once
+ * and only the loudest true one is drawn.
+ *
+ * `moving` is design's V3 addition and is a fact off the same rollup — work
+ * genuinely running right now. It exists because "on track" was doing two jobs:
+ * a mission with nine live runs and a mission that has not been touched in a
+ * week both read as a calm green tick, and the second is the one worth knowing
+ * about. It sits BELOW `needs_you` deliberately — something waiting on you
+ * outranks something Cue is busy with.
+ *
+ * There is still no percentage anywhere in here (V3's ruling (a)): the arc is
+ * the status, not a quantity. A % returns only for a mission with a real
+ * connected metric, and that mission does not exist yet.
+ */
 export function ringStatusFor(m: Mission): RingStatus {
   const budgetStopped =
     m.budgetCents != null && m.budgetCents > 0 && m.spentCents >= m.budgetCents;
@@ -61,6 +78,7 @@ export function ringStatusFor(m: Mission): RingStatus {
   if (m.status === "abandoned") return "blocked";
   if (m.status === "paused" || budgetStopped) return "blocked";
   if (m.rollup.counts.awaiting_review > 0) return "needs_you";
+  if (m.rollup.counts.running > 0) return "moving";
   return "on_track";
 }
 

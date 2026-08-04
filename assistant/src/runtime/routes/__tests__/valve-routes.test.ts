@@ -155,6 +155,61 @@ describe("teaching the valve", () => {
     expect(row.kept).toBe(0);
   });
 
+  test("the read route reports NOTHING taught on a fresh instance", async () => {
+    // The distinction the Guardrails page depends on: a zero here means the
+    // ✕ has genuinely never been used, and the surface must say that rather
+    // than print "0 senders demoted" as though it were an achievement.
+    const read = await call("getValveTeaching");
+    expect(read.taught).toEqual([]);
+    expect(read.demotedSenders).toBe(0);
+    expect(read.threshold).toBeGreaterThan(1);
+  });
+
+  test("`demotedSenders` counts what the RULES use, not the taught list", async () => {
+    const dismiss = (subjectKey: string) =>
+      call("recordValveFeedback", {
+        body: { subjectKind: "sender", subjectKey, signal: "dismissed" },
+      });
+
+    // One ✕ is deliberately not enough — a single dismissal is as likely to
+    // mean "dealt with it". A surface counting rows here would have claimed a
+    // demotion that the banding rules never make.
+    await dismiss("once@example.com");
+    let read = await call("getValveTeaching");
+    expect(read.taught).toHaveLength(1);
+    expect(read.demotedSenders).toBe(0);
+
+    await dismiss("twice@example.com");
+    await dismiss("twice@example.com");
+    read = await call("getValveTeaching");
+    expect(read.demotedSenders).toBe(1);
+
+    // …and taking one back genuinely undoes it, rather than merely being
+    // absent: both counts are kept, so `kept` can outweigh `dismissed`.
+    await call("recordValveFeedback", {
+      body: {
+        subjectKind: "sender",
+        subjectKey: "twice@example.com",
+        signal: "kept",
+      },
+    });
+    await call("recordValveFeedback", {
+      body: {
+        subjectKind: "sender",
+        subjectKey: "twice@example.com",
+        signal: "kept",
+      },
+    });
+    read = await call("getValveTeaching");
+    expect(read.demotedSenders).toBe(0);
+  });
+
+  test("the read route records nothing — asking is not teaching", async () => {
+    await call("getValveTeaching");
+    await call("getValveTeaching");
+    expect((await call("getValveTeaching")).taught).toEqual([]);
+  });
+
   test("bad input is rejected rather than recorded against the wrong subject", async () => {
     await expect(
       call("recordValveFeedback", {

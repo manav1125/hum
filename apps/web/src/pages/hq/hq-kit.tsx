@@ -3,10 +3,12 @@
  * by the HQ deck, the pulse, and Mission detail.
  *
  * Faithful to the locked Cue-HQ-Build design doc: serif display headings,
- * DM Mono microlabels, status rings that NEVER fake a number (phase 1 is
- * status-only — a full ring tinted by the honest state: ✓ on track,
- * ! needs you, ◼ blocked), and the dark hero gradient still used by Mission
- * detail. The full-bleed concentric "rings hero" that lived here is gone: the
+ * DM Mono microlabels, status rings that NEVER fake a number — the arc IS the
+ * status (v35 · V3, answer (a)): a full green ring + ✓ on track, a full amber
+ * ring + ! when something waits on you, a long blue segment with live bars
+ * while work is moving, a red stub + ◼ when blocked. No percentage anywhere,
+ * because there is no connected metric to measure one from. The dark hero
+ * gradient is still used by Mission detail, which draws the same arcs. The full-bleed concentric "rings hero" that lived here is gone: the
  * v33 HQ draws mission health once, as four status rings inside the Deck rail's
  * Missions tile, so the portfolio reads in a tile instead of a screen. Colors ride the theme-aware `--mv1-*` vars plus the
  * HQ-local `--hq-teal` accent injected by `<HqStyle/>`.
@@ -18,16 +20,36 @@ import { C, mono, serif } from "@/domains/activity/theme";
 
 export { C, mono, serif };
 
-/** The honest phase-1 ring state. */
-export type RingStatus = "on_track" | "needs_you" | "blocked";
+/** The honest ring state. Never a percentage — see {@link StatusRing}. */
+export type RingStatus = "on_track" | "needs_you" | "moving" | "blocked";
 
 export const RING_META: Record<
   RingStatus,
-  { glyph: string; label: string; color: string }
+  {
+    glyph: string;
+    label: string;
+    color: string;
+    /**
+     * How much of the circle the arc covers, 0–1 — **the status, not a
+     * quantity** (design V3, answer (a)).
+     *
+     * This is the one number in the ring language, and it is a constant per
+     * state rather than anything measured: a full circle means settled, a long
+     * segment means in motion, a stub means stopped. Because the sweep is a
+     * property of the STATE, two blocked missions draw identical arcs and no
+     * reader can mistake the geometry for progress. The moment a mission gains
+     * a real connected metric, that mission's ring takes a measured fraction
+     * here — and no other mission's does.
+     */
+    arc: number;
+  }
 > = {
-  on_track: { glyph: "✓", label: "on track", color: C.green },
-  needs_you: { glyph: "!", label: "needs you", color: C.amber },
-  blocked: { glyph: "◼", label: "blocked", color: C.danger },
+  on_track: { glyph: "✓", label: "on track", color: C.green, arc: 1 },
+  needs_you: { glyph: "!", label: "needs you", color: C.amber, arc: 1 },
+  moving: { glyph: "", label: "moving", color: C.blue, arc: 0.76 },
+  // A stub, not a ring: blocked is the one state that should look interrupted
+  // rather than merely tinted.
+  blocked: { glyph: "◼", label: "blocked", color: C.danger, arc: 0.17 },
 };
 
 /**
@@ -68,6 +90,10 @@ export function HqStyle() {
           ":root{--hq-muted:#6B6B60;}",
           '[data-theme="dark"],[data-theme="velvet"]{--hq-muted:#9A9AA8;}',
           "@keyframes hqBar{0%,100%{height:5px}50%{height:13px}}",
+          // The ring's bars scale rather than resize: a `height` keyframe
+          // would overflow the ring at small sizes, and the whole point of the
+          // moving mark is that it sits inside the arc.
+          "@keyframes hqRingBar{0%,100%{transform:scaleY(.28)}50%{transform:scaleY(1)}}",
           "@keyframes hqBlink{0%,100%{opacity:1}50%{opacity:.35}}",
           "@keyframes hqReveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}",
           // Loading shimmer (design doc R5·A5 "headers first, shimmer where
@@ -154,9 +180,56 @@ export function MicroLabel({
 }
 
 /**
- * A single status ring. Phase 1 is status-only: the arc is FULL (never a
- * made-up sweep) and tinted by the honest state, with the state glyph in the
- * middle — exactly the "Day one, rings don't show a percentage" frame.
+ * Two live bars — the `moving` ring's mark.
+ *
+ * A glyph would have to say something ("→", "…") that the arc already says; the
+ * bars say the one thing a static mark cannot, which is that this is happening
+ * right now. They ride the `hqRingBar` keyframe, and the global
+ * reduced-motion rule in {@link HqStyle} stops them animating without removing
+ * them — the state stays legible when the motion does not run.
+ */
+export function ActivityBars({ color, height }: { color: string; height: number }) {
+  return (
+    <span
+      aria-hidden
+      data-slot="hq-ring-bars"
+      style={{ display: "flex", gap: 1.5, height, alignItems: "center" }}
+    >
+      <span
+        style={{
+          width: 2,
+          height: "100%",
+          background: color,
+          borderRadius: 1,
+          animation: "hqRingBar 1.2s ease-in-out infinite",
+        }}
+      />
+      <span
+        style={{
+          width: 2,
+          height: "100%",
+          background: color,
+          borderRadius: 1,
+          animation: "hqRingBar 1.2s ease-in-out .3s infinite",
+        }}
+      />
+    </span>
+  );
+}
+
+/**
+ * A single status ring — **status-only, and the arc IS the status**.
+ *
+ * Design's V3 answer (a). The frame this replaces drew "74%" and "36%" swept
+ * arcs, and there is no percentage to draw: mission progress has no connected
+ * metric, so a swept arc would be a fabricated number wearing a chart's
+ * clothes. Instead the sweep is a constant per state — full ring + ✓ on track,
+ * a long segment with live bars while moving, a red stub + ◼ when blocked — so
+ * the geometry reads as health at a glance and cannot be misread as a
+ * measurement. `RING_META[...].arc` is the only place a fraction exists.
+ *
+ * Nothing here is carried by colour alone: each state has its own sweep and its
+ * own mark, and the `aria-label` says the state in words.
  */
 export function StatusRing({
   status,
@@ -171,6 +244,14 @@ export function StatusRing({
 }) {
   const meta = RING_META[status];
   const r = size / 2 - stroke - 1;
+  const circumference = 2 * Math.PI * r;
+  // A full arc must not be drawn as a dash pattern: `strokeLinecap="round"` on
+  // a 100%-length dash paints two caps over the same pixels and leaves a nick
+  // at 12 o'clock. Only a partial arc gets a dasharray.
+  const dash =
+    meta.arc >= 1
+      ? undefined
+      : `${circumference * meta.arc} ${circumference * (1 - meta.arc)}`;
   return (
     <div
       role="img"
@@ -199,6 +280,7 @@ export function StatusRing({
           stroke={meta.color}
           strokeWidth={stroke}
           strokeLinecap="round"
+          strokeDasharray={dash}
         />
       </svg>
       <div
@@ -213,7 +295,14 @@ export function StatusRing({
           color: meta.color,
         }}
       >
-        {meta.glyph}
+        {/* Moving has no glyph: its mark is the motion itself (the same
+            "the mark IS the state" rule the voice screen follows). Reduced
+            motion falls back to a static pair of bars via `HqStyle`. */}
+        {status === "moving" ? (
+          <ActivityBars color={meta.color} height={Math.round(size * 0.24)} />
+        ) : (
+          meta.glyph
+        )}
       </div>
     </div>
   );

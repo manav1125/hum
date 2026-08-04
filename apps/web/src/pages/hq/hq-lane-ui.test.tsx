@@ -18,6 +18,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 
 import {
@@ -32,6 +34,22 @@ import { known, unavailable } from "./hq-tiers";
 import type { Mission } from "./use-missions";
 
 afterEach(cleanup);
+
+/**
+ * The rail's blocked rings ask the daemon for a cycle count, so the tree needs
+ * a query client. Retries are off: a test that silently retried a fetch would
+ * be measuring the harness rather than the surface.
+ */
+function Wrap({ children }: { children: ReactNode }) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
+  );
+}
 
 function mission(over: Partial<Mission> & { id: string }): Mission {
   return {
@@ -93,9 +111,14 @@ function renderRail(over: Partial<HqCensusInput> = {}) {
   return {
     census,
     ...render(
-      <MemoryRouter>
-        <HqRail tiles={railTiles(census)} missions={missions} focus={null} />
-      </MemoryRouter>,
+      <Wrap>
+        <HqRail
+          assistantId="a1"
+          tiles={railTiles(census)}
+          missions={missions}
+          focus={null}
+        />
+      </Wrap>,
     ),
   };
 }
@@ -225,9 +248,14 @@ describe("the hinge, on screen", () => {
     cleanup();
 
     const rail = render(
-      <MemoryRouter>
-        <HqRail tiles={railTiles(census)} missions={[]} focus={null} />
-      </MemoryRouter>,
+      <Wrap>
+        <HqRail
+          assistantId="a1"
+          tiles={railTiles(census)}
+          missions={[]}
+          focus={null}
+        />
+      </Wrap>,
     );
     const railText = (id: string) =>
       rail.container
