@@ -83,13 +83,11 @@ import {
 } from "../../memory/canonical-guardian-store.js";
 import {
   addMessage,
-  extractImageSourcePaths,
   getConversation,
   getMessages,
   getMessagesPaginated,
   hasMessages,
   type MessageRow,
-  provenanceFromTrustContext,
   setConversationInferenceProfile,
 } from "../../memory/conversation-crud.js";
 import {
@@ -137,6 +135,11 @@ import {
   resolveTrustContext,
   withSourceChannel,
 } from "../trust-context-resolver.js";
+import {
+  emitCannedMessageComplete,
+  persistCannedAssistantCard,
+} from "./canned-message-complete.js";
+import { buildChannelMetadata } from "./channel-metadata.js";
 import {
   BadRequestError,
   InternalError,
@@ -290,22 +293,6 @@ function isValidRiskThreshold(value: unknown): value is RiskThreshold {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Temporary fix — remove when #31994 lands
-// ---------------------------------------------------------------------------
-//
-// The canned-response paths in this file (canned greeting, inline approval
-// reply, slash command, /compact, /clean) bypass the agent loop and so don't
-// pick up the per-turn anchor id allocated in conversation-agent-loop.ts.
-// Their `message_complete` events therefore went out without `messageId`,
-// and the macOS client filter at ChatActionHandler.swift:507 dropped those
-// events when they raced past the 50 ms streaming-buffer flush — leaving
-// `isSending` stuck for the full 60 s watchdog window.
-//
-// Centralized so the patch surface is one helper + N one-line callers rather
-// than N duplicated literals. When #31994 lands and stamps these sites with
-// `state.assistantTurnId` directly, grep for `emitCannedMessageComplete` to
-// find every call site and inline-then-delete.
 /**
  * How long after a canned (slash-command) turn completes to re-assert the
  * idle activity state. Long enough that the send POST's response has landed
@@ -313,18 +300,6 @@ function isValidRiskThreshold(value: unknown): value is RiskThreshold {
  * chain), short enough that a stuck spinner clears before it reads as a hang.
  */
 const CANNED_TURN_IDLE_REASSERT_MS = 2_000;
-
-function emitCannedMessageComplete(
-  send: (msg: ServerMessage) => void,
-  conversationId: string,
-  persistedAssistantId: string,
-): void {
-  send({
-    type: "message_complete",
-    conversationId,
-    messageId: persistedAssistantId,
-  });
-}
 
 /**
  * True when a message's persisted metadata explicitly flags it as hidden.
@@ -2146,7 +2121,6 @@ async function handleSendMessageImpl(
     // forceCompact() makes an LLM call that can exceed the client's
     // HTTP timeout on large contexts, causing a false "Failed to send".
     (async () => {
-      let assistantMessagePersisted = false;
       try {
         broadcastMessage({
           type: "user_message_echo",
@@ -2157,34 +2131,17 @@ async function handleSendMessageImpl(
         });
         publishConversationMessagesChanged(conversationId, originClientId);
         conversation.emitActivityState("thinking", "context_compacting");
-        const result = await conversation.forceCompact();
-        const responseText = formatCompactResult(result);
-
-        const assistantMsg = createAssistantMessage(responseText);
-        const persistedAssistant = await addMessage(
+        // Same sink the result card below goes out on, so the indicator and
+        // the card can never be delivered to different places.
+        const result = await conversation.forceCompact(broadcastMessage);
+        await persistCannedAssistantCard({
+          conversation,
           conversationId,
-          "assistant",
-          JSON.stringify(assistantMsg.content),
-          { metadata: channelMeta },
-        );
-        assistantMessagePersisted = true;
-        conversation.getMessages().push(assistantMsg);
-
-        broadcastMessage({
-          type: "assistant_text_delta",
-          text: responseText,
-          conversationId,
+          text: formatCompactResult(result),
+          metadata: channelMeta,
+          originClientId,
         });
-        emitCannedMessageComplete(
-          broadcastMessage,
-          conversationId,
-          persistedAssistant.id,
-        );
-        publishConversationMessagesChanged(conversationId, originClientId);
       } catch (err) {
-        if (assistantMessagePersisted) {
-          publishConversationMessagesChanged(conversationId, originClientId);
-        }
         log.error({ err, conversationId }, "Compact command failed");
         broadcastMessage({
           type: "conversation_error",
@@ -2241,7 +2198,6 @@ async function handleSendMessageImpl(
       const channelMeta = buildChannelMetadata(sourceChannel, sourceInterface, {
         trustContext: conversation.trustContext,
       });
-      let assistantMessagePersisted = false;
       try {
         broadcastMessage({
           type: "user_message_echo",
@@ -2253,33 +2209,14 @@ async function handleSendMessageImpl(
         publishConversationMessagesChanged(conversationId, originClientId);
 
         const result = await conversation.forceClean();
-        const responseText = formatCleanResult(result);
-
-        const assistantMsg = createAssistantMessage(responseText);
-        const persistedAssistant = await addMessage(
+        await persistCannedAssistantCard({
+          conversation,
           conversationId,
-          "assistant",
-          JSON.stringify(assistantMsg.content),
-          { metadata: channelMeta },
-        );
-        assistantMessagePersisted = true;
-        conversation.getMessages().push(assistantMsg);
-
-        broadcastMessage({
-          type: "assistant_text_delta",
-          text: responseText,
-          conversationId,
+          text: formatCleanResult(result),
+          metadata: channelMeta,
+          originClientId,
         });
-        emitCannedMessageComplete(
-          broadcastMessage,
-          conversationId,
-          persistedAssistant.id,
-        );
-        publishConversationMessagesChanged(conversationId, originClientId);
       } catch (err) {
-        if (assistantMessagePersisted) {
-          publishConversationMessagesChanged(conversationId, originClientId);
-        }
         log.error({ err, conversationId }, "Clean command failed");
         broadcastMessage({
           type: "conversation_error",
@@ -2638,47 +2575,6 @@ function handleSearchConversations({
   });
 
   return { query, results };
-}
-
-// ---------------------------------------------------------------------------
-// Metadata helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Assemble the standard channel metadata object for message persistence.
- *
- * Combines provenance (trust context), channel/interface routing, and
- * optional per-message fields (automated flag, image source paths) into the
- * Record that `addMessage` stores in the `metadata` column.
- */
-function buildChannelMetadata(
-  sourceChannel: string,
-  sourceInterface: string,
-  opts?: {
-    trustContext?: Parameters<typeof provenanceFromTrustContext>[0];
-    provenanceOverride?: Record<string, unknown>;
-    automated?: boolean;
-    attachments?: ReadonlyArray<{
-      filename: string;
-      mimeType: string;
-      filePath?: string;
-    }>;
-  },
-): Record<string, unknown> {
-  const provenance =
-    opts?.provenanceOverride ?? provenanceFromTrustContext(opts?.trustContext);
-  const imageSourcePaths = opts?.attachments
-    ? extractImageSourcePaths(opts.attachments)
-    : undefined;
-  return {
-    ...provenance,
-    userMessageChannel: sourceChannel,
-    assistantMessageChannel: sourceChannel,
-    userMessageInterface: sourceInterface,
-    assistantMessageInterface: sourceInterface,
-    ...(opts?.automated ? { automated: true } : {}),
-    ...(imageSourcePaths ? { imageSourcePaths } : {}),
-  };
 }
 
 // ---------------------------------------------------------------------------

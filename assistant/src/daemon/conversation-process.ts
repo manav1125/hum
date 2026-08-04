@@ -57,9 +57,11 @@ import { resolveVerificationSessionIntent } from "./verification-session-intent.
 
 const log = getLogger("conversation-process");
 
+/** Locale-formatted count for the user-facing context stats cards. */
+const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("en-US");
+
 /** Format the result of a forced compaction into a user-facing message. */
 export function formatCompactResult(result: ContextWindowResult): string {
-  const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("en-US");
   if (!result.compacted) {
     return [
       `Context compaction skipped — ${result.reason ?? "nothing to compact"}.`,
@@ -81,9 +83,50 @@ export function formatCompactResult(result: ContextWindowResult): string {
   ].join("\n");
 }
 
+/**
+ * User-facing copy for the compactor's internal skip-reason strings, keyed by
+ * the exact `ContextWindowResult.reason` values reachable from the
+ * "summarize up to here" path. Unknown reasons fall back to the raw string.
+ */
+const SUMMARIZE_SKIP_REASON_COPY: Record<string, string> = {
+  "fixed boundary out of range": "nothing to summarize before this point",
+  "tail_start at head — nothing to compact":
+    "nothing to summarize before this point",
+  "no messages to compact": "nothing to summarize",
+  "compaction disabled": "summarization is disabled in the assistant's config",
+  "provider error": "the summary could not be generated — try again",
+  "unparseable response": "the summary could not be generated — try again",
+};
+
+/**
+ * Format the result of a "summarize up to here" compaction into a user-facing
+ * card.
+ */
+export function formatSummarizeUpToResult(result: ContextWindowResult): string {
+  if (!result.compacted) {
+    const reason = result.reason
+      ? (SUMMARIZE_SKIP_REASON_COPY[result.reason] ?? result.reason)
+      : "nothing to summarize";
+    return `Summarization skipped — ${reason}.`;
+  }
+  const saved =
+    result.previousEstimatedInputTokens - result.estimatedInputTokens;
+  return [
+    "**Conversation summarized**",
+    // Persisted (row-space) count — `compactedMessages` is history-space and
+    // counts the synthetic summary head on a repeat summarize, which is not
+    // a message the user ever saw. The kept tail never contains the head.
+    `Summarized ${fmt(result.compactedPersistedMessages)} earlier messages. ${fmt(
+      result.preservedTailMessages,
+    )} recent messages kept in full.`,
+    `Context: ${fmt(result.previousEstimatedInputTokens)} → ${fmt(
+      result.estimatedInputTokens,
+    )} tokens (${fmt(saved)} saved)`,
+  ].join("\n");
+}
+
 /** Format the result of a forced clean into a user-facing message. */
 export function formatCleanResult(result: CleanResult): string {
-  const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("en-US");
   const reclaimed =
     result.previousEstimatedInputTokens - result.estimatedInputTokens;
   return [
@@ -631,7 +674,11 @@ async function drainSingleMessage(
       conversation.emitActivityState("thinking", "context_compacting", {
         requestId: next.requestId,
       });
-      const result = await conversation.forceCompact();
+      // Push the usage refresh to the queued item's own sink, the one the
+      // result card below streams on. `sendToClient` is reset to a no-op once
+      // an interactive turn finishes, so a `/compact` draining behind one
+      // would otherwise refresh nothing.
+      const result = await conversation.forceCompact(next.onEvent);
       const responseText = formatCompactResult(result);
 
       const assistantMsg = createAssistantMessage(responseText);
@@ -1665,7 +1712,8 @@ export async function processMessage(
       conversation.emitActivityState("thinking", "context_compacting", {
         requestId,
       });
-      const result = await conversation.forceCompact();
+      // Same sink the result card below streams on (see the drain branch).
+      const result = await conversation.forceCompact(onEvent);
       const responseText = formatCompactResult(result);
 
       const assistantMsg = createAssistantMessage(responseText);

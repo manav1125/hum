@@ -4,6 +4,7 @@ import {
   ExternalLink,
   FileCode,
   GitBranch,
+  ListCollapse,
   RotateCcw,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookmarkToggle } from "@/domains/chat/components/message-hover-actions/bookmark-toggle";
 import type { DisplayMessage } from "@/domains/chat/types/types";
 import { messagePlainText } from "@/domains/chat/utils/message-plain-text";
+import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 
 type MessageHoverActionsProps = {
   /** The message whose text is copied and whose role/timestamp drive the row. */
@@ -19,6 +21,8 @@ type MessageHoverActionsProps = {
   openInSlackUrl?: string;
   /** Callback when "Fork from here" is clicked. */
   onFork?: () => void;
+  /** Callback when "Summarize up to here" is clicked. */
+  onSummarizeUpToHere?: () => void;
   /** Callback when "Inspect" is clicked. */
   onInspect?: () => void;
   /** Callback when "Retry" is clicked. Only supplied for the latest
@@ -93,10 +97,18 @@ export function MessageHoverActions({
   message,
   openInSlackUrl,
   onFork,
+  onSummarizeUpToHere,
   onInspect,
   onRetry,
 }: MessageHoverActionsProps) {
   const { role } = message;
+
+  // Summarize is feature-flag gated: the button renders only when a caller
+  // provides the callback AND the `summarize-up-to-here` flag is on (callers
+  // also withhold the callback when the flag is off — this is the render-site
+  // half of that gate).
+  const summarizeUpToHereEnabled =
+    useClientFeatureFlagStore.use.summarizeUpToHere();
   // Flat plain-text body derived from the message's text blocks; this is the
   // copy payload and mirrors the daemon's `joinWithSpacing`.
   const content = useMemo(() => messagePlainText(message), [message]);
@@ -202,6 +214,17 @@ export function MessageHoverActions({
           className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--content-tertiary)] transition-colors hover:bg-[var(--surface-active)] hover:text-[var(--content-default)]"
         >
           <GitBranch className="h-3.5 w-3.5" />
+        </button>
+      )}
+
+      {onSummarizeUpToHere && summarizeUpToHereEnabled && (
+        <button
+          type="button"
+          onClick={onSummarizeUpToHere}
+          title="Summarize up to here"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--content-tertiary)] transition-colors hover:bg-[var(--surface-active)] hover:text-[var(--content-default)]"
+        >
+          <ListCollapse className="h-3.5 w-3.5" />
         </button>
       )}
 

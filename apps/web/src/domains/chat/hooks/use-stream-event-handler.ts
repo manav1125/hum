@@ -48,6 +48,7 @@ import {
 } from "@/domains/chat/utils/stream-handlers/tool-call-handlers";
 import {
   handleUsageUpdate,
+  handleContextWindowUsage,
   handleUsageProgress,
   handleCompactionCircuitOpen,
   handleCompactionCircuitClosed,
@@ -317,6 +318,9 @@ export function useStreamEventHandler(
           break;
         case "usage_update":
           handleUsageUpdate(event, ctx);
+          break;
+        case "context_window_usage":
+          handleContextWindowUsage(event, ctx);
           break;
         // Per-call usage deltas. The top-level chat surface reads running
         // totals from `usage_update`; per-call deltas additionally feed the

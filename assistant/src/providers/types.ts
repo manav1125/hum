@@ -280,6 +280,19 @@ export interface Provider {
     messages: Message[],
     options?: SendMessageOptions,
   ): Promise<ProviderResponse>;
+  /**
+   * Count the input tokens for `messages` with the provider's real tokenizer
+   * (e.g. Anthropic's `/v1/messages/count_tokens` — no inference). Optional:
+   * providers without a count endpoint omit it, and callers fall back to the
+   * local estimate. Used for user-facing figures (`/compact`, `/clean`,
+   * "summarize up to here") so the displayed numbers match the provider's
+   * reported usage rather than the chars/4 heuristic.
+   */
+  countInputTokens?(
+    messages: Message[],
+    systemPrompt: string,
+    tools?: ToolDefinition[],
+  ): Promise<number>;
 }
 
 // ── Context-overflow error ────────────────────────────────────────────
