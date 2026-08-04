@@ -19,6 +19,7 @@
  */
 
 import { AnthropicProvider } from "../anthropic/client.js";
+import { BasetenProvider } from "../baseten/client.js";
 import { BudgetCapProvider } from "../budget-cap.js";
 import { FireworksProvider } from "../fireworks/client.js";
 import { GeminiProvider } from "../gemini/client.js";
@@ -115,6 +116,11 @@ const ADAPTER_FACTORIES: Record<string, AdapterFactory> = {
     }),
   minimax: ({ apiKey, model, streamTimeoutMs }) =>
     new MinimaxProvider(apiKey, model, { streamTimeoutMs }),
+  baseten: ({ apiKey, model, streamTimeoutMs, baseURL }) =>
+    new BasetenProvider(apiKey, model, {
+      streamTimeoutMs,
+      ...(baseURL ? { baseURL } : {}),
+    }),
 };
 
 /**

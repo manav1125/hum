@@ -6,6 +6,7 @@ import { ProviderError } from "../../util/errors.js";
 import { getLogger } from "../../util/logger.js";
 import { extractRetryAfterMs } from "../../util/retry.js";
 import { escapeXmlAttr } from "../../util/xml.js";
+import { recordProviderRequestDiagnostics } from "../request-diagnostics.js";
 import { createStreamTimeout } from "../stream-timeout.js";
 import type {
   ContentBlock,
@@ -207,15 +208,32 @@ export class OpenAIResponsesProvider implements Provider {
     const usageAttributionHeaders = configObj?.usageAttributionHeaders as
       | Record<string, string>
       | undefined;
+    const promptCacheKey =
+      typeof configObj?.promptCacheKey === "string" &&
+      configObj.promptCacheKey.length > 0
+        ? (configObj.promptCacheKey as string)
+        : undefined;
 
     try {
+      const effectiveModel = modelOverride ?? this.model;
+      recordProviderRequestDiagnostics({ model_id: effectiveModel });
       const input = this.toResponsesInput(messages);
 
       const params: Record<string, unknown> = {
-        model: modelOverride ?? this.model,
+        model: effectiveModel,
         input,
         ...(this.codexSubscription ? { store: false } : {}),
       };
+
+      // A per-conversation prompt-cache key gives OpenAI's cache router a
+      // stable affinity key so a conversation's requests land on the same
+      // cache shard. Every model on the direct API receives it — OpenAI's
+      // implicit caching mode carries no explicit breakpoints yet still gains
+      // prefix-cache routing affinity from a stable key. The Codex
+      // subscription endpoint rejects extra params, so it is skipped there.
+      if (!this.codexSubscription && promptCacheKey) {
+        params.prompt_cache_key = promptCacheKey;
+      }
 
       if (systemPrompt) {
         params.instructions = systemPrompt.replaceAll(
