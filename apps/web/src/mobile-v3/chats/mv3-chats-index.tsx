@@ -18,11 +18,17 @@
  *     `lastRunConversationId` is this conversation
  *   Conversations with none of these render as plain rows (no fake receipts).
  *
- * SEARCH SCOPE — wired to the conversation list (client-side title filter).
- * The spec's "Search chats, work, memory…" cross-search has no existing
- * endpoint on this surface, so the placeholder honestly scopes to chats.
+ * SEARCH SCOPE — server-side, across every thread. The box used to filter
+ * `title.includes(q)` over the drained window (page 0 is 50 rows; the owner has
+ * 420 reachable and 1188 in the database), so a thread from two weeks ago came
+ * back as "No chats match." — a claim about the corpus made by a function that
+ * had seen the first page of it. It now runs the daemon's
+ * `GET /v1/search/global?categories=conversations`, which is FTS over message
+ * bodies plus a title LIKE over the WHOLE database. When that call fails the
+ * surface falls back to the old local filter and RENDERS WHY, instead of an
+ * empty state that means something else. See `chats-search.ts`.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, X } from "lucide-react";
 
@@ -34,6 +40,14 @@ import { haptic } from "@/utils/haptics";
 import { AuroraBackdrop } from "../aurora-backdrop";
 import { GlassCard } from "../glass-card";
 import { LargeTitleHeader } from "../large-title-header";
+
+import {
+  CHAT_SEARCH_DEBOUNCE_MS,
+  localTitleMatches,
+  runChatSearch,
+  scopeNote,
+  type ChatSearchState,
+} from "./chats-search";
 
 /** "9:41" today · "Thu" this week · "Jul 3" older (frame 21's time column). */
 function timeLabel(epochMs: number | undefined): string {
@@ -227,12 +241,65 @@ export function Mv3ChatsIndex({
     return map;
   }, [workItemsQuery.data]);
 
-  const visible = useMemo(() => {
-    const live = conversations.filter((c) => !c.archivedAt);
-    const q = query.trim().toLowerCase();
-    if (!q) return live;
-    return live.filter((c) => (c.title ?? "").toLowerCase().includes(q));
-  }, [conversations, query]);
+  const live = useMemo(
+    () => conversations.filter((c) => !c.archivedAt),
+    [conversations],
+  );
+
+  // Debounced server-side search. `live` is deliberately NOT a dependency: it
+  // changes identity on every list refetch, and re-firing the request on each
+  // would turn a background drain into a request storm. The fallback rows it
+  // feeds are read at call time, which is fresh enough for a fallback.
+  const liveRef = useRef(live);
+  // Declared before the search effect so effect order guarantees the ref is
+  // fresh by the time a query change reads it.
+  useEffect(() => {
+    liveRef.current = live;
+  }, [live]);
+  const [search, setSearch] = useState<ChatSearchState>({ status: "idle" });
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setSearch({ status: "idle" });
+      return;
+    }
+    // Local matches paint immediately so the field feels live; the note under
+    // it says a search is still running, so this is never mistaken for the
+    // whole answer.
+    setSearch({
+      status: "searching",
+      query: trimmed,
+      rows: localTitleMatches(liveRef.current, trimmed),
+    });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void runChatSearch(
+        assistantId,
+        trimmed,
+        liveRef.current,
+        controller.signal,
+      ).then((next) => {
+        // `null` is a superseded keystroke — a newer effect already owns the
+        // state. Painting an empty list here would be the original bug again.
+        if (next && !controller.signal.aborted) setSearch(next);
+      });
+    }, CHAT_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, assistantId]);
+
+  const searching = query.trim().length > 0;
+  const visible = searching
+    ? search.status === "idle"
+      ? []
+      : search.rows
+    : live;
+  const note = searching ? scopeNote(search) : null;
 
   return (
     <div
@@ -372,6 +439,26 @@ export function Mv3ChatsIndex({
             }}
           />
         </div>
+        {/* What was searched. Never omitted while a query is live: a bounded
+            search that doesn't name its bound is the defect this fixed. */}
+        {note ? (
+          <div
+            data-slot="mv3-chats-search-scope"
+            role={search.status === "loaded_only" ? "status" : undefined}
+            style={{
+              fontSize: 11.5,
+              lineHeight: 1.35,
+              marginTop: 7,
+              padding: "0 2px",
+              color:
+                search.status === "loaded_only"
+                  ? "var(--mv3-amber)"
+                  : "var(--mv3-muted)",
+            }}
+          >
+            {note}
+          </div>
+        ) : null}
       </div>
 
       {/* Rows — the only scrolling region. */}
@@ -397,7 +484,17 @@ export function Mv3ChatsIndex({
                 padding: "32px 0",
               }}
             >
-              {query.trim() ? "No chats match." : "No chats yet."}
+              {!searching
+                ? "No chats yet."
+                : search.status === "whole"
+                  ? // Only sayable because the index answered — the scope line
+                    // above states that it did.
+                    `No chats match “${search.query}”.`
+                  : search.status === "loaded_only"
+                    ? // NOT "no chats match": older threads were never looked
+                      // at. The amber line above carries the reason.
+                      "Nothing in the chats already loaded matches."
+                    : "Searching…"}
             </div>
           ) : null}
           {visible.map((conversation, i) => {
