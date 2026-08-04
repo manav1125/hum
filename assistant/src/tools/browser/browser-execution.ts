@@ -2,6 +2,7 @@ import { optimizeImageForTransport } from "../../agent/image-optimize.js";
 import { getConfig } from "../../config/loader.js";
 import { HostBrowserProxy } from "../../daemon/host-browser-proxy.js";
 import type { ImageContent } from "../../providers/types.js";
+import { wrapUntrustedContent } from "../../security/untrusted-content.js";
 import { getLogger } from "../../util/logger.js";
 import { truncate } from "../../util/truncate.js";
 import { safeStringSlice } from "../../util/unicode.js";
@@ -13,9 +14,11 @@ import {
   resolveHostAddresses,
   resolveRequestAddress,
   sanitizeUrlForOutput,
+  sanitizeUrlStringForOutput,
 } from "../network/url-safety.js";
 import type { ToolContext, ToolExecutionResult } from "../types.js";
 import {
+  type AuthChallenge,
   detectAuthChallenge,
   detectCaptchaChallenge,
   formatAuthChallenge,
@@ -105,6 +108,105 @@ const ACTION_TIMEOUT_MS = 10_000;
 const MAX_WAIT_MS = 30_000;
 
 const MAX_EXTRACT_LENGTH = 50_000;
+
+/**
+ * Character budget for the fenced payload returned by `browser_extract`.
+ * Sized above {@link MAX_EXTRACT_LENGTH} so the innerText cap stays the
+ * effective limit for body text, while still bounding the header and the
+ * page-controlled (otherwise unbounded) links list.
+ */
+const MAX_EXTRACT_FENCE_CHARS = MAX_EXTRACT_LENGTH + 10_000;
+
+/**
+ * Caps on the link list `browser_extract` returns with `include_links`.
+ * Anchor text and hrefs are page-authored and unbounded (a data-URI href
+ * runs to megabytes), so one link could otherwise spend the whole extract
+ * budget and truncate away every link after it.
+ */
+const MAX_EXTRACTED_LINKS = 200;
+const MAX_LINK_TEXT_CHARS = 80;
+const MAX_LINK_HREF_CHARS = 200;
+
+/**
+ * Character budget for the fenced payload returned by `browser_snapshot`.
+ *
+ * A snapshot's usefulness is all-or-nothing per element: truncating the
+ * list drops trailing element ids the model needs to act on. The AX
+ * transform bounds a snapshot to 150 elements with capped names, values
+ * and attribute strings, so this sits above that worst case and the fence
+ * cannot cut the element list short — while still bounding what a
+ * pathological page can push into context.
+ */
+const MAX_SNAPSHOT_FENCE_CHARS = 100_000;
+
+/**
+ * Maximum length of a page-authored URL or title echoed into a tool
+ * result.
+ *
+ * These render ahead of the payload they head, and the page controls both
+ * (`history.pushState` to a megabyte-long URL, a `document.title` of
+ * arbitrary length). Left unbounded, a hostile page could push the header
+ * alone past a tool's fence budget and truncate away the element list or
+ * body text that follows.
+ */
+const MAX_PAGE_HEADER_CHARS = 500;
+
+/** Read the current page URL, credential-stripped and length-bounded. */
+async function readPageUrl(
+  cdp: CdpClient,
+  signal?: AbortSignal,
+): Promise<string> {
+  const url = sanitizeUrlStringForOutput(await getCurrentUrl(cdp, signal));
+  return truncate(url, MAX_PAGE_HEADER_CHARS);
+}
+
+/** Read the current page title, length-bounded. */
+async function readPageTitle(
+  cdp: CdpClient,
+  signal?: AbortSignal,
+): Promise<string> {
+  return truncate(await getPageTitle(cdp, signal), MAX_PAGE_HEADER_CHARS);
+}
+
+/**
+ * Fence page-derived text before it reaches the model.
+ *
+ * Everything a browser tool reads out of a live page — titles, accessible
+ * names, body text, link labels, form-field labels — is authored by
+ * whoever controls that page, so it carries the same prompt-injection risk
+ * as an inbound email or a fetched web page. `wrapUntrustedContent` marks
+ * it as third-party data, escapes attempts to close the fence from inside,
+ * and caps its size.
+ */
+function fencePageContent(
+  content: string,
+  pageUrl: string,
+  maxChars?: number,
+): string {
+  return wrapUntrustedContent(content, {
+    source: "web",
+    sourceDetail: pageUrl,
+    ...(maxChars === undefined ? {} : { maxChars }),
+  });
+}
+
+/**
+ * Origin to attribute a detected auth challenge to.
+ *
+ * The detector reads the live DOM, which may sit at a different URL than
+ * the one navigation settled on (an SPA login redirect, a modal, the
+ * post-CAPTCHA page). Prefer the URL the detector actually inspected so
+ * the fence metadata names the origin that authored the labels, falling
+ * back to the navigation's final URL when the detector reports none.
+ */
+function authChallengeOrigin(
+  challenge: AuthChallenge,
+  fallbackUrl: string,
+): string {
+  return challenge.url
+    ? sanitizeUrlStringForOutput(challenge.url)
+    : fallbackUrl;
+}
 
 type StatusCheckMode = BrowserStatusMode;
 
@@ -1171,12 +1273,17 @@ export async function executeBrowserNavigate(
       // Page may have navigated during evaluate - safe to ignore
     }
 
-    const safeFinalUrl = sanitizeUrlForOutput(new URL(finalUrl));
-    const title = await getPageTitle(cdp, context.signal);
+    const safeFinalUrl = truncate(
+      sanitizeUrlForOutput(new URL(finalUrl)),
+      MAX_PAGE_HEADER_CHARS,
+    );
+    const title = await readPageTitle(cdp, context.signal);
+    // The document title is page-authored, so it is fenced separately
+    // from the tool's own scaffolding lines.
     const lines: string[] = [
       `Requested URL: ${safeRequestedUrl}`,
       `Final URL: ${safeFinalUrl}`,
-      `Title: ${title || "(none)"}`,
+      fencePageContent(`Title: ${title || "(none)"}`, safeFinalUrl),
     ];
 
     if (navigationTimedOut) {
@@ -1235,12 +1342,11 @@ export async function executeBrowserNavigate(
                 "Cloudflare verification detected. Please solve the CAPTCHA in the Chrome window. The browser will automatically detect when you're done and resume.",
               bringToFront: true,
             });
-            const newUrl = await getCurrentUrl(cdp, context.signal);
-            const newTitle = await getPageTitle(cdp, context.signal);
+            const newUrl = await readPageUrl(cdp, context.signal);
+            const newTitle = await readPageTitle(cdp, context.signal);
             lines.push("");
-            lines.push(
-              `CAPTCHA solved by user. Current page: ${newTitle} (${newUrl})`,
-            );
+            lines.push("CAPTCHA solved by user. Current page:");
+            lines.push(fencePageContent(`${newTitle} (${newUrl})`, newUrl));
 
             // Re-check for auth challenges - the page behind the CAPTCHA may have a login form
             const postCaptchaAuth = await detectAuthChallenge(
@@ -1249,7 +1355,12 @@ export async function executeBrowserNavigate(
             );
             if (postCaptchaAuth) {
               lines.push("");
-              lines.push(formatAuthChallenge(postCaptchaAuth));
+              lines.push(
+                fencePageContent(
+                  formatAuthChallenge(postCaptchaAuth),
+                  authChallengeOrigin(postCaptchaAuth, safeFinalUrl),
+                ),
+              );
               lines.push(...loginGuidanceLines(cdp.kind));
             }
           } else {
@@ -1264,8 +1375,16 @@ export async function executeBrowserNavigate(
         } else {
           // Login / 2FA / OAuth - the agent should handle these itself
           // using browser operations + credential_store. Don't hand off.
+          // The service name and field labels come from the page, so the
+          // formatted challenge is fenced; the remediation steps below are
+          // the tool's own instructions and stay outside.
           lines.push("");
-          lines.push(formatAuthChallenge(challenge));
+          lines.push(
+            fencePageContent(
+              formatAuthChallenge(challenge),
+              authChallengeOrigin(challenge, safeFinalUrl),
+            ),
+          );
           lines.push(...loginGuidanceLines(cdp.kind));
         }
       }
@@ -1333,8 +1452,8 @@ export async function executeBrowserSnapshot(
   const { cdp, browserMode } = acquired;
 
   try {
-    const currentUrl = await getCurrentUrl(cdp, context.signal);
-    const title = await getPageTitle(cdp, context.signal);
+    const currentUrl = await readPageUrl(cdp, context.signal);
+    const title = await readPageTitle(cdp, context.signal);
 
     // Pull the full accessibility tree via CDP and fold it into typed
     // interactive elements + an `eid → backendNodeId` map. Interaction
@@ -1354,13 +1473,23 @@ export async function executeBrowserSnapshot(
       backendNodeMap,
     );
 
-    // A snapshot is the surface most likely to be mistaken for the user's own
-    // session ("it says signed out"), so it discloses its browser too.
+    // The whole snapshot is page-authored — element roles, accessible
+    // names, attribute values and the title all come from the DOM — so
+    // the entire payload goes inside the fence. Element ids stay usable:
+    // fencing marks the block as data, it does not hide it.
+    //
+    // A snapshot is the surface most likely to be mistaken for the user's
+    // own session ("it says signed out"), so it discloses its browser too —
+    // in the tool's own voice, outside the fence.
     return {
       content: [
-        formatAxSnapshot(
-          { elements, selectorMap: backendNodeMap },
-          { url: currentUrl, title },
+        fencePageContent(
+          formatAxSnapshot(
+            { elements, selectorMap: backendNodeMap },
+            { url: currentUrl, title },
+          ),
+          currentUrl,
+          MAX_SNAPSHOT_FENCE_CHARS,
         ),
         ...backendDisclosureLines(cdp.kind),
       ].join("\n"),
@@ -2263,8 +2392,8 @@ export async function executeBrowserExtract(
   if (acquired.errorResult) return acquired.errorResult;
   const cdp = acquired.cdp;
   try {
-    const currentUrl = await getCurrentUrl(cdp, context.signal);
-    const title = await getPageTitle(cdp, context.signal);
+    const currentUrl = await readPageUrl(cdp, context.signal);
+    const title = await readPageTitle(cdp, context.signal);
 
     let textContent = await evaluateExpression<string>(
       cdp,
@@ -2294,15 +2423,30 @@ export async function executeBrowserExtract(
       if (links.length > 0) {
         lines.push("");
         lines.push("Links:");
-        for (const link of links) {
-          lines.push(`  [${link.text || "(no text)"}](${link.href})`);
+        // Bound both fields here rather than trusting the caps in
+        // EXTRACT_LINKS_EXPRESSION: that runs inside the page, so its
+        // return value is as page-controlled as the DOM it reads. A
+        // single unbounded href would otherwise spend the fence budget
+        // and truncate away every link after it.
+        for (const link of links.slice(0, MAX_EXTRACTED_LINKS)) {
+          const text = truncate(String(link.text ?? ""), MAX_LINK_TEXT_CHARS);
+          const href = truncate(
+            sanitizeUrlStringForOutput(String(link.href ?? "")),
+            MAX_LINK_HREF_CHARS,
+          );
+          lines.push(`  [${text || "(no text)"}](${href})`);
         }
       }
     }
 
-    withBackendDisclosure(lines, cdp.kind);
+    // Everything above is page-derived, so it all goes inside the fence;
+    // the backend disclosure is the tool's own voice and stays outside.
+    const resultLines: string[] = [
+      fencePageContent(lines.join("\n"), currentUrl, MAX_EXTRACT_FENCE_CHARS),
+    ];
+    withBackendDisclosure(resultLines, cdp.kind);
 
-    return { content: lines.join("\n"), isError: false };
+    return { content: resultLines.join("\n"), isError: false };
   } catch (err) {
     const diagnosticMessage = formatCdpSendDiagnostics(
       err,

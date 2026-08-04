@@ -1,14 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
-// Silence the logger from local-cdp-client.
-mock.module("../../../../util/logger.js", () => ({
-  getLogger: () => ({
-    info: () => {},
-    debug: () => {},
-    warn: () => {},
-    error: () => {},
-  }),
-}));
+import { createMockLoggerModule } from "../../../../__tests__/helpers/mock-logger.js";
+
+// Silence the logger from local-cdp-client. Full-coverage mock: a
+// getLogger-only factory would delete `getCliLogger` etc. from the
+// process-global registry and break later files in a combined run.
+mock.module("../../../../util/logger.js", () => createMockLoggerModule());
 
 let fakeSessionSendCalls: Array<{ method: string; params?: unknown }> = [];
 let fakeSessionDetachCalls = 0;

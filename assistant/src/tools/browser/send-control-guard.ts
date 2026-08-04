@@ -37,6 +37,10 @@
  */
 
 import {
+  escapeContentBoundaries,
+  wrapUntrustedContent,
+} from "../../security/untrusted-content.js";
+import {
   BROWSER_SUBMIT_KEYWORDS,
   requiresHumanApprovalForAction,
 } from "../outbound-send.js";
@@ -330,10 +334,25 @@ export function gateResolvedSendControl(params: {
   // The label we tell the model to re-issue with MUST itself trip
   // `requiresHumanApprovalForAction`, or the retry sails past the gate and this
   // guard blocks it again forever. A key chord ("cmd+enter") does not match the
-  // keyword set, so it gets wrapped.
-  const approvalLabel = BROWSER_SUBMIT_KEYWORDS.test(controlLabel)
-    ? controlLabel
-    : `Send (${controlLabel})`;
+  // keyword set, so it gets wrapped. Fence-tag escaping keeps a hostile
+  // accessible name from forging or closing an `<external_content>` envelope
+  // when the model echoes the label back; for real labels it is the identity.
+  const approvalLabel = escapeContentBoundaries(
+    BROWSER_SUBMIT_KEYWORDS.test(controlLabel)
+      ? controlLabel
+      : `Send (${controlLabel})`,
+  );
+
+  // For clicks the control's name is the page's own text (its accessible
+  // name), so it crosses into model context only inside an
+  // `<external_content>` fence per `security/AGENTS.md`. Key chords are the
+  // daemon's own strings and stay inline.
+  const labelMention =
+    kind === "click" ? "(control label fenced below)" : `(“${controlLabel}”)`;
+  const fencedLabelBlock =
+    kind === "click"
+      ? `\n${wrapUntrustedContent(controlLabel, { source: "web" })}`
+      : "";
 
   if (unattended) {
     void import("../../work-items/work-item-approval-timeouts.js")
@@ -343,20 +362,22 @@ export function gateResolvedSendControl(params: {
       .catch(() => {});
     const reason =
       `Parked "${toolName}": ${act} activates a send/submit control ` +
-      `(“${controlLabel}”). That reaches outside or can't be undone, so it ` +
+      `${labelMention}. That reaches outside or can't be undone, so it ` +
       `needs a human and can't run unattended. I've saved it as a needs-you ` +
       `item — approve and re-run to do it. (Navigating, reading, and drafting ` +
-      `in the page are unaffected; only the send itself waits.)`;
+      `in the page are unaffected; only the send itself waits.)` +
+      fencedLabelBlock;
     return { blocked: true, result: { content: reason, isError: true } };
   }
 
   const reason =
     `Blocked "${toolName}": ${act} activates a send/submit control ` +
-    `(“${controlLabel}”), and the way you addressed it (${targetDescription}) ` +
+    `${labelMention}, and the way you addressed it (${targetDescription}) ` +
     `carries no label, so the human-approval gate could not see what this ` +
     `does. Nothing was dispatched.\n` +
     `To proceed, re-issue the exact same call with \`label: "${approvalLabel}"\` ` +
     `added — that routes it through the approval gate and the user gets a ` +
-    `confirmation prompt. Retrying without the label will be blocked again.`;
+    `confirmation prompt. Retrying without the label will be blocked again.` +
+    fencedLabelBlock;
   return { blocked: true, result: { content: reason, isError: true } };
 }
