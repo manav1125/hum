@@ -59,6 +59,8 @@ const ClassifyRiskSchema = z.object({
       pluginsDir: z.string().optional(),
       actorTokenSigningKeyPath: z.string(),
       skillSourceDirs: z.array(z.string()),
+      controlPlaneDirs: z.array(z.string()).optional(),
+      controlPlaneFiles: z.array(z.string()).optional(),
     })
     .optional(),
   // Skill classifier context (pre-resolved by assistant)
@@ -430,6 +432,8 @@ export async function handleClassifyRisk(
         hooksDir: fileCtx?.hooksDir ?? SENTINEL,
         pluginsDir: fileCtx?.pluginsDir ?? SENTINEL,
         skillSourceDirs: fileCtx?.skillSourceDirs ?? [],
+        controlPlaneDirs: fileCtx?.controlPlaneDirs ?? [],
+        controlPlaneFiles: fileCtx?.controlPlaneFiles ?? [],
       };
 
       const assessment = await fileRiskClassifier.classify(
