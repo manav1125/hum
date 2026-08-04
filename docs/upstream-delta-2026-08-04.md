@@ -260,8 +260,17 @@ attention) · marketplace-over-embeddings. Upstream has NO meeting-joining code 
   is fixed by suppressing config writes during the DB-migration pass. Known baseline (pre-existing,
   NOT from Wave A): `src/__tests__/checker.test.ts` fails 52 tests on this branch's base, and
   combined browser-dir runs carry config-loader mock pollution.
-- **Wave B (week):** channel robustness cluster + product quick wins (retry, bookmarks-web,
-  summarize-up-to-here, model catalog + caching keys + request diagnostics, inbound email attachments).
+- **Wave B — DONE (2026-08-04, same branch, 10 commits):** webhook tolerant-Zod +
+  shared retries + inbound email-attachment ingest (B-1); Slack group DMs / single
+  SlackApiError / permalink fallback / mention rendering / socket generation-counting (B-2);
+  guardian cards persist + Telegram in-place withdrawal + phone deny-gate hoist (B-3);
+  model catalog refresh + Baseten + prompt_cache_key + request diagnostics, web mirror +
+  regenerated SDK (B-4); retry button + bookmarks web UI, flag ON (B-5);
+  chat-complex-documents skill (B-6); summarize-up-to-here end-to-end incl.
+  context_window_usage event, flag ON (B-7). Also fixed the pre-existing checker.test.ts
+  baseline (harness gap from bb2f211eb8; 131/0 now). Follow-ups noted in commits: Slack
+  cross-surface card withdrawal, mobile long-press summarize entry, system_card polish,
+  Velay/consumer migration onto exponential-backoff util.
 - **Wave C (decide):** voice unified front door as a scoped project (the one genuinely strategic
   re-platform this window); plugin apps/deps; memory-DB cutover.
 - Keep the Monday releases watch (schedule b12e1ba0-3d7d). Re-run the deep delta in 2–3 weeks;
