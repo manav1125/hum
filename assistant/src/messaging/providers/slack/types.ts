@@ -27,6 +27,7 @@ export interface SlackBotsInfoResponse extends SlackApiResponse {
 export interface SlackConversation {
   id: string;
   name?: string;
+  name_normalized?: string;
   is_channel?: boolean;
   is_group?: boolean;
   is_im?: boolean;
@@ -41,6 +42,10 @@ export interface SlackConversation {
   unread_count_display?: number;
   latest?: SlackMessage;
   user?: string;
+}
+
+export interface SlackConversationInfoResponse extends SlackApiResponse {
+  channel: SlackConversation;
 }
 
 export interface SlackConversationsListResponse extends SlackApiResponse {

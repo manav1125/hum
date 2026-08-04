@@ -16,9 +16,9 @@ import {
   callSlackApi,
   callSlackApiForm,
   completeSlackUpload,
-  SlackApiError,
   uploadToSlackUrl,
 } from "./api.js";
+import { SlackApiError } from "./web-api-transport.js";
 
 const log = getLogger("slack-send");
 

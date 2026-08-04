@@ -19,9 +19,6 @@ mock.module("./api.js", () => ({
     callSlackApiMock(method, body),
   callSlackApiForm: async () => ({}),
   completeSlackUpload: async () => {},
-  SlackApiError: class SlackApiError extends Error {
-    slackError?: string;
-  },
   uploadToSlackUrl: async () => {},
 }));
 
