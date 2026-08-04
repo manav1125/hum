@@ -19,6 +19,7 @@ import { C } from "@/lib/hq-theme";
 import {
   AUTONOMY_LABEL,
   DIAL_LABEL,
+  activityLine,
   agoLabel,
   dialBanner,
   intervalLabel,
@@ -31,8 +32,10 @@ import {
   useToggleWatcher,
   useWatcherProviders,
   useWatchers,
+  watcherHealthMeta,
   type Autonomy,
   type GlobalDial,
+  type HealthTone,
   type Playbook,
   type Watcher,
 } from "@/mobile-v3/you/use-automations-data";
@@ -100,128 +103,22 @@ function Micro({ children }: { children: React.ReactNode }) {
 // ── Watcher card ──────────────────────────────────────────────────────
 
 /**
- * Fields the daemon's `watchers/list` sends that the shared `Watcher` type does
- * not yet declare. Every one is optional: a client can be newer than the daemon
- * it is talking to, and the card must degrade to saying less rather than to
- * guessing.
- *
- * `scope` is what this watcher is pointed at; `hitCount`/`lastHitAt` are what it
- * has actually produced. The card exists in its current form because neither
- * was available and `lastPollAt` was rendered in their place.
+ * The serif-HQ colour for a health tone. The glyph and the word come from the
+ * shared `watcherHealthMeta` so both surfaces name the states identically; only
+ * the palette is local. `bad` is red on purpose — a watcher that cannot produce
+ * must not render in the healthy colour.
  */
-type WatcherRow = Omit<Watcher, "health"> & {
-  /**
-   * `not_watching` is not in the shared `WatcherHealth` union yet — that type
-   * lives on a surface another agent owns. Widening it here keeps the state
-   * checkable instead of casting at the comparison.
-   */
-  health: Watcher["health"] | "not_watching";
-  scope?: { watching: boolean; summary: string; fix?: string };
-  hitCount?: number;
-  lastHitAt?: number | null;
-  createdAt?: number;
+const TONE_COLOR: Record<HealthTone, string> = {
+  good: GREEN,
+  warn: AMBER,
+  bad: RED,
+  neutral: MUTED,
 };
 
-/**
- * The health chip: a glyph, a word and a colour — in that order of importance.
- * The glyph is not decoration; the same three states are otherwise separated
- * only by hue, which is no separation at all for a large share of readers.
- */
-function healthMeta(w: WatcherRow) {
-  // A watcher with nothing to poll is not "healthy" and is not a connection
-  // problem — connecting an account would not make it start working. The
-  // daemon reports this only when a provider says its config cannot produce.
-  if (w.health === "not_watching") {
-    return {
-      glyph: "⊘",
-      label: "not watching",
-      color: RED,
-      note:
-        w.scope?.summary ??
-        "This watcher isn't pointed at anything, so nothing can arrive.",
-      fix: w.scope?.fix ?? "Remove it, or re-create it with a source to watch.",
-    };
-  }
-  if (w.health === "not_connected") {
-    return {
-      glyph: "▲",
-      label: "not connected",
-      color: AMBER,
-      note: `${w.credentialService} isn't connected — connect it to start`,
-      fix: null,
-    };
-  }
-  if (w.health === "reauth") {
-    return {
-      glyph: "▲",
-      label: "reauth",
-      color: AMBER,
-      note: "Token expired — reconnect to resume",
-      fix: null,
-    };
-  }
-  if (w.health === "ok")
-    return {
-      glyph: "✓",
-      label: "healthy",
-      color: GREEN,
-      note: null,
-      fix: null,
-    };
-  return { glyph: "…", label: "checking", color: MUTED, note: null, fix: null };
-}
-
-/**
- * What this watcher has produced, said without ever calling a poll a hit.
- *
- * The old line read `Last hit ${ago(lastPollAt)}` — the poll clock under a hit's
- * label. In production that rendered "Last hit 2m ago" on a watcher that had
- * recorded zero events in a day and a half of polling, which is the complaint
- * this card is answering. A poll and a hit are now two separate clauses, and
- * zero says zero.
- */
-function activityLine(w: WatcherRow): string {
-  const checked = agoLabel(w.lastPollAt);
-  const hits = w.hitCount;
-
-  // Older daemon: no hit counts at all. Say only what we can stand behind —
-  // when it last checked — and never relabel that as a hit.
-  if (hits === undefined) {
-    return checked ? `Last checked ${checked}` : "Not checked yet";
-  }
-
-  if (hits > 0) {
-    const last = agoLabel(w.lastHitAt ?? null);
-    const arrived = last ? `, last ${last}` : "";
-    return `${hits} ${hits === 1 ? "hit" : "hits"}${arrived} · checked ${
-      checked ?? "not yet"
-    }`;
-  }
-
-  if (!checked) return "Nothing yet — it hasn't run for the first time";
-
-  // Zero hits with a healthy poll is genuinely ambiguous: a quiet source and a
-  // broken one look identical from here. Say the two facts and let them be
-  // compared, rather than picking one story and asserting it.
-  const watchingFor = durationLabel(w.createdAt ?? null);
-  const since = watchingFor ? ` in ${watchingFor} of watching` : "";
-  return `Nothing has arrived${since} · last checked ${checked}`;
-}
-
-/** "3 days" / "7 hours" / "20 minutes" — an elapsed span, not a timestamp. */
-function durationLabel(since: number | null): string | null {
-  if (!since) return null;
-  const m = Math.max(0, Math.round((Date.now() - since) / 60_000));
-  if (m < 60) return m <= 1 ? "the last minute" : `${m} minutes`;
-  const h = Math.round(m / 60);
-  if (h < 48) return h === 1 ? "an hour" : `${h} hours`;
-  return `${Math.round(h / 24)} days`;
-}
-
-function WatcherCard({ watcher }: { watcher: WatcherRow }) {
+function WatcherCard({ watcher }: { watcher: Watcher }) {
   const toggle = useToggleWatcher();
   const del = useDeleteWatcher();
-  const h = healthMeta(watcher);
+  const h = watcherHealthMeta(watcher);
   return (
     <div
       style={{
@@ -255,7 +152,7 @@ function WatcherCard({ watcher }: { watcher: WatcherRow }) {
             gap: 5,
             fontFamily: mono,
             fontSize: 10.5,
-            color: h.color,
+            color: TONE_COLOR[h.tone],
           }}
         >
           <span aria-hidden style={{ fontSize: 11, lineHeight: 1 }}>

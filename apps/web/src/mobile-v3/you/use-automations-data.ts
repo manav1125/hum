@@ -24,8 +24,25 @@ export type Autonomy = "auto" | "draft" | "notify";
 /**
  * `not_connected` is deliberately distinct from `reauth`: "reconnect to
  * resume" is the wrong sentence for an account that was never connected.
+ *
+ * `not_watching` is distinct from both: the daemon reports it when a provider
+ * says its config cannot produce, and connecting an account would not fix it.
+ * It outranks every credential answer including 'ok', because a green dot on a
+ * watcher that can never hit is the exact lie the state exists to stop.
  */
-export type WatcherHealth = "ok" | "reauth" | "unknown" | "not_connected";
+export type WatcherHealth =
+  | "ok"
+  | "reauth"
+  | "unknown"
+  | "not_connected"
+  | "not_watching";
+
+/** What a watcher is pointed at, as the daemon's provider describes it. */
+export interface WatcherScope {
+  watching: boolean;
+  summary: string;
+  fix?: string;
+}
 
 export interface Watcher {
   id: string;
@@ -41,6 +58,20 @@ export interface Watcher {
   configJson: string | null;
   credentialService: string;
   health: WatcherHealth;
+  /**
+   * What the watcher is pointed at, and what it has actually produced.
+   *
+   * Optional because a client can be newer than the daemon it is talking to,
+   * and a card must degrade to saying less rather than to guessing. `scope` is
+   * the target; `hitCount`/`lastHitAt` are the output. Every surface had to
+   * substitute `lastPollAt` for these before the daemon sent them — which is
+   * how an account-wide GitHub watcher with zero events read as "hit 2m ago"
+   * for a day and a half.
+   */
+  scope?: WatcherScope;
+  hitCount?: number;
+  lastHitAt?: number | null;
+  createdAt?: number;
 }
 
 export interface Playbook {
@@ -229,6 +260,121 @@ export function agoLabel(epoch: number | null): string | null {
   const h = Math.round(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.round(h / 24)}d ago`;
+}
+
+/** "3 days" / "7 hours" / "20 minutes" — an elapsed span, not a timestamp. */
+export function durationLabel(since: number | null | undefined): string | null {
+  if (!since) return null;
+  const m = Math.max(0, Math.round((Date.now() - since) / 60_000));
+  if (m < 60) return m <= 1 ? "the last minute" : `${m} minutes`;
+  const h = Math.round(m / 60);
+  if (h < 48) return h === 1 ? "an hour" : `${h} hours`;
+  return `${Math.round(h / 24)} days`;
+}
+
+/**
+ * What a watcher has produced, said without ever calling a poll a hit.
+ *
+ * The old line read `Last hit ${agoLabel(lastPollAt)}` — the poll clock under a
+ * hit's label. In production that rendered "Last hit 2m ago" on a watcher that
+ * had recorded zero events in a day and a half of polling, on both the desktop
+ * board and the mobile leaf. A poll and a hit are two separate clauses here,
+ * and zero says zero. Shared so neither surface can drift back.
+ */
+export function activityLine(
+  w: Pick<Watcher, "lastPollAt" | "hitCount" | "lastHitAt" | "createdAt">,
+): string {
+  const checked = agoLabel(w.lastPollAt);
+  const hits = w.hitCount;
+
+  // Older daemon: no hit counts at all. Say only what we can stand behind —
+  // when it last checked — and never relabel that as a hit.
+  if (hits === undefined) {
+    return checked ? `Last checked ${checked}` : "Not checked yet";
+  }
+
+  if (hits > 0) {
+    const last = agoLabel(w.lastHitAt ?? null);
+    const arrived = last ? `, last ${last}` : "";
+    return `${hits} ${hits === 1 ? "hit" : "hits"}${arrived} · checked ${
+      checked ?? "not yet"
+    }`;
+  }
+
+  if (!checked) return "Nothing yet — it hasn't run for the first time";
+
+  // Zero hits with a healthy poll is genuinely ambiguous: a quiet source and a
+  // broken one look identical from here. Say the two facts and let them be
+  // compared, rather than picking one story and asserting it.
+  const watchingFor = durationLabel(w.createdAt ?? null);
+  const since = watchingFor ? ` in ${watchingFor} of watching` : "";
+  return `Nothing has arrived${since} · last checked ${checked}`;
+}
+
+/**
+ * The semantic half of the health chip: a glyph, a word and a tone — in that
+ * order of importance. The glyph is not decoration; the states are otherwise
+ * separated only by hue, which is no separation at all for a large share of
+ * readers. Colour is left to the caller because the two surfaces draw from
+ * different palettes (serif-HQ tokens vs. the mv3 vars) — but a `bad` tone must
+ * never be drawn green on either.
+ */
+export type HealthTone = "good" | "warn" | "bad" | "neutral";
+
+export interface WatcherHealthMeta {
+  glyph: string;
+  label: string;
+  tone: HealthTone;
+  /** Why it can't produce — null when there is nothing wrong to report. */
+  note: string | null;
+  /** What would fix it, when that is knowable. */
+  fix: string | null;
+}
+
+export function watcherHealthMeta(
+  w: Pick<Watcher, "health" | "credentialService" | "scope">,
+): WatcherHealthMeta {
+  // A watcher with nothing to poll is not "healthy" and is not a connection
+  // problem — connecting an account would not make it start working.
+  if (w.health === "not_watching") {
+    return {
+      glyph: "⊘",
+      label: "not watching",
+      tone: "bad",
+      note:
+        w.scope?.summary ??
+        "This watcher isn't pointed at anything, so nothing can arrive.",
+      fix: w.scope?.fix ?? "Remove it, or re-create it with a source to watch.",
+    };
+  }
+  if (w.health === "not_connected") {
+    return {
+      glyph: "▲",
+      label: "not connected",
+      tone: "warn",
+      note: `${w.credentialService} isn't connected — connect it to start`,
+      fix: null,
+    };
+  }
+  if (w.health === "reauth") {
+    return {
+      glyph: "▲",
+      label: "reauth",
+      tone: "warn",
+      note: "Token expired — reconnect to resume",
+      fix: null,
+    };
+  }
+  if (w.health === "ok") {
+    return { glyph: "✓", label: "healthy", tone: "good", note: null, fix: null };
+  }
+  return {
+    glyph: "…",
+    label: "checking",
+    tone: "neutral",
+    note: null,
+    fix: null,
+  };
 }
 
 export const AUTONOMY_LABEL: Record<Autonomy, string> = {

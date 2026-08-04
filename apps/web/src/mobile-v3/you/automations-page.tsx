@@ -7,6 +7,13 @@
  * CAP: an option above the dial's ceiling renders locked (🔒) with a line
  * pointing to You → Trust. The cap is the server's truth — the playbook list
  * carries `globalDial`/`effectiveAutonomy`/`autonomyCapped`.
+ *
+ * The watcher card carries the same rule as the desktop board: it says what the
+ * watcher is pointed at, and it never substitutes the poll clock for a hit. It
+ * used to render `hit ${agoLabel(lastPollAt)}`, so a GitHub watcher that had
+ * polled ~320 times over 27 hours with zero events read as a live one. Hits and
+ * checks are separate clauses now, and a watcher that cannot produce
+ * (`not_watching`) never renders green.
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -21,7 +28,7 @@ import { Eyebrow, YouScreen } from "./you-kit";
 import {
   AUTONOMY_LABEL,
   DIAL_LABEL,
-  agoLabel,
+  activityLine,
   dialBanner,
   intervalLabel,
   useCreatePlaybook,
@@ -30,16 +37,30 @@ import {
   useToggleWatcher,
   useWatcherProviders,
   useWatchers,
+  watcherHealthMeta,
   type Autonomy,
   type GlobalDial,
+  type HealthTone,
   type Playbook,
   type Watcher,
 } from "./use-automations-data";
 
 const TEAL = "#4FC7C7";
 const VIOLET = "#A79FF0";
-const GREEN = "#6FD69A";
 const AMBER = "#F4BF4F";
+
+/**
+ * The mv3 colour for a health tone. The glyph and the word come from the shared
+ * `watcherHealthMeta`, so this leaf and the desktop board name the states
+ * identically; only the palette is local. `bad` is the fail colour on purpose —
+ * a watcher that cannot produce must not render in the healthy green.
+ */
+const TONE_COLOR: Record<HealthTone, string> = {
+  good: "var(--mv3-green-text)",
+  warn: "var(--mv3-amber-text)",
+  bad: "var(--mv3-fail-text)",
+  neutral: "var(--mv3-faint)",
+};
 
 /** Autonomy ranking so we can tell which options the dial ceiling locks. */
 const AUTONOMY_RANK: Record<Autonomy, number> = {
@@ -66,58 +87,72 @@ function providerLabel(id: string): string {
 }
 
 // ── Watcher card ──────────────────────────────────────────────────────
-function HealthDot({ health }: { health: Watcher["health"] }) {
-  const color =
-    health === "ok"
-      ? GREEN
-      : health === "reauth" || health === "not_connected"
-        ? AMBER
-        : "var(--mv3-faint)";
+
+/**
+ * A glyph, a word, a colour — in that order of importance. This replaced a bare
+ * coloured dot: the states were separated only by hue, which is no separation
+ * at all for a large share of readers, and the dot's three aria-labels could not
+ * name a fourth state.
+ */
+function HealthChip({ watcher }: { watcher: Watcher }) {
+  const h = watcherHealthMeta(watcher);
   return (
     <span
-      aria-label={
-        health === "reauth"
-          ? "Reconnect needed"
-          : health === "ok"
-            ? "Healthy"
-            : "Status unknown"
-      }
       style={{
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: color,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 3,
         flexShrink: 0,
+        fontFamily: "var(--mv3-mono)",
+        fontSize: 9.5,
+        letterSpacing: ".04em",
+        color: TONE_COLOR[h.tone],
       }}
-    />
+    >
+      <span aria-hidden style={{ fontSize: 10, lineHeight: 1 }}>
+        {h.glyph}
+      </span>
+      {h.label}
+    </span>
   );
+}
+
+/**
+ * What the watcher is pointed at, in the daemon's words.
+ *
+ * The pre-daemon fallback is the locally-parsed config filter — the only thing
+ * this card could say about scope before `watchers/list` described it. It is a
+ * fragment, not a sentence, so it is rendered without the "Watching:" lead-in
+ * and never claims the watcher is or isn't pointed at anything.
+ */
+function scopeLine(watcher: Watcher): {
+  text: string;
+  watching: boolean;
+} | null {
+  if (watcher.scope) {
+    return { text: watcher.scope.summary, watching: watcher.scope.watching };
+  }
+  try {
+    const cfg = watcher.configJson ? JSON.parse(watcher.configJson) : {};
+    if (typeof cfg.filter === "string" && cfg.filter) {
+      return { text: cfg.filter, watching: true };
+    }
+  } catch {
+    // Unreadable config proves nothing about the watcher — say nothing.
+  }
+  return null;
 }
 
 function WatcherCard({ watcher }: { watcher: Watcher }) {
   const toggle = useToggleWatcher();
-  const lastHit = agoLabel(watcher.lastPollAt);
-  const filter = (() => {
-    try {
-      const cfg = watcher.configJson ? JSON.parse(watcher.configJson) : {};
-      return typeof cfg.filter === "string" ? cfg.filter : null;
-    } catch {
-      return null;
-    }
-  })();
-  const meta = [
-    providerLabel(watcher.providerId),
-    filter,
-    intervalLabel(watcher.pollIntervalMs),
-    lastHit ? `hit ${lastHit}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const h = watcherHealthMeta(watcher);
+  const scope = scopeLine(watcher);
 
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         gap: 12,
         padding: "13px 15px",
         borderBottom: "1px solid var(--mv3-line)",
@@ -142,26 +177,82 @@ function WatcherCard({ watcher }: { watcher: Watcher }) {
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 14.5, fontWeight: 600 }}>
+          <span
+            style={{
+              fontSize: 14.5,
+              fontWeight: 600,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {watcher.name}
           </span>
-          <HealthDot health={watcher.health} />
+          <HealthChip watcher={watcher} />
         </div>
         <div
           style={{
             fontSize: 11.5,
             color: "var(--mv3-muted)",
             marginTop: 2,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
           }}
         >
-          {watcher.health === "reauth"
-            ? "Token expired — reconnect to resume"
-            : watcher.health === "not_connected"
-              ? `${watcher.credentialService} isn't connected — connect it to start`
-              : meta}
+          {providerLabel(watcher.providerId)} ·{" "}
+          {intervalLabel(watcher.pollIntervalMs)}
+        </div>
+        {/* What it is pointed at. Without this the card read as "on, but
+            pointing nowhere" — the same sentence whether it watches an entire
+            account or nothing at all. */}
+        {scope ? (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: scope.watching
+                ? "var(--mv3-muted)"
+                : "var(--mv3-fail-text)",
+              marginTop: 5,
+              lineHeight: 1.45,
+            }}
+          >
+            {scope.watching && watcher.scope ? "Watching: " : ""}
+            {scope.text}
+          </div>
+        ) : null}
+        {h.note && h.note !== watcher.scope?.summary ? (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "var(--mv3-fail-text)",
+              marginTop: 5,
+              lineHeight: 1.45,
+            }}
+          >
+            {h.note}
+          </div>
+        ) : null}
+        {h.fix ? (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: AMBER,
+              marginTop: 4,
+              lineHeight: 1.45,
+            }}
+          >
+            {h.fix}
+          </div>
+        ) : null}
+        {/* Polls and hits, never conflated. */}
+        <div
+          style={{
+            fontSize: 11.5,
+            color: "var(--mv3-faint)",
+            marginTop: 5,
+            lineHeight: 1.45,
+          }}
+        >
+          {activityLine(watcher)}
         </div>
       </div>
       <button
