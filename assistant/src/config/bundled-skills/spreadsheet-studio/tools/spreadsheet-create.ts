@@ -16,8 +16,8 @@ import type {
   ToolExecutionResult,
 } from "../../../../tools/types.js";
 import {
-  computeResults,
   type CellScalar,
+  computeResults,
   type ModelCell,
   type WorkbookModel,
 } from "./formula-eval.js";

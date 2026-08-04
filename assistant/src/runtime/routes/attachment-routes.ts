@@ -30,6 +30,10 @@ import {
 import { getWorkspaceDir } from "../../util/platform.js";
 import { ACTOR_PRINCIPALS, LOCAL_PRINCIPALS } from "../auth/route-policy.js";
 import {
+  resolveExistingConversations,
+  sourceConversationSchema,
+} from "./artifact-provenance.js";
+import {
   BadRequestError,
   ConflictError,
   NotFoundError,
@@ -39,10 +43,6 @@ import {
 } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 import { RouteResponse } from "./types.js";
-import {
-  resolveExistingConversations,
-  sourceConversationSchema,
-} from "./artifact-provenance.js";
 
 /** 150 MB — base64-encoded 100 MB attachment ≈ 134 MB plus JSON wrapper overhead. */
 const MAX_UPLOAD_BODY_BYTES = 150 * 1024 * 1024;

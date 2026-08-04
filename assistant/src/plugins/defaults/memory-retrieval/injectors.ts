@@ -66,13 +66,13 @@ import { readPkbContext } from "../../../memory/pkb/context.js";
 import { searchPkbFiles } from "../../../memory/pkb/pkb-search.js";
 import { getPkbRoot, PKB_WORKSPACE_SCOPE } from "../../../memory/pkb/types.js";
 import { readMemoryV2StaticContent } from "../../../memory/v2/static-context.js";
-import { buildSpawnedWorkBlock } from "../../../work-items/spawned-work-context.js";
 import type { Message } from "../../../providers/types.js";
 import { getLogger } from "../../../util/logger.js";
 import {
   getConfigQuarantineNoticePath,
   getSandboxWorkingDir,
 } from "../../../util/platform.js";
+import { buildSpawnedWorkBlock } from "../../../work-items/spawned-work-context.js";
 import {
   type InjectionBlock,
   type Injector,

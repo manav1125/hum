@@ -17,12 +17,12 @@
  * only the tool surface that was missing.
  */
 
-import { RiskLevel } from "../../permissions/types.js";
 import {
   BROWSER_OPERATION_META,
   executeBrowserOperation,
 } from "../../browser/operations.js";
 import type { BrowserOperation } from "../../browser/types.js";
+import { RiskLevel } from "../../permissions/types.js";
 import type { ToolDefinition } from "../types.js";
 
 /**

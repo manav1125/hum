@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
 import { chromium } from "playwright";
 
 const BASE = "https://manav.justcue.app";

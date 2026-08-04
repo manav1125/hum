@@ -20,17 +20,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { getBundledSkillsDir } from "../../../skills.js";
 import type {
   ToolContext,
   ToolExecutionResult,
 } from "../../../../tools/types.js";
+import { getBundledSkillsDir } from "../../../skills.js";
 
-const PRESENTATIONS_SUBPATH = join(
-  "app-builder",
-  "templates",
-  "presentations",
-);
+const PRESENTATIONS_SUBPATH = join("app-builder", "templates", "presentations");
 
 function presentationsRoot(): string {
   return join(getBundledSkillsDir(), PRESENTATIONS_SUBPATH);
@@ -137,7 +133,9 @@ export async function run(
   let wanted = order;
   const rawSlides = input.slides;
   if (Array.isArray(rawSlides) && rawSlides.length > 0) {
-    const want = new Set(rawSlides.map((s) => Number(s)).filter(Number.isFinite));
+    const want = new Set(
+      rawSlides.map((s) => Number(s)).filter(Number.isFinite),
+    );
     wanted = order.filter((s) => want.has(s.n));
     if (wanted.length === 0) {
       return {
