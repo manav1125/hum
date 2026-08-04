@@ -40,9 +40,32 @@ const schemes =
 // persist across launches. "Apple Development" is a `development`-type cert
 // (found via the "Mac Developer" type by the afterSign re-sign pass); it runs
 // on the signing machine and needs no notarization.
-const signIdentity = process.env.CUE_MAC_SIGN_IDENTITY || undefined;
+// A Developer ID build is a different kind of signature, not a different name.
+// `type: "development"` above is right for the local Apple Development identity
+// and wrong for Developer ID: that is electron-builder's `distribution` type,
+// and it also rejects an `identity` carrying the "Developer ID Application:"
+// prefix ("appropriate certificate will be chosen automatically"), because the
+// type already tells it which certificate class to look in. Hardcoding
+// development meant the repo could not produce a distributable build at all —
+// every local pack was signed with a certificate that Gatekeeper refuses on any
+// Mac but the signing one.
+//
+// The bare common name is deliberately what we hand over: "Manav Gupta
+// (TEAMID)" is ambiguous to `codesign` on a machine holding both an Apple
+// Distribution and a Developer ID cert, but electron-builder disambiguates by
+// certificate type before it ever shells out.
+const rawSignIdentity = process.env.CUE_MAC_SIGN_IDENTITY || undefined;
+const isDeveloperId = /^Developer ID Application:\s*/i.test(
+  rawSignIdentity ?? "",
+);
+const signIdentity = isDeveloperId
+  ? rawSignIdentity.replace(/^Developer ID Application:\s*/i, "")
+  : rawSignIdentity;
 const macSigning = signIdentity
-  ? { identity: signIdentity, type: "development" }
+  ? {
+      identity: signIdentity,
+      type: isDeveloperId ? "distribution" : "development",
+    }
   : {};
 
 /** @type {import("electron-builder").Configuration} */
