@@ -22874,6 +22874,74 @@ paths:
                 - stop
               additionalProperties: false
   /v1/hq/valve/feedback:
+    get:
+      operationId: hq_valve_feedback_get
+      summary: What the ✕ has taught the valve
+      description:
+        The read half of `POST hq/valve/feedback`, so a policy surface can state what the dismissals have actually
+        achieved without recording a dismissal to find out. `demotedSenders` is the count the banding rules genuinely
+        use — the same `learnedDownSenders()` set, i.e. senders over the threshold whose dismissals still outnumber
+        their keeps — not the length of the taught list, which includes subjects that were corrected once and subjects
+        the owner has since taken back.
+      tags:
+        - hq
+        - valve
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  demotedSenders:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Senders the valve is currently quieting because of the ✕. This is the number a surface may claim as a
+                      result.
+                  threshold:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Dismissals of one sender required before anything is quieted. One ✕ is deliberately not enough.
+                  taught:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        subjectKind:
+                          type: string
+                        subjectKey:
+                          type: string
+                        dismissed:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        kept:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        lastSignalAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - subjectKind
+                        - subjectKey
+                        - dismissed
+                        - kept
+                        - lastSignalAt
+                      additionalProperties: false
+                    description:
+                      Every subject carrying a signal, most-dismissed first. Both counts are kept, so a sender taken back reads
+                      differently from one never corrected.
+                required:
+                  - demotedSenders
+                  - threshold
+                  - taught
+                additionalProperties: false
     post:
       operationId: hq_valve_feedback_post
       summary: Teach the valve

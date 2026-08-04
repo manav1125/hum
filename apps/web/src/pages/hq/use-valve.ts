@@ -26,6 +26,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  hqValveFeedbackGetQueryKey,
   hqValveFeedbackPostMutation,
   hqValveGetOptions,
   hqValveGetQueryKey,
@@ -107,7 +108,11 @@ export function useValveFeedback(assistantId: string) {
       // page would keep reporting a demotion count taken before the dismissal
       // that changed it — the surface whose entire job is to be the record of
       // what you have taught, quietly a minute behind.
-      void queryClient.invalidateQueries({ queryKey: ["valve-teaching"] });
+      void queryClient.invalidateQueries({
+        queryKey: hqValveFeedbackGetQueryKey({
+          path: { assistant_id: assistantId },
+        }),
+      });
     },
   });
 }

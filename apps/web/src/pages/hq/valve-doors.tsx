@@ -40,13 +40,15 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  hqValveFeedbackGetOptions,
+  hqValveFeedbackGetQueryKey,
   hqValveGetOptions,
   hqValveGetQueryKey,
   hqValveMissionsByMissionIdDeleteMutation,
   hqValveMissionsByMissionIdPutMutation,
   hqValvePutMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
-import { client } from "@/generated/daemon/client.gen";
+import type { HqValveFeedbackGetResponses } from "@/generated/daemon/types.gen";
 
 import { C } from "./hq-kit";
 import { useValveState, type ValveStop } from "./use-valve";
@@ -165,7 +167,11 @@ function useInvalidateValve(assistantId: string) {
       // they are exactly the ones that go stale the moment the stop moves.
       exact: false,
     });
-    void queryClient.invalidateQueries({ queryKey: ["valve-teaching"] });
+    void queryClient.invalidateQueries({
+      queryKey: hqValveFeedbackGetQueryKey({
+        path: { assistant_id: assistantId },
+      }),
+    });
   };
 }
 
@@ -190,53 +196,23 @@ export function useClearMissionValveStop(assistantId: string) {
   });
 }
 
-export interface ValveTeaching {
-  /** Senders the banding rules are ACTUALLY quieting. Never a row count. */
-  demotedSenders: number;
-  /** Dismissals of one sender needed before anything is quieted. */
-  threshold: number;
-  taught: {
-    subjectKind: string;
-    subjectKey: string;
-    dismissed: number;
-    kept: number;
-    lastSignalAt: number;
-  }[];
-}
+/** The read half of the feedback route, straight off the generated SDK. */
+export type ValveTeaching = HqValveFeedbackGetResponses[200];
 
 /**
- * What the ✕ has taught — the read half of the feedback route.
+ * What the ✕ has taught.
  *
- * Newer than the generated daemon SDK, so the wire shape is named here and the
- * already-authed `client` is called directly (the same pattern as
- * `use-mission-lifecycle`). `null` means we could not ask, and is NOT the same
- * as `{demotedSenders: 0}`, which means the ✕ has genuinely taught nothing yet.
- * Guardrails renders those two as different sentences.
+ * `null` means **we could not ask**, and is deliberately NOT the same value as
+ * `{demotedSenders: 0}`, which means the ✕ has genuinely taught nothing yet.
+ * Guardrails renders those two as different sentences (see
+ * {@link taughtSentence}); collapsing them is how a broken read becomes a
+ * confident claim about the owner's habits.
  */
 export function useValveTeaching(assistantId: string) {
   const query = useQuery({
-    queryKey: ["valve-teaching", assistantId],
+    ...hqValveFeedbackGetOptions({ path: { assistant_id: assistantId } }),
     enabled: Boolean(assistantId),
     staleTime: 60_000,
-    queryFn: async (): Promise<ValveTeaching | null> => {
-      try {
-        const { data, response } = await client.get<
-          ValveTeaching | undefined,
-          unknown
-        >({
-          url: "/v1/assistants/{assistant_id}/hq/valve/feedback",
-          path: { assistant_id: assistantId },
-          throwOnError: false,
-        });
-        const body = data as ValveTeaching | undefined;
-        if (response?.ok && body && typeof body.demotedSenders === "number") {
-          return body;
-        }
-      } catch {
-        // Older daemon, or the route is unreachable. `null` says so.
-      }
-      return null;
-    },
   });
   return { teaching: query.data ?? null, isLoading: query.isLoading };
 }
