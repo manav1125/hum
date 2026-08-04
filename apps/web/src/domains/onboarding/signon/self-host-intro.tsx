@@ -18,9 +18,13 @@
  * dead ends, so this arc collects the same two things (consent, names)
  * through the same writers and then gets out of the way.
  *
- * Everything it shows is either typed by the user on this screen or read from
- * the session. Nothing is invented to fill a gap: on a fresh instance there
- * is no activity to show, and this says so by not claiming any.
+ * Everything it shows is either typed by the user on this screen, read from
+ * the session, or read from the instance itself (`instance-facts.ts`). Nothing
+ * is invented to fill a gap — and, since the gate that runs this arc is
+ * device-scoped, nothing is assumed about the instance either. A second device
+ * signing into an instance with history is told about that history; a fresh one
+ * is told it is fresh; and when the instance does not answer, neither claim is
+ * made and the arc runs exactly as before.
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
@@ -48,6 +52,11 @@ import {
   type ConsentScopes,
 } from "./consent-scopes";
 import { GravityStyles, OrbitalSystem } from "./gravity-kit";
+import {
+  arrivedBody,
+  useInstanceFacts,
+  type InstanceFacts,
+} from "./instance-facts";
 import { markSelfHostIntroComplete } from "./intro-state";
 
 type IntroStep = "arrived" | "consent" | "names" | "dayOne";
@@ -68,6 +77,29 @@ export function SelfHostIntro() {
   const navigate = useNavigate();
   const [step, setStep] = useState<IntroStep>("arrived");
   const user = useAuthStore((s) => s.user);
+  const facts = useInstanceFacts();
+
+  /**
+   * Names are asked once per PERSON, not once per device.
+   *
+   * If the instance already carries a name for this user, a laptop asking for
+   * it again is friction dressed as diligence — and worse than friction: the
+   * names step parks a pre-chat context, and the daemon's first-message handler
+   * writes that context straight over `data/onboarding-context.json`, so a
+   * second device answering "names" with empty tools/tasks would wipe the
+   * onboarding facts the instance already had.
+   *
+   * Only `knownUserName` gets a vote. The assistant name cannot: the daemon
+   * reports "Cue" both when the user chose it and when nobody has chosen, so it
+   * is evidence of nothing (it is still good enough to be the field's
+   * placeholder, which is what it is used for below).
+   *
+   * Unknown means ask. The read fails open, so an unreachable daemon lands on
+   * the arc's original behaviour rather than skipping a question it should have
+   * put.
+   */
+  const afterConsent = (): IntroStep =>
+    facts.knownUserName ? "dayOne" : "names";
 
   /**
    * v28 · K3 — day one ends by PRODUCING THE FIRST THING, not by landing on an
@@ -106,7 +138,7 @@ export function SelfHostIntro() {
       >
         <GravityStyles />
         <DayOneState
-          name={displayNameOf(user)}
+          name={displayNameOf(user) ?? facts.knownUserName}
           onAnswer={(answer) => finish(answer)}
         />
       </div>
@@ -155,13 +187,13 @@ export function SelfHostIntro() {
           }}
         >
           {step === "arrived" ? (
-            <ArrivedStep onNext={() => setStep("consent")} />
+            <ArrivedStep facts={facts} onNext={() => setStep("consent")} />
           ) : null}
           {step === "consent" ? (
-            <ConsentStep onNext={() => setStep("names")} />
+            <ConsentStep onNext={() => setStep(afterConsent())} />
           ) : null}
           {step === "names" ? (
-            <NamesStep onDone={() => setStep("dayOne")} />
+            <NamesStep facts={facts} onDone={() => setStep("dayOne")} />
           ) : null}
         </div>
       </div>
@@ -177,18 +209,26 @@ export function SelfHostIntro() {
  * name we greet with it, and if it does not we greet without one. We never
  * guess a name out of an email local-part and we never claim Cue has already
  * done work it has not done.
+ *
+ * The body sentence is the one thing here that is a claim about the INSTANCE
+ * rather than about the session, so it is the one thing that has to be looked
+ * up rather than assumed — see `arrivedBody`, which has an honest sentence for
+ * each of the three states including "the instance did not answer".
  */
-function ArrivedStep({ onNext }: { onNext: () => void }) {
+function ArrivedStep({
+  facts,
+  onNext,
+}: {
+  facts: InstanceFacts;
+  onNext: () => void;
+}) {
   const user = useAuthStore((s) => s.user);
-  const name = displayNameOf(user);
+  const name = displayNameOf(user) ?? facts.knownUserName;
 
   return (
     <div>
       <IntroTitle>{name ? `You're in, ${name}.` : "You're in."}</IntroTitle>
-      <IntroBody>
-        This Cue is yours alone — it runs on your own instance. Nothing has
-        happened here yet; two quick questions and it starts working.
-      </IntroBody>
+      <IntroBody>{arrivedBody(facts.conversationCount)}</IntroBody>
       <div style={{ marginTop: 20 }}>
         <IntroPrimary onClick={onNext}>Continue</IntroPrimary>
       </div>
@@ -347,9 +387,7 @@ function ConsentCard({
   // alone, and never by dimming the card. The explanatory sentence is the only
   // thing that says why this one is off, so it stays at full strength.
   const border =
-    card.tone === "hold"
-      ? "rgba(224,166,75,.35)"
-      : "rgba(111,214,154,.30)";
+    card.tone === "hold" ? "rgba(224,166,75,.35)" : "rgba(111,214,154,.30)";
   const glyphBg =
     card.tone === "hold" ? "rgba(224,166,75,.15)" : "rgba(111,214,154,.15)";
   const glyphColor =
@@ -382,10 +420,7 @@ function ConsentCard({
         >
           {card.glyph}
         </span>
-        <span
-          id={labelId}
-          style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}
-        >
+        <span id={labelId} style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}>
           {card.title}
         </span>
         <button
@@ -449,7 +484,21 @@ function ConsentCard({
 
 /* ───────────────────────────── 3 · names ─────────────────────────────── */
 
-function NamesStep({ onDone }: { onDone: () => void }) {
+/**
+ * Only reached when the instance does NOT already know who this is (see
+ * `afterConsent`). The instance's own name for itself is used as the CUE IS
+ * placeholder rather than as a prefilled value: a placeholder shows what Cue
+ * currently answers to without turning "I left the field alone" into a written
+ * answer, which matters because "Cue" is also what the daemon reports when
+ * nobody has chosen anything.
+ */
+function NamesStep({
+  facts,
+  onDone,
+}: {
+  facts: InstanceFacts;
+  onDone: () => void;
+}) {
   const [userName, setUserName] = useState("");
   const [assistantName, setAssistantName] = useState("");
 
@@ -492,7 +541,7 @@ function NamesStep({ onDone }: { onDone: () => void }) {
       <IntroField
         id="cue-intro-assistant-name"
         label="CUE IS"
-        placeholder="Cue"
+        placeholder={facts.knownAssistantName ?? "Cue"}
         value={assistantName}
         onChange={setAssistantName}
       />
