@@ -203,6 +203,8 @@ describe("connect", () => {
         audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
         conversationId: "conv-xyz",
         timezone: BROWSER_TIMEZONE,
+        // The capability handshake for `tool_activity` — see below.
+        toolActivity: true,
       },
     ]);
     expect(ws.sentBinary).toHaveLength(0);
@@ -215,6 +217,7 @@ describe("connect", () => {
       type: "start",
       audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
       timezone: BROWSER_TIMEZONE,
+      toolActivity: true,
     });
   });
 
@@ -503,8 +506,54 @@ describe("sendAudio", () => {
         type: "start",
         audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
         timezone: BROWSER_TIMEZONE,
+        toolActivity: true,
       },
     ]);
+  });
+
+  /**
+   * `tool_activity` is how the call screen names the tool it is touching. The
+   * daemon only sends the frame to clients that ASK for it, because a client
+   * that has never heard of a frame type parses it as `invalid_json` and treats
+   * that as fatal — an unconditional new frame type would end live calls on
+   * every already-shipped client. Asking is therefore not a preference, it is
+   * the compatibility handshake, and it must be on every start frame.
+   */
+  test("every start frame asks for tool_activity", async () => {
+    // Including the combinations that already carry optional fields — the ask
+    // is unconditional, not a mode.
+    const client = makeClient();
+    await client.connect({
+      assistantId: "assistant-1",
+      fullDuplex: true,
+      engine: "gemini-live",
+      persona: "cofounder",
+    });
+    const ws = FakeWebSocket.instances.at(-1);
+    if (!ws) throw new Error("no WebSocket was constructed");
+    ws.open();
+
+    expect(ws.sentJson[0]).toMatchObject({ toolActivity: true });
+  });
+
+  test("a tool_activity frame reaches the consumer with the real tool name", async () => {
+    const client = makeClient();
+    const ws = await connectAndGetSocket(client);
+    ws.open();
+    ws.receive({ type: "ready", seq: 1, sessionId: "s", conversationId: "c" });
+
+    const seen: Array<{ toolName: string; turnId: string }> = [];
+    client.on("toolActivity", (f) =>
+      seen.push({ toolName: f.toolName, turnId: f.turnId }),
+    );
+    ws.receive({
+      type: "tool_activity",
+      seq: 2,
+      turnId: "turn-1",
+      toolName: "web_search",
+    });
+
+    expect(seen).toEqual([{ toolName: "web_search", turnId: "turn-1" }]);
   });
 
   test("drops audio before ready (session not active)", async () => {

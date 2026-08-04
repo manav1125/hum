@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import { Drama, Keyboard, Mic, MicOff, Sparkles, X } from "lucide-react";
+import { Drama, Keyboard, Mic, MicOff, X } from "lucide-react";
 
 import {
   VoiceOrb,
@@ -226,38 +226,14 @@ export function VoiceModeSurface({
     }
   }, [active, connecting, start, stop, assistantId, conversationId]);
 
-  // --- Voice engine toggle (Realtime = the `gemini-live` speech-native
-  // session, Classic = cascade). The ids are internal; see the user-facing
-  // copy note at the toggle's render site below. ---------------------------
-  // Persists to the same `cue.voiceEngine` key `resolveVoiceEngine()` reads, so
-  // flipping it and (re)starting a session picks the chosen engine. Visible in
-  // the header because a localStorage flag is unusable inside the desktop app.
-  const [engine, setEngineState] = useState<"cascade" | "gemini-live">(() => {
-    try {
-      return window.localStorage.getItem("cue.voiceEngine") === "gemini-live"
-        ? "gemini-live"
-        : "cascade";
-    } catch {
-      return "cascade";
-    }
-  });
-  const toggleEngine = useCallback(() => {
-    const next = engine === "gemini-live" ? "cascade" : "gemini-live";
-    setEngineState(next);
-    try {
-      window.localStorage.setItem("cue.voiceEngine", next);
-    } catch {
-      // ignore locked-down storage
-    }
-    // Apply immediately: restart an in-flight session so the new engine takes
-    // effect (the engine is chosen at session start).
-    if (active || connecting) {
-      void (async () => {
-        await stop();
-        await start(assistantId, conversationId ?? undefined);
-      })();
-    }
-  }, [engine, active, connecting, stop, start, assistantId, conversationId]);
+  // --- Voice engine ---------------------------------------------------------
+  // There is NO engine control on this screen any more. v35: "the engine
+  // toggle comes off this screen — nobody changes engines mid-sentence." Its
+  // home is Your Cue → Preferences → Voice, and the call screen's long-press
+  // on the timer is the engineering back door. Both write the one key this
+  // module reads at session start (`utils/voice-engine.ts`), so the choice
+  // still lands here without a pill on a live call restarting the session
+  // under the speaker.
 
   // --- Persona / mode picker (Companion / Reflective / Co-founder) -----------
   // Persists to `cue.voicePersona` (the key `resolveVoicePersona()` reads), so
@@ -378,8 +354,6 @@ export function VoiceModeSurface({
         listening={listening}
         denied={denied}
         sessionFailed={sessionFailed}
-        engine={engine}
-        onToggleEngine={toggleEngine}
         onToggle={handleToggle}
         onStop={() => void stop()}
         onSetMuted={setMuted}
@@ -445,54 +419,10 @@ export function VoiceModeSurface({
         </button>
       ) : null}
 
-      {/* Engine toggle — Realtime (the `gemini-live` speech-native session)
-          vs Classic (cascade). Top-left, mirroring the Done button. Visible so
-          it's usable inside the desktop app where a localStorage flag can't be
-          set.
-
-          USER-FACING COPY NAMES NO VENDOR. The engine ids are internal; the
-          tooltip a user reads says "Realtime"/"Classic" only. The realtime
-          session is already instructed not to name its own provider
-          (`assistant/src/gemini-live/gemini-live-session.ts`) — a tooltip that
-          named it would undo that from the outside, on every deployment,
-          managed or not. Nothing is lost on self-host either: this toggle
-          picks an engine, not a provider account, so it is removed outright
-          rather than gated on managed mode. */}
-      <button
-        type="button"
-        onClick={toggleEngine}
-        aria-label={`Voice engine: ${engine === "gemini-live" ? "Realtime" : "Classic"}. Tap to switch.`}
-        title={
-          engine === "gemini-live"
-            ? "Realtime engine — faster, speech-native. Tap for Classic."
-            : "Classic engine (full assistant) — deeper, slower. Tap for Realtime."
-        }
-        style={{
-          position: "absolute",
-          top: `calc(14px + ${safeInset("top")})`,
-          left: `calc(14px + ${safeInset("left")})`,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
-          fontFamily: mono,
-          fontSize: 12,
-          color: engine === "gemini-live" ? "#0B0B0F" : TEXT_2,
-          background:
-            engine === "gemini-live"
-              ? "rgba(120,220,180,.92)"
-              : "rgba(255,255,255,.04)",
-          border: `1px solid ${LINE_2}`,
-          borderRadius: 999,
-          padding: "8px 14px",
-          minHeight: 36,
-          cursor: "pointer",
-          backdropFilter: "blur(8px)",
-          zIndex: 2,
-        }}
-      >
-        <Sparkles size={14} aria-hidden />
-        {engine === "gemini-live" ? "Realtime" : "Classic"}
-      </button>
+      {/* No engine toggle here — v35 moved it to Your Cue → Preferences →
+          Voice. It was the one control on a call screen that restarted the
+          session when you touched it, which is the opposite of what a call
+          screen is for. */}
 
       {/* Persona / mode picker — below the engine toggle, same pill style. Taps
           cycle Companion → Reflective → Co-founder. Applied at session start. */}
@@ -506,7 +436,7 @@ export function VoiceModeSurface({
         }
         style={{
           position: "absolute",
-          top: `calc(58px + ${safeInset("top")})`,
+          top: `calc(14px + ${safeInset("top")})`,
           left: `calc(14px + ${safeInset("left")})`,
           display: "inline-flex",
           alignItems: "center",
@@ -996,53 +926,6 @@ function Mv3PillWave({ animate }: { animate: boolean }) {
   );
 }
 
-/** Quiet v3 pill button (engine toggle / Done) — mono microlabel chrome. */
-function Mv3QuietPill({
-  onClick,
-  active = false,
-  children,
-  ariaLabel,
-  title,
-}: {
-  onClick: () => void;
-  active?: boolean;
-  children: React.ReactNode;
-  ariaLabel: string;
-  title?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={ariaLabel}
-      title={title}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 7,
-        fontFamily: "var(--mv3-mono)",
-        fontSize: 10.5,
-        letterSpacing: "0.1em",
-        textTransform: "uppercase",
-        color: active ? "#7FA3F2" : "#9A9AA8",
-        background: active ? "rgba(61,110,232,.22)" : "rgba(255,255,255,.07)",
-        border: `1px solid ${
-          active ? "rgba(61,110,232,.45)" : "rgba(255,255,255,.1)"
-        }`,
-        borderRadius: 99,
-        padding: "0 14px",
-        minHeight: 44,
-        cursor: "pointer",
-        backdropFilter: "blur(10px)",
-        WebkitBackdropFilter: "blur(10px)",
-        WebkitTapHighlightColor: "transparent",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
 interface Mv3VoiceMobileProps {
   state: string;
   partialTranscript: string;
@@ -1056,8 +939,6 @@ interface Mv3VoiceMobileProps {
   listening: boolean;
   denied: boolean;
   sessionFailed: boolean;
-  engine: "cascade" | "gemini-live";
-  onToggleEngine: () => void;
   onToggle: () => void;
   onStop: () => void;
   onSetMuted: (muted: boolean) => void;
@@ -1085,8 +966,6 @@ function Mv3VoiceMobile({
   listening,
   denied,
   sessionFailed,
-  engine,
-  onToggleEngine,
   onToggle,
   onStop,
   onSetMuted,
@@ -1176,10 +1055,9 @@ function Mv3VoiceMobile({
         }}
       />
 
-      {/* Top controls — engine toggle (kept: required behavior) + Done.
-          The surface is mounted full-bleed (fixed inset:0 overlay / route), so
-          this row must clear the iOS status bar itself via the safe-area top
-          inset — otherwise the Realtime pill renders under the clock. */}
+      {/* Top controls — ✕ only. The surface is mounted full-bleed (fixed
+          inset:0 overlay / route), so this row clears the iOS status bar
+          itself via the safe-area top inset. */}
       <div
         style={{
           flexShrink: 0,
@@ -1191,21 +1069,10 @@ function Mv3VoiceMobile({
           zIndex: 5,
         }}
       >
-        <Mv3QuietPill
-          onClick={onToggleEngine}
-          active={engine === "gemini-live"}
-          ariaLabel={`Voice engine: ${
-            engine === "gemini-live" ? "Realtime" : "Classic"
-          }. Tap to switch.`}
-          title={
-            engine === "gemini-live"
-              ? "Realtime engine. Tap for Classic."
-              : "Classic engine (full assistant). Tap for Realtime."
-          }
-        >
-          <Sparkles size={12} aria-hidden />
-          {engine === "gemini-live" ? "Realtime" : "Classic"}
-        </Mv3QuietPill>
+        {/* The engine pill used to sit here. v35 took it off the call screen;
+            its home is Your Cue → Preferences → Voice. The spacer keeps ✕
+            hard right. */}
+        <span aria-hidden />
         {onExit ? (
           /* Frame 2's exit grammar: ✕ top-right, round glass. Stops any live
              session (handleExit upstream) then hands control back — the route

@@ -75,6 +75,7 @@ import {
   type LiveVoiceSessionState,
 } from "@/domains/chat/voice/live-voice/live-voice-store";
 import { resolveVoicePersona } from "@/domains/chat/voice/live-voice/voice-personas";
+import { resolveVoiceEngine } from "@/utils/voice-engine";
 
 // ---------------------------------------------------------------------------
 // Thresholds (mirror the macOS LiveVoiceChannelManager defaults)
@@ -159,6 +160,17 @@ export interface UseLiveVoiceResult {
    * `start()` so a session begins muted if the user muted before starting.
    */
   setMuted: (muted: boolean) => void;
+  /**
+   * Interrupt the assistant mid-reply and hand the floor back — the deliberate
+   * version of barge-in, for a surface that offers "tap anywhere to interrupt".
+   *
+   * It routes through the SAME path sustained speech uses, so a tap and a
+   * spoken interruption cannot diverge, and it is a no-op unless the assistant
+   * is actually speaking. That last part matters: a control that reports doing
+   * something while nothing happened is the fake status this surface exists to
+   * remove, so the caller only draws the invitation while `speaking`.
+   */
+  interrupt: () => void;
 }
 
 /** Injectable factories so tests can supply mock primitives. */
@@ -189,29 +201,6 @@ export interface UseLiveVoiceOptions {
    * `localStorage["cue.voicePersona"]`, falling back to companion.
    */
   persona?: string;
-}
-
-/**
- * Resolve the opt-in voice engine: an explicit option wins, then a
- * `?voiceEngine=gemini-live` query param, then `localStorage["cue.voiceEngine"]`,
- * else the cascade default. Kept side-effect-free and SSR-safe.
- */
-function resolveVoiceEngine(
-  explicit?: "cascade" | "gemini-live",
-): "cascade" | "gemini-live" {
-  if (explicit) return explicit;
-  if (typeof window === "undefined") return "cascade";
-  try {
-    const param = new URLSearchParams(window.location.search).get(
-      "voiceEngine",
-    );
-    if (param === "gemini-live" || param === "cascade") return param;
-    const stored = window.localStorage.getItem("cue.voiceEngine");
-    if (stored === "gemini-live" || stored === "cascade") return stored;
-  } catch {
-    // Access to location/localStorage can throw in locked-down contexts.
-  }
-  return "cascade";
 }
 
 /**
@@ -552,6 +541,13 @@ export function useLiveVoice(
               return;
           }
         }),
+        client.on("toolActivity", (frame) => {
+          if (!live()) return;
+          // The one place a "what is it doing" caption may come from. It is a
+          // real tool name from a tool that really started; the surface decides
+          // what words to put on it, and says something honest when it has none.
+          useLiveVoiceStore.getState().setActivityTool(frame.toolName);
+        }),
         client.on("busy", () => {
           if (!live()) return;
           finishWithError(
@@ -605,6 +601,12 @@ export function useLiveVoice(
     [teardown, attemptReconnect],
   );
 
+  const interrupt = useCallback(() => {
+    const session = sessionRef.current;
+    if (!session) return;
+    interruptIfSpeaking(session, teardown);
+  }, [teardown]);
+
   // The reconnect path re-enters `start()` via this ref (start references
   // attemptReconnect, which can't reference start directly).
   useEffect(() => {
@@ -628,6 +630,7 @@ export function useLiveVoice(
     start,
     stop,
     setMuted,
+    interrupt,
   };
 }
 

@@ -49,6 +49,7 @@ mock.module("@/domains/chat/voice/live-voice/use-live-voice", () => ({
       start: async () => {},
       stop: async () => {},
       setMuted: () => {},
+      interrupt: () => {},
     };
   },
 }));
@@ -187,48 +188,40 @@ describe("a dead session cannot pretend to be alive", () => {
 // "i think we should go to full screen voice mode as an option somewhere - i do
 // like the real life voice mode like chat back and forth ... lets find a way to
 // do both?" — same session, two presentations.
-describe("full screen shows the call, not a typing surface", () => {
-  test("it draws the whole exchange, including the cascade's, and this session's earlier turns", () => {
+/**
+ * The call screen, to v35 §V1.
+ *
+ * The rules being pinned here are the ones a redesign quietly loses: the screen
+ * is a CALL and not a transcript, it has exactly three controls, and the
+ * thinking state never says something it was not told.
+ */
+describe("the call screen is a call", () => {
+  test("it captions the CURRENT sentence and does not redraw the thread", () => {
     const view = renderStrip(
       () => {
         const s = useLiveVoiceStore.getState();
-        // The cascade — the engine the strip deliberately stays out of the way
-        // of, because the thread streams it. Full screen covers the thread, so
-        // if it deferred in the same way it would show nothing at all.
         s.setEngine("cascade");
         s.setFinalTranscript("What's on my plate today?");
         s.appendAssistantTranscript("Three things — want them in order?");
         s.closeTurn();
         s.setFinalTranscript("Yes please.");
-        s.appendAssistantTranscript("Starting with the Acme renewal.");
-        s.setState("speaking");
-      },
-      { fullScreen: true, onToggleFullScreen: () => {} },
-    );
-
-    expect(view.queryByText(/What's on my plate today\?/)).not.toBeNull();
-    expect(view.queryByText(/Three things — want them in order\?/)).not.toBeNull();
-    expect(view.queryByText(/Yes please\./)).not.toBeNull();
-    expect(view.queryByText(/Starting with the Acme renewal\./)).not.toBeNull();
-  });
-
-  test("a closed turn is drawn once, not twice", () => {
-    const view = renderStrip(
-      () => {
-        const s = useLiveVoiceStore.getState();
-        s.setFinalTranscript("Remind me to call Sam.");
-        s.appendAssistantTranscript("Saved it.");
-        s.closeTurn();
         s.setState("listening");
       },
       { fullScreen: true, onToggleFullScreen: () => {} },
     );
 
-    expect(view.queryAllByText(/Remind me to call Sam\./)).toHaveLength(1);
-    expect(view.queryAllByText(/Saved it\./)).toHaveLength(1);
+    // The open sentence is captioned…
+    expect(view.queryByText(/Yes please\./)).not.toBeNull();
+    // …and the finished exchange is NOT, because it already belongs to the
+    // thread. v35: "live captions of the current sentence only — the full
+    // transcript belongs to the thread, not the call."
+    expect(view.queryByText(/What's on my plate today\?/)).toBeNull();
+    expect(
+      view.queryByText(/Three things — want them in order\?/),
+    ).toBeNull();
   });
 
-  test("there is no text composer on it — no textbox and no send", () => {
+  test("exactly three controls: mute, end, collapse", () => {
     const view = renderStrip(
       () => {
         useLiveVoiceStore.getState().setState("listening");
@@ -236,12 +229,142 @@ describe("full screen shows the call, not a typing surface", () => {
       { fullScreen: true, onToggleFullScreen: () => {} },
     );
 
+    expect(view.queryByLabelText("Mute microphone")).not.toBeNull();
+    expect(view.queryByLabelText("End call")).not.toBeNull();
+    expect(view.queryByLabelText("Back to the conversation")).not.toBeNull();
+
+    // Nothing else. The buttons on screen are the three controls plus the call
+    // timer (which is also the engine back door) — no engine pill, no persona
+    // cycle, no composer.
+    const buttons = view.container.querySelectorAll("button");
+    expect(buttons.length).toBeLessThanOrEqual(4);
     expect(view.queryByRole("textbox")).toBeNull();
     expect(view.queryByLabelText("Send message")).toBeNull();
-    // …and the way back into the thread is on screen, so it is not a trap.
+  });
+
+  test("the engine toggle is NOT on the call screen", () => {
+    const view = renderStrip(
+      () => {
+        useLiveVoiceStore.getState().setState("listening");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+
+    // v35: it moved to Your Cue → Preferences → Voice. Long-pressing the timer
+    // is the only way back to it, and a long-press is not a control on screen.
+    expect(view.queryByText("Realtime")).toBeNull();
+    expect(view.queryByText("Classic")).toBeNull();
+  });
+
+  test("listening says so; speaking offers the interrupt", () => {
+    const listening = renderStrip(
+      () => {
+        useLiveVoiceStore.getState().setState("listening");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+    expect(listening.queryByText("Listening")).not.toBeNull();
+    expect(listening.queryByText("tap anywhere to interrupt")).toBeNull();
+    cleanup();
+
+    const speaking = renderStrip(
+      () => {
+        const s = useLiveVoiceStore.getState();
+        s.appendAssistantTranscript("Starting with the Acme renewal.");
+        s.setState("speaking");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+    expect(speaking.queryByText("tap anywhere to interrupt")).not.toBeNull();
     expect(
-      view.queryByLabelText("Back to the conversation"),
+      speaking.queryByText(/Starting with the Acme renewal\./),
     ).not.toBeNull();
+  });
+});
+
+/**
+ * The thinking caption is the one place this surface could invent a fact, so
+ * it gets its own guard. Every phrase must trace to a tool that really started.
+ */
+describe("the thinking state never invents what it is doing", () => {
+  function renderThinking(activityTool: string | null) {
+    return renderStrip(
+      () => {
+        const s = useLiveVoiceStore.getState();
+        s.setState("thinking");
+        s.setActivityTool(activityTool);
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+  }
+
+  test("a reported tool is named in words", () => {
+    const view = renderThinking("web_search");
+    expect(view.queryByText("Searching the web…")).not.toBeNull();
+  });
+
+  test("a tool with no copy is admitted, not dressed up", () => {
+    const view = renderThinking("some_tool_nobody_wrote_copy_for");
+    expect(view.queryByText("Using a tool…")).not.toBeNull();
+  });
+
+  test("nothing reported says only what it knows", () => {
+    // The realtime engine, an older daemon, or a moment that is not inside a
+    // tool call. All three land here, and all three must show a plain wait.
+    const view = renderThinking(null);
+    expect(view.queryByText("Thinking…")).not.toBeNull();
+  });
+
+  test("one turn's tool is never shown as the next turn's work", () => {
+    const view = renderStrip(
+      () => {
+        const s = useLiveVoiceStore.getState();
+        s.setState("thinking");
+        s.setActivityTool("web_search");
+        // The turn finishes and a new one opens.
+        s.closeTurn();
+        s.setFinalTranscript("And what about Tuesday?");
+        s.setState("thinking");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+
+    expect(view.queryByText("Searching the web…")).toBeNull();
+    expect(view.queryByText("Thinking…")).not.toBeNull();
+  });
+});
+
+describe("a call you can always leave", () => {
+  test("a failed call keeps end and collapse, and says the words are kept", () => {
+    const view = renderStrip(
+      () => {
+        useLiveVoiceStore
+          .getState()
+          .fail("Voice couldn't connect.", "session");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+
+    // Fail open: the exits survive the failure.
+    expect(view.queryByLabelText("End call")).not.toBeNull();
+    expect(view.queryByLabelText("Back to the conversation")).not.toBeNull();
+    // …and the transcript contract is stated where it matters most.
+    expect(
+      view.queryByText(/saved in this conversation/i),
+    ).not.toBeNull();
+  });
+
+  test("a connecting call is drawn as connecting, not as listening", () => {
+    const view = renderStrip(
+      () => {
+        useLiveVoiceStore.getState().setState("connecting");
+      },
+      { fullScreen: true, onToggleFullScreen: () => {} },
+    );
+
+    expect(view.queryByText("Connecting…")).not.toBeNull();
+    expect(view.queryByText("Listening")).toBeNull();
+    expect(view.queryByLabelText("Back to the conversation")).not.toBeNull();
   });
 
   test("the inline bar offers the way in", () => {

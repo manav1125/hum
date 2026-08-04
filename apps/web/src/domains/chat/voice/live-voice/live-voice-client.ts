@@ -34,6 +34,7 @@ import {
   type LiveVoiceSttFinalServerFrame,
   type LiveVoiceSttPartialServerFrame,
   type LiveVoiceThinkingServerFrame,
+  type LiveVoiceToolActivityServerFrame,
   type LiveVoiceTtsAudioServerFrame,
   type LiveVoiceTtsDoneServerFrame,
   parseServerFrame,
@@ -76,6 +77,12 @@ export interface LiveVoiceClientEventMap {
   archived: LiveVoiceArchivedServerFrame;
   /** Visual result card lifecycle (op: show/update/dismiss). */
   card: LiveVoiceCardServerFrame;
+  /**
+   * A tool the current turn has started executing, named verbatim. Only ever
+   * fires because {@link LiveVoiceChannelClient} asked for it on the `start`
+   * frame — see the note there.
+   */
+  toolActivity: LiveVoiceToolActivityServerFrame;
   busy: LiveVoiceBusyServerFrame;
   error: LiveVoiceClientError;
   /** Fired exactly once when the transport closes (clean or otherwise). */
@@ -152,6 +159,7 @@ export class LiveVoiceChannelClient {
     metrics: new Set(),
     archived: new Set(),
     card: new Set(),
+    toolActivity: new Set(),
     busy: new Set(),
     error: new Set(),
     closed: new Set(),
@@ -301,6 +309,12 @@ export class LiveVoiceChannelClient {
       ...(this.engine === "gemini-live" ? { engine: "gemini-live" } : {}),
       ...(browserTimezone ? { timezone: browserTimezone } : {}),
       ...(this.persona ? { persona: this.persona } : {}),
+      // Ask for `tool_activity`. The daemon sends the frame ONLY to clients
+      // that ask, because a client which has never heard of a frame type
+      // parses it as `invalid_json` and treats that as fatal — so an
+      // unconditional broadcast would kill calls on every already-shipped
+      // client. Asking is the handshake that makes the new frame safe.
+      toolActivity: true,
     };
     this.trySend(JSON.stringify(startFrame));
   }
@@ -350,6 +364,9 @@ export class LiveVoiceChannelClient {
         return;
       case "card":
         this.emit("card", frame);
+        return;
+      case "tool_activity":
+        this.emit("toolActivity", frame);
         return;
       case "error":
         if (frame.fatal === false) {

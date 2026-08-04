@@ -111,6 +111,11 @@ import {
   LS_VOICE_INPUT_DEVICE,
   getPreferredInputDeviceId,
 } from "@/utils/voice-input-device";
+import {
+  readVoiceEngine,
+  writeVoiceEngine,
+  type VoiceEngine,
+} from "@/utils/voice-engine";
 
 import {
   Mv3SettingsNote,
@@ -181,7 +186,7 @@ function StateChip({
   onText?: string;
   offText?: string;
 }) {
-  const color = on ? "var(--mv3-green)" : "var(--mv3-faint)";
+  const color = on ? "var(--mv3-green)" : "var(--mv3-muted)";
   return (
     <span
       style={{
@@ -602,7 +607,7 @@ export function Mv3AiLeaf() {
           style={{
             padding: "0 15px 13px",
             fontSize: 11,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             lineHeight: 1.5,
           }}
         >
@@ -736,7 +741,7 @@ export function Mv3PrivacyLeaf() {
               name="Autonomy & trust rules"
               line="What Cue may do alone — lives in Rules"
             />
-            <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+            <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
               ›
             </span>
           </button>
@@ -864,7 +869,7 @@ function ScheduleRow({
       >
         <StateChip on={schedule.enabled} />
       </button>
-      <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+      <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
         ›
       </span>
     </div>
@@ -1019,6 +1024,27 @@ type TimeoutValue = (typeof TIMEOUT_OPTIONS)[number]["value"];
 const DEFAULT_TIMEOUT: TimeoutValue = "30";
 const SYSTEM_DEFAULT_DEVICE = "";
 
+/**
+ * Copy names no vendor: the engine ids are internal, and the realtime session
+ * is instructed not to name its own provider.
+ */
+const VOICE_ENGINE_ROWS: ReadonlyArray<{
+  value: VoiceEngine;
+  label: string;
+  note: string;
+}> = [
+  {
+    value: "cascade",
+    label: "Classic",
+    note: "The full assistant — every tool and your memory. It can say what it is doing while it works.",
+  },
+  {
+    value: "gemini-live",
+    label: "Realtime",
+    note: "Speech-native. Replies faster, does less.",
+  },
+];
+
 export function Mv3VoiceLeaf() {
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
 
@@ -1093,6 +1119,13 @@ export function Mv3VoiceLeaf() {
     }
   };
 
+  // --- voice engine (the same key the session start reads) ---
+  const [engine, setEngine] = useState<VoiceEngine>(() => readVoiceEngine());
+  const pickEngine = (next: VoiceEngine) => {
+    setEngine(next);
+    writeVoiceEngine(next);
+  };
+
   // --- conversation timeout (mirrors ConversationTimeoutCard) ---
   const [timeoutValue, setTimeoutValue] = useState<TimeoutValue>(() => {
     const raw = getLocalSetting(LS_CONVERSATION_TIMEOUT, DEFAULT_TIMEOUT);
@@ -1156,6 +1189,21 @@ export function Mv3VoiceLeaf() {
           Allow microphone access to list devices
         </button>
       ) : null}
+
+      {/* Voice engine — v35 moved this off the call screen ("nobody changes
+          engines mid-sentence"). It applies at the START of the next call. */}
+      <SectionCard eyebrow="Voice engine" delay={0.2}>
+        {VOICE_ENGINE_ROWS.map((opt, i) => (
+          <RadioRow
+            key={opt.value}
+            name={opt.label}
+            line={opt.note}
+            selected={engine === opt.value}
+            isLast={i === VOICE_ENGINE_ROWS.length - 1}
+            onPress={() => pickEngine(opt.value)}
+          />
+        ))}
+      </SectionCard>
 
       <SectionCard eyebrow="Conversation timeout" delay={0.25}>
         {TIMEOUT_OPTIONS.map((opt, i) => (
@@ -1586,7 +1634,7 @@ export function Mv3IntegrationsLeaf() {
             <span style={{ fontSize: 12.5, color: "var(--mv3-text)", flex: 1 }}>
               {oauthNotice.text}
             </span>
-            <span style={{ fontSize: 11, color: "var(--mv3-faint)" }}>
+            <span style={{ fontSize: 11, color: "var(--mv3-muted)" }}>
               dismiss
             </span>
           </button>
@@ -1731,7 +1779,7 @@ export function Mv3IntegrationsLeaf() {
                       Enable
                     </span>
                   )}
-                  <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+                  <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
                     ›
                   </span>
                 </button>
@@ -1760,7 +1808,7 @@ export function Mv3IntegrationsLeaf() {
               name="Connected apps"
               line="Apps linked in chat (Gmail, Slack…) live in You → Connections"
             />
-            <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+            <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
               ›
             </span>
           </button>
@@ -2005,7 +2053,7 @@ export function Mv3BrandLeaf() {
               />
               <NavRow
                 icon={<span style={{ fontSize: 14 }}>＋</span>}
-                iconBg="color-mix(in srgb, var(--mv3-violet-fill, #7F77DD) 16%, transparent)"
+                iconBg="color-mix(in srgb, var(--mv3-violet-glyph, #7F77DD) 16%, transparent)"
                 label="Add or edit a brand"
                 isLast
                 onPress={() => setStudioOpen(true)}
@@ -2427,7 +2475,7 @@ export function Mv3NotificationsLeaf() {
                 style={quietTimeInputStyle}
               />
               <span
-                style={{ color: "var(--mv3-faint)", fontSize: 12 }}
+                style={{ color: "var(--mv3-muted)", fontSize: 12 }}
                 aria-hidden
               >
                 –
@@ -2461,7 +2509,7 @@ export function Mv3NotificationsLeaf() {
               name="Connected channels"
               line="Telegram · WhatsApp · email — instant, where you already are"
             />
-            <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+            <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
               ›
             </span>
           </button>
@@ -2496,7 +2544,7 @@ export function Mv3NotificationsLeaf() {
             name="Connected channels"
             line="Telegram · WhatsApp · email — instant, where you already are"
           />
-          <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+          <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
             ›
           </span>
         </button>
@@ -2513,7 +2561,7 @@ export function Mv3NotificationsLeaf() {
             name="In-app"
             line="Approvals and review items surface on Today"
           />
-          <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+          <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
             ›
           </span>
         </button>

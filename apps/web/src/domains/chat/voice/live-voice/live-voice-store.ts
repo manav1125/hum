@@ -148,6 +148,23 @@ export interface LiveVoiceState {
    * draw it (only surfaces that hide the thread).
    */
   turns: LiveVoiceTurn[];
+  /**
+   * The REGISTERED NAME of the tool the open turn is executing right now, from
+   * the daemon's `tool_activity` frame — or `null` when nothing is known.
+   *
+   * `null` is the normal, honest resting value, and it means exactly one thing:
+   * the client has not been told. That happens on the realtime engine (whose
+   * function calls never leave the provider session), against a daemon too old
+   * to send the frame, and during every part of a turn that is not inside a
+   * tool call. A surface must render the not-known case as a wait with no
+   * claim in it — never as a guessed activity, because a caption that says
+   * "checking the pricing model" while the turn is searching the web is a
+   * fabricated status, and a fabricated status is worse than no status.
+   *
+   * Cleared whenever a new turn opens, so one turn's tool can never be shown
+   * as the next turn's work.
+   */
+  activityTool: string | null;
 }
 
 export interface LiveVoiceActions {
@@ -178,6 +195,11 @@ export interface LiveVoiceActions {
   dismissCard: (surfaceId: string) => void;
   /** Drop every card (called at the start of each new turn and on reset). */
   clearCards: () => void;
+  /**
+   * Record the tool the open turn has started executing (raw registered name),
+   * or `null` to go back to "not known".
+   */
+  setActivityTool: (toolName: string | null) => void;
   /** Reset every field back to the idle defaults. */
   reset: () => void;
 }
@@ -200,6 +222,7 @@ const INITIAL_STATE: LiveVoiceState = {
   failureKind: null,
   cards: [],
   turns: [],
+  activityTool: null,
 };
 
 /**
@@ -211,6 +234,10 @@ const OPEN_TURN = {
   turnClosed: false,
   finalTranscript: "",
   assistantTranscript: "",
+  // A new turn knows nothing about what it will touch. Carrying the previous
+  // turn's tool across the boundary would caption the new question with the
+  // old answer's work.
+  activityTool: null,
 } as const;
 
 /** Build a `LiveVoiceCard` from a `card` server frame, defaulting opaque data. */
@@ -255,18 +282,19 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
         : { assistantTranscript: s.assistantTranscript + delta },
     ),
   clearAssistantTranscript: () =>
-    set({ assistantTranscript: "", turnClosed: false }),
+    set({ assistantTranscript: "", turnClosed: false, activityTool: null }),
   closeTurn: () =>
     set((s) => {
-      if (s.turnClosed) return { turnClosed: true };
+      if (s.turnClosed) return { turnClosed: true, activityTool: null };
       const user = s.finalTranscript.trim();
       const assistant = s.assistantTranscript.trim();
       // A turn that said nothing (a cough the daemon closed without an answer)
       // is not an exchange; recording it would put an empty pair of bubbles in
       // the full-screen transcript.
-      if (!user && !assistant) return { turnClosed: true };
+      if (!user && !assistant) return { turnClosed: true, activityTool: null };
       return {
         turnClosed: true,
+        activityTool: null,
         turns: [
           ...s.turns,
           { id: (s.turns.at(-1)?.id ?? 0) + 1, user, assistant },
@@ -303,6 +331,7 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
   dismissCard: (surfaceId) =>
     set((s) => ({ cards: s.cards.filter((c) => c.surfaceId !== surfaceId) })),
   clearCards: () => set({ cards: [] }),
+  setActivityTool: (activityTool) => set({ activityTool }),
   reset: () => set({ ...INITIAL_STATE }),
 }));
 

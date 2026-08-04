@@ -75,6 +75,18 @@ export interface LiveVoiceClientStartFrame {
    * Mirrors the runtime contract in `assistant/src/live-voice/protocol.ts`.
    */
   readonly persona?: string;
+  /**
+   * Opt in to `tool_activity` server frames — the raw name of each tool the
+   * turn actually invokes. Mirrors the runtime contract in
+   * `assistant/src/live-voice/protocol.ts`.
+   *
+   * It is a capability flag, not a preference: an older client has never heard
+   * of `tool_activity`, and {@link parseServerFrame} classifies an unknown type
+   * as a fatal `invalid_json`. Asking for the frame is what makes it safe for
+   * the daemon to send it, so a shipped client that never asks keeps exactly
+   * today's behaviour.
+   */
+  readonly toolActivity?: boolean;
 }
 
 export interface LiveVoiceClientPttReleaseFrame {
@@ -111,6 +123,7 @@ const LIVE_VOICE_SERVER_FRAME_TYPES = [
   "metrics",
   "archived",
   "card",
+  "tool_activity",
   "error",
 ] as const;
 
@@ -216,6 +229,24 @@ export interface LiveVoiceCardServerFrame extends LiveVoiceServerFrameBase {
   readonly turnId?: string;
 }
 
+/**
+ * The tool the current turn has just started executing, by its REAL registered
+ * name. Port of the runtime contract in `assistant/src/live-voice/protocol.ts`.
+ *
+ * Arrives only when the `start` frame set `toolActivity`, and only on the
+ * cascade engine — the realtime engine runs its function calls inside the
+ * provider session and never reaches this path. `toolName` is untranslated on
+ * purpose: turning it into words a person reads is the surface's job, and a
+ * surface that has no words for a tool must say something honest rather than
+ * let the daemon invent a phrase for it.
+ */
+export interface LiveVoiceToolActivityServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "tool_activity";
+  readonly turnId: string;
+  /** Registered tool name, verbatim (`web_search`, `ui_show`, …). */
+  readonly toolName: string;
+}
+
 export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "error";
   readonly code: string;
@@ -245,6 +276,7 @@ export type LiveVoiceServerFrame =
   | LiveVoiceMetricsServerFrame
   | LiveVoiceArchivedServerFrame
   | LiveVoiceCardServerFrame
+  | LiveVoiceToolActivityServerFrame
   | LiveVoiceErrorServerFrame;
 
 /**

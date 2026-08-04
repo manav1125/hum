@@ -45,6 +45,11 @@ import {
   getPreferredInputDeviceId,
 } from "@/utils/voice-input-device";
 import { canConfigureFnPushToTalk } from "@/runtime/hotkey";
+import {
+  readVoiceEngine,
+  writeVoiceEngine,
+  type VoiceEngine,
+} from "@/utils/voice-engine";
 
 const LS_CONVERSATION_TIMEOUT = "vellum:voice:conversationTimeoutSeconds";
 
@@ -88,6 +93,7 @@ export function VoicePage() {
     <div className="flex flex-col gap-6">
       <SpeechServicesBanner />
       <MicrophoneCard />
+      <VoiceEngineCard />
       <PushToTalkCard />
       <ConversationTimeoutCard />
     </div>
@@ -513,6 +519,49 @@ function ActivationKeyOption({
       />
       <span className="text-[var(--content-default)]">{label}</span>
     </button>
+  );
+}
+
+/**
+ * The voice engine — v35's new home for a control that used to sit on the call
+ * screen ("nobody changes engines mid-sentence"). It applies at the START of
+ * the next call, which is exactly why it belongs here and not there: changing
+ * it live meant tearing down and rebuilding the session under the speaker.
+ *
+ * User-facing copy names no vendor. The engine ids are internal, and the
+ * realtime session is instructed not to name its own provider — a label here
+ * that named it would undo that from the outside.
+ */
+const VOICE_ENGINE_OPTIONS: ReadonlyArray<{
+  value: VoiceEngine;
+  label: string;
+}> = [
+  { value: "cascade", label: "Classic — the full assistant" },
+  { value: "gemini-live", label: "Realtime — faster, speech-native" },
+];
+
+function VoiceEngineCard() {
+  const [engine, setEngine] = useState<VoiceEngine>(() => readVoiceEngine());
+
+  const handleChange = useCallback((next: VoiceEngine) => {
+    setEngine(next);
+    writeVoiceEngine(next);
+  }, []);
+
+  return (
+    <DetailCard
+      title="Voice engine"
+      subtitle="Classic runs the full assistant — every tool, your memory, and it can tell you what it is doing while it works. Realtime is speech-native: it replies faster but does less. Takes effect on your next call."
+    >
+      <div className="max-w-xs">
+        <Dropdown<VoiceEngine>
+          options={VOICE_ENGINE_OPTIONS}
+          value={engine}
+          onChange={handleChange}
+          aria-label="Voice engine"
+        />
+      </div>
+    </DetailCard>
   );
 }
 

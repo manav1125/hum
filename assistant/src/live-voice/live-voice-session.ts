@@ -231,6 +231,12 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private readonly createTurnId: () => string;
   private readonly conversationId: string;
   private readonly fullDuplex: boolean;
+  /**
+   * Whether THIS client asked for `tool_activity` frames on the `start` frame.
+   * Never assumed: a client that did not ask has never heard of the frame type
+   * and would treat it as an unparseable — and therefore fatal — payload.
+   */
+  private readonly toolActivity: boolean;
   /** Base control prompt composed with the selected persona/mode (tone). */
   private readonly voiceControlPrompt: string;
   private readonly fullDuplexIdleTimeoutMs: number;
@@ -275,6 +281,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     this.conversationId =
       context.startFrame.conversationId ?? context.sessionId;
     this.fullDuplex = context.startFrame.fullDuplex === true;
+    this.toolActivity = context.startFrame.toolActivity === true;
     // Compose the selected conversation mode (companion / reflective /
     // cofounder) onto the base control prompt. Absent/unknown → companion,
     // whose fragment is the base warm default, so behaviour is unchanged.
@@ -947,6 +954,21 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
               op: "dismiss",
               surfaceId: msg.surfaceId,
               turnId,
+            });
+          },
+          // The tool this turn is actually touching, by its real name, so the
+          // call screen can say what it is doing while it thinks instead of
+          // showing an unattributed wait. Gated on the client having asked for
+          // the frame type (see `toolActivity` on the start frame) and on the
+          // same forwarding guard as the text deltas, so a barged-in turn
+          // cannot leave a stale activity on screen.
+          tool_use_start: (msg) => {
+            if (!this.toolActivity) return;
+            if (!this.isForwardingAssistantText(token)) return;
+            void this.sendFrame({
+              type: "tool_activity",
+              turnId,
+              toolName: msg.toolName,
             });
           },
         },

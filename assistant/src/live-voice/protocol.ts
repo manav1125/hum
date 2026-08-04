@@ -22,6 +22,7 @@ const _LIVE_VOICE_SERVER_FRAME_TYPES = [
   "metrics",
   "archived",
   "card",
+  "tool_activity",
   "error",
 ] as const;
 
@@ -98,6 +99,20 @@ export interface LiveVoiceClientStartFrame {
    * capabilities.
    */
   readonly persona?: string;
+  /**
+   * Opt in to `tool_activity` server frames — the raw name of each tool the
+   * turn actually invokes, so a voice UI can say what it is doing in words
+   * instead of showing an unattributed spinner.
+   *
+   * It is a CAPABILITY FLAG, not a preference, and the reason is compatibility
+   * in the dangerous direction. A client that has never heard of a frame type
+   * treats it as an unparseable frame, and the web client's `parseServerFrame`
+   * classifies that as fatal — so a new daemon streaming a brand-new frame type
+   * at an already-shipped client (the desktop app bundles its own web snapshot)
+   * would kill live calls mid-sentence. Sending it only to clients that asked
+   * makes that impossible: silence is the old behaviour, exactly.
+   */
+  readonly toolActivity?: boolean;
 }
 
 export interface LiveVoiceClientAudioFrame {
@@ -234,6 +249,30 @@ export interface LiveVoiceCardServerFrame extends LiveVoiceServerFrameBase {
   readonly turnId?: string;
 }
 
+/**
+ * The tool this turn has just started executing, by its REAL registered name.
+ *
+ * Sent only to clients that set `toolActivity` on the `start` frame (see that
+ * field), and only on the cascade engine, where the turn runs through the agent
+ * loop and `tool_use_start` is a real event with a real name. The realtime
+ * engine runs its own function calls inside the provider session and never
+ * reaches this path, so it emits nothing — and a client that shows nothing is
+ * correct there, because nothing is known.
+ *
+ * `toolName` is deliberately raw and untranslated. Turning `web_search` into
+ * words a person reads is presentation, and it belongs to the surface drawing
+ * it; a wire that carried prose would invite the daemon to invent a phrase for
+ * a tool it does not have copy for, which is the exact failure this frame
+ * exists to prevent.
+ */
+export interface LiveVoiceToolActivityServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "tool_activity";
+  /** The turn this tool call belongs to. */
+  readonly turnId: string;
+  /** Registered tool name, verbatim (`web_search`, `ui_show`, …). */
+  readonly toolName: string;
+}
+
 export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "error";
   readonly code: LiveVoiceProtocolErrorCode;
@@ -265,6 +304,7 @@ export type LiveVoiceServerFrame =
   | LiveVoiceMetricsServerFrame
   | LiveVoiceArchivedServerFrame
   | LiveVoiceCardServerFrame
+  | LiveVoiceToolActivityServerFrame
   | LiveVoiceErrorServerFrame;
 
 type WithoutSeq<T extends LiveVoiceServerFrameBase> = Omit<T, "seq">;
@@ -281,6 +321,7 @@ export type LiveVoiceServerFramePayload =
   | WithoutSeq<LiveVoiceMetricsServerFrame>
   | WithoutSeq<LiveVoiceArchivedServerFrame>
   | WithoutSeq<LiveVoiceCardServerFrame>
+  | WithoutSeq<LiveVoiceToolActivityServerFrame>
   | WithoutSeq<LiveVoiceErrorServerFrame>;
 
 class LiveVoiceServerFrameSequencer {
@@ -474,6 +515,15 @@ function validateStartFrame(
     );
   }
 
+  if ("toolActivity" in value && typeof value.toolActivity !== "boolean") {
+    return protocolError(
+      "invalid_field",
+      "start frame field toolActivity must be a boolean",
+      "toolActivity",
+      "start",
+    );
+  }
+
   return {
     ok: true,
     frame: {
@@ -491,6 +541,7 @@ function validateStartFrame(
       // Persona is cosmetic (tone only): accept a valid id, silently drop
       // anything else to the default rather than rejecting the session.
       ...(isVoicePersonaId(value.persona) ? { persona: value.persona } : {}),
+      ...(value.toolActivity === true ? { toolActivity: true } : {}),
       audio: audioConfig.frame,
     },
   };

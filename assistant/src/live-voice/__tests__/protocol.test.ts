@@ -391,3 +391,71 @@ describe("LiveVoiceServerFrameSequencer", () => {
     });
   });
 });
+
+/**
+ * `tool_activity` is the frame that lets a call screen say what it is doing in
+ * words. It is opt-in for a compatibility reason with teeth: a client that has
+ * never heard of a frame type parses it as unreadable, and the web client
+ * treats an unreadable frame as fatal — so an unconditional new frame type
+ * would end live calls on every already-shipped client (the desktop app bundles
+ * its own web snapshot). Silence for a client that did not ask is the whole
+ * safety property, so it is pinned here.
+ */
+describe("tool_activity is opt-in on the wire", () => {
+  const audio = {
+    mimeType: "audio/pcm",
+    sampleRate: 16000,
+    channels: 1,
+  } as const;
+
+  test("a client that asks has its request preserved", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, toolActivity: true }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.frame).toEqual({ type: "start", audio, toolActivity: true });
+  });
+
+  test("a client that says nothing is NOT opted in", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("toolActivity" in result.frame).toBe(false);
+  });
+
+  test("an explicit false is not opted in either", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, toolActivity: false }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("toolActivity" in result.frame).toBe(false);
+  });
+
+  test("a non-boolean is rejected rather than coerced", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, toolActivity: "yes" }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.field).toBe("toolActivity");
+  });
+
+  test("the frame sequences like any other server frame", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    const frame: LiveVoiceServerFrame = sequencer.next({
+      type: "tool_activity",
+      turnId: "turn-1",
+      toolName: "web_search",
+    });
+    expect(frame).toEqual({
+      type: "tool_activity",
+      turnId: "turn-1",
+      toolName: "web_search",
+      seq: 1,
+    });
+  });
+});

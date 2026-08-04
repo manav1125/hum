@@ -175,11 +175,22 @@ export function MobileThreadVoice({
     start,
     stop,
     setMuted,
+    interrupt,
   } = useLiveVoice();
   const cards = useLiveVoiceStore.use.cards();
   const engine = useLiveVoiceStore.use.engine();
   const turnClosed = useLiveVoiceStore.use.turnClosed();
-  const turns = useLiveVoiceStore.use.turns();
+  // The tool this turn is actually executing (or null — see the store field).
+  // Full screen names it in words; it is never guessed.
+  const activityTool = useLiveVoiceStore.use.activityTool();
+
+  // The call clock. It belongs HERE, not on the full-screen surface, for the
+  // same reason the session does: this component stays mounted for the whole
+  // call, so the number survives every expand/collapse and every reconnect and
+  // stays the one true "since you started this call". A clock owned by the
+  // surface would restart every time the user collapsed, which is a wrong
+  // number rendered confidently.
+  const [callStartedAt] = useState(() => Date.now());
 
   // Cards are display-only here (Slice 1 parity with the Voice tab — actions
   // don't round-trip on the live-voice channel yet).
@@ -242,17 +253,20 @@ export function MobileThreadVoice({
     void start(assistantId, conversationId);
   }, [start, assistantId, conversationId]);
 
-  // FULL SCREEN — the same session, the chat screen taken away. There is no
-  // thread behind it, so the "don't redraw what the thread already has"
-  // reasoning above does not apply here: it draws the whole open exchange for
-  // BOTH engines, on top of the session's finished turns.
+  // FULL SCREEN — the same session, the chat screen taken away.
+  //
+  // v35 rules the call screen is a CALL, not a transcript: "live captions of
+  // the current sentence only — the full transcript belongs to the thread, not
+  // the call." So it gets the open sentence and nothing else. The record is not
+  // lost by that: the thread is streaming this call as 🎙 turns while it
+  // happens, artefacts arrive there as cards, and ending drops the user back
+  // into it at the end of the transcript.
   if (fullScreen) {
     return (
       <VoiceFullScreen
         title={conversationTitle ?? null}
-        turns={turns}
-        // `turnClosed` means this exchange has already been appended to
-        // `turns`; drawing it as the open one too would show it twice.
+        // `turnClosed` means the exchange is finished and already in the
+        // thread; the call screen then has no CURRENT sentence to caption.
         currentUser={
           turnClosed
             ? ""
@@ -262,14 +276,16 @@ export function MobileThreadVoice({
                 .trim()
         }
         currentAssistant={turnClosed ? "" : assistantTranscript.trim()}
-        cards={cards}
         state={state}
+        activityTool={activityTool}
         muted={muted}
+        startedAt={callStartedAt}
         error={error}
         failureKind={failureKind}
         onCollapse={onToggleFullScreen ?? (() => {})}
         onEnd={handleEnd}
         onToggleMute={handleOrbTap}
+        onInterrupt={interrupt}
         onRetry={handleRetry}
       />
     );

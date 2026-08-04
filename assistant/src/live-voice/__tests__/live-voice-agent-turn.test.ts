@@ -436,3 +436,61 @@ describe("LiveVoiceSession assistant turn", () => {
     ]);
   });
 });
+
+/**
+ * The tool the turn is touching, forwarded so a call screen can name it in
+ * words instead of guessing — and NOT forwarded to a client that never asked
+ * for the frame type, because such a client cannot parse it and treats an
+ * unparseable frame as the end of the call.
+ */
+describe("LiveVoiceSession tool activity", () => {
+  const startVoiceTurnTouchingATool = () =>
+    mock(async (options: VoiceTurnOptions) => {
+      options.callbacks?.tool_use_start?.({
+        type: "tool_use_start",
+        conversationId: options.conversationId,
+        toolUseId: "tool-1",
+        toolName: "web_search",
+        input: { query: "acme pricing" },
+      } as Parameters<NonNullable<VoiceTurnCallbacks["tool_use_start"]>>[0]);
+      options.callbacks?.message_complete?.({
+        type: "message_complete",
+        conversationId: options.conversationId,
+        messageId: "assistant-message-1",
+      });
+      return { turnId: "bridge-turn-1", abort: mock() };
+    });
+
+  test("a client that opted in is told the real tool name", async () => {
+    const { frames, session, transcriber } = createSessionHarness({
+      startFrame: { ...START_FRAME, toolActivity: true },
+      startVoiceTurn: startVoiceTurnTouchingATool(),
+    });
+
+    await session.start();
+    transcriber.emit({ type: "final", text: "what does acme charge" });
+    await session.handleClientFrame({ type: "ptt_release" });
+    await waitFor(() => frames.some((f) => f.type === "tool_activity"));
+
+    const frame = frames.find((f) => f.type === "tool_activity");
+    expect(frame).toMatchObject({
+      type: "tool_activity",
+      toolName: "web_search",
+    });
+  });
+
+  test("a client that did not opt in is sent nothing at all", async () => {
+    const { frames, session, transcriber } = createSessionHarness({
+      startFrame: START_FRAME,
+      startVoiceTurn: startVoiceTurnTouchingATool(),
+    });
+
+    await session.start();
+    transcriber.emit({ type: "final", text: "what does acme charge" });
+    await session.handleClientFrame({ type: "ptt_release" });
+    await waitFor(() => frames.some((f) => f.type === "thinking"));
+    await flushAsyncCallbacks();
+
+    expect(frames.some((f) => f.type === "tool_activity")).toBe(false);
+  });
+});

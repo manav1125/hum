@@ -117,6 +117,20 @@ export interface VoiceTurnCallbacks {
   ui_surface_dismiss?: (
     msg: Extract<ServerMessage, { type: "ui_surface_dismiss" }>,
   ) => void;
+  /**
+   * A tool this turn has actually started executing. Already observed here (it
+   * is the `tool_use_start` logged below and handed to the phone event sink);
+   * this callback simply lets a non-phone voice client see the same fact.
+   *
+   * It exists so a voice surface can say what it is doing IN WORDS while it
+   * thinks. Without it the only honest thing a call screen can render during a
+   * long tool call is an unattributed wait, because the alternative — guessing
+   * a plausible activity — is a caption that is confidently wrong whenever the
+   * guess misses.
+   */
+  tool_use_start?: (
+    msg: Extract<ServerMessage, { type: "tool_use_start" }>,
+  ) => void;
 }
 
 export interface VoiceTurnOptions {
@@ -657,6 +671,7 @@ export async function startVoiceTurn(
               "Voice turn tool_use_start",
             );
             eventSink.onToolUse(msg.toolName, msg.input);
+            opts.callbacks?.tool_use_start?.(msg);
           } else if (msg.type === "ui_surface_show") {
             // Additive to the SSE broadcast above: also hand visual surfaces to
             // the voice client so `ui_show` results render inline as cards.
