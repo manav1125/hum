@@ -410,6 +410,29 @@ export function ChatMainPanel({
     [sendMessage],
   );
 
+  // Hover-action Retry on the latest completed assistant message: re-send
+  // the most recent real user message through the normal send pipeline so
+  // the assistant produces a fresh response as a new turn. (Our daemon has
+  // no discard-and-regenerate endpoint — upstream's `/conversations/:id/retry`
+  // — so retry composes the existing send machinery instead, like the
+  // interrupted-turn recovery above.)
+  const handleRetryLatestTurn = useCallback(() => {
+    if (isSending(useTurnStore.getState().phase)) return;
+    const storeMessages = useChatSessionStore.getState().messages;
+    const candidate = storeMessages.findLast(
+      (m) =>
+        m.role === "user" &&
+        !m.isSubagentNotification &&
+        !m.queueStatus &&
+        !m.taskRunContext,
+    );
+    if (!candidate) return;
+    const text = messagePlainText(candidate);
+    if (!text.trim()) return;
+    haptic.light();
+    void sendMessage(text);
+  }, [sendMessage]);
+
   const handleDismissApiKeyError = useCallback(
     () => useChatSessionStore.getState().setError(null),
     [],
@@ -840,6 +863,7 @@ export function ChatMainPanel({
     onForkConversation: handleForkConversationCallback,
     onInspectMessage: handleInspectMessage,
     onRetryInterrupted: handleRetryInterrupted,
+    onRetryLatestTurn: handleRetryLatestTurn,
     renderAvatar,
     onPullRefresh: handlePullRefresh,
     pullRefreshEnabled: chatPullToRefreshEnabled && touchSupported,

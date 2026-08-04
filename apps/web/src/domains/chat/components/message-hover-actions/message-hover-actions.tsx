@@ -1,6 +1,14 @@
-import { Check, Copy, ExternalLink, FileCode, GitBranch } from "lucide-react";
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  FileCode,
+  GitBranch,
+  RotateCcw,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { BookmarkToggle } from "@/domains/chat/components/message-hover-actions/bookmark-toggle";
 import type { DisplayMessage } from "@/domains/chat/types/types";
 import { messagePlainText } from "@/domains/chat/utils/message-plain-text";
 
@@ -13,6 +21,10 @@ type MessageHoverActionsProps = {
   onFork?: () => void;
   /** Callback when "Inspect" is clicked. */
   onInspect?: () => void;
+  /** Callback when "Retry" is clicked. Only supplied for the latest
+   *  completed assistant message — re-runs the turn's user message as a
+   *  fresh send. */
+  onRetry?: () => void;
 };
 
 function formatTimestamp(epoch: number): string {
@@ -82,6 +94,7 @@ export function MessageHoverActions({
   openInSlackUrl,
   onFork,
   onInspect,
+  onRetry,
 }: MessageHoverActionsProps) {
   const { role } = message;
   // Flat plain-text body derived from the message's text blocks; this is the
@@ -167,6 +180,19 @@ export function MessageHoverActions({
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
       )}
+
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          title="Retry"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--content-tertiary)] transition-colors hover:bg-[var(--surface-active)] hover:text-[var(--content-default)]"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      )}
+
+      <BookmarkToggle message={message} />
 
       {onFork && (
         <button

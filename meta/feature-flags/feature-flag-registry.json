@@ -209,7 +209,7 @@
       "key": "bookmarks",
       "label": "Message Bookmarks",
       "description": "Show the bookmark icon on messages and enable the Bookmarks tab in Settings",
-      "defaultEnabled": false
+      "defaultEnabled": true
     },
     {
       "id": "fork-from-message",

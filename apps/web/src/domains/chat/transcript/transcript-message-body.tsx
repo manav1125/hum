@@ -75,6 +75,7 @@ export function TranscriptMessageBody({
   onSubagentClick,
   onStopSubagent,
   onRetryInterrupted,
+  onRetryTurn,
   isStreaming = false,
 }: TranscriptMessageBodyProps) {
   const isSlackMessage = Boolean(message.slackMessage);
@@ -430,6 +431,7 @@ export function TranscriptMessageBody({
           openInSlackUrl={slackMessageUrl}
           onFork={forkHandler}
           onInspect={inspectHandler}
+          onRetry={isUser ? undefined : onRetryTurn}
         />
       </div>
     </>

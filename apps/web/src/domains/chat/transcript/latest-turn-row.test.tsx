@@ -26,7 +26,14 @@ mock.module("@/domains/chat/components/chat-markdown-message", () => ({
 mock.module(
   "@/domains/chat/components/message-hover-actions/message-hover-actions",
   () => ({
-    MessageHoverActions: () => <div data-testid="hover-actions" />,
+    // Marker for the retry-threading tests: rows whose hover actions were
+    // handed an `onRetry` callback render `data-has-retry="true"`.
+    MessageHoverActions: ({ onRetry }: { onRetry?: () => void }) => (
+      <div
+        data-testid="hover-actions"
+        data-has-retry={onRetry ? "true" : undefined}
+      />
+    ),
   }),
 );
 
@@ -136,5 +143,59 @@ describe("LatestTurnRow render order", () => {
       />,
     );
     expect(html).toContain('data-latest-turn="true"');
+  });
+});
+
+describe("LatestTurnRow retry threading", () => {
+  // Under static markup zustand reads the turn store's INITIAL state
+  // (phase "idle"), i.e. a settled turn — the case where retry attaches.
+
+  test("only the LAST assistant response row carries the retry action", () => {
+    const anchor = userMessageItem("u1", "question");
+    const responseItems: TranscriptItem[] = [
+      assistantMessageItem("a1", "FIRST_RESPONSE"),
+      assistantMessageItem("a2", "SECOND_RESPONSE"),
+    ];
+    const html = renderToStaticMarkup(
+      <LatestTurnRow
+        anchorMessage={anchor}
+        responseItems={responseItems}
+        {...sharedProps}
+        onRetryLatestTurn={() => {}}
+      />,
+    );
+    const markers = html.match(/data-has-retry="true"/g) ?? [];
+    expect(markers.length).toBe(1);
+    // The marker sits after the second response's content in document order.
+    expect(html.indexOf('data-has-retry="true"')).toBeGreaterThan(
+      html.indexOf("SECOND_RESPONSE"),
+    );
+  });
+
+  test("no retry marker when onRetryLatestTurn is absent", () => {
+    const anchor = userMessageItem("u1", "question");
+    const html = renderToStaticMarkup(
+      <LatestTurnRow
+        anchorMessage={anchor}
+        responseItems={[assistantMessageItem("a1", "RESPONSE")]}
+        {...sharedProps}
+      />,
+    );
+    expect(html).not.toContain('data-has-retry="true"');
+  });
+
+  test("interrupted rows keep their own notice and get no hover retry", () => {
+    const anchor = userMessageItem("u1", "question");
+    const interrupted = assistantMessageItem("a1", "PARTIAL");
+    interrupted.message.interrupted = true;
+    const html = renderToStaticMarkup(
+      <LatestTurnRow
+        anchorMessage={anchor}
+        responseItems={[interrupted]}
+        {...sharedProps}
+        onRetryLatestTurn={() => {}}
+      />,
+    );
+    expect(html).not.toContain('data-has-retry="true"');
   });
 });

@@ -67,6 +67,10 @@ export interface TranscriptMessageBodyProps {
    *  resolves the original user message and re-sends it. When omitted the
    *  interrupted notice renders without a Retry button. */
   onRetryInterrupted?: (assistantMessageId: string) => void;
+  /** Retry handler surfaced as a hover action on this row. Only supplied
+   *  for the latest completed assistant message (see `LatestTurnRow`);
+   *  re-runs the turn's user message as a fresh send. */
+  onRetryTurn?: () => void;
   /**
    * True when this message belongs to the turn that is actively streaming.
    * Set by `LatestTurnRow` for the in-progress response cluster; history

@@ -63,6 +63,12 @@ export interface LatestTurnRowProps {
   /** Retry handler for an interrupted assistant row (turn killed by a
    *  daemon restart). Forwarded to each `TranscriptRow`. */
   onRetryInterrupted?: (assistantMessageId: string) => void;
+  /** Hover-action retry for the latest completed assistant message:
+   *  re-sends the turn's user message as a fresh turn. Attached only to the
+   *  final assistant response row, and withheld entirely while the turn is
+   *  still streaming or the row is already flagged `interrupted` (that path
+   *  has its own retry notice). */
+  onRetryLatestTurn?: () => void;
 }
 
 export const LatestTurnRow = memo(function LatestTurnRow({
@@ -84,6 +90,7 @@ export const LatestTurnRow = memo(function LatestTurnRow({
   onSubagentClick,
   onStopSubagent,
   onRetryInterrupted,
+  onRetryLatestTurn,
 }: LatestTurnRowProps) {
   // The response cluster is "streaming" whenever the turn is in flight. This
   // keeps each response message's last tool-call group expanded for the whole
@@ -91,6 +98,20 @@ export const LatestTurnRow = memo(function LatestTurnRow({
   const phase = useTurnStore.use.phase();
   const isStreaming =
     phase === "queued" || phase === "thinking" || phase === "streaming";
+
+  // The one response row that carries the hover Retry action: the last
+  // assistant message in the cluster, once the turn has settled. Interrupted
+  // rows keep their dedicated inline retry notice instead.
+  const retryRowKey =
+    !isStreaming && onRetryLatestTurn
+      ? responseItems.findLast(
+          (item) =>
+            item.kind === "message" &&
+            item.message.role !== "user" &&
+            !item.message.interrupted,
+        )?.key
+      : undefined;
+
   return (
     <div className="flex flex-col" data-latest-turn="true">
       <TranscriptRow
@@ -132,6 +153,9 @@ export const LatestTurnRow = memo(function LatestTurnRow({
             onSubagentClick={onSubagentClick}
             onStopSubagent={onStopSubagent}
             onRetryInterrupted={onRetryInterrupted}
+            onRetryTurn={
+              response.key === retryRowKey ? onRetryLatestTurn : undefined
+            }
             isStreaming={isStreaming}
           />
         </Fragment>

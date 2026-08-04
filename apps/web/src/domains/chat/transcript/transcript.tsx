@@ -90,6 +90,10 @@ export interface TranscriptProps {
    *  daemon restart): re-sends the original user message. Forwarded to
    *  every transcript row. */
   onRetryInterrupted?: (assistantMessageId: string) => void;
+  /** Hover-action retry for the latest completed assistant message:
+   *  re-sends the latest user message as a fresh turn. Forwarded to
+   *  `LatestTurnRow` only — history rows never carry it. */
+  onRetryLatestTurn?: () => void;
   /** Optional render-prop that produces the chat avatar element to mount
    *  at the bottom of the conversation. Rendered inside the latest-edge
    *  region so the avatar pins to the bottom of the viewport while the
@@ -304,6 +308,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(
                   anchorMessage={partition.anchorMessage}
                   responseItems={partition.responseItems}
                   {...rowProps}
+                  onRetryLatestTurn={rest.onRetryLatestTurn}
                 />
               )}
               {rest.renderAvatar ? (

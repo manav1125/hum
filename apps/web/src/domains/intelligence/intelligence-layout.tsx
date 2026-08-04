@@ -144,6 +144,7 @@ export function IntelligenceLayout() {
   const isPlatformHosted = useActiveAssistantIsPlatformHosted();
   const platformNotifications =
     useClientFeatureFlagStore.use.platformNotifications();
+  const bookmarksEnabled = useClientFeatureFlagStore.use.bookmarks();
   const requirementsMet: Record<SubLeafRequirement, boolean> = {
     "desktop-app": isElectron(),
     "platform-hosted-assistant":
@@ -163,6 +164,9 @@ export function IntelligenceLayout() {
     unavailableReason: string | null;
   })[] = panelsForPath(pathname)
     .filter((sub) => !sub.developerOnly || settingsDeveloperNav)
+    // Flag-gated rows (currently only Bookmarks) hide outright when the
+    // feature is off — a feature that doesn't exist is not a disabled row.
+    .filter((sub) => sub.flag !== "bookmarks" || bookmarksEnabled)
     .map((sub) => ({
       ...sub,
       unavailableReason: subLeafUnavailableReason(sub, requirementsMet),
