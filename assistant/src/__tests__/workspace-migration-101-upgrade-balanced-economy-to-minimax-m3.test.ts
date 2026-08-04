@@ -87,7 +87,7 @@ describe("101-upgrade-balanced-economy-to-minimax-m3 migration", () => {
     const profile = readProfiles()["balanced-economy"]!;
     expect(profile.model).toBe("accounts/fireworks/models/minimax-m3");
     expect(profile.description).toBe(
-      "Strong open model (MiniMax M3) at a lower price point",
+      "Full-depth reasoning and longer answers, at a lower price",
     );
     expect(profile.maxTokens).toBe(32000);
     expect(profile.contextWindow).toEqual({ maxInputTokens: 200000 });

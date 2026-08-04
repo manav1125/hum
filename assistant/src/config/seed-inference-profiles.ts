@@ -80,13 +80,19 @@ const MANAGED_PROFILE_TEMPLATES: Record<string, ManagedProfileTemplate> = {
   },
   // Open-weight economy option: MiniMax M3 served by Fireworks via managed
   // platform inference.
+  //
+  // The `description` is customer-facing: it must describe the trade-off the
+  // user is choosing (depth, length, price), never the vendor behind it. A
+  // managed customer did not pick, pay for, or administer that vendor, and
+  // the product does not name it. See the seed-data scan in
+  // `apps/web/src/assistant/vendor-surface-guard.test.ts`.
   "balanced-economy": {
     intent: "balanced",
     provider: "fireworks",
     connectionName: "fireworks-managed",
     source: "managed",
     label: "Balanced Economy",
-    description: "Strong open model (MiniMax M3) at a lower price point",
+    description: "Full-depth reasoning and longer answers, at a lower price",
     maxTokens: 32000,
     effort: "high",
     thinking: { enabled: true, streamThinking: true },

@@ -14,11 +14,20 @@
  * exempted with a reason. A NEW surface fails here on the commit that adds
  * it, instead of being found by the next audit.
  *
- * Two scans, because the leak has two shapes:
- *   1. STATIC — a vendor name written as a literal in the source.
+ * Three scans, because the leak has three shapes:
+ *   1. STATIC — a vendor name written as a literal in the web source.
  *   2. DYNAMIC — a model/provider string that arrives from the daemon as
  *      data and flows through a generic renderer. No literal to grep, so
  *      those call sites are listed by hand in `DYNAMIC_MODEL_SURFACES`.
+ *   3. SEED — a vendor name baked into a record the DAEMON writes into a
+ *      customer's workspace: an inference-profile description, a seeded
+ *      connection label, onboarding copy. This one is not a web file at
+ *      all, and gating the renderer does not help: the string is already
+ *      on the customer's disk, and any future surface that prints it
+ *      leaks on the spot. The seeded `Balanced Economy` description read
+ *      "Strong open model (MiniMax M3) at a lower price point" and was
+ *      fetched into the usage tab's profile metadata while going
+ *      unrendered — latent, not safe.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -248,5 +257,189 @@ describe("vendor discretion — dynamic surfaces", () => {
       (path) => !SOURCE_FILES.some((f) => f.path === path),
     );
     expect(missing).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Seed data — the daemon's side of the same rule.
+// ---------------------------------------------------------------------------
+
+const SEED_ROOT = join(SRC_ROOT, "..", "..", "..", "assistant", "src");
+
+/**
+ * A file holds seed data when it seeds (path says `seed`) or when it is a
+ * workspace migration — migrations write directly into a live customer's
+ * `config.json`, `memory/`, and DB, which is exactly how the vendor-naming
+ * profile description reached every existing instance.
+ *
+ * `EXTRA_SEED_SOURCES` covers seeders whose filename does not say so.
+ */
+const EXTRA_SEED_SOURCES = ["providers/inference/connections.ts"];
+
+function isSeedSource(path: string): boolean {
+  return /seed/i.test(path) || path.startsWith("workspace/migrations/");
+}
+
+/**
+ * Seed files allowed to carry a vendor name, each with the reason. As with
+ * `ALLOWLIST`, every entry is a claim a reader can check — not a list of
+ * known failures.
+ */
+const SEED_ALLOWLIST: Record<string, string> = {
+  // Labels for the canonical provider connections. Rendered only by
+  // `domains/settings/ai/manage-providers-modal.tsx` and its siblings — the
+  // page `domains/settings/ai/ai-page.tsx` returns null on managed, and a
+  // self-hoster supplying the key is entitled to see which vendor it is.
+  "providers/inference/connections.ts":
+    "connection labels; rendered only by domains/settings/ai/** (gated)",
+
+  // Release-note text appended to `<workspace>/UPDATES.md`. The bulletin
+  // feature was removed: nothing reads the file, and migration
+  // `098-remove-stale-updates-bulletin-file` deletes it outright — and runs
+  // after all three, so a fresh workspace never keeps the text either.
+  "workspace/migrations/049-release-notes-default-sonnet.ts":
+    "UPDATES.md text; nothing consumes it and migration 098 deletes the file",
+  "workspace/migrations/053-release-notes-acp-codex.ts":
+    "UPDATES.md text; nothing consumes it and migration 098 deletes the file",
+  "workspace/migrations/058-release-notes-acp-sessions-ui.ts":
+    "UPDATES.md text; nothing consumes it and migration 098 deletes the file",
+
+  // Onboarding bullet seeded into `memory/threads.md`: "offer to port their
+  // context from a prior assistant (ChatGPT, Claude, ...)". Names the
+  // products a user is migrating FROM, not Cue's own model — the same call
+  // as `domains/onboarding/prechat.ts`. 091 supersedes 069's wording.
+  "workspace/migrations/069-seed-onboarding-threads.ts":
+    "names prior assistants a user migrates from, not Cue's model",
+  "workspace/migrations/091-retighten-migration-onboarding-thread.ts":
+    "names prior assistants a user migrates from, not Cue's model",
+
+  // The repair itself, which has to quote the strings in order to replace
+  // them — the seed-data equivalent of `use-managed-mode.ts` defining the
+  // gate by naming what it bans.
+  "workspace/migrations/104-devendor-balanced-economy-description.ts":
+    "quotes the two old descriptions in order to overwrite them",
+};
+
+/**
+ * A `WorkspaceMigration`'s own `description` is a developer log line —
+ * `workspace/migrations/runner.ts` logs it and no surface renders it, so
+ * "from Kimi K2.6 to MiniMax M3" there is not a leak.
+ *
+ * Removing exactly that one field, rather than allowlisting the file, keeps
+ * the rest of every migration under the scan: `101`'s registry description
+ * is forgiven while the `profile.description = ...` it WRITES is not. The
+ * match is anchored on the `id:` that precedes it, so an ordinary
+ * `description:` key in a seeded record (which is the thing we are hunting)
+ * is never swallowed.
+ */
+const MIGRATION_REGISTRY_DESCRIPTION =
+  /\bid:[^,]*,\s*\n\s*description:\s*\n?\s*("(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`)/;
+
+function withoutMigrationRegistryDescription(code: string): string {
+  return code.replace(MIGRATION_REGISTRY_DESCRIPTION, "");
+}
+
+/**
+ * Seeded copy is a string. Scanning literals only — rather than the whole
+ * file — keeps identifiers and module paths (`AnthropicProvider`,
+ * `forceOpenRouterSelfHost`, `../gemini/client.js`) out of the signal
+ * without weakening it: a vendor name a customer can read has to be quoted
+ * somewhere to get there.
+ */
+const STRING_LITERAL =
+  /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+
+function stringLiterals(code: string): string {
+  return (code.match(STRING_LITERAL) ?? []).join("\n");
+}
+
+/** The vendor prose a seed file quotes, or null when it is clean. */
+function seededVendor(path: string, source: string): string | null {
+  let code = stripComments(source);
+  if (path.startsWith("workspace/migrations/")) {
+    code = withoutMigrationRegistryDescription(code);
+  }
+  const literals = stringLiterals(code);
+  return VENDOR_PROSE.find((vendor) => literals.includes(vendor)) ?? null;
+}
+
+const SEED_FILES = walk(SEED_ROOT)
+  .map((full) => ({ path: relative(SEED_ROOT, full), full }))
+  .filter(
+    ({ path }) =>
+      !/\.(test|spec)\.tsx?$/.test(path) &&
+      !path.split("/").includes("__tests__"),
+  )
+  .filter(
+    ({ path }) => isSeedSource(path) || EXTRA_SEED_SOURCES.includes(path),
+  );
+
+describe("vendor discretion — daemon seed data", () => {
+  test("the seed scan found the daemon source tree", () => {
+    // Without this, moving `assistant/src` turns every assertion below into
+    // a vacuous pass over an empty list.
+    expect(SEED_FILES.length).toBeGreaterThan(50);
+  });
+
+  test("no seeded record names a vendor in copy a customer could read", () => {
+    const leaking: Array<{ file: string; vendor: string }> = [];
+
+    for (const { path, full } of SEED_FILES) {
+      if (SEED_ALLOWLIST[path]) continue;
+      const vendor = seededVendor(path, readFileSync(full, "utf8"));
+      if (vendor) leaking.push({ file: path, vendor });
+    }
+
+    // A failure here means a record the daemon writes onto a customer's disk
+    // names the inference vendor. Describe the trade-off instead — speed,
+    // cost, depth, context — and never substitute a different vendor's name.
+    expect(leaking).toEqual([]);
+  });
+
+  test("the seed allowlist has no stale entries", () => {
+    const stale = [
+      ...Object.keys(SEED_ALLOWLIST),
+      ...EXTRA_SEED_SOURCES,
+    ].filter((path) => !SEED_FILES.some((f) => f.path === path));
+    expect(stale).toEqual([]);
+  });
+
+  test("the scan catches a vendor name in a seeded description", () => {
+    // The exact shape this scan was written for.
+    const seed = `const T = {
+  "balanced-economy": {
+    label: "Balanced Economy",
+    description: "Strong open model (MiniMax M3) at a lower price point",
+  },
+};`;
+    expect(seededVendor("config/seed-inference-profiles.ts", seed)).toBe(
+      "MiniMax",
+    );
+  });
+
+  test("forgiving the migration log line does not forgive what it writes", () => {
+    // A migration whose own registry description is clean, but which writes
+    // a vendor-naming description into the customer's config, must still
+    // trip — otherwise the strip above is a hole rather than a filter.
+    const migration = `export const m: WorkspaceMigration = {
+  id: "999-example",
+  description: "Rewrite the economy profile",
+  run(dir: string): void {
+    profile.description = "Strong open model (MiniMax M3)";
+  },
+};`;
+    expect(seededVendor("workspace/migrations/999-example.ts", migration)).toBe(
+      "MiniMax",
+    );
+
+    // And the log line itself is genuinely forgiven.
+    const logOnly = `export const m: WorkspaceMigration = {
+  id: "998-example",
+  description: "Switch the profile from Kimi K2.6 to MiniMax M3",
+  run(dir: string): void {},
+};`;
+    expect(seededVendor("workspace/migrations/998-example.ts", logOnly)).toBe(
+      null,
+    );
   });
 });

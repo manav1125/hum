@@ -49,7 +49,7 @@ export const upgradeBalancedEconomyToMinimaxM3Migration: WorkspaceMigration = {
 
     profile.model = NEW_MODEL;
     profile.description =
-      "Strong open model (MiniMax M3) at a lower price point";
+      "Full-depth reasoning and longer answers, at a lower price";
     profile.maxTokens = 32000;
     delete profile.logitBias;
     profiles["balanced-economy"] = profile;
