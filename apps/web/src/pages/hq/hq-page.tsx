@@ -26,10 +26,11 @@
  * landed yet is `unavailable`, not an empty array — `?? []` is how a loading
  * spinner becomes a confident zero. The counts themselves come off
  * unpaginated daemon reads (`listWorkItems` and `missions` take no limit), so
- * none of them is a page size. The one place the label had to change from
- * design's frame is "filed today": `arrivals/summary` is a TRAILING window with
- * no `since` parameter, so the strip says `FILED · 24H` and the tile names the
- * window it actually covers.
+ * none of them is a page size. The filed lane asks `arrivals/summary` for
+ * `since=today` in the browser's own zone and reads the bound the daemon says
+ * it applied — so the strip says `FILED TODAY` when the day was really the
+ * bound, and reverts to `FILED · 24H` by itself if that parameter is ever
+ * dropped. The label follows the answer, never the question.
  *
  * Mobile is always Glance — the phone cannot hold a rail, so it keeps the
  * strip-as-census in `@/mobile-v3` and Deck is a desktop affordance only.
@@ -53,6 +54,7 @@ import {
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { useMobileLayout } from "@/hooks/use-is-mobile";
 import {
+  browserTimeZone,
   useDayPicture,
   useLifeHorizons,
   useWaitingOnPeople,
@@ -78,6 +80,8 @@ import { HqFirstRun, useHqFirstRun } from "./hq-firstrun";
 import { CompanyPanel } from "./company-panel";
 import {
   buildHqCensus,
+  filedWindowOf,
+  type FiledWindow,
   type HqCensusInput,
   type HqLaneId,
   type WatcherReading,
@@ -450,8 +454,16 @@ export function HqPage() {
     staleTime: 60_000,
   });
 
+  // Ask for THIS person's day, not the daemon's — prod runs UTC, so a bare
+  // "today" there would move a London evening's arrivals into tomorrow. The
+  // daemon resolves the boundary through the same resolver the calendar
+  // day-strip uses, and reports back which bound it actually applied; the
+  // label reads that, not this request. See `filedWindowOf`.
   const arrivalsQuery = useQuery({
-    ...arrivalsSummaryGetOptions({ path: { assistant_id: assistantId } }),
+    ...arrivalsSummaryGetOptions({
+      path: { assistant_id: assistantId },
+      query: { since: "today", tz: browserTimeZone() },
+    }),
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
@@ -532,7 +544,9 @@ export function HqPage() {
   // rather than an empty list, because `?? []` is how a pending query becomes a
   // confident zero.
   const watchers = watchersQuery.data;
-  const liveWatchers = (watchers ?? []).filter((w) => w.enabled && !w.lastError);
+  const liveWatchers = (watchers ?? []).filter(
+    (w) => w.enabled && !w.lastError,
+  );
   const failingWatchers = (watchers ?? []).filter(
     (w) => w.enabled && w.lastError,
   );
@@ -558,7 +572,7 @@ export function HqPage() {
     : queued.isLoading
       ? unavailable("Still reading the queue…")
       : known(cameIn);
-  const arrivalsState: LaneState<ArrivalsSummary & { windowHours: number }> =
+  const arrivalsState: LaneState<ArrivalsSummary & { window: FiledWindow }> =
     arrivalsQuery.isError
       ? unavailable("Cue couldn't read what arrived.")
       : arrivalsQuery.data == null
@@ -569,7 +583,8 @@ export function HqPage() {
             kept: arrivalsQuery.data.kept,
             // Off the response, never a constant here: the label is only
             // honest if the window comes from the same payload as the count.
-            windowHours: arrivalsQuery.data.windowHours,
+            // We asked for `since=today` — this reads what we were GIVEN.
+            window: filedWindowOf(arrivalsQuery.data),
           });
   const inMotionState = running.isError
     ? unavailable<{ running: HqWorkItem[]; schedules: typeof schedules }>(

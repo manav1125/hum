@@ -54,10 +54,12 @@
  *     pre-run assessor is holding for a word from you, because "none need you"
  *     is false the moment one of them has a `clarify`/`blocked` verdict.
  *   · `filed` — arrivals filed by the gate over **the window the daemon
- *     actually reports**, which is a trailing one (24h by default), not
- *     midnight-to-now. The label says so. `arrivals/summary` has no `since`
- *     parameter, so "filed today" is not a sentence this surface can honestly
- *     write yet.
+ *     actually reports**. HQ asks for `since=today` in its own timezone, and
+ *     when the daemon confirms it bounded the day there, the label reads
+ *     TODAY. When the daemon reports a trailing window instead — an older
+ *     build, a dropped parameter, a rolled-back route — the label reverts to
+ *     `· 24H` on its own. See {@link FiledWindow}: the label is derived from
+ *     what came back, never from what was asked for.
  *   · `in_motion` — running work items, plus live schedules and the next fire.
  *   · `watching` — watchers that are enabled AND not currently erroring.
  *     Existing is not working; the erroring ones are named, never counted in.
@@ -86,12 +88,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export type HqLaneId =
-  | "needs_you"
-  | "blocked"
-  | "holding"
-  | "filed"
-  | "in_motion"
-  | "watching";
+  "needs_you" | "blocked" | "holding" | "filed" | "in_motion" | "watching";
 
 export const HQ_LANE_IDS = [
   "needs_you",
@@ -272,6 +269,74 @@ export interface ValveFacts {
   unbanded: number;
 }
 
+/**
+ * What the arrivals response said its own lower bound was.
+ *
+ * This exists so the FILED label is a function of the answer rather than of
+ * the question. HQ asks for `since=today`; if that parameter is ever dropped,
+ * unhonoured, or served by a daemon that predates it, the response comes back
+ * describing a trailing window and this type carries that fact all the way to
+ * the label — which then says `· 24H` again with no code change and no lie in
+ * between.
+ *
+ * `unstated` is the third case on purpose: a bound with no calendar meaning
+ * (an explicit instant) has no honest short label, so the surface says nothing
+ * about the window rather than picking the nearest-sounding one.
+ */
+export type FiledWindow =
+  | { readonly kind: "local_day"; readonly timeZone: string | null }
+  | { readonly kind: "trailing"; readonly hours: number }
+  | { readonly kind: "unstated" };
+
+/**
+ * Read the window off an arrivals response.
+ *
+ * Deliberately tolerant of a response that has never heard of `bound`: an
+ * older daemon returns `windowHours` and nothing else, and that must degrade
+ * to the trailing label rather than to a crash or to a confident "today".
+ */
+export function filedWindowOf(payload: {
+  bound?: string | null;
+  windowHours?: number | null;
+  timeZone?: string | null;
+}): FiledWindow {
+  if (payload.bound === "local_day") {
+    return { kind: "local_day", timeZone: payload.timeZone ?? null };
+  }
+  // No `bound` at all is the old contract, which was always trailing.
+  if (
+    (payload.bound == null || payload.bound === "trailing_window") &&
+    typeof payload.windowHours === "number"
+  ) {
+    return { kind: "trailing", hours: payload.windowHours };
+  }
+  return { kind: "unstated" };
+}
+
+/** The mono strip label's window clause — empty when there is nothing true to say. */
+function filedStripLabel(window: FiledWindow): string {
+  switch (window.kind) {
+    case "local_day":
+      return "FILED TODAY";
+    case "trailing":
+      return `FILED · ${window.hours}H`;
+    case "unstated":
+      return "FILED";
+  }
+}
+
+/** The same window, in the detail sentence's voice. */
+function filedWindowPhrase(window: FiledWindow): string {
+  switch (window.kind) {
+    case "local_day":
+      return "today";
+    case "trailing":
+      return `last ${window.hours}h`;
+    case "unstated":
+      return "so far";
+  }
+}
+
 export interface HqCensusInput {
   /** The one needs-you number, computed once by the page (invariant 2). */
   needsYou: LaneState<number>;
@@ -289,7 +354,7 @@ export interface HqCensusInput {
    * of the payload rather than a constant here, because the label is only
    * honest if it comes from the same response as the count.
    */
-  arrivals: LaneState<ArrivalsSummary & { windowHours: number }>;
+  arrivals: LaneState<ArrivalsSummary & { window: FiledWindow }>;
   inMotion: LaneState<{ running: HqWorkItem[]; schedules: HqSchedule[] }>;
   /** Watchers split by health. `live` = enabled and not erroring. */
   watching: LaneState<{
@@ -355,13 +420,15 @@ function valveHeldNote(v: ValveFacts): string | null {
   return `${v.held} more held back — in Work, nothing lost`;
 }
 
-function filedDetail(a: ArrivalsSummary & { windowHours: number }): string {
-  const window = `last ${a.windowHours}h`;
+function filedDetail(a: ArrivalsSummary & { window: FiledWindow }): string {
+  const window = filedWindowPhrase(a.window);
   if (a.total === 0) {
     // Refusing to say "all quiet": nothing arriving because nothing is
     // watching is a different fact, and the watching lane one tile down is
     // where that gets answered.
-    return `Nothing arrived in the ${window}.`;
+    return a.window.kind === "local_day"
+      ? "Nothing has arrived today."
+      : `Nothing arrived in the ${window}.`;
   }
   const kept =
     a.kept > 0 ? ` · ${a.kept} kept for you` : " · none needed surfacing";
@@ -427,7 +494,8 @@ function statOf<T>(state: LaneState<T>, of: (payload: T) => number): LaneStat {
   if (q == null) {
     return {
       kind: "unknown",
-      why: state.kind === "unavailable" ? state.reason : "Cue couldn't read it.",
+      why:
+        state.kind === "unavailable" ? state.reason : "Cue couldn't read it.",
     };
   }
   return { kind: "count", value: q.value };
@@ -470,14 +538,21 @@ function toneFor(stat: LaneStat, hot: (n: number) => LaneTone): LaneTone {
  */
 export function buildHqCensus(input: HqCensusInput): HqCensus {
   const needsYouStat = statOf(input.needsYou, (n) => n);
-  const blockedStat = statOf(input.missions, (ms) => blockedMissions(ms).length);
+  const blockedStat = statOf(
+    input.missions,
+    (ms) => blockedMissions(ms).length,
+  );
   const holdingStat = statOf(input.holding, (items) => items.length);
   const filedStat = statOf(input.arrivals, (a) => a.filed);
   const inMotionStat = statOf(input.inMotion, (p) => p.running.length);
   const watchingStat = statOf(input.watching, (p) => p.live.length);
 
-  const filedWindow =
-    input.arrivals.kind === "known" ? input.arrivals.payload.windowHours : null;
+  // A lane we could not read has no window to describe, so it gets the bare
+  // label — same rule as the stat above it: no reading, no claim.
+  const filedWindow: FiledWindow =
+    input.arrivals.kind === "known"
+      ? input.arrivals.payload.window
+      : { kind: "unstated" };
 
   return {
     needs_you: {
@@ -528,11 +603,12 @@ export function buildHqCensus(input: HqCensusInput): HqCensus {
     },
     filed: {
       id: "filed",
-      // The window comes off the response, never off a hope. `arrivals/summary`
-      // is a TRAILING window with no `since` parameter, so this cannot say
-      // "today" — and a label that lies about its window is a fake number with
-      // extra steps.
-      stripLabel: filedWindow == null ? "FILED" : `FILED · ${filedWindow}H`,
+      // The window comes off the response, never off a hope. HQ asks for
+      // `since=today`, but this label reads the bound the daemon says it
+      // actually used — so the day the parameter stops being honoured, the
+      // label stops saying TODAY by itself. A label that lies about its window
+      // is a fake number with extra steps.
+      stripLabel: filedStripLabel(filedWindow),
       tileTitle: "Came in",
       glyph: "↴",
       tone: "neutral",
@@ -649,4 +725,3 @@ export function sublineLanes(census: HqCensus): HqLaneReading[] {
 export function isTappable(reading: HqLaneReading): boolean {
   return reading.stat.kind === "count";
 }
-

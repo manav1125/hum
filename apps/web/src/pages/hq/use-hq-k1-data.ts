@@ -31,8 +31,18 @@ import type {
 
 const SAFETY_NET_MS = 60_000;
 
-/** The browser knows the user's zone; prod runs UTC and must be told. */
-function browserTimeZone(): string | undefined {
+/**
+ * The browser knows the user's zone; prod runs UTC and must be told.
+ *
+ * Exported so every HQ read of "today" — the day rail here, the filed count in
+ * `hq-page` — asks in the same zone. Two surfaces on one screen disagreeing
+ * about which day it is would be a bug nobody could see until midnight.
+ *
+ * `undefined` on failure, deliberately, rather than "UTC": a browser that
+ * cannot name its zone should let the daemon fall back to the zone the owner
+ * configured, not overrule it with the daemon's own.
+ */
+export function browserTimeZone(): string | undefined {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
   } catch {

@@ -34,6 +34,7 @@ import {
   MAX_ARRIVAL_PAGE,
 } from "../../arrivals/arrival-store.js";
 import { createWorkItemForArrival } from "../../arrivals/arrival-surface.js";
+import { localDate, zonedWallClockToMs } from "../../calendar/day-rail.js";
 import type { ServerMessage } from "../../daemon/message-protocol.js";
 import { bandWorkItem } from "../../valve/valve-intake.js";
 import { recordFeedback } from "../../valve/valve-store.js";
@@ -45,6 +46,7 @@ import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage
 import { buildAssistantEvent } from "../assistant-event.js";
 import { assistantEventHub } from "../assistant-event-hub.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
+import { resolveRailTimeZone } from "./calendar-day-routes.js";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.js";
 import type { RouteDefinition } from "./types.js";
 import { annotateWorkItems, workItemSchema } from "./work-items-routes.js";
@@ -113,7 +115,35 @@ const summarySchema = z.object({
     .int()
     .describe("Inclusive lower bound of the window, epoch ms"),
   until: z.number().int().describe("When the summary was computed, epoch ms"),
-  windowHours: z.number().int(),
+  windowHours: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "The trailing window in hours. NULL whenever `bound` is not " +
+        "'trailing_window' — the hours elapsed since a day boundary is not a " +
+        "window anybody chose, and rounding it would hand you a number to " +
+        "print that nobody asked for.",
+    ),
+  bound: z
+    .enum(["trailing_window", "local_day", "explicit"])
+    .describe(
+      "What set `since`, and therefore what a label over these numbers may " +
+        "say. 'trailing_window' = the last N hours ending now; the only " +
+        "honest label is the window itself. 'local_day' = midnight-to-now in " +
+        '`timeZone`; "today" is true of these numbers and only these. ' +
+        "'explicit' = an instant you supplied, with no calendar meaning — say " +
+        "nothing about the window rather than invent one. Clients must derive " +
+        'their label from THIS field: a client that hardcodes "today" will ' +
+        "keep saying it the day the parameter stops being honoured.",
+    ),
+  timeZone: z
+    .string()
+    .nullable()
+    .describe(
+      "The IANA zone the local day was resolved in. Null unless `bound` is " +
+        "'local_day' — so \"today\" can always be shown to be somebody's today.",
+    ),
   arrived: z
     .number()
     .int()
@@ -146,6 +176,50 @@ function parseWindowHours(raw: string | undefined): number | undefined {
   return n;
 }
 
+/**
+ * Resolve the `since` parameter into a lower bound, and — when it is a day
+ * boundary — the zone that day belongs to.
+ *
+ * `since=today` is the whole reason this exists. "Today" is the owner's day,
+ * not the daemon's: prod runs UTC, so a naive midnight here would move a
+ * London evening's arrivals into tomorrow and an LA afternoon's into
+ * yesterday. So the boundary is resolved through
+ * {@link resolveRailTimeZone} — the SAME resolver the calendar day-strip uses
+ * (`tz` param, else the owner's configured/detected zone, else the host's) —
+ * and the same {@link zonedWallClockToMs} that converges across DST
+ * transitions. There is deliberately no second notion of "today" in this
+ * codebase: if the day-strip and the filed count ever disagree about which day
+ * it is, that is one bug in one function, not two surfaces drifting.
+ *
+ * An epoch-ms value is also accepted, for callers that mean a specific
+ * instant. It resolves with no timezone, so the response's `bound` comes back
+ * `explicit` and no surface is tempted to call it a day.
+ */
+export function parseSince(
+  raw: string | undefined,
+  tz: string | undefined,
+  nowMs: number,
+): { since: number; timeZone?: string } | undefined {
+  if (raw === undefined || raw.trim().length === 0) return undefined;
+  const value = raw.trim();
+
+  if (value.toLowerCase() === "today") {
+    const timeZone = resolveRailTimeZone(tz);
+    return {
+      since: zonedWallClockToMs(localDate(nowMs, timeZone), 0, timeZone),
+      timeZone,
+    };
+  }
+
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new BadRequestError(
+      `since must be "today" or a non-negative epoch-ms timestamp (got "${raw}")`,
+    );
+  }
+  return { since: n };
+}
+
 export const ROUTES: RouteDefinition[] = [
   {
     operationId: "getArrivalsSummary",
@@ -157,23 +231,52 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "Arrived / filed / kept census",
     description:
-      "How much came in over a trailing window and what Cue did with it. " +
+      "How much came in over a window and what Cue did with it. " +
       "`kept` is the honest number: it counts arrivals Cue looked at and " +
       "decided you need to see. It is NOT derived from autoFileConfidence — " +
       "that field means 'assigned to a project' and reading relevance out of " +
-      "it overstates what the filter actually did.",
+      "it overstates what the filter actually did.\n\n" +
+      "Bound it two ways. `windowHours` gives a trailing window ending now; " +
+      "`since=today` gives midnight-to-now in YOUR timezone, which is what " +
+      'lets a surface say "today" instead of "last 24h". `since` wins when ' +
+      "both are sent. The response reports which bound it actually used in " +
+      "`bound`, so a label can follow the data rather than a hope.",
     tags: ["arrivals"],
     queryParams: [
       {
         name: "windowHours",
-        description: "Trailing window in hours (default 24)",
+        description:
+          "Trailing window in hours (default 24). Ignored when `since` is set.",
         schema: { type: "number" },
+      },
+      {
+        name: "since",
+        description:
+          'Lower bound. "today" = midnight-to-now in the timezone resolved ' +
+          "from `tz` (the owner's day, not the daemon's — prod runs UTC). " +
+          "Or a non-negative epoch-ms instant, which is reported as `bound: " +
+          "'explicit'` because an arbitrary moment has no calendar name.",
+        schema: { type: "string" },
+      },
+      {
+        name: "tz",
+        description:
+          "IANA timezone the local day is resolved in when `since=today`. " +
+          "Falls back to your configured/detected zone, then the daemon " +
+          "host's. Clients that know their own zone should always send it. " +
+          "Same parameter, same resolver, as `calendar/day`.",
+        schema: { type: "string" },
       },
     ],
     responseBody: summarySchema,
     handler: ({ queryParams }) => {
       const windowHours = parseWindowHours(queryParams?.windowHours);
-      return getArrivalsSummary(windowHours ? { windowHours } : {});
+      const since = parseSince(queryParams?.since, queryParams?.tz, Date.now());
+      return getArrivalsSummary({
+        ...(windowHours ? { windowHours } : {}),
+        ...(since ? { since: since.since } : {}),
+        ...(since?.timeZone ? { timeZone: since.timeZone } : {}),
+      });
     },
   },
 

@@ -789,6 +789,106 @@ export function listAttachments(opts?: {
   );
 }
 
+/**
+ * The mirror image of {@link listAttachments}: things the OWNER sent Cue.
+ *
+ * Same table, same denylist, opposite role. `listAttachments` exists to answer
+ * "what did we make together" and deliberately excludes uploads; this exists
+ * because excluding them from the Library LIST was right and excluding them
+ * from the Library SEARCH was not. Someone who uploaded a contract and later
+ * searches for it should find it — in its thread, labelled as theirs, and
+ * never mixed into a list that claims everything on it was made with Cue.
+ *
+ * What it will not return:
+ *   · anything an assistant message also links to. That is the Library proper,
+ *     and a file in both places would be counted twice on one screen — once
+ *     under a heading claiming Cue made it and once under a heading claiming
+ *     the owner sent it. The two sections are disjoint by construction.
+ *   · tool captures and voice-call audio chunks
+ *     ({@link TOOL_CAPTURE_FILENAME_PREFIXES}, which covers `live-voice-user-*`
+ *     — those ride user-role messages and would otherwise flood every search
+ *     with things nobody consciously sent).
+ *   · anything whose filename does not match the query.
+ *
+ * Matching is on filename only. The bytes are not indexed, and pretending
+ * otherwise by returning content-less matches would be a worse lie than the
+ * narrow scope; the caller says "by name" in the surface.
+ */
+export interface UploadedAttachment extends AttachmentMetadata {
+  /**
+   * The conversation the owner sent it in, derived from the USER-role link.
+   * Still only an id — the caller must confirm the thread exists before
+   * offering a link to it.
+   */
+  sourceConversationId: string | null;
+}
+
+/**
+ * Hard cap on one uploads search.
+ *
+ * Exported because the surface has to know it: a result set that came back
+ * exactly this long proves only that there were at least this many, and the
+ * surface is required to say so rather than print the length as a total.
+ */
+export const MAX_UPLOAD_SEARCH = 50;
+
+/** Escape the LIKE metacharacters so a filename with `%` in it searches literally. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+export function searchUploadedAttachments(opts: {
+  query: string;
+  limit?: number;
+}): UploadedAttachment[] {
+  const q = opts.query.trim();
+  if (q.length === 0) return [];
+  const limit = Math.min(
+    MAX_UPLOAD_SEARCH,
+    Math.max(1, opts.limit ?? MAX_UPLOAD_SEARCH),
+  );
+
+  const excludeClauses = TOOL_CAPTURE_FILENAME_PREFIXES.map(
+    () => "lower(a.original_filename) NOT LIKE ?",
+  ).join(" AND ");
+  const excludeArgs = TOOL_CAPTURE_FILENAME_PREFIXES.map((p) => `${p}%`);
+
+  return rawAll<UploadedAttachment>(
+    `SELECT
+       a.id,
+       a.original_filename AS originalFilename,
+       a.mime_type AS mimeType,
+       a.size_bytes AS sizeBytes,
+       a.kind,
+       a.created_at AS createdAt,
+       a.thumbnail_base64 AS thumbnailBase64,
+       (SELECT m2.conversation_id
+          FROM message_attachments ma2
+          JOIN messages m2 ON m2.id = ma2.message_id
+         WHERE ma2.attachment_id = a.id AND m2.role = 'user'
+         ORDER BY m2.created_at ASC
+         LIMIT 1) AS sourceConversationId
+     FROM attachments a
+     WHERE lower(a.original_filename) LIKE ? ESCAPE '\\'
+       AND ${excludeClauses}
+       AND EXISTS (
+         SELECT 1 FROM message_attachments ma
+         JOIN messages m ON m.id = ma.message_id
+         WHERE ma.attachment_id = a.id AND m.role = 'user'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM message_attachments ma
+         JOIN messages m ON m.id = ma.message_id
+         WHERE ma.attachment_id = a.id AND m.role = 'assistant'
+       )
+     ORDER BY a.created_at DESC
+     LIMIT ?`,
+    `%${escapeLike(q.toLowerCase())}%`,
+    ...excludeArgs,
+    limit,
+  );
+}
+
 export function getAttachmentContent(attachmentId: string): Buffer | null {
   const row = getAttachmentRow(attachmentId);
   if (!row) return null;

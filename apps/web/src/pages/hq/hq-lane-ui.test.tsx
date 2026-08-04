@@ -55,7 +55,12 @@ function input(over: Partial<HqCensusInput> = {}): HqCensusInput {
       mission({ id: "Raise $100M", status: "abandoned" }),
     ]),
     holding: known([]),
-    arrivals: known({ total: 18, filed: 12, kept: 6, windowHours: 24 }),
+    arrivals: known({
+      total: 18,
+      filed: 12,
+      kept: 6,
+      window: { kind: "trailing" as const, hours: 24 },
+    }),
     inMotion: known({ running: [], schedules: [] }),
     watching: known({ live: [], failing: [] }),
     ...over,
@@ -134,16 +139,21 @@ describe("Glance strip", () => {
     const quiet = renderStrip({
       needsYou: known(0),
       missions: known([]),
-      arrivals: known({ total: 0, filed: 0, kept: 0, windowHours: 24 }),
+      arrivals: known({
+        total: 0,
+        filed: 0,
+        kept: 0,
+        window: { kind: "trailing" as const, hours: 24 },
+      }),
     });
     expect(
       quiet.container.querySelectorAll("[data-hq-strip-cell]"),
     ).toHaveLength(5);
     cleanup();
     const busy = renderStrip({ needsYou: known(312) });
-    expect(busy.container.querySelectorAll("[data-hq-strip-cell]")).toHaveLength(
-      5,
-    );
+    expect(
+      busy.container.querySelectorAll("[data-hq-strip-cell]"),
+    ).toHaveLength(5);
   });
 });
 
@@ -168,9 +178,7 @@ describe("Deck rail", () => {
     // Four missions, four rings, each labelled with its honest state.
     const rings = tile.querySelectorAll('[role="img"]');
     expect(rings).toHaveLength(4);
-    expect(
-      [...rings].map((r) => r.getAttribute("aria-label")),
-    ).toEqual([
+    expect([...rings].map((r) => r.getAttribute("aria-label"))).toEqual([
       "Mission on track",
       "Mission on track",
       "Mission blocked",

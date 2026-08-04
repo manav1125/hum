@@ -214,12 +214,49 @@ export interface ArrivalReasonCount {
   count: number;
 }
 
+/**
+ * What decided the lower bound of the summary — and therefore what a label
+ * over these numbers is allowed to say.
+ *
+ * This travels in the payload because the caller cannot infer it. A client
+ * that asked for a day boundary and got a trailing window back would have no
+ * way to tell, and would print "today" over 24 trailing hours. So the answer
+ * names its own bound:
+ *
+ *  · `trailing_window` — the last N hours, ending now. The only honest label
+ *    is the window itself ("· 24H"). This is the default and the fallback.
+ *  · `local_day` — midnight-to-now in a named timezone. "Today" is a true
+ *    sentence about these numbers, and only about these.
+ *  · `explicit` — a caller-supplied instant with no calendar meaning. There is
+ *    no short label for "since some moment you picked", so surfaces say
+ *    nothing about the window rather than inventing one.
+ */
+export type ArrivalsSummaryBound = "trailing_window" | "local_day" | "explicit";
+
 export interface ArrivalsSummary {
   /** Inclusive lower bound of the window, epoch ms. */
   since: number;
   /** The moment the summary was computed, epoch ms. */
   until: number;
-  windowHours: number;
+  /**
+   * The trailing window in hours — and **null whenever `bound` is not
+   * `trailing_window`**.
+   *
+   * Null rather than the elapsed hours since the bound, on purpose. Eight and
+   * a half hours into a local day, an `windowHours: 8` would be a number
+   * nobody asked for, off by half an hour, and indistinguishable to a reader
+   * from a window they had chosen. A caller that wants the elapsed span can
+   * subtract `since` from `until`; a caller that wants to print a window is
+   * being told there isn't one.
+   */
+  windowHours: number | null;
+  /** What set {@link since}. See {@link ArrivalsSummaryBound}. */
+  bound: ArrivalsSummaryBound;
+  /**
+   * The IANA zone the local day was resolved in — null unless `bound` is
+   * `local_day`. Named so "today" can be shown to be somebody's today.
+   */
+  timeZone: string | null;
   /** Everything that arrived in the window. Always `filed + kept`. */
   arrived: number;
   /** Recorded and findable, but not in the lane. */
@@ -238,21 +275,54 @@ export interface ArrivalsSummary {
 const MAX_SUMMARY_REASONS = 10;
 
 /**
- * The arrived / filed / kept census over a trailing window.
+ * The arrived / filed / kept census over a window.
  *
  * `kept` means "Cue looked at it and decided you need to see it" — it is a
  * count of `disposition = 'surfaced'` rows and nothing else. It is deliberately
  * not derived from `auto_file_confidence`, which is a PROJECT-assignment
  * signal; reading relevance out of it is what made the old digest dishonest.
+ *
+ * Two bounds are offered, and the answer says which one it used. `since` wins
+ * when both are given: an explicit instant is a stronger statement of intent
+ * than a window width, and silently widening it back out to a trailing window
+ * is exactly the failure the {@link ArrivalsSummary.bound} field exists to
+ * make impossible to hide.
  */
 export function getArrivalsSummary(opts?: {
   windowHours?: number;
+  /**
+   * Inclusive lower bound, epoch ms. Overrides `windowHours`.
+   *
+   * `timeZone` is passed alongside it by callers who resolved a local day
+   * boundary, purely so the response can name whose day it was — this function
+   * does no zone maths of its own. Resolving "today" is the route's job,
+   * through the one resolver the calendar day-strip already uses.
+   */
+  since?: number;
+  timeZone?: string;
 }): ArrivalsSummary {
   const db = getDb();
   const until = Date.now();
+  const explicitSince =
+    opts?.since !== undefined && Number.isFinite(opts.since)
+      ? // A bound in the future would report a negative window over an empty
+        // set — clamp to `until` so it reads as "nothing yet today", which is
+        // what a clock-skewed client actually means.
+        Math.min(opts.since, until)
+      : null;
+  const bound: ArrivalsSummaryBound =
+    explicitSince === null
+      ? "trailing_window"
+      : opts?.timeZone
+        ? "local_day"
+        : "explicit";
   const windowHours =
-    opts?.windowHours && opts.windowHours > 0 ? opts.windowHours : 24;
-  const since = until - windowHours * 3_600_000;
+    explicitSince !== null
+      ? null
+      : opts?.windowHours && opts.windowHours > 0
+        ? opts.windowHours
+        : 24;
+  const since = explicitSince ?? until - windowHours! * 3_600_000;
 
   const rows = db
     .select({
@@ -292,6 +362,8 @@ export function getArrivalsSummary(opts?: {
     since,
     until,
     windowHours,
+    bound,
+    timeZone: bound === "local_day" ? opts!.timeZone! : null,
     arrived: filed + kept,
     filed,
     kept,

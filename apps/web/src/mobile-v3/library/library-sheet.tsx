@@ -33,8 +33,11 @@ import {
   type LibraryEntry,
   type LibraryFilter,
 } from "./library-model";
+import { combinedEmptyNote, hasUploadSection } from "./library-search";
+import { UploadsSection } from "./uploads-section";
 import { useLibraryOutputs } from "./use-library-outputs";
 import { useOpenLibraryEntry } from "./use-open-entry";
+import { useUploadSearch } from "./use-upload-search";
 
 export function Mv3LibrarySheet({
   assistantId,
@@ -62,6 +65,9 @@ export function Mv3LibrarySheet({
   const [search, setSearch] = useState("");
   const [now] = useState(() => Date.now());
   const { openEntry, previewModal } = useOpenLibraryEntry(assistantId);
+  // The uploads half of search. Independent of `entries` above, so a failure
+  // here can never blank the made-with-Cue results.
+  const uploads = useUploadSearch(assistantId, search, open);
 
   const filters = useMemo(() => availableFilters(entries), [entries]);
   const visible = useMemo(() => {
@@ -176,7 +182,7 @@ export function Mv3LibrarySheet({
               I couldn’t load your library just now. Nothing is lost — swipe
               down and try again in a moment.
             </div>
-          ) : visible.length === 0 ? (
+          ) : visible.length === 0 && !hasUploadSection(uploads) ? (
             <div
               style={{
                 fontSize: 12.5,
@@ -185,7 +191,9 @@ export function Mv3LibrarySheet({
               }}
             >
               {search.trim()
-                ? `Nothing in your library matches “${search.trim()}”.`
+                ? /* Never "nothing matches" about a search that only half
+                     happened — the note admits when uploads went unsearched. */
+                  combinedEmptyNote(search, uploads)
                 : filter !== "All"
                   ? `Nothing here is filed under ${filter}.`
                   : `Nothing here yet. ${libraryScopeNote}`}
@@ -224,6 +232,14 @@ export function Mv3LibrarySheet({
               ) : null}
             </>
           )}
+          {/* Below the made-with-Cue results, behind a rule — and OUTSIDE the
+              branch above, so an upload-only match still reaches the screen
+              when nothing made with Cue matched. That short-circuit is what
+              made the one search this section exists for the one search that
+              lost it. */}
+          {!isLoading && !isError ? (
+            <UploadsSection state={uploads} now={now} onNavigate={onClose} />
+          ) : null}
         </div>
 
         {/* The share line is computed from this shell's reach and the cards

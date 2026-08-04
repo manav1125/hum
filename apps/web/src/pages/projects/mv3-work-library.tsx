@@ -35,8 +35,14 @@ import {
   madeLine,
   type LibraryFilter,
 } from "@/mobile-v3/library/library-model";
+import {
+  combinedEmptyNote,
+  hasUploadSection,
+} from "@/mobile-v3/library/library-search";
+import { UploadsSection } from "@/mobile-v3/library/uploads-section";
 import { useLibraryOutputs } from "@/mobile-v3/library/use-library-outputs";
 import { useOpenLibraryEntry } from "@/mobile-v3/library/use-open-entry";
+import { useUploadSearch } from "@/mobile-v3/library/use-upload-search";
 import { WorkHeader } from "@/mobile-v3/work-kit";
 import { haptic } from "@/utils/haptics";
 
@@ -54,6 +60,9 @@ export function Mv3WorkLibrary() {
   const { entries, isLoading, isError } = useLibraryOutputs(assistantId);
   const { projects } = useProjects(assistantId);
   const { openEntry, previewModal } = useOpenLibraryEntry(assistantId);
+  // The uploads half of search — its own query, so a failure here cannot
+  // empty the made-with-Cue gallery beside it.
+  const uploads = useUploadSearch(assistantId, search);
 
   const thingTitleOf = useMemo(() => {
     const map = new Map(projects.map((p) => [p.id, p.title]));
@@ -194,7 +203,7 @@ export function Mv3WorkLibrary() {
             I couldn’t load your library just now — nothing has been lost. Pull
             down or try again in a moment.
           </div>
-        ) : visible.length === 0 ? (
+        ) : visible.length === 0 && !hasUploadSection(uploads) ? (
           <div
             style={{
               fontSize: 13,
@@ -204,7 +213,9 @@ export function Mv3WorkLibrary() {
             }}
           >
             {search.trim()
-              ? `Nothing in your library matches “${search.trim()}”.`
+              ? /* Never "nothing matches" about a search that only half
+                   happened — the note admits when uploads went unsearched. */
+                combinedEmptyNote(search, uploads)
               : filter !== "All"
                 ? `Nothing here is filed under ${filter} — the chip is here because other kinds exist.`
                 : `Nothing here yet. ${libraryScopeNote}`}
@@ -223,6 +234,13 @@ export function Mv3WorkLibrary() {
             </div>
           ))
         )}
+
+        {/* Below the made-with-Cue results, behind a rule. Rendered whenever
+            the library itself loaded — including when the main results are
+            empty, because an upload-only match is the whole point. */}
+        {!isLoading && !isError ? (
+          <UploadsSection state={uploads} now={now} />
+        ) : null}
 
         {/* Computed from the shell's real reach and the cards actually on the
             wall, not written down. The ⇪ buttons already work here — the grid

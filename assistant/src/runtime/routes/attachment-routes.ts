@@ -17,6 +17,8 @@ import {
   getAttachmentById,
   getFilePathBySourcePath,
   listAttachments,
+  MAX_UPLOAD_SEARCH,
+  searchUploadedAttachments,
   StoredAttachment,
   uploadAttachment,
   uploadAttachmentFromBytes,
@@ -30,6 +32,10 @@ import {
 import { getWorkspaceDir } from "../../util/platform.js";
 import { ACTOR_PRINCIPALS, LOCAL_PRINCIPALS } from "../auth/route-policy.js";
 import {
+  resolveExistingConversations,
+  sourceConversationSchema,
+} from "./artifact-provenance.js";
+import {
   BadRequestError,
   ConflictError,
   NotFoundError,
@@ -39,10 +45,6 @@ import {
 } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 import { RouteResponse } from "./types.js";
-import {
-  resolveExistingConversations,
-  sourceConversationSchema,
-} from "./artifact-provenance.js";
 
 /** 150 MB — base64-encoded 100 MB attachment ≈ 134 MB plus JSON wrapper overhead. */
 const MAX_UPLOAD_BODY_BYTES = 150 * 1024 * 1024;
@@ -690,6 +692,62 @@ function handleListAttachmentsRoute({ queryParams = {} }: RouteHandlerArgs) {
   return { attachments };
 }
 
+/**
+ * "Things you sent" — the Library's search-only section.
+ *
+ * The Library LIST is "made with Cue" and stays that way; this is the read
+ * behind the separated section that lets a search still find the file you
+ * uploaded three weeks ago. Every row carries the thread it lives in, so the
+ * only thing offered is a way back to it.
+ *
+ * `truncated` is the honest half. The store caps at
+ * {@link MAX_UPLOAD_SEARCH}, and a full page proves only that there were at
+ * least that many — so the count is reported alongside a flag saying whether
+ * it is the whole answer. A surface that printed `uploads.length` as a total
+ * would be repeating the "All conversations · 151" defect with a new noun.
+ */
+function handleSearchUploadsRoute({ queryParams = {} }: RouteHandlerArgs) {
+  const q = typeof queryParams.q === "string" ? queryParams.q.trim() : "";
+  if (q.length === 0) {
+    throw new BadRequestError("q is required and must not be empty");
+  }
+  const rawLimit = Number(queryParams.limit);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(MAX_UPLOAD_SEARCH, Math.max(1, rawLimit))
+    : MAX_UPLOAD_SEARCH;
+
+  const rows = searchUploadedAttachments({ query: q, limit });
+  // Same rule as the list above: a stored conversation id is not proof the
+  // thread still exists, and an upload whose thread is gone must render with
+  // no link rather than a broken one.
+  const live = resolveExistingConversations(
+    rows.map((a) => a.sourceConversationId).filter((id): id is string => !!id),
+  );
+
+  return {
+    query: q,
+    limit,
+    // True when the page came back full: there may be more, and the surface
+    // must say so instead of printing a count.
+    truncated: rows.length >= limit,
+    uploads: rows.map((a) => {
+      const source = a.sourceConversationId
+        ? live.get(a.sourceConversationId)
+        : undefined;
+      return {
+        id: a.id,
+        original_filename: a.originalFilename,
+        mime_type: a.mimeType,
+        size_bytes: a.sizeBytes,
+        kind: a.kind,
+        created_at: a.createdAt,
+        thumbnail_base64: a.thumbnailBase64,
+        ...(source ? { sourceConversation: source } : {}),
+      };
+    }),
+  };
+}
+
 export const ROUTES: RouteDefinition[] = [
   {
     operationId: "attachments_list",
@@ -728,6 +786,68 @@ export const ROUTES: RouteDefinition[] = [
       ),
     }),
     handler: handleListAttachmentsRoute,
+  },
+  {
+    operationId: "attachments_search_uploads",
+    endpoint: "attachments/uploads/search",
+    method: "GET",
+    policy: {
+      requiredScopes: ["attachments.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Search things you sent Cue",
+    description:
+      "Search the files the OWNER uploaded, by filename, newest first. The " +
+      "exact complement of `attachments_list`: that one is everything Cue " +
+      "MADE, this one is everything you SENT, and the two sets are disjoint " +
+      "(an attachment linked to an assistant message is never returned here). " +
+      'Backs the Library\'s separated "Things you sent · in their chats" ' +
+      "section — the Library list itself stays 'made with Cue'.\n\n" +
+      "Matches on filename only; file contents are not indexed. `truncated` " +
+      "is true when the page came back full, meaning the count is a floor and " +
+      "not a total — surfaces must say so rather than print the length.",
+    tags: ["attachments"],
+    queryParams: [
+      {
+        name: "q",
+        schema: { type: "string" },
+        description:
+          "Required. Matched against the filename, case-insensitive.",
+      },
+      {
+        name: "limit",
+        schema: { type: "integer" },
+        description: `Max rows (default and cap ${MAX_UPLOAD_SEARCH}).`,
+      },
+    ],
+    responseBody: z.object({
+      query: z.string(),
+      limit: z.number().int().describe("The cap actually applied"),
+      truncated: z
+        .boolean()
+        .describe(
+          "The page came back full, so there may be more. When true, the " +
+            "number of rows is a floor, never a total.",
+        ),
+      uploads: z.array(
+        z.object({
+          id: z.string(),
+          original_filename: z.string(),
+          mime_type: z.string(),
+          size_bytes: z.number(),
+          kind: z.string(),
+          created_at: z.number(),
+          thumbnail_base64: z.string().nullable(),
+          sourceConversation: sourceConversationSchema
+            .optional()
+            .describe(
+              "The thread it was sent in. Absent when that thread no longer " +
+                "exists — the row then offers no link rather than a dead one.",
+            ),
+        }),
+      ),
+    }),
+    handler: handleSearchUploadsRoute,
   },
   {
     operationId: "attachment_content",

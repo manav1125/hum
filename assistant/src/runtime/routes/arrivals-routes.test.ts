@@ -11,6 +11,7 @@ import {
   recordArrival,
   type RecordArrivalInput,
 } from "../../arrivals/arrival-store.js";
+import { localDate, zonedWallClockToMs } from "../../calendar/day-rail.js";
 import { getDb, getSqliteFrom } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { createTask } from "../../tasks/task-store.js";
@@ -61,7 +62,9 @@ describe("GET arrivals/summary", () => {
       filed: number;
       kept: number;
       reversed: number;
-      windowHours: number;
+      windowHours: number | null;
+      bound: "trailing_window" | "local_day" | "explicit";
+      timeZone: string | null;
       since: number;
       until: number;
       topFiledReasons: Array<{ reason: string; count: number }>;
@@ -124,6 +127,107 @@ describe("GET arrivals/summary", () => {
   test("rejects a nonsense window rather than silently widening it", () => {
     expect(() => summary({ windowHours: "-3" })).toThrow(BadRequestError);
     expect(() => summary({ windowHours: "abc" })).toThrow(BadRequestError);
+  });
+
+  // -------------------------------------------------------------------------
+  // `since` — the parameter that lets a label say TODAY
+  // -------------------------------------------------------------------------
+
+  describe("?since", () => {
+    /** Where a client's day actually starts, by the daemon's own maths. */
+    function midnightIn(timeZone: string, nowMs = Date.now()): number {
+      return zonedWallClockToMs(localDate(nowMs, timeZone), 0, timeZone);
+    }
+
+    function backdate(id: string, createdAt: number): void {
+      getSqliteFrom(getDb()).run(
+        /*sql*/ `UPDATE arrivals SET created_at = ? WHERE id = ?`,
+        [createdAt, id],
+      );
+    }
+
+    test("the default answer names itself a trailing window", () => {
+      const out = summary();
+      expect(out.bound).toBe("trailing_window");
+      expect(out.windowHours).toBe(24);
+      // Null, so nothing can print a zone it never resolved.
+      expect(out.timeZone).toBeNull();
+    });
+
+    test("since=today bounds at the owner's midnight and says so", () => {
+      const tz = "Europe/London";
+      const out = summary({ since: "today", tz });
+
+      expect(out.bound).toBe("local_day");
+      expect(out.timeZone).toBe(tz);
+      expect(out.since).toBe(midnightIn(tz, out.until));
+      // The window is not a window any more, so no hours are offered for a
+      // surface to print.
+      expect(out.windowHours).toBeNull();
+    });
+
+    test("\"today\" is the person's day, not the daemon's", () => {
+      // 25 hours apart, so these two zones are essentially never on the same
+      // local date at the same instant. A daemon computing UTC midnight would
+      // hand both of them the same bound.
+      const early = summary({ since: "today", tz: "Pacific/Kiritimati" });
+      const late = summary({ since: "today", tz: "Pacific/Niue" });
+
+      expect(early.since).not.toBe(late.since);
+      expect(early.timeZone).toBe("Pacific/Kiritimati");
+      expect(late.timeZone).toBe("Pacific/Niue");
+    });
+
+    test("the bound is real: yesterday's arrival is not in today's count", () => {
+      const tz = "Europe/London";
+      const midnight = midnightIn(tz);
+
+      const yesterday = seed();
+      backdate(yesterday.id, midnight - 1_000);
+      const today = seed();
+      backdate(today.id, midnight + 1_000);
+
+      expect(summary({ since: "today", tz }).arrived).toBe(1);
+      // The same two rows are both inside a 48h trailing window — proof the
+      // difference above is the day boundary and not the seeding.
+      expect(summary({ windowHours: "48" }).arrived).toBe(2);
+    });
+
+    test("since wins over windowHours rather than being quietly widened", () => {
+      const tz = "Europe/London";
+      const out = summary({ since: "today", tz, windowHours: "168" });
+      expect(out.bound).toBe("local_day");
+      expect(out.since).toBe(midnightIn(tz, out.until));
+    });
+
+    test("an epoch instant is honoured but refuses to be called a day", () => {
+      const at = Date.now() - 3 * 3_600_000;
+      const out = summary({ since: String(at) });
+
+      expect(out.bound).toBe("explicit");
+      expect(out.since).toBe(at);
+      // No calendar meaning, so no zone and no window — a surface has nothing
+      // to overclaim with.
+      expect(out.timeZone).toBeNull();
+      expect(out.windowHours).toBeNull();
+    });
+
+    test("a bound in the future clamps to now instead of a negative window", () => {
+      const out = summary({ since: String(Date.now() + 60 * 3_600_000) });
+      expect(out.since).toBeLessThanOrEqual(out.until);
+      expect(out.arrived).toBe(0);
+    });
+
+    test("rejects a nonsense since rather than falling back to a window", () => {
+      expect(() => summary({ since: "yesterday" })).toThrow(BadRequestError);
+      expect(() => summary({ since: "-1" })).toThrow(BadRequestError);
+    });
+
+    test("rejects a nonsense tz rather than silently using another day", () => {
+      expect(() => summary({ since: "today", tz: "Mars/Olympus" })).toThrow(
+        BadRequestError,
+      );
+    });
   });
 });
 

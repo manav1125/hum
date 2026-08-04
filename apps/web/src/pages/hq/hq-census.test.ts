@@ -11,7 +11,8 @@
  *
  *   2 · **Never a fake number.** A lane we could not read prints no digit, its
  *       cell is not tappable, and the "filed" label names the window the daemon
- *       actually reported rather than the "today" design's frame illustrated.
+ *       actually reported — TODAY only when the daemon says it really bounded
+ *       the local day, and `· 24H` again the moment it stops.
  *
  * Every guard in here is mutation-checked: the test breaks the thing the guard
  * watches and asserts the guard fires. A green check on a check that has never
@@ -28,6 +29,7 @@ import {
   blockedMissions,
   buildHqCensus,
   DECK_SLOT,
+  filedWindowOf,
   GLANCE_SLOT,
   HQ_LANE_IDS,
   isTappable,
@@ -77,7 +79,12 @@ function input(over: Partial<HqCensusInput> = {}): HqCensusInput {
     valve: known({ stop: "needs_you" as const, held: 0, unbanded: 0 }),
     missions: known([]),
     holding: known([]),
-    arrivals: known({ total: 0, filed: 0, kept: 0, windowHours: 24 }),
+    arrivals: known({
+      total: 0,
+      filed: 0,
+      kept: 0,
+      window: { kind: "trailing" as const, hours: 24 },
+    }),
     inMotion: known({ running: [], schedules: [] }),
     watching: known({ live: [], failing: [] }),
     ...over,
@@ -105,7 +112,12 @@ describe("the hinge — Glance and Deck are one census", () => {
           mission({ id: "b", status: "paused" }),
         ]),
         holding: known([workItem("q1"), workItem("q2")]),
-        arrivals: known({ total: 18, filed: 12, kept: 6, windowHours: 24 }),
+        arrivals: known({
+          total: 18,
+          filed: 12,
+          kept: 6,
+          window: { kind: "trailing" as const, hours: 24 },
+        }),
       }),
     );
     const strip = new Map(stripCells(census).map((r) => [r.id, r]));
@@ -194,21 +206,91 @@ describe("never a fake number", () => {
   test("the filed label names the window the daemon reported", () => {
     const census = buildHqCensus(
       input({
-        arrivals: known({ total: 18, filed: 12, kept: 6, windowHours: 24 }),
+        arrivals: known({
+          total: 18,
+          filed: 12,
+          kept: 6,
+          window: { kind: "trailing" as const, hours: 24 },
+        }),
       }),
     );
-    // Design's frame says "FILED TODAY". `arrivals/summary` is a TRAILING
-    // window with no `since`, so "today" is a claim this surface cannot make.
+    // A trailing window cannot be called "today", whatever HQ asked for.
     expect(census.filed.stripLabel).toBe("FILED · 24H");
     expect(census.filed.stripLabel).not.toMatch(/TODAY/i);
     expect(census.filed.detail).toContain("last 24h");
     expect(census.filed.detail).toContain("12 filed");
   });
 
+  test("a day-bounded answer earns the word TODAY", () => {
+    const census = buildHqCensus(
+      input({
+        arrivals: known({
+          total: 18,
+          filed: 12,
+          kept: 6,
+          window: { kind: "local_day" as const, timeZone: "Europe/London" },
+        }),
+      }),
+    );
+    expect(census.filed.stripLabel).toBe("FILED TODAY");
+    expect(census.filed.detail).toContain("today");
+    expect(census.filed.detail).toContain("12 filed");
+    // No hours anywhere: a day is not 24 trailing hours and must not read
+    // like one.
+    expect(census.filed.stripLabel).not.toMatch(/\d+H/);
+  });
+
+  test("if `since` is ever dropped, the label reverts on its own", () => {
+    // Exactly the payload an older daemon — or a rolled-back route — returns:
+    // `windowHours` and no `bound`. The word TODAY has to disappear without
+    // anyone editing this surface, which is the whole reason the label is
+    // derived from the response instead of from the request.
+    const legacy = filedWindowOf({ windowHours: 24 });
+    expect(legacy).toEqual({ kind: "trailing", hours: 24 });
+
+    const census = buildHqCensus(
+      input({
+        arrivals: known({ total: 18, filed: 12, kept: 6, window: legacy }),
+      }),
+    );
+    expect(census.filed.stripLabel).toBe("FILED · 24H");
+    expect(census.filed.stripLabel).not.toMatch(/TODAY/i);
+  });
+
+  test("the window is read off the answer, not off the question", () => {
+    // A daemon that ignored `since=today` and served a trailing window says
+    // so, and `filedWindowOf` believes the answer.
+    expect(
+      filedWindowOf({ bound: "trailing_window", windowHours: 24 }),
+    ).toEqual({ kind: "trailing", hours: 24 });
+    expect(
+      filedWindowOf({ bound: "local_day", timeZone: "Asia/Tokyo" }),
+    ).toEqual({ kind: "local_day", timeZone: "Asia/Tokyo" });
+    // An instant with no calendar meaning gets no window label at all rather
+    // than the nearest-sounding one.
+    expect(filedWindowOf({ bound: "explicit", windowHours: null })).toEqual({
+      kind: "unstated",
+    });
+  });
+
+  test("an unreadable lane claims no window", () => {
+    const census = buildHqCensus(
+      input({ arrivals: unavailable("Cue couldn't read what arrived.") }),
+    );
+    expect(census.filed.stripLabel).toBe("FILED");
+    expect(census.filed.stripLabel).not.toMatch(/TODAY/i);
+    expect(census.filed.stat.kind).toBe("unknown");
+  });
+
   test("a different window changes the label, so it can never go stale", () => {
     const census = buildHqCensus(
       input({
-        arrivals: known({ total: 3, filed: 3, kept: 0, windowHours: 6 }),
+        arrivals: known({
+          total: 3,
+          filed: 3,
+          kept: 0,
+          window: { kind: "trailing" as const, hours: 6 },
+        }),
       }),
     );
     expect(census.filed.stripLabel).toBe("FILED · 6H");
@@ -218,6 +300,18 @@ describe("never a fake number", () => {
   test("nothing arrived does not get reported as calm", () => {
     const census = buildHqCensus(input());
     expect(census.filed.detail).toBe("Nothing arrived in the last 24h.");
+
+    const today = buildHqCensus(
+      input({
+        arrivals: known({
+          total: 0,
+          filed: 0,
+          kept: 0,
+          window: { kind: "local_day" as const, timeZone: "Europe/London" },
+        }),
+      }),
+    );
+    expect(today.filed.detail).toBe("Nothing has arrived today.");
   });
 });
 
@@ -344,7 +438,9 @@ describe("lane sentences", () => {
     const held = buildHqCensus(
       input({ holding: known([workItem("a"), heldItem("b")]) }),
     );
-    expect(held.holding.detail).toBe("2 queued · 1 waiting on a word from you.");
+    expect(held.holding.detail).toBe(
+      "2 queued · 1 waiting on a word from you.",
+    );
     expect(held.holding.detail).not.toContain("none");
   });
 

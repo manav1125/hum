@@ -56,7 +56,12 @@ function censusInput(over: Partial<HqCensusInput> = {}): HqCensusInput {
     valve: known({ stop: "needs_you" as const, held: 0, unbanded: 0 }),
     missions: known(MISSIONS),
     holding: known([]),
-    arrivals: known({ total: 18, filed: 12, kept: 6, windowHours: 24 }),
+    arrivals: known({
+      total: 18,
+      filed: 12,
+      kept: 6,
+      window: { kind: "trailing" as const, hours: 24 },
+    }),
     inMotion: known({ running: [], schedules: [] }),
     watching: known({ live: [], failing: [] }),
     ...over,
@@ -124,14 +129,13 @@ function deck(items: HqWorkItem[], move: NextMove = MOVE, count = 6) {
 describe("Glance", () => {
   test("is greeting, capture, ONE move, one door, and the strip", () => {
     const { container } = glance();
-    expect(container.querySelectorAll('[data-slot="hq-next-move"]')).toHaveLength(
-      1,
-    );
-    expect(container.querySelector('[data-slot="hq-glance-more"]')!.textContent)
-      .toBe("5 more need you ›");
     expect(
-      container.querySelectorAll('[data-hq-strip-cell]'),
-    ).toHaveLength(5);
+      container.querySelectorAll('[data-slot="hq-next-move"]'),
+    ).toHaveLength(1);
+    expect(
+      container.querySelector('[data-slot="hq-glance-more"]')!.textContent,
+    ).toBe("5 more need you ›");
+    expect(container.querySelectorAll("[data-hq-strip-cell]")).toHaveLength(5);
   });
 
   test("the subline joins whole sentences without stacking full stops", () => {
@@ -176,7 +180,9 @@ describe("Glance", () => {
       needsYou: known(6),
       valve: known({ stop: "needs_you" as const, held: 0, unbanded: 0 }),
     });
-    expect(container.querySelector('[data-slot="hq-glance-caveat"]')).toBeNull();
+    expect(
+      container.querySelector('[data-slot="hq-glance-caveat"]'),
+    ).toBeNull();
   });
 
   test("no move and nothing needing you is a statement, not a blank", () => {
@@ -298,7 +304,11 @@ describe("Deck", () => {
         census={buildHqCensus(
           censusInput({
             needsYou: known(57),
-            valve: known({ stop: "needs_you" as const, held: 37, unbanded: 57 }),
+            valve: known({
+              stop: "needs_you" as const,
+              held: 37,
+              unbanded: 57,
+            }),
           }),
         )}
         missions={MISSIONS}

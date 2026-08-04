@@ -3922,10 +3922,15 @@ paths:
     get:
       operationId: arrivals_summary_get
       summary: Arrived / filed / kept census
-      description:
-        "How much came in over a trailing window and what Cue did with it. `kept` is the honest number: it counts
-        arrivals Cue looked at and decided you need to see. It is NOT derived from autoFileConfidence — that field means
-        'assigned to a project' and reading relevance out of it overstates what the filter actually did."
+      description: >-
+        How much came in over a window and what Cue did with it. `kept` is the honest number: it counts arrivals Cue
+        looked at and decided you need to see. It is NOT derived from autoFileConfidence — that field means 'assigned to
+        a project' and reading relevance out of it overstates what the filter actually did.
+
+
+        Bound it two ways. `windowHours` gives a trailing window ending now; `since=today` gives midnight-to-now in YOUR
+        timezone, which is what lets a surface say "today" instead of "last 24h". `since` wins when both are sent. The
+        response reports which bound it actually used in `bound`, so a label can follow the data rather than a hope.
       tags:
         - arrivals
       responses:
@@ -3947,9 +3952,35 @@ paths:
                     maximum: 9007199254740991
                     description: When the summary was computed, epoch ms
                   windowHours:
-                    type: integer
-                    minimum: -9007199254740991
-                    maximum: 9007199254740991
+                    anyOf:
+                      - type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      - type: "null"
+                    description:
+                      The trailing window in hours. NULL whenever `bound` is not 'trailing_window' — the hours elapsed since a
+                      day boundary is not a window anybody chose, and rounding it would hand you a number to print that
+                      nobody asked for.
+                  bound:
+                    type: string
+                    enum:
+                      - trailing_window
+                      - local_day
+                      - explicit
+                    description:
+                      'What set `since`, and therefore what a label over these numbers may say. ''trailing_window'' = the last N
+                      hours ending now; the only honest label is the window itself. ''local_day'' = midnight-to-now in
+                      `timeZone`; "today" is true of these numbers and only these. ''explicit'' = an instant you
+                      supplied, with no calendar meaning — say nothing about the window rather than invent one. Clients
+                      must derive their label from THIS field: a client that hardcodes "today" will keep saying it the
+                      day the parameter stops being honoured.'
+                  timeZone:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                    description:
+                      The IANA zone the local day was resolved in. Null unless `bound` is 'local_day' — so "today" can always be
+                      shown to be somebody's today.
                   arrived:
                     type: integer
                     minimum: -9007199254740991
@@ -3992,6 +4023,8 @@ paths:
                   - since
                   - until
                   - windowHours
+                  - bound
+                  - timeZone
                   - arrived
                   - filed
                   - kept
@@ -4004,7 +4037,25 @@ paths:
           required: false
           schema:
             type: number
-          description: Trailing window in hours (default 24)
+          description: Trailing window in hours (default 24). Ignored when `since` is set.
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+          description:
+            'Lower bound. "today" = midnight-to-now in the timezone resolved from `tz` (the owner''s day, not the
+            daemon''s — prod runs UTC). Or a non-negative epoch-ms instant, which is reported as `bound: ''explicit''`
+            because an arbitrary moment has no calendar name.'
+        - name: tz
+          in: query
+          required: false
+          schema:
+            type: string
+          description:
+            IANA timezone the local day is resolved in when `since=today`. Falls back to your configured/detected zone,
+            then the daemon host's. Clients that know their own zone should always send it. Same parameter, same
+            resolver, as `calendar/day`.
   /v1/attachments:
     delete:
       operationId: attachments_delete
@@ -4315,6 +4366,104 @@ paths:
                 - path
                 - mimeType
               additionalProperties: false
+  /v1/attachments/uploads/search:
+    get:
+      operationId: attachments_uploads_search_get
+      summary: Search things you sent Cue
+      description: >-
+        Search the files the OWNER uploaded, by filename, newest first. The exact complement of `attachments_list`: that
+        one is everything Cue MADE, this one is everything you SENT, and the two sets are disjoint (an attachment linked
+        to an assistant message is never returned here). Backs the Library's separated "Things you sent · in their
+        chats" section — the Library list itself stays 'made with Cue'.
+
+
+        Matches on filename only; file contents are not indexed. `truncated` is true when the page came back full,
+        meaning the count is a floor and not a total — surfaces must say so rather than print the length.
+      tags:
+        - attachments
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: string
+                  limit:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: The cap actually applied
+                  truncated:
+                    type: boolean
+                    description: The page came back full, so there may be more. When true, the number of rows is a floor, never a total.
+                  uploads:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        original_filename:
+                          type: string
+                        mime_type:
+                          type: string
+                        size_bytes:
+                          type: number
+                        kind:
+                          type: string
+                        created_at:
+                          type: number
+                        thumbnail_base64:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        sourceConversation:
+                          description:
+                            The thread it was sent in. Absent when that thread no longer exists — the row then offers no link rather
+                            than a dead one.
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            title:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                          required:
+                            - id
+                            - title
+                          additionalProperties: false
+                      required:
+                        - id
+                        - original_filename
+                        - mime_type
+                        - size_bytes
+                        - kind
+                        - created_at
+                        - thumbnail_base64
+                      additionalProperties: false
+                required:
+                  - query
+                  - limit
+                  - truncated
+                  - uploads
+                additionalProperties: false
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Required. Matched against the filename, case-insensitive.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max rows (default and cap 50).
   /v1/audio/{audioId}:
     get:
       operationId: audio_by_audioId_get
