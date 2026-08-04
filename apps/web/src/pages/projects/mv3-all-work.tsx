@@ -179,7 +179,7 @@ function WorkRow({
             <div
               style={{
                 fontSize: 11,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 marginTop: 2,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -218,7 +218,7 @@ function WorkRow({
         {queued && !optimisticRun ? (
           <RunNowButton title={item.title} onRun={onRun} />
         ) : null}
-        <span aria-hidden style={{ fontSize: 15, color: "var(--mv3-faint)" }}>
+        <span aria-hidden style={{ fontSize: 15, color: "var(--mv3-muted)" }}>
           ›
         </span>
       </SwipeArchiveRow>
@@ -466,7 +466,7 @@ export function Mv3AllWork() {
                   ...microLabel,
                   fontSize: 9.5,
                   letterSpacing: "0.1em",
-                  color: "var(--mv3-faint)",
+                  color: "var(--mv3-muted)",
                   padding: "4px 6px 8px",
                 }}
               >
@@ -508,7 +508,7 @@ export function Mv3AllWork() {
                   <div
                     style={{
                       fontSize: 11,
-                      color: "var(--mv3-faint)",
+                      color: "var(--mv3-muted)",
                       padding: "2px 6px",
                     }}
                   >

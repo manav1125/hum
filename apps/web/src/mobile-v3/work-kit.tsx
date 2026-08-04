@@ -323,7 +323,7 @@ export function ParkedMark(): React.ReactElement {
         fontSize: 9.5,
         letterSpacing: "0.08em",
         textTransform: "uppercase",
-        color: "var(--mv3-faint)",
+        color: "var(--mv3-muted)",
       }}
     >
       ○ parked
@@ -368,7 +368,7 @@ export function ParkedCoachline({
     <div
       style={{
         fontSize: 11,
-        color: "var(--mv3-faint)",
+        color: "var(--mv3-muted)",
         lineHeight: 1.5,
         padding: "4px 6px 0",
       }}
@@ -568,9 +568,9 @@ export function WorkSegmented({
               fontSize: 11.5,
               fontWeight: selected ? 600 : 400,
               // White on the accent's text leg — never the bright value.
-              color: selected ? "#fff" : "var(--mv3-muted)",
+              color: selected ? "var(--mv3-accent-on-fill)" : "var(--mv3-muted)",
               background: selected
-                ? "var(--mv3-accent-on-fill)"
+                ? "var(--mv3-accent-fill)"
                 : "transparent",
               border: "none",
               borderRadius: 9,
@@ -699,7 +699,7 @@ export const sectionMicro: React.CSSProperties = {
   fontSize: 9.5,
   letterSpacing: "0.1em",
   textTransform: "uppercase",
-  color: "var(--mv3-faint)",
+  color: "var(--mv3-muted)",
 };
 
 /**

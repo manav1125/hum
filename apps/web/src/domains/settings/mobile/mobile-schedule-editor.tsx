@@ -450,7 +450,7 @@ export function Mv3ScheduleEditorSheet({
                       fontSize: 10.5,
                       color: customInvalid
                         ? "#E5675B"
-                        : "var(--mv3-faint)",
+                        : "var(--mv3-muted)",
                       marginTop: 6,
                     }}
                   >
@@ -483,7 +483,7 @@ export function Mv3ScheduleEditorSheet({
                       <span
                         style={{
                           fontSize: 10.5,
-                          color: "var(--mv3-faint)",
+                          color: "var(--mv3-muted)",
                           marginLeft: 6,
                         }}
                       >
@@ -535,7 +535,7 @@ export function Mv3ScheduleEditorSheet({
                 <div
                   style={{
                     fontSize: 10.5,
-                    color: "var(--mv3-faint)",
+                    color: "var(--mv3-muted)",
                     marginTop: 4,
                   }}
                 >
@@ -570,7 +570,7 @@ export function Mv3ScheduleEditorSheet({
               <div
                 style={{
                   fontSize: 10.5,
-                  color: "var(--mv3-faint)",
+                  color: "var(--mv3-muted)",
                   marginTop: 5,
                 }}
               >
@@ -592,7 +592,7 @@ export function Mv3ScheduleEditorSheet({
               style={{
                 fontFamily: mv3Mono,
                 fontSize: 10,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 flex: 1,
                 overflowWrap: "anywhere",
               }}
@@ -670,8 +670,8 @@ export function Mv3ScheduleEditorSheet({
             background:
               !dirty || customInvalid
                 ? "var(--mv3-btn2-bg)"
-                : "linear-gradient(160deg, #4E7CEC, #3560CC)",
-            color: !dirty || customInvalid ? "var(--mv3-faint)" : "#fff",
+                : "var(--mv3-accent-fill-gradient)",
+            color: !dirty || customInvalid ? "var(--mv3-muted)" : "#fff",
             border: "none",
             borderRadius: 14,
             padding: 14,

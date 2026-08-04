@@ -106,7 +106,7 @@ function StateTile({ state }: { state: RowState }) {
           width: 22,
           height: 22,
           borderRadius: 7,
-          background: "color-mix(in srgb, var(--mv3-faint) 8%, transparent)",
+          background: "color-mix(in srgb, var(--mv3-dim-glyph) 8%, transparent)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -119,7 +119,7 @@ function StateTile({ state }: { state: RowState }) {
             height: 12,
             borderRadius: "50%",
             border:
-              "1.5px dashed color-mix(in srgb, var(--mv3-faint) 70%, transparent)",
+              "1.5px dashed color-mix(in srgb, var(--mv3-dim-glyph) 70%, transparent)",
           }}
         />
       </span>
@@ -137,7 +137,7 @@ function StateTile({ state }: { state: RowState }) {
         width: 22,
         height: 22,
         borderRadius: 7,
-        background: "color-mix(in srgb, var(--mv3-faint) 8%, transparent)",
+        background: "color-mix(in srgb, var(--mv3-dim-glyph) 8%, transparent)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -211,7 +211,7 @@ function WorkRow({
           style={{
             display: "block",
             fontSize: 10.5,
-            color: dim ? "var(--mv3-faint)" : "var(--mv3-muted)",
+            color: "var(--mv3-muted)",
             marginTop: 2,
             whiteSpace: "nowrap",
             overflow: "hidden",
@@ -221,7 +221,7 @@ function WorkRow({
           {[projectTitle ?? "unfiled", STATE_SUB[state]].join(" · ")}
         </span>
       </span>
-      <span aria-hidden style={{ color: "var(--mv3-faint)", flexShrink: 0 }}>
+      <span aria-hidden style={{ color: "var(--mv3-muted)", flexShrink: 0 }}>
         ›
       </span>
     </button>
@@ -478,8 +478,8 @@ export function Mv3MissionDetail({ missionId }: { missionId: string }) {
                 width: 20,
                 height: 20,
                 borderRadius: 7,
-                background: "var(--mv3-violet-on-fill)",
-                color: "#fff",
+                background: "var(--mv3-violet-fill)",
+                color: "var(--mv3-violet-on-fill)",
                 fontSize: 10,
                 display: "flex",
                 alignItems: "center",

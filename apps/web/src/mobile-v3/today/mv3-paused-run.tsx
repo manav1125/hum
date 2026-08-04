@@ -243,8 +243,8 @@ export function Mv3PausedRunRow({
           }}
           style={{
             width: "100%",
-            background: "var(--mv3-amber-btn-bg)",
-            color: "var(--mv3-amber-btn-text)",
+            background: "var(--mv3-amber-fill)",
+            color: "var(--mv3-amber-on-fill)",
             border: "none",
             borderRadius: 11,
             padding: 10,

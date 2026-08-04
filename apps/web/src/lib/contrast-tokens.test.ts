@@ -159,14 +159,35 @@ describe("addendum A1 — mobile-v3 --mv3-* layer", () => {
     expect(decl(light, "mv3-fail")).toBe("#c24e42");
   });
 
+  // Dark's text legs equal their fill legs wherever the fill leg is already
+  // readable on the dark grounds — which is four of the five.
   test.each([
-    ["mv3-accent", "mv3-accent-text"],
     ["mv3-amber", "mv3-amber-text"],
     ["mv3-violet", "mv3-violet-text"],
     ["mv3-green", "mv3-green-text"],
     ["mv3-teal", "mv3-teal-text"],
   ])("dark keeps %s === %s", (fill, text) => {
     expect(decl(dark, text)).toBe(decl(dark, fill));
+  });
+
+  /**
+   * Accent is the exception, and this test used to assert the defect.
+   *
+   * `--mv3-accent` is #3D6EE8, which measures 4.28:1 on the dark canvas and
+   * 3.81:1 on a dark card — below the floor, as small copy. "dark keeps
+   * mv3-accent === mv3-accent-text" enshrined that as a rule, so the one
+   * check standing over the value was voting to keep it.
+   *
+   * That is worth naming rather than quietly editing: a test can hold a bug
+   * in place more firmly than no test at all, because it converts the fix
+   * into a failure. It was caught by rendering the layer in a browser and
+   * measuring what was painted — not by reading the tokens, which is what
+   * both guards had been doing. The dark stop is now #7FA3F2 (7.84:1 canvas,
+   * 6.99:1 card), the value `--mv3-micro` already carries in dark.
+   */
+  test("dark accent text is the readable stop, not the fill leg", () => {
+    expect(decl(dark, "mv3-accent-text")).toBe("#7fa3f2");
+    expect(decl(dark, "mv3-accent-text")).not.toBe(decl(dark, "mv3-accent"));
   });
 });
 

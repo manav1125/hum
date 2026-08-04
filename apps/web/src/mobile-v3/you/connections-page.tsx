@@ -338,7 +338,7 @@ export function Mv3ConnectionsPage() {
                 <div
                   style={{
                     fontSize: 11,
-                    color: "var(--mv3-faint)",
+                    color: "var(--mv3-muted)",
                     textAlign: "center",
                     padding: "0 8px",
                     lineHeight: 1.5,
@@ -401,7 +401,7 @@ export function Mv3ConnectionsPage() {
                   leaves without your say-so
                 </div>
               </div>
-              <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+              <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
                 ›
               </span>
             </div>
@@ -450,7 +450,7 @@ export function Mv3ConnectionsPage() {
                   Telegram · WhatsApp · email — verify once, reach Cue anywhere
                 </div>
               </div>
-              <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+              <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
                 ›
               </span>
             </div>
@@ -528,7 +528,7 @@ export function Mv3ConnectionsPage() {
               {phoneLive ? (
                 <LiveDot />
               ) : (
-                <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+                <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
                   ›
                 </span>
               )}
@@ -695,7 +695,7 @@ export function Mv3ConnectionsPage() {
             <div
               style={{
                 fontSize: 11,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 marginTop: 12,
                 textAlign: "center",
                 lineHeight: 1.5,
@@ -793,7 +793,7 @@ export function Mv3ConnectionsPage() {
                     fontWeight: 600,
                     fontFamily: "inherit",
                     color: "#fff",
-                    background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                    background: "var(--mv3-accent-fill-gradient)",
                     border: "none",
                     borderRadius: 10,
                     padding: "10px 16px",

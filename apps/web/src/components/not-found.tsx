@@ -48,7 +48,7 @@ export function NotFound() {
               fontSize: 11,
               letterSpacing: "0.14em",
               textTransform: "uppercase",
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               marginBottom: 10,
             }}
           >

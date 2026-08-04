@@ -99,9 +99,9 @@ function ReviewRow({
           height: 22,
           borderRadius: 7,
           background: stale
-            ? "color-mix(in srgb, var(--mv3-faint) 10%, transparent)"
+            ? "color-mix(in srgb, var(--mv3-dim-glyph) 10%, transparent)"
             : "color-mix(in srgb, var(--mv3-violet) 16%, transparent)",
-          color: stale ? "var(--mv3-faint)" : "var(--mv3-violet)",
+          color: stale ? "var(--mv3-muted)" : "var(--mv3-violet)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -146,7 +146,7 @@ function ReviewRow({
           {sub}
         </span>
       </span>
-      <span aria-hidden style={{ color: "var(--mv3-faint)", flexShrink: 0 }}>
+      <span aria-hidden style={{ color: "var(--mv3-muted)", flexShrink: 0 }}>
         ›
       </span>
     </SwipeArchiveRow>
@@ -420,7 +420,7 @@ export function ReviewIndexPage() {
                     fontFamily: mv3Mono,
                     fontSize: 9.5,
                     letterSpacing: "0.1em",
-                    color: "var(--mv3-faint)",
+                    color: "var(--mv3-muted)",
                   }}
                 >
                   OLDER — LIKELY STALE
@@ -451,7 +451,7 @@ export function ReviewIndexPage() {
             <div
               style={{
                 fontSize: 11,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 textAlign: "center",
                 padding: "6px 0",
               }}
@@ -484,8 +484,8 @@ export function ReviewIndexPage() {
               onClick={() => void archiveStale()}
               style={{
                 flex: 1,
-                background: "var(--mv3-violet-on-fill)",
-                color: "#fff",
+                background: "var(--mv3-violet-fill)",
+                color: "var(--mv3-violet-on-fill)",
                 border: "none",
                 borderRadius: 14,
                 padding: 13,

@@ -291,7 +291,7 @@ function SkillManage({
           style={{
             textAlign: "center",
             fontSize: 11.5,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             padding: "6px 0",
           }}
         >
@@ -943,7 +943,7 @@ export function Mv3SkillsPage({
                     {skill.version ? ` · v${skill.version}` : ""}
                   </span>
                 </span>
-                <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+                <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
                   ›
                 </span>
               </button>

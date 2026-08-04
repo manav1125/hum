@@ -322,7 +322,7 @@ export function DismissX({
         justifyContent: "center",
         background: "transparent",
         border: "none",
-        color: "var(--mv3-faint)",
+        color: "var(--mv3-muted)",
         fontSize: 13,
         lineHeight: 1,
         cursor: "pointer",

@@ -247,7 +247,7 @@ export function MobileLiveActivity({
           >
             {isWaiting ? view.label : view.text}
             {view.detail ? (
-              <span style={{ color: "var(--mv3-faint)", fontWeight: 400 }}>
+              <span style={{ color: "var(--mv3-muted)", fontWeight: 400 }}>
                 {" "}
                 · {view.detail}
               </span>
@@ -293,7 +293,7 @@ export function MobileLiveActivity({
                   gap: 7,
                   fontSize: 11.5,
                   lineHeight: 1.35,
-                  color: isLatest ? "var(--mv3-muted)" : "var(--mv3-faint)",
+                  color: isLatest ? "var(--mv3-muted)" : "var(--mv3-muted)",
                   opacity: isLatest ? 1 : 0.75,
                   animation: "mlaFadeUp .25s ease-out both",
                 }}

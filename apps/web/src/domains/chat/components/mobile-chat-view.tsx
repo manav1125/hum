@@ -128,7 +128,7 @@ const MCHAT_TRANSCRIPT_THEME = `
   --surface-overlay: var(--mv3-glass);
   --content-default: var(--mv3-text);
   --content-secondary: var(--mv3-muted);
-  --content-tertiary: var(--mv3-faint);
+  --content-tertiary: var(--mv3-muted);
   --border-base: var(--mv3-line);
 }
 /* User bubble → frame 8: blue gradient, 20/20/6/20 radius, soft blue shadow.
@@ -136,8 +136,8 @@ const MCHAT_TRANSCRIPT_THEME = `
    end of the row; scope by alignment (carried over from the mv1 reskin). */
 .cue-mchat .self-end .bg-\\[var\\(--surface-lift\\)\\],
 .cue-mchat .items-end > .bg-\\[var\\(--surface-lift\\)\\] {
-  background: linear-gradient(160deg, #4E7CEC, #3560CC) !important;
-  color: #fff !important;
+  background: var(--mv3-accent-fill-gradient) !important;
+  color: var(--mv3-accent-on-fill) !important;
   border-radius: 20px 20px 6px 20px !important;
   box-shadow: 0 10px 24px -12px rgba(61, 110, 232, 0.5);
 }
@@ -171,8 +171,12 @@ const MCHAT_TRANSCRIPT_THEME = `
 .cue-mchat .border-l-\\[var\\(--accent-cue\\)\\] {
   --accent-cue: var(--mv3-amber);
   --accent-cue-strong: var(--mv3-amber);
-  --primary-base: var(--mv3-amber);
-  --content-inset: var(--mv3-amber-btn-text);
+  /* The ground and its ink, as a pair: --primary-base is a BUTTON GROUND and
+     --content-inset is the ink on it, so the ground takes amber's fill stop.
+     Binding it to the bright --mv3-amber put white on #B4770F at 3.76:1 —
+     the same shape as the phone's Approve button. */
+  --primary-base: var(--mv3-amber-fill);
+  --content-inset: var(--mv3-amber-on-fill);
   background: var(--mv3-amber-card-bg) !important;
   border-color: var(--mv3-amber-card-border) !important;
   border-left-color: var(--mv3-amber) !important;
@@ -1240,7 +1244,7 @@ export function MobileChatView({
                   width: 34,
                   height: 34,
                   borderRadius: "50%",
-                  background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                  background: "var(--mv3-accent-fill-gradient)",
                   color: "#fff",
                   display: "flex",
                   alignItems: "center",
@@ -1285,7 +1289,7 @@ export function MobileChatView({
                   background: canStopGenerating
                     ? "var(--mv3-btn2-bg)"
                     : canSend
-                      ? "linear-gradient(160deg, #4E7CEC, #3560CC)"
+                      ? "var(--mv3-accent-fill-gradient)"
                       : "var(--mv3-btn2-bg)",
                   border: canStopGenerating
                     ? "1px solid var(--mv3-btn2-border)"

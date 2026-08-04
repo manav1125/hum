@@ -347,8 +347,8 @@ function ProjectCardV3({
             }}
             style={{
               width: "max-content",
-              background: "var(--mv3-amber)",
-              color: "var(--mv3-amber-btn-text)",
+              background: "var(--mv3-amber-fill)",
+              color: "var(--mv3-amber-on-fill)",
               border: "none",
               borderRadius: 10,
               padding: "8px 14px",
@@ -691,7 +691,7 @@ export function Mv3Projects() {
                         style={{
                           display: "block",
                           fontSize: 10.5,
-                          color: "var(--mv3-faint)",
+                          color: "var(--mv3-muted)",
                           marginTop: 2,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -703,7 +703,7 @@ export function Mv3Projects() {
                     </span>
                     <span
                       aria-hidden
-                      style={{ color: "var(--mv3-faint)", fontSize: 15 }}
+                      style={{ color: "var(--mv3-muted)", fontSize: 15 }}
                     >
                       ›
                     </span>
@@ -865,7 +865,7 @@ function FilterRow({
         aria-hidden
         style={{
           width: 16,
-          color: selected ? "var(--mv3-micro)" : "var(--mv3-faint)",
+          color: selected ? "var(--mv3-micro)" : "var(--mv3-muted)",
         }}
       >
         {selected ? "✓" : "·"}

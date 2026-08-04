@@ -271,7 +271,7 @@ function RowAssignment({
         >
           {p?.title ?? "Project"} ✓
         </button>
-        <span style={{ fontSize: 9.5, color: "var(--mv3-faint)" }}>
+        <span style={{ fontSize: 9.5, color: "var(--mv3-muted)" }}>
           suggested — tap to change
         </span>
       </div>
@@ -558,7 +558,7 @@ export function Mv3AddTasksSheet({
               when recording is unsupported; dimmed + honest when denied. */}
           {dictationSupported && result === null ? (
             micBlocked ? (
-              <span style={{ fontSize: 10.5, color: "var(--mv3-faint)" }}>
+              <span style={{ fontSize: 10.5, color: "var(--mv3-muted)" }}>
                 Mic unavailable — type instead
               </span>
             ) : !dictating && !recording && !transcribing ? (
@@ -674,7 +674,7 @@ export function Mv3AddTasksSheet({
                 style={{
                   marginLeft: "auto",
                   fontSize: 11,
-                  color: "var(--mv3-faint)",
+                  color: "var(--mv3-muted)",
                 }}
               >
                 {transcribing ? "transcribing…" : "tap to stop"}
@@ -687,7 +687,7 @@ export function Mv3AddTasksSheet({
                 fontSize: 13.5,
                 lineHeight: 1.45,
                 fontStyle: "italic",
-                color: interim ? "var(--mv3-text)" : "var(--mv3-faint)",
+                color: interim ? "var(--mv3-text)" : "var(--mv3-muted)",
               }}
             >
               {interim
@@ -823,7 +823,7 @@ export function Mv3AddTasksSheet({
                       </span>
                       {state === "pending" ? (
                         <span
-                          style={{ fontSize: 10.5, color: "var(--mv3-faint)" }}
+                          style={{ fontSize: 10.5, color: "var(--mv3-muted)" }}
                         >
                           adding…
                         </span>
@@ -1156,7 +1156,7 @@ export function Mv3AddTasksSheet({
           >
             <path d="M12 2l7 4v6c0 4.4-3 8.4-7 10-4-1.6-7-5.6-7-10V6z" />
           </svg>
-          <span style={{ fontSize: 10, color: "var(--mv3-faint)" }}>
+          <span style={{ fontSize: 10, color: "var(--mv3-muted)" }}>
             Added parked — nothing runs or spends until you say so
           </span>
         </div>

@@ -7,7 +7,7 @@
  *
  * The v27 mock was drawn against these exact tokens (its dark ground #0B0D13 is
  * `--mv3-bg`, its muted #9A9AA8 is `--mv3-muted`, its violet button #534AB7 is
- * `--mv3-violet-on-fill`), so matching the spec and passing the guard are the
+ * `--mv3-violet-fill`), so matching the spec and passing the guard are the
  * same act. The two places the mock and the guard disagree are noted inline.
  *
  * Local tokens below cover the two values the mock uses that mv3.css has no name
@@ -298,7 +298,7 @@
   color: var(--mv3-muted);
 }
 
-/* The send affordance. `--mv3-violet-on-fill` is the ground stop of the violet
+/* The send affordance. `--mv3-violet-fill` is the ground stop of the violet
    hue — the one that carries white text at contrast. The mock's #534AB7 IS this
    token, so spec and guard agree here. */
 .mv3c-send {
@@ -306,8 +306,8 @@
   height: 31px;
   border-radius: 50%;
   border: none;
-  background: var(--mv3-violet-on-fill);
-  color: #fff;
+  background: var(--mv3-violet-fill);
+  color: var(--mv3-violet-on-fill);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -600,8 +600,8 @@
 /* Primary actions live in the footer — always below 60% of viewport height. */
 .mv3c-primary {
   width: 100%;
-  background: var(--mv3-violet-on-fill);
-  color: #fff;
+  background: var(--mv3-violet-fill);
+  color: var(--mv3-violet-on-fill);
   border: none;
   border-radius: 14px;
   padding: 14px;
@@ -720,7 +720,7 @@
   width: 2px;
   height: 100%;
   border-radius: 1px;
-  background: var(--mv3-violet-fill);
+  background: var(--mv3-violet-glyph);
   animation: mv3Bar 1.2s ease-in-out infinite;
 }
 

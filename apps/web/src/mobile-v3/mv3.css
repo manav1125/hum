@@ -21,16 +21,55 @@
   /* Canvas + type (README DNA table). */
   --mv3-bg: #f2f3f7;
   --mv3-text: #17171c;
-  --mv3-muted: #5a6672;
-  --mv3-faint: #8d99a5; /* frame 12 "due 10:30" rgb(141,153,165) */
   --mv3-accent: #3d6ee8;
   --mv3-micro: #2b53c4; /* microlabel (AA in light) */
   --mv3-ring-active: #3d6ee8; /* tab-bar Today ring stroke when active */
 
+  /* ── Muted text, named for the GROUND it sits on ──────────────────────
+   *
+   * v35's ninth-recurrence note: "build the tokens named for ground and
+   * role … so the wrong value can't be typed into the right slot."
+   *
+   * These two are INVARIANT. The dark block below must never redefine
+   * them, because the ground is already in the name — `--mv3-muted-on-dark`
+   * is legal only over a dark ground and measures 2.19:1 over this canvas.
+   * The name is what stops it being typed here; the guard fails the build
+   * if it is, and fails it by NAME rather than waiting for the number.
+   *
+   * Hue note, so the next reader doesn't "correct" it: design's light stop
+   * is #6B6B60, measured on the HQ's warm paper (#F4F3EF / #E8E6E0). mv3's
+   * canvas is the cool #F2F3F7 and the mv3 frames set their light muted at
+   * #5A6672 — the same ROLE in the same contrast band (5.29:1 here against
+   * #6B6B60's 4.86:1 on paper), in this surface's hue. Typing the paper
+   * value onto this canvas would be the very substitution design is
+   * objecting to, one axis over. The dark stop IS design's value exactly. */
+  --mv3-muted-on-light: #5a6672;
+  --mv3-muted-on-dark: #9a9aa8;
+
+  /* The theme-following alias — correct for every mv3 surface, because mv3
+   * grounds follow the theme. The two above are for grounds that don't. */
+  --mv3-muted: var(--mv3-muted-on-light);
+
+  /* Dim DECORATION — inactive dots, dashed rules, 8–16% tints, off-state
+   * glyph marks. It carries no words, so it has no contrast floor and no
+   * ground in its name. It is not a text token: #8D99A5 measures 2.62:1 on
+   * this canvas, which is mv3's own instance of the #8A8A7E / #A8A89C
+   * mistake design has now logged nine times. The guard rejects it, and
+   * every `-glyph` token, in any `color:` slot. */
+  --mv3-dim-glyph: #8d99a5;
+
+  /* DEPRECATED — `--mv3-faint` was a text role at 2.62:1, and 68 of its 88
+   * mv3 uses were `color:`. There is no dim stop for type, so it now
+   * resolves to the muted stop. That repairs, without editing them, the
+   * call sites in `mobile-v3/library/**` and `domains/onboarding/**` that
+   * belong to other sessions. New uses fail the guard by name; decoration
+   * takes `--mv3-dim-glyph`. Delete this line when the allowlist in
+   * mv3-contrast-tokens.test.ts is empty. */
+  --mv3-faint: var(--mv3-muted);
+
   /* State colors (README taxonomy, light legs). */
   --mv3-amber: #b4770f;
   --mv3-violet: #534ab7;
-  --mv3-violet-fill: #7f77dd; /* Approve button fill (both themes) */
   --mv3-green: #277e41;
   --mv3-teal: #0e8c8c; /* third orbit-chip hue in the frames */
 
@@ -50,28 +89,65 @@
   --mv3-green-text: #277e41; /* already 4.6:1 — unchanged, named for symmetry */
   --mv3-teal-text: #0a6a6a;
 
-  /* ── The `-on-fill` legs ──────────────────────────────────────────────
+  /* ── Coloured controls: the ground and its ink, named so they can't swap ──
    *
-   * BACKGROUND values for a control that carries WHITE TEXT. Not decoration:
-   * a coloured fill under white text is a TEXT context, so it takes the text
-   * stop of its hue, never the bright one. `--mv3-violet-fill` (#7f77dd)
-   * under white measured 3.76:1 and shipped that way on the phone's Approve
-   * button.
+   * `-fill`     the control's BACKGROUND. Always the stop its own ink clears
+   *             4.5:1 against — under white ink that is the text variant v35
+   *             lists (#534AB7 · #8A5A08 · #0A6A6A · #2B53C4), never the
+   *             bright leg. A `-fill` in a `color:` slot fails the guard.
+   * `-on-fill`  the INK that sits ON that ground, and nothing else. An
+   *             `-on-fill` in a `background:` slot fails the guard.
    *
-   * This naming is the structural fix design asked for after eight
-   * recurrences of one failure class. The pairs read as what they are —
-   * `--mv3-violet-fill` is a glyph/ring/border value and `--mv3-violet-on-fill`
-   * is a ground under white — so the wrong one is wrong at the callsite rather
-   * than three contrast checks later. `mv3-contrast-tokens.test.ts` fails the
-   * build if a bright leg reappears under white text.
+   * This is v35's `--violet-fill` / `--violet-on-fill` pair, and the pairing
+   * is the point: whoever changes the ground sees the ink beside it.
    *
-   * Same on both themes: white text needs the same ground either way. */
-  --mv3-accent-on-fill: #2b53c4;
-  --mv3-amber-on-fill: #8a5a08;
-  --mv3-violet-on-fill: #534ab7;
-  --mv3-teal-on-fill: #0a6a6a;
-  --mv3-green-on-fill: #277e41;
-  --mv3-fail-on-fill: #a63a2f;
+   * The previous spelling had it backwards — `--mv3-violet-on-fill` read as
+   * "the ink on a violet fill" but held a BACKGROUND, and `--mv3-violet-fill`
+   * read as the ground but held the bright #7F77DD that shipped under white
+   * at 3.76:1 on the phone's Approve button. Two names that both described
+   * the wrong slot is how a value legal as a ring arc got typed under text.
+   * The bright value now lives at `--mv3-violet-glyph`, so the old mistake
+   * is not spellable: there is no longer a name that means "ground" and
+   * holds a mark colour.
+   *
+   * Only amber varies by theme — the dark frames invert it to a light ground
+   * carrying ink (7.71:1). Both halves move together, by definition. */
+  --mv3-accent-fill: #2b53c4;
+  --mv3-accent-on-fill: #ffffff;
+  --mv3-amber-fill: #8a5a08;
+  --mv3-amber-on-fill: #ffffff;
+  --mv3-violet-fill: #534ab7;
+  --mv3-violet-on-fill: #ffffff;
+  --mv3-teal-fill: #0a6a6a;
+  --mv3-teal-on-fill: #ffffff;
+  --mv3-green-fill: #277e41;
+  --mv3-green-on-fill: #ffffff;
+  --mv3-fail-fill: #a63a2f;
+  --mv3-fail-on-fill: #ffffff;
+
+  /* Bright violet — orbit dots, ring arcs, 12–16% tints. Same on both
+   * themes. Not a ground under text and not a `color:`. (Was, misleadingly,
+   * `--mv3-violet-fill`.) */
+  --mv3-violet-glyph: #7f77dd;
+
+  /* ── Gradient grounds ────────────────────────────────────────────────
+   *
+   * A gradient is a ground, so it obeys the ground rule: EVERY stop clears
+   * its ink, not just the one someone happened to check. These are tokens
+   * for the same reason the flat legs are — `linear-gradient(160deg,
+   * #4E7CEC, #3560CC)` was typed out by hand at twelve call sites under
+   * white text, and its light stop measured 3.88:1 at all twelve. Nothing
+   * named it, so nothing could check it, and a hand-copied literal is the
+   * one thing no rename can protect. The light stop is now `--mv3-accent`
+   * itself (4.57:1) — the smallest correction that clears the floor and
+   * keeps the sweep's identity.
+   *
+   * The violet segmented control ran #B0A8F5 → #8B80E8 under white: 2.15:1
+   * at the light end, the worst measured value in this layer.
+   *
+   * Ink for both is the matching `-on-fill`. */
+  --mv3-accent-fill-gradient: linear-gradient(160deg, #3d6ee8, #3560cc);
+  --mv3-violet-fill-gradient: linear-gradient(160deg, #6257c9, #534ab7);
 
   /* Glass cards (frame 12 card stack). */
   --mv3-card: rgba(255, 255, 255, 0.85);
@@ -81,15 +157,11 @@
   --mv3-amber-card-bg: #fbf4e4;
   --mv3-amber-card-border: rgba(180, 119, 15, 0.35);
   --mv3-amber-card-shadow: 0 10px 26px -18px rgba(180, 119, 15, 0.35);
-  /* The amber control's GROUND and its ink move together, always.
-   *
-   * `--mv3-amber` (#b4770f) under white measures 3.76:1 — the same number
-   * design flagged on C5's "Send it", and the ninth recurrence of one class.
-   * It shipped here because the button's two halves lived in separate tokens
-   * and only one of them was ever checked. Naming the pair is the fix:
-   * whoever changes the ground sees the ink beside it. */
-  --mv3-amber-btn-bg: #8a5a08;
-  --mv3-amber-btn-text: #ffffff;
+  /* The amber button's ground and ink are `--mv3-amber-fill` /
+   * `--mv3-amber-on-fill` above. `--mv3-amber-btn-bg` / `-btn-text` were the
+   * first draft of that pair and are gone: `-btn-` named the COMPONENT, so
+   * the next amber ground needed a new name and got the bright leg instead.
+   * `-fill` / `-on-fill` names the role, so there is only ever one pair. */
   --mv3-violet-card-bg: rgba(255, 255, 255, 0.85);
   --mv3-violet-card-border: rgba(127, 119, 221, 0.35);
   --mv3-violet-card-shadow: 0 16px 36px -22px rgba(127, 119, 221, 0.3);
@@ -145,22 +217,44 @@
 [data-theme="velvet"] {
   --mv3-bg: #0a0c12;
   --mv3-text: #f4f4f6;
-  --mv3-muted: #9a9aa8;
-  --mv3-faint: #9a9aa8; /* dark frames use one muted gray */
   --mv3-accent: #3d6ee8;
   --mv3-micro: #7fa3f2;
   --mv3-ring-active: #7fa3f2;
 
+  /* Only the ALIAS moves. `--mv3-muted-on-light` / `--mv3-muted-on-dark` are
+   * deliberately absent here: a token whose name states its ground cannot
+   * mean something else on another theme, and the guard fails the build if
+   * either is redefined in this block. */
+  --mv3-muted: var(--mv3-muted-on-dark);
+  --mv3-dim-glyph: #9a9aa8; /* dark frames use one muted gray */
+
   --mv3-amber: #e0a64b;
   --mv3-violet: #a79ff0;
-  --mv3-violet-fill: #7f77dd;
   --mv3-green: #6fd69a;
   --mv3-teal: #4fc7c7;
 
-  /* Text legs — dark. Identical to the fill legs on purpose: on #0A0C12 the
-   * bright values already measure 5.1–8.4:1, so a call site that moves to a
-   * text leg must render exactly as before here. Addendum A1 is light-only. */
-  --mv3-accent-text: #3d6ee8;
+  /* The inverted amber pair — a light ground carrying ink, 7.71:1. Every
+   * other `-fill` / `-on-fill` is theme-invariant (white ink needs the same
+   * ground either way), so only this one is restated. */
+  --mv3-amber-fill: #e0a64b;
+  --mv3-amber-on-fill: #211e16;
+
+  /* Text legs — dark. Mostly identical to the fill legs on purpose: on
+   * #0A0C12 those bright values measure 8.2–10.9:1, so a call site moving to
+   * a text leg renders exactly as before. Addendum A1 is light-only.
+   *
+   * ACCENT WAS THE EXCEPTION, and the comment above this line used to claim
+   * a floor of "5.1–8.4:1" that accent never met: #3D6EE8 measures 4.28:1 on
+   * the canvas and 3.81:1 on a card. It sat here for the whole of the range
+   * the comment asserted, because the assertion was prose. Nothing computed
+   * it — the guard skips a control whose ground is an rgba() card, and text
+   * legs are usually written with no ground beside them at all.
+   *
+   * The dark accent stop is #7FA3F2 (7.84:1 canvas / 6.99:1 card) — the value
+   * `--mv3-micro` already uses one block below, for exactly this reason.
+   * `mv3-contrast-tokens.test.ts` now measures every text leg against both
+   * dark grounds, so the next false floor fails instead of reading well. */
+  --mv3-accent-text: #7fa3f2;
   --mv3-amber-text: #e0a64b;
   --mv3-violet-text: #a79ff0;
   --mv3-green-text: #6fd69a;
@@ -173,9 +267,6 @@
   --mv3-amber-card-bg: rgba(52, 42, 22, 0.75);
   --mv3-amber-card-border: rgba(224, 166, 75, 0.4);
   --mv3-amber-card-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.7);
-  /* Dark inverts the pair: a light amber ground carrying ink, 7.71:1. */
-  --mv3-amber-btn-bg: #e0a64b;
-  --mv3-amber-btn-text: #211e16;
   --mv3-violet-card-bg: rgba(38, 34, 58, 0.6);
   --mv3-violet-card-border: rgba(167, 159, 240, 0.35);
   --mv3-violet-card-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.7);

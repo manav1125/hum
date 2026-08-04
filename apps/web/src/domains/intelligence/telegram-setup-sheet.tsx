@@ -497,7 +497,7 @@ export function TelegramSetupSheet({
                         <summary
                           style={{
                             fontSize: 10.5,
-                            color: "var(--mv3-faint)",
+                            color: "var(--mv3-muted)",
                             cursor: "pointer",
                             listStyle: "none",
                           }}
@@ -508,7 +508,7 @@ export function TelegramSetupSheet({
                           style={{
                             fontFamily: mv3Mono,
                             fontSize: 10,
-                            color: "var(--mv3-faint)",
+                            color: "var(--mv3-muted)",
                             marginTop: 3,
                             overflowWrap: "anywhere",
                           }}
@@ -522,7 +522,7 @@ export function TelegramSetupSheet({
                 <div
                   style={{
                     fontSize: 10.5,
-                    color: "var(--mv3-faint)",
+                    color: "var(--mv3-muted)",
                     marginTop: 7,
                   }}
                 >
@@ -593,10 +593,10 @@ export function TelegramSetupSheet({
               background:
                 !token.trim() || saveMutation.isPending
                   ? "var(--mv3-btn2-bg)"
-                  : "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                  : "var(--mv3-accent-fill-gradient)",
               color:
                 !token.trim() || saveMutation.isPending
-                  ? "var(--mv3-faint)"
+                  ? "var(--mv3-muted)"
                   : "#fff",
               border: "1px solid var(--mv3-btn2-border)",
               borderRadius: 14,
@@ -622,7 +622,7 @@ export function TelegramSetupSheet({
             style={{
               width: "100%",
               background: "var(--mv3-btn2-bg)",
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               border: "1px solid var(--mv3-btn2-border)",
               borderRadius: 14,
               padding: 13,
@@ -663,7 +663,7 @@ export function TelegramSetupSheet({
         <div
           style={{
             fontSize: 11,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             textAlign: "center",
             marginTop: 12,
             lineHeight: 1.5,

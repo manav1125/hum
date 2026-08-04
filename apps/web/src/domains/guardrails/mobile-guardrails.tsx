@@ -423,7 +423,7 @@ export function Mv3CheckpointSheet({
               </button>
             ))}
             {agents.length === 0 ? (
-              <span style={{ fontSize: 12.5, color: "var(--mv3-faint)" }}>
+              <span style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
                 No agents in the registry yet.
               </span>
             ) : null}
@@ -434,11 +434,11 @@ export function Mv3CheckpointSheet({
             style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}
           >
             {missionsQuery.isLoading ? (
-              <span style={{ fontSize: 12.5, color: "var(--mv3-faint)" }}>
+              <span style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
                 Loading missions…
               </span>
             ) : (missionsQuery.data?.missions.length ?? 0) === 0 ? (
-              <span style={{ fontSize: 12.5, color: "var(--mv3-faint)" }}>
+              <span style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
                 No active missions yet.
               </span>
             ) : (
@@ -574,7 +574,7 @@ export function Mv3CheckpointSheet({
                     onClick={() => remove(cp)}
                     style={{
                       fontSize: 12,
-                      color: "var(--mv3-faint)",
+                      color: "var(--mv3-muted)",
                       background: "none",
                       border: "none",
                       padding: "8px 6px",
@@ -591,7 +591,7 @@ export function Mv3CheckpointSheet({
             <div
               style={{
                 fontSize: 11,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 marginTop: 8,
                 lineHeight: 1.5,
               }}
@@ -654,7 +654,7 @@ export function Mv3AgentScopesScreen() {
       <div
         style={{
           fontSize: 11.5,
-          color: "var(--mv3-faint)",
+          color: "var(--mv3-muted)",
           textAlign: "center",
           padding: "4px 12px",
           lineHeight: 1.5,
@@ -730,7 +730,7 @@ function Mv3AgentScopeCard({
       style={{
         fontSize: 12,
         fontFamily: "inherit",
-        color: on ? "var(--mv3-text)" : "var(--mv3-faint)",
+        color: on ? "var(--mv3-text)" : "var(--mv3-muted)",
         background: on ? "var(--mv3-btn2-bg)" : "transparent",
         border: on
           ? "1px solid var(--mv3-btn2-border)"
@@ -786,9 +786,9 @@ function Mv3AgentScopeCard({
           style={{
             ...microLabel,
             fontSize: 9.5,
-            color: paused ? "var(--mv3-faint)" : "var(--mv3-green)",
+            color: paused ? "var(--mv3-muted)" : "var(--mv3-green)",
             background: `color-mix(in srgb, ${
-              paused ? "var(--mv3-faint)" : "var(--mv3-green)"
+              paused ? "var(--mv3-muted)" : "var(--mv3-green)"
             } 12%, transparent)`,
             padding: "4px 9px",
             borderRadius: 6,
@@ -863,7 +863,7 @@ function Mv3AgentScopeCard({
             <span
               style={{
                 fontSize: 10.5,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 marginLeft: "auto",
               }}
             >

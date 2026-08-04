@@ -572,8 +572,8 @@ export function ReviewQueuePage() {
               onClick={() => doApprove(item)}
               style={{
                 flex: 1,
-                background: "var(--mv3-green-on-fill)",
-                color: "#fff",
+                background: "var(--mv3-green-fill)",
+                color: "var(--mv3-green-on-fill)",
                 border: "none",
                 borderRadius: 14,
                 padding: 14,

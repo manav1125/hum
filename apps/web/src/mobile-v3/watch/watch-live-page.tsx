@@ -219,7 +219,7 @@ function StreamNode({
             style={{
               fontFamily: mv3Mono,
               fontSize: 10,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               marginTop: 3,
               overflowWrap: "anywhere",
             }}
@@ -545,7 +545,7 @@ export function WatchLivePage() {
               style={{
                 ...barBtn,
                 flex: "1.4 1 140px",
-                background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                background: "var(--mv3-accent-fill-gradient)",
                 color: "#fff",
                 border: "none",
                 boxShadow: "var(--mv3-primary-btn-shadow)",

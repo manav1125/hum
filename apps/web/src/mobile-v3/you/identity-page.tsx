@@ -96,7 +96,7 @@ function EditSheet({
         <div style={{ fontSize: 14.5, fontWeight: 600 }}>{title}</div>
         {children}
         <div
-          style={{ fontSize: 10.5, color: "var(--mv3-faint)", marginTop: 8 }}
+          style={{ fontSize: 10.5, color: "var(--mv3-muted)", marginTop: 8 }}
         >
           {HELPER}
         </div>
@@ -114,7 +114,7 @@ function EditSheet({
           }}
           style={{
             width: "100%",
-            background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+            background: "var(--mv3-accent-fill-gradient)",
             color: "#ffffff",
             border: "none",
             borderRadius: 12,
@@ -202,7 +202,7 @@ function IdentityRow({
           alignItems: "center",
           gap: 6,
           fontSize: 13.5,
-          color: valueSet ? "var(--mv3-muted)" : "var(--mv3-faint)",
+          color: valueSet ? "var(--mv3-muted)" : "var(--mv3-muted)",
           maxWidth: 150,
           whiteSpace: "nowrap",
           overflow: "hidden",
@@ -212,7 +212,7 @@ function IdentityRow({
         {ornament}
         {value}
       </span>
-      <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+      <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
         ›
       </span>
     </button>

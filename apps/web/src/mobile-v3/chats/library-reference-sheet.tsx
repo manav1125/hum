@@ -183,7 +183,7 @@ export function LibraryReferenceSheet({
           <Search
             size={14}
             aria-hidden
-            style={{ color: "var(--mv3-faint)", flexShrink: 0 }}
+            style={{ color: "var(--mv3-muted)", flexShrink: 0 }}
           />
           <input
             value={query}

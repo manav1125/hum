@@ -337,7 +337,7 @@ export function Mv3NewProjectSheet({
       <div
         style={{
           fontSize: 10.5,
-          color: "var(--mv3-faint)",
+          color: "var(--mv3-muted)",
           marginTop: 8,
           textAlign: "center",
         }}

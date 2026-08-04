@@ -434,7 +434,7 @@ export function Mv3LedgerPage() {
               style={{
                 ...microLabel,
                 fontSize: 9.5,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 padding: "4px 4px 8px",
               }}
             >
@@ -512,7 +512,7 @@ export function Mv3LedgerPage() {
                         <div
                           style={{
                             fontSize: 10.5,
-                            color: "var(--mv3-faint)",
+                            color: "var(--mv3-muted)",
                             marginTop: 1,
                           }}
                         >
@@ -525,7 +525,7 @@ export function Mv3LedgerPage() {
                         style={{
                           fontFamily: mv3Mono,
                           fontSize: 10,
-                          color: "var(--mv3-faint)",
+                          color: "var(--mv3-muted)",
                           flexShrink: 0,
                         }}
                       >

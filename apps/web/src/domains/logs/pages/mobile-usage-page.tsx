@@ -205,7 +205,7 @@ export function Mv3UsagePage() {
                 fontFamily: "inherit",
                 color: active ? "#fff" : "var(--mv3-muted)",
                 background: active
-                  ? "linear-gradient(160deg, #4E7CEC, #3560CC)"
+                  ? "var(--mv3-accent-fill-gradient)"
                   : "transparent",
                 border: "none",
                 borderRadius: 9,
@@ -330,7 +330,7 @@ export function Mv3UsagePage() {
               <div
                 style={{
                   fontSize: 12.5,
-                  color: "var(--mv3-faint)",
+                  color: "var(--mv3-muted)",
                   padding: "22px 0",
                   textAlign: "center",
                 }}
@@ -375,7 +375,7 @@ export function Mv3UsagePage() {
                 <div
                   style={{
                     fontSize: 10.5,
-                    color: "var(--mv3-faint)",
+                    color: "var(--mv3-muted)",
                     marginTop: 7,
                   }}
                 >
@@ -396,7 +396,7 @@ export function Mv3UsagePage() {
             <div
               style={{
                 ...microLabel,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 padding: "6px 4px 8px",
               }}
             >
@@ -406,7 +406,7 @@ export function Mv3UsagePage() {
               <div
                 style={{
                   fontSize: 12.5,
-                  color: "var(--mv3-faint)",
+                  color: "var(--mv3-muted)",
                   padding: "2px 4px",
                 }}
               >
@@ -492,7 +492,7 @@ export function Mv3UsagePage() {
               <div
                 style={{
                   fontSize: 10.5,
-                  color: "var(--mv3-faint)",
+                  color: "var(--mv3-muted)",
                   marginTop: 9,
                   padding: "0 4px",
                   lineHeight: 1.5,
@@ -576,7 +576,7 @@ function SpendBarColumn({
                 width: "100%",
                 height: 2,
                 background:
-                  "color-mix(in srgb, var(--mv3-faint) 35%, transparent)",
+                  "color-mix(in srgb, var(--mv3-dim-glyph) 35%, transparent)",
                 borderRadius: 2,
                 outline: selected
                   ? "1.5px solid var(--mv3-accent)"
@@ -605,7 +605,7 @@ function SpendBarColumn({
       <span
         style={{
           fontSize: dense ? 8 : 9,
-          color: bar.isPeak ? "var(--mv3-text)" : "var(--mv3-faint)",
+          color: bar.isPeak ? "var(--mv3-text)" : "var(--mv3-muted)",
           fontWeight: bar.isPeak ? 600 : 400,
           height: 12,
           lineHeight: "12px",

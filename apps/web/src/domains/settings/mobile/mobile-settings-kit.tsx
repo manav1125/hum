@@ -43,7 +43,7 @@ export function Mv3SettingsNote({ children }: { children: ReactNode }) {
     <div
       style={{
         fontSize: 11.5,
-        color: "var(--mv3-faint)",
+        color: "var(--mv3-muted)",
         textAlign: "center",
         padding: "4px 14px",
         lineHeight: 1.5,

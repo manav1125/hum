@@ -122,7 +122,7 @@ export function Mv3ProjectBrief({
           </div>
         )}
         <div
-          style={{ fontSize: 10.5, color: "var(--mv3-faint)", marginTop: 9 }}
+          style={{ fontSize: 10.5, color: "var(--mv3-muted)", marginTop: 9 }}
         >
           Tap to edit — changes re-steer the agents immediately
         </div>
@@ -167,7 +167,7 @@ export function Mv3ProjectBrief({
             fontFamily: "inherit",
           }}
         />
-        <div style={{ fontSize: 11, color: "var(--mv3-faint)", marginTop: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--mv3-muted)", marginTop: 8 }}>
           Cue reads this before working any task in this project.
         </div>
         {patch.isError ? (

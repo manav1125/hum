@@ -184,7 +184,7 @@ export function Mv3AssessmentPanel({
               marginLeft: "auto",
               fontFamily: mv3Mono,
               fontSize: 10,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
             }}
           >
             checked {checked}
@@ -209,7 +209,7 @@ export function Mv3AssessmentPanel({
         <div
           style={{
             fontSize: 11,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             marginTop: 9,
             lineHeight: 1.5,
           }}
@@ -310,7 +310,7 @@ function NotAiTaskBody({ understanding }: { understanding: string | null }) {
       <div
         style={{
           fontSize: 11,
-          color: "var(--mv3-faint)",
+          color: "var(--mv3-muted)",
           lineHeight: 1.5,
           marginTop: 7,
         }}
@@ -336,7 +336,7 @@ function BlockedBody({
         <div
           style={{
             fontSize: 11,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             lineHeight: 1.5,
             marginTop: 7,
           }}
@@ -385,7 +385,7 @@ function Block({
   return (
     <div>
       <div
-        style={{ ...microLabel, fontSize: 9.5, color: "var(--mv3-faint)" }}
+        style={{ ...microLabel, fontSize: 9.5, color: "var(--mv3-muted)" }}
       >
         {label}
       </div>
@@ -466,7 +466,7 @@ function AnswerField({
             flex: 1,
             minWidth: 120,
             fontSize: 11,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             lineHeight: 1.4,
           }}
         >
@@ -536,7 +536,7 @@ function QuietBtn({
       style={{
         fontFamily: "inherit",
         fontSize: 12,
-        color: "var(--mv3-faint)",
+        color: "var(--mv3-muted)",
         background: "none",
         border: "none",
         padding: "12px 2px",

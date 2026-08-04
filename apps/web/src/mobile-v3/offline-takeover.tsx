@@ -174,7 +174,7 @@ export function OfflineTakeover() {
               width: 6,
               height: 6,
               borderRadius: "50%",
-              background: "var(--mv3-faint)",
+              background: "var(--mv3-dim-glyph)",
             }}
           />
           <span
@@ -186,13 +186,13 @@ export function OfflineTakeover() {
               width: 5,
               height: 5,
               borderRadius: "50%",
-              background: "var(--mv3-faint)",
+              background: "var(--mv3-dim-glyph)",
             }}
           />
           <CueRing
             size={110}
             stroke="var(--mv3-muted)"
-            dotColor="var(--mv3-faint)"
+            dotColor="var(--mv3-dim-glyph)"
             style={{ position: "relative", opacity: 0.75 }}
           />
         </div>

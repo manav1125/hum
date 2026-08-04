@@ -382,8 +382,8 @@ function NeedsYouCard({
         }}
         style={{
           width: "100%",
-          background: "var(--mv3-amber)",
-          color: "var(--mv3-amber-btn-text)",
+          background: "var(--mv3-amber-fill)",
+          color: "var(--mv3-amber-on-fill)",
           border: "none",
           borderRadius: 11,
           padding: 10,
@@ -524,7 +524,7 @@ function ArtifactRow({
           {item.updatedAt ? ` · ${relativeTime(item.updatedAt)}` : ""}
         </div>
       </div>
-      <span aria-hidden style={{ fontSize: 16, color: "var(--mv3-faint)" }}>
+      <span aria-hidden style={{ fontSize: 16, color: "var(--mv3-muted)" }}>
         ›
       </span>
     </div>
@@ -1259,7 +1259,7 @@ export function Mv3ProjectDetail() {
                   ) : null}
                   <span
                     aria-hidden
-                    style={{ fontSize: 15, color: "var(--mv3-faint)" }}
+                    style={{ fontSize: 15, color: "var(--mv3-muted)" }}
                   >
                     ›
                   </span>
@@ -1315,13 +1315,13 @@ export function Mv3ProjectDetail() {
                   {item.title}
                 </span>
                 {item.updatedAt ? (
-                  <span style={{ fontSize: 11, color: "var(--mv3-faint)" }}>
+                  <span style={{ fontSize: 11, color: "var(--mv3-muted)" }}>
                     {relativeTime(item.updatedAt)}
                   </span>
                 ) : null}
                 <span
                   aria-hidden
-                  style={{ fontSize: 15, color: "var(--mv3-faint)" }}
+                  style={{ fontSize: 15, color: "var(--mv3-muted)" }}
                 >
                   ›
                 </span>
@@ -1690,7 +1690,7 @@ export function Mv3ProjectDetail() {
           <span
             style={{
               fontSize: 12.5,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               flex: 1,
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -1802,7 +1802,7 @@ function ContextLine({
         style={{
           width: 14,
           fontSize: 9.5,
-          color: "var(--mv3-faint)",
+          color: "var(--mv3-muted)",
           textAlign: "center",
         }}
       >

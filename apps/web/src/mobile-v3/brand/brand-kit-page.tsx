@@ -106,7 +106,7 @@ function LivePreview({ profile }: { profile: BrandProfile }) {
           <div
             style={{
               fontSize: 9.5,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               padding: "5px 9px",
               textAlign: "center",
             }}
@@ -246,7 +246,7 @@ function LeafRow({
             {sub}
           </div>
         </div>
-        <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+        <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
           ›
         </span>
       </div>
@@ -352,7 +352,7 @@ export function BrandKitPage() {
                     />
                   ))
                 ) : (
-                  <span style={{ fontSize: 12, color: "var(--mv3-faint)" }}>
+                  <span style={{ fontSize: 12, color: "var(--mv3-muted)" }}>
                     No colors saved
                   </span>
                 )}
@@ -602,7 +602,7 @@ export function BrandKitPage() {
                       <span
                         style={{
                           fontSize: 10.5,
-                          color: "var(--mv3-faint)",
+                          color: "var(--mv3-muted)",
                           padding: "0 6px",
                         }}
                       >

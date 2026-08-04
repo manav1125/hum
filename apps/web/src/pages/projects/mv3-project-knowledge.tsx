@@ -262,7 +262,7 @@ export function Mv3ProjectKnowledge({
               </span>
               <span
                 aria-hidden
-                style={{ fontSize: 12, color: "var(--mv3-faint)" }}
+                style={{ fontSize: 12, color: "var(--mv3-muted)" }}
               >
                 ›
               </span>
@@ -302,7 +302,7 @@ export function Mv3ProjectKnowledge({
         ) : null}
 
         <div
-          style={{ fontSize: 10.5, color: "var(--mv3-faint)", marginTop: 9 }}
+          style={{ fontSize: 10.5, color: "var(--mv3-muted)", marginTop: 9 }}
         >
           Cue can read these when working any task in this project.
         </div>
@@ -395,7 +395,7 @@ export function Mv3ProjectKnowledge({
             {error}
           </div>
         ) : null}
-        <div style={{ fontSize: 11, color: "var(--mv3-faint)", marginTop: 10 }}>
+        <div style={{ fontSize: 11, color: "var(--mv3-muted)", marginTop: 10 }}>
           Cue can read these when working any task in this project.
         </div>
       </SheetShell>
@@ -422,7 +422,7 @@ export function Mv3ProjectKnowledge({
               style={{
                 fontFamily: mv3Mono,
                 fontSize: 10.5,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 marginTop: 5,
                 wordBreak: "break-all",
               }}

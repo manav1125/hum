@@ -376,7 +376,7 @@ export function Mv3FilesPage({ assistantId }: { assistantId: string }) {
         </GlassCard>
       ) : gallery.isLoading ? (
         <GlassCard padding="18px 16px" style={rise(0.1)}>
-          <div style={{ fontSize: 13, color: "var(--mv3-faint)" }}>
+          <div style={{ fontSize: 13, color: "var(--mv3-muted)" }}>
             Loading what Cue has made…
           </div>
         </GlassCard>
@@ -475,7 +475,7 @@ export function Mv3FilesPage({ assistantId }: { assistantId: string }) {
                     width: 34,
                     height: 34,
                     borderRadius: "50%",
-                    background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                    background: "var(--mv3-accent-fill-gradient)",
                     border: "none",
                     display: "flex",
                     alignItems: "center",
@@ -546,7 +546,7 @@ export function Mv3FilesPage({ assistantId }: { assistantId: string }) {
                     <div
                       style={{
                         fontSize: 9.5,
-                        color: "var(--mv3-faint)",
+                        color: "var(--mv3-muted)",
                         marginTop: 2,
                         whiteSpace: "nowrap",
                         overflow: "hidden",
@@ -564,7 +564,7 @@ export function Mv3FilesPage({ assistantId }: { assistantId: string }) {
           <div
             style={{
               fontSize: 10.5,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               textAlign: "center",
               marginTop: 2,
             }}

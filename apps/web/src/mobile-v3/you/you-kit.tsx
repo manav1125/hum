@@ -308,7 +308,7 @@ export function NavRow({
           {meta}
         </span>
       ) : null}
-      <span style={{ color: "var(--mv3-faint)", marginLeft: 4 }} aria-hidden>
+      <span style={{ color: "var(--mv3-muted)", marginLeft: 4 }} aria-hidden>
         ›
       </span>
     </button>
@@ -443,7 +443,7 @@ export function TrustFootnote({ children }: { children: React.ReactNode }) {
       >
         <path d="M12 2l7 4v6c0 4.4-3 8.4-7 10-4-1.6-7-5.6-7-10V6z" />
       </svg>
-      <span style={{ fontSize: 11.5, color: "var(--mv3-faint)" }}>
+      <span style={{ fontSize: 11.5, color: "var(--mv3-muted)" }}>
         {children}
       </span>
     </div>

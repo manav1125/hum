@@ -106,7 +106,7 @@ function ModeChip({ mode }: { mode: AutonomyMode }) {
       ? "var(--mv3-green)"
       : mode === "ask"
         ? "var(--mv3-amber)"
-        : "var(--mv3-faint)";
+        : "var(--mv3-muted)";
   return (
     <span
       style={{
@@ -426,8 +426,8 @@ function MakeRuleSheetV3({
               width: 24,
               height: 24,
               borderRadius: 8,
-              background: "var(--mv3-accent-on-fill)",
-              color: "#fff",
+              background: "var(--mv3-accent-fill)",
+              color: "var(--mv3-accent-on-fill)",
               fontSize: 12,
               display: "flex",
               alignItems: "center",
@@ -665,7 +665,7 @@ export function Mv3RulesPage() {
                 mode === "auto"
                   ? "var(--mv3-green)"
                   : mode === "never"
-                    ? "var(--mv3-faint)"
+                    ? "var(--mv3-dim-glyph)"
                     : "var(--mv3-amber)"
               }
               name={row.name}
@@ -696,7 +696,7 @@ export function Mv3RulesPage() {
                 <RuleRow
                   key={rule.id}
                   glyph="↴"
-                  glyphColor={on ? "var(--mv3-green)" : "var(--mv3-faint)"}
+                  glyphColor={on ? "var(--mv3-green)" : "var(--mv3-dim-glyph)"}
                   name={rule.label}
                   ariaLabel={`${rule.label} — ${on ? "on" : "off"}. ${
                     on ? "Switch off" : "Switch on"
@@ -706,9 +706,9 @@ export function Mv3RulesPage() {
                     style={{
                       ...microLabel,
                       fontSize: 9.5,
-                      color: on ? "var(--mv3-green)" : "var(--mv3-faint)",
+                      color: on ? "var(--mv3-green)" : "var(--mv3-muted)",
                       background: `color-mix(in srgb, ${
-                        on ? "var(--mv3-green)" : "var(--mv3-faint)"
+                        on ? "var(--mv3-green)" : "var(--mv3-muted)"
                       } 12%, transparent)`,
                       padding: "4px 9px",
                       borderRadius: 6,
@@ -755,7 +755,7 @@ export function Mv3RulesPage() {
                 <RuleRow
                   key={cp.id}
                   glyph="‖"
-                  glyphColor={on ? "var(--mv3-amber)" : "var(--mv3-faint)"}
+                  glyphColor={on ? "var(--mv3-amber)" : "var(--mv3-dim-glyph)"}
                   name={cp.label}
                   ariaLabel={`Checkpoint: ${cp.label} — ${on ? "on" : "off"}. ${
                     on ? "Switch off" : "Switch on"
@@ -771,9 +771,9 @@ export function Mv3RulesPage() {
                     style={{
                       ...microLabel,
                       fontSize: 9.5,
-                      color: on ? "var(--mv3-amber)" : "var(--mv3-faint)",
+                      color: on ? "var(--mv3-amber)" : "var(--mv3-muted)",
                       background: `color-mix(in srgb, ${
-                        on ? "var(--mv3-amber)" : "var(--mv3-faint)"
+                        on ? "var(--mv3-amber)" : "var(--mv3-muted)"
                       } 12%, transparent)`,
                       padding: "4px 9px",
                       borderRadius: 6,

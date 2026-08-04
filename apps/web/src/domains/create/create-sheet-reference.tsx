@@ -188,7 +188,7 @@ export function SheetReferencePicker({
               border: "none",
               cursor: "pointer",
               fontSize: 13,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               fontFamily: "inherit",
             }}
           >
@@ -252,7 +252,7 @@ export function SheetReferencePicker({
               border: "none",
               cursor: "pointer",
               fontSize: 13,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               fontFamily: "inherit",
             }}
           >

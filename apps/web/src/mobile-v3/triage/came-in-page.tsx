@@ -620,7 +620,7 @@ export function CameInPage() {
               style={{
                 textAlign: "center",
                 fontSize: 12,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
                 padding: "10px 0",
                 minHeight: 40,
                 background: "none",
@@ -665,7 +665,7 @@ export function CameInPage() {
                     onClick={confirmAll}
                     style={{
                       fontSize: 11.5,
-                      color: "var(--mv3-faint)",
+                      color: "var(--mv3-muted)",
                       background: "none",
                       border: "none",
                       padding: "10px 4px",
@@ -682,12 +682,12 @@ export function CameInPage() {
                       width: 3,
                       height: 3,
                       borderRadius: "50%",
-                      background: "var(--mv3-faint)",
+                      background: "var(--mv3-dim-glyph)",
                     }}
                   />
                 </>
               ) : null}
-              <span style={{ fontSize: 11.5, color: "var(--mv3-faint)" }}>
+              <span style={{ fontSize: 11.5, color: "var(--mv3-muted)" }}>
                 Why these? — every catch shows its source
               </span>
             </div>

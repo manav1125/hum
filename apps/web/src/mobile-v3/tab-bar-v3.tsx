@@ -189,8 +189,8 @@ function TabItem({
               height: 15,
               padding: "0 4px",
               borderRadius: 8,
-              background: "var(--mv3-accent-on-fill)",
-              color: "#fff",
+              background: "var(--mv3-accent-fill)",
+              color: "var(--mv3-accent-on-fill)",
               fontSize: 9,
               fontWeight: 700,
               lineHeight: "15px",
@@ -389,9 +389,9 @@ function MarkTab({
             position: "absolute",
             inset: 0,
             borderRadius: "50%",
-            // `-on-fill` is the ground under white marks. The bright accent
+            // `-fill` is the ground; `-on-fill` is the mark on it. The bright accent
             // leg belongs to strokes and rings, never under white.
-            background: "var(--mv3-accent-on-fill)",
+            background: "var(--mv3-accent-fill)",
             // The ring of background separating the raised mark from the pill
             // beneath it — the frames draw 3px of the screen colour.
             border: "3px solid var(--mv3-bg)",
@@ -404,7 +404,7 @@ function MarkTab({
               : undefined,
           }}
         >
-          <CueRing size={23} stroke="#fff" strokeWidth={48} dotRadius={36} />
+          <CueRing size={23} stroke="var(--mv3-accent-on-fill)" strokeWidth={48} dotRadius={36} />
         </span>
       </span>
       {/* The frames give the mark no printed label — it is the brand, raised

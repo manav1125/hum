@@ -333,7 +333,7 @@ function v3Btn(tone: "primary" | "neutral" | "danger"): React.CSSProperties {
   if (tone === "primary")
     return {
       ...base,
-      background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+      background: "var(--mv3-accent-fill-gradient)",
       color: "#fff",
       boxShadow: "var(--mv3-primary-btn-shadow)",
     };
@@ -1376,7 +1376,7 @@ function Recap({
         line: "var(--mv3-line)",
         t1: "var(--mv3-text)",
         t2: "var(--mv3-muted)",
-        t3: "var(--mv3-faint)",
+        t3: "var(--mv3-muted)",
         blue: "var(--mv3-accent)",
         blueW: "color-mix(in srgb, var(--mv3-accent) 18%, transparent)",
         blueS: "var(--mv3-micro)",

@@ -59,7 +59,7 @@ const TONE_COLOR: Record<HealthTone, string> = {
   good: "var(--mv3-green-text)",
   warn: "var(--mv3-amber-text)",
   bad: "var(--mv3-fail-text)",
-  neutral: "var(--mv3-faint)",
+  neutral: "var(--mv3-muted)",
 };
 
 /** Autonomy ranking so we can tell which options the dial ceiling locks. */
@@ -247,7 +247,7 @@ function WatcherCard({ watcher }: { watcher: Watcher }) {
         <div
           style={{
             fontSize: 11.5,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             marginTop: 5,
             lineHeight: 1.45,
           }}
@@ -437,7 +437,7 @@ function NewWatcherSheet({ onClose }: { onClose: () => void }) {
             );
           })}
           {providers && providers.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--mv3-faint)" }}>
+            <div style={{ fontSize: 12, color: "var(--mv3-muted)" }}>
               No providers registered.
             </div>
           ) : null}
@@ -574,12 +574,12 @@ function NewPlaybookSheet({
                   fontWeight: active ? 600 : 400,
                   fontFamily: "inherit",
                   color: locked
-                    ? "var(--mv3-faint)"
+                    ? "var(--mv3-muted)"
                     : active
                       ? "#fff"
                       : "var(--mv3-muted)",
                   background: active
-                    ? "linear-gradient(160deg,#B0A8F5,#8B80E8)"
+                    ? "var(--mv3-violet-fill-gradient)"
                     : "transparent",
                   border: "none",
                   borderRadius: 10,
@@ -859,7 +859,7 @@ export function Mv3AutomationsPage() {
             style={{
               padding: "6px 15px 12px",
               fontSize: 12.5,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
             }}
           >
             No watchers yet — add one to monitor a source.
@@ -885,7 +885,7 @@ export function Mv3AutomationsPage() {
             style={{
               padding: "6px 15px 12px",
               fontSize: 12.5,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
             }}
           >
             No playbooks yet — turn a watcher hit into an action.

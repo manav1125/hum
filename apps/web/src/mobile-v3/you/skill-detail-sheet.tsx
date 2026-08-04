@@ -385,7 +385,7 @@ export function SkillDetailSheet({
                   <div
                     style={{
                       fontSize: 10.5,
-                      color: "var(--mv3-faint)",
+                      color: "var(--mv3-muted)",
                       marginTop: model.usesLine ? 2 : 0,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -412,7 +412,7 @@ export function SkillDetailSheet({
             </div>
           ) : null}
           {plan?.files ? (
-            <div style={{ ...microLabel, color: "var(--mv3-faint)" }}>
+            <div style={{ ...microLabel, color: "var(--mv3-muted)" }}>
               {plan.files.length} file{plan.files.length === 1 ? "" : "s"} to
               install
               {plan.skipped.length > 0

@@ -72,9 +72,9 @@ export interface OrbitChip {
 /** Spec chip angles (frame 1): three slots at 20° / 140° / 260°. */
 const CHIP_ANGLES = [20, 140, 260];
 /** Satellite dots (frame 1): 7px @80° and 6px @300°, radius 62. */
-const DOT_SLOTS: Array<{ angle: number; size: number; color: string }> = [
-  { angle: 80, size: 7, color: "var(--mv3-ring-active)" },
-  { angle: 300, size: 6, color: "var(--mv3-violet-fill)" },
+const DOT_SLOTS: Array<{ angle: number; size: number; hue: string }> = [
+  { angle: 80, size: 7, hue: "var(--mv3-ring-active)" },
+  { angle: 300, size: 6, hue: "var(--mv3-violet-glyph)" },
 ];
 
 /**
@@ -227,8 +227,8 @@ export function CueRingHero({
                     width: d.size,
                     height: d.size,
                     borderRadius: "50%",
-                    background: d.color,
-                    boxShadow: `0 0 ${d.size + 3}px color-mix(in srgb, ${d.color} 70%, transparent)`,
+                    background: d.hue,
+                    boxShadow: `0 0 ${d.size + 3}px color-mix(in srgb, ${d.hue} 70%, transparent)`,
                   }}
                 />
               </div>

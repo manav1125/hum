@@ -354,7 +354,7 @@ export function Mv3ChatsIndex({
                   width: 32,
                   height: 32,
                   borderRadius: "50%",
-                  background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                  background: "var(--mv3-accent-fill-gradient)",
                   color: "#fff",
                   display: "flex",
                   alignItems: "center",
@@ -418,7 +418,7 @@ export function Mv3ChatsIndex({
           <Search
             size={14}
             aria-hidden
-            style={{ color: "var(--mv3-faint)", flexShrink: 0 }}
+            style={{ color: "var(--mv3-muted)", flexShrink: 0 }}
           />
           <input
             value={query}
@@ -550,7 +550,7 @@ export function Mv3ChatsIndex({
                   <span
                     style={{
                       fontSize: 10.5,
-                      color: "var(--mv3-faint)",
+                      color: "var(--mv3-muted)",
                       flexShrink: 0,
                     }}
                   >

@@ -916,10 +916,10 @@ export function ContactsPage({
 function ContactsEmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center">
-      <p style={{ fontSize: 15, fontWeight: 600, color: "#1A2230" }}>
+      <p style={{ fontSize: 15, fontWeight: 600, color: "var(--mv3-text)" }}>
         Pick someone to see their dossier
       </p>
-      <p style={{ fontSize: 13, color: "#8D99A5", maxWidth: 300 }}>
+      <p style={{ fontSize: 13, color: "var(--mv3-muted)", maxWidth: 300 }}>
         Cue keeps context, commitments, and how to reach each person you select.
       </p>
     </div>

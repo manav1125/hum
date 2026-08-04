@@ -487,7 +487,7 @@ export function PhoneSetupSheet({
                 <div
                   style={{
                     fontSize: 10.5,
-                    color: "var(--mv3-faint)",
+                    color: "var(--mv3-muted)",
                     marginTop: 7,
                   }}
                 >
@@ -597,7 +597,7 @@ export function PhoneSetupSheet({
                 <div
                   style={{
                     fontSize: 10.5,
-                    color: "var(--mv3-faint)",
+                    color: "var(--mv3-muted)",
                     marginTop: 8,
                     lineHeight: 1.5,
                   }}
@@ -618,7 +618,7 @@ export function PhoneSetupSheet({
           <div
             style={{
               fontSize: 11,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               marginTop: 2,
               marginBottom: 7,
               lineHeight: 1.5,
@@ -685,10 +685,10 @@ export function PhoneSetupSheet({
               background:
                 !accountSid.trim() || !authToken.trim() || saveCreds.isPending
                   ? "var(--mv3-btn2-bg)"
-                  : "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                  : "var(--mv3-accent-fill-gradient)",
               color:
                 !accountSid.trim() || !authToken.trim() || saveCreds.isPending
-                  ? "var(--mv3-faint)"
+                  ? "var(--mv3-muted)"
                   : "#fff",
               border: "1px solid var(--mv3-btn2-border)",
               borderRadius: 14,
@@ -720,10 +720,10 @@ export function PhoneSetupSheet({
               background:
                 !selectedNumber || assign.isPending
                   ? "var(--mv3-btn2-bg)"
-                  : "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                  : "var(--mv3-accent-fill-gradient)",
               color:
                 !selectedNumber || assign.isPending
-                  ? "var(--mv3-faint)"
+                  ? "var(--mv3-muted)"
                   : "#fff",
               border: "1px solid var(--mv3-btn2-border)",
               borderRadius: 14,
@@ -766,7 +766,7 @@ export function PhoneSetupSheet({
         <div
           style={{
             fontSize: 11,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             textAlign: "center",
             marginTop: 12,
             lineHeight: 1.5,

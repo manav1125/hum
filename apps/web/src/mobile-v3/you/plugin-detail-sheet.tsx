@@ -349,7 +349,7 @@ export function PluginDetailSheet({
                       style={{
                         fontFamily: "var(--mv3-mono)",
                         fontSize: 10.5,
-                        color: "var(--mv3-faint)",
+                        color: "var(--mv3-muted)",
                         marginTop: 2,
                       }}
                     >
@@ -729,8 +729,8 @@ export function PluginUntrustedInstallSheet({
             }}
             style={{
               flex: 1,
-              background: "var(--mv3-fail-on-fill)",
-              color: "#fff",
+              background: "var(--mv3-fail-fill)",
+              color: "var(--mv3-fail-on-fill)",
               border: "none",
               borderRadius: 12,
               padding: 12,

@@ -615,7 +615,7 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
                   {p.issues && p.issues.length > 0 ? " · needs attention" : ""}
                 </span>
               </span>
-              <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+              <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
                 ›
               </span>
             </button>

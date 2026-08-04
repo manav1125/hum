@@ -228,7 +228,7 @@ export function CreateSheetForm({
           className="cue-pressable"
           style={{
             width: "100%",
-            background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+            background: "var(--mv3-accent-fill-gradient)",
             color: "#ffffff",
             border: "none",
             borderRadius: 15,
@@ -841,7 +841,7 @@ function SheetTagsInput({
             ＋ {s}
           </button>
         ))}
-        <span style={{ fontSize: 9.5, color: "var(--mv3-faint)" }}>
+        <span style={{ fontSize: 9.5, color: "var(--mv3-muted)" }}>
           suggested from memory
         </span>
       </div>

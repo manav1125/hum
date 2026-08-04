@@ -178,8 +178,8 @@ function WorkingNow({ counts }: { counts: CueCounts }) {
                 width: 18,
                 height: 18,
                 borderRadius: 6,
-                background: "var(--mv3-violet-on-fill)",
-                color: "#fff",
+                background: "var(--mv3-violet-fill)",
+                color: "var(--mv3-violet-on-fill)",
                 fontSize: 8.5,
                 display: "flex",
                 alignItems: "center",
@@ -470,14 +470,14 @@ export function Mv3CueScreen() {
                 width: 44,
                 height: 44,
                 borderRadius: "50%",
-                background: "var(--mv3-accent-on-fill)",
+                background: "var(--mv3-accent-fill)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
               }}
             >
-              <CueRing size={23} stroke="#fff" strokeWidth={48} dotRadius={36} />
+              <CueRing size={23} stroke="var(--mv3-accent-on-fill)" strokeWidth={48} dotRadius={36} />
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div

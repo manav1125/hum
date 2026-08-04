@@ -269,7 +269,7 @@ export function Mv3TierLine({ id, line }: { id: LaneId; line: LaneLine }) {
       <span style={{ flex: 1, minWidth: 0 }}>{line.sentence}</span>
       <span
         aria-hidden
-        style={{ fontSize: 12, flexShrink: 0, color: "var(--mv3-faint)" }}
+        style={{ fontSize: 12, flexShrink: 0, color: "var(--mv3-muted)" }}
       >
         ›
       </span>

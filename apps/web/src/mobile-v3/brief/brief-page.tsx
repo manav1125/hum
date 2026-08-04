@@ -164,7 +164,7 @@ function OvernightRow({
         {item.title}
       </span>
       {item.project || item.agent ? (
-        <span style={{ fontSize: 11, color: "var(--mv3-faint)", flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: "var(--mv3-muted)", flexShrink: 0 }}>
           {item.agent ?? item.project}
         </span>
       ) : null}
@@ -241,7 +241,7 @@ function OvernightBeat({ items }: { items: OvernightItem[] }) {
           <div
             style={{
               fontSize: 11.5,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               padding: "2px 4px",
               ...rise(0.35 + 5 * 0.15),
             }}
@@ -403,8 +403,8 @@ function AskBeat({
             onClick={() => run(primary)}
             style={{
               width: "100%",
-              background: "var(--mv3-amber-btn-bg)",
-              color: "var(--mv3-amber-btn-text)",
+              background: "var(--mv3-amber-fill)",
+              color: "var(--mv3-amber-on-fill)",
               border: "none",
               borderRadius: 13,
               padding: 12,
@@ -466,7 +466,7 @@ function timeLabel(iso: string | undefined): string | null {
 const DAY_TICKS = [
   "var(--mv3-accent)",
   "var(--mv3-green)",
-  "var(--mv3-violet-fill)",
+  "var(--mv3-violet-glyph)",
   "var(--mv3-teal)",
 ];
 
@@ -761,7 +761,7 @@ export function BriefPage() {
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 11, color: "var(--mv3-faint)", paddingBottom: 6 }}>
+        <div style={{ fontSize: 11, color: "var(--mv3-muted)", paddingBottom: 6 }}>
           {beats.length > 0 && beatIndex < beats.length - 1
             ? "tap to continue"
             : " "}

@@ -125,7 +125,7 @@ export function EmptyOrbit() {
           }}
           style={{
             width: "100%",
-            background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+            background: "var(--mv3-accent-fill-gradient)",
             color: "#ffffff",
             border: "none",
             borderRadius: 15,

@@ -187,7 +187,7 @@ function AgentCardV3({
             <span style={{ color: status.color }}>{status.text}</span>
           </div>
         </div>
-        <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+        <span style={{ color: "var(--mv3-muted)" }} aria-hidden>
           {expanded ? "⌄" : "›"}
         </span>
       </div>

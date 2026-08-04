@@ -196,7 +196,7 @@ function NextMoveV3({
             style={{
               marginLeft: "auto",
               fontSize: 11.5,
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
             }}
           >
             {relativeTime(new Date(move.generatedAt).getTime())}
@@ -298,9 +298,9 @@ function ReviewV3({
           onClick={open}
           style={{
             ...primaryBtn,
-            background: "var(--mv3-violet-on-fill)",
+            background: "var(--mv3-violet-fill)",
             boxShadow:
-              "0 12px 26px -10px color-mix(in srgb, var(--mv3-violet-on-fill) 50%, transparent)",
+              "0 12px 26px -10px color-mix(in srgb, var(--mv3-violet-fill) 50%, transparent)",
           }}
         >
           Review
@@ -1485,7 +1485,7 @@ export function Mv3Today({
               fontSize: 10,
               letterSpacing: "0.1em",
               textTransform: "uppercase",
-              color: "var(--mv3-faint)",
+              color: "var(--mv3-muted)",
               padding: "4px 0 0",
             }}
           >

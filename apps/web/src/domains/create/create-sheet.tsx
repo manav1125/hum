@@ -1009,7 +1009,7 @@ export function CreateSheet({
                     cursor: "pointer",
                     color: active ? "#ffffff" : "var(--mv3-muted)",
                     background: active
-                      ? "linear-gradient(160deg, #4E7CEC, #3560CC)"
+                      ? "var(--mv3-accent-fill-gradient)"
                       : "transparent",
                     border: "none",
                     borderRadius: 9,
@@ -1199,7 +1199,7 @@ export function CreateSheet({
             onClick={submit}
             style={{
               flex: 1,
-              background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+              background: "var(--mv3-accent-fill-gradient)",
               color: "#ffffff",
               border: "none",
               borderRadius: 15,

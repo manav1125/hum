@@ -482,7 +482,7 @@ function MobileDocumentV3({
                 height: 32,
                 borderRadius: "50%",
                 background: canSend
-                  ? "linear-gradient(160deg, #4E7CEC, #3560CC)"
+                  ? "var(--mv3-accent-fill-gradient)"
                   : "var(--mv3-btn2-bg)",
                 color: canSend ? "#fff" : "var(--mv3-muted)",
                 display: "flex",

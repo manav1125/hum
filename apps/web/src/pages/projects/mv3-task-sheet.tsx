@@ -153,7 +153,7 @@ const sectionLabel: React.CSSProperties = {
   ...microLabel,
   fontSize: 9.5,
   letterSpacing: "0.1em",
-  color: "var(--mv3-faint)",
+  color: "var(--mv3-muted)",
   marginBottom: 8,
 };
 
@@ -195,7 +195,7 @@ function StackBtn({
       ? {
           background: "none",
           border: "none",
-          color: color ?? "var(--mv3-faint)",
+          color: color ?? "var(--mv3-muted)",
         }
       : {
           background: "var(--mv3-btn2-bg)",
@@ -231,7 +231,7 @@ function StackBtn({
           style={{
             marginLeft: "auto",
             fontSize: 9,
-            color: "var(--mv3-faint)",
+            color: "var(--mv3-muted)",
             fontWeight: 400,
           }}
         >
@@ -432,7 +432,7 @@ export function Mv3TaskSheet({
                 fontSize: 10,
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
               }}
             >
               ○ Parked
@@ -445,7 +445,7 @@ export function Mv3TaskSheet({
               style={{
                 marginLeft: "auto",
                 fontSize: 11.5,
-                color: "var(--mv3-faint)",
+                color: "var(--mv3-muted)",
               }}
             >
               {isParked(item)
@@ -654,7 +654,7 @@ export function Mv3TaskSheet({
               fontSize: 11,
               color: doneElsewhere.isError
                 ? "var(--mv3-amber)"
-                : "var(--mv3-faint)",
+                : "var(--mv3-muted)",
               marginTop: 6,
               lineHeight: 1.5,
             }}
@@ -884,7 +884,7 @@ export function Mv3TaskSheet({
               <div
                 style={{
                   fontSize: 11,
-                  color: "var(--mv3-faint)",
+                  color: "var(--mv3-muted)",
                   lineHeight: 1.5,
                   marginTop: 2,
                 }}
@@ -900,7 +900,7 @@ export function Mv3TaskSheet({
           style={{
             marginTop: 16,
             fontSize: 11.5,
-            color: patch.isError ? "var(--mv3-amber)" : "var(--mv3-faint)",
+            color: patch.isError ? "var(--mv3-amber)" : "var(--mv3-muted)",
             minHeight: 16,
           }}
         >
