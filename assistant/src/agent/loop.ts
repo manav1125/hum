@@ -956,6 +956,10 @@ export class AgentLoop {
     let newMessagesStart = history.length;
     let toolUseTurns = 0;
     let postModelCallContinues = 0;
+    // One resume per turn after a call dies mid-generation: a second
+    // interruption means re-issuing is not getting through, so the error
+    // surfaces instead of looping.
+    let interruptedCallResumed = false;
     // Advisor consults spent this run. Bounds the extra latency/cost of the
     // escalation (`llm.advisor.maxConsultsPerTurn`); once exhausted the gate
     // short-circuits and rounds execute un-advised.
@@ -1107,6 +1111,10 @@ export class AgentLoop {
       // elsewhere in the turn body (tool execution, the success-path stop
       // chain, post-model-call hooks) must not re-enter the stop chain.
       let providerCallError: unknown;
+      // Set once the model streams its first token on this iteration's call.
+      // The outer catch reads it to tell a refused request from a generation
+      // that died mid-flight. Declared here so that catch can reach it.
+      let streamedTokens = false;
 
       try {
         // ── Pre-call budget gate ─────────────────────────────────────
@@ -1420,6 +1428,12 @@ export class AgentLoop {
           systemPrompt: turnSystemPrompt,
           config: providerConfig,
           onEvent: (event) => {
+            if (
+              event.type === "text_delta" ||
+              event.type === "thinking_delta"
+            ) {
+              streamedTokens = true;
+            }
             if (event.type === "text_delta") {
               // Held when the turn's output is deferred — the final text is
               // emitted once, after the `post-model-call` hook runs.
@@ -2322,6 +2336,30 @@ export class AgentLoop {
             // onto the new array; the repaired history is the base the retry's
             // output appends after.
             newMessagesStart = history.length;
+            continue;
+          }
+
+          // Last: the call died mid-generation. `streamedTokens` means the
+          // provider accepted the request and started producing before it
+          // failed, so the request is fine and re-issuing it as-is is the
+          // recovery — nothing to repair, which is why no branch above claims
+          // it. A rejection that streamed nothing is the opposite case (the
+          // provider refused the request), and an identical resend would be
+          // refused identically, so those surface. Main-agent turns only:
+          // background call sites answer to callers that handle their own
+          // failures.
+          if (
+            streamedTokens &&
+            !interruptedCallResumed &&
+            callSite === "mainAgent" &&
+            postModelCallContinues < MAX_POST_MODEL_CALL_CONTINUES
+          ) {
+            interruptedCallResumed = true;
+            postModelCallContinues++;
+            rlog.warn(
+              { turn: toolUseTurns, messageCount: history.length, err },
+              "Model call died mid-generation, resuming the turn",
+            );
             continue;
           }
         }
