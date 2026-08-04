@@ -95,6 +95,33 @@ export const MODELS_BY_PROVIDER = {
   ],
   openai: [
     {
+      id: "gpt-5.6-sol",
+      displayName: "GPT-5.6 Sol",
+      contextWindowTokens: 1_050_000,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 128_000,
+      supportsThinking: true,
+      longContextPricingThresholdTokens: 272_000,
+    },
+    {
+      id: "gpt-5.6-terra",
+      displayName: "GPT-5.6 Terra",
+      contextWindowTokens: 1_050_000,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 128_000,
+      supportsThinking: true,
+      longContextPricingThresholdTokens: 272_000,
+    },
+    {
+      id: "gpt-5.6-luna",
+      displayName: "GPT-5.6 Luna",
+      contextWindowTokens: 1_050_000,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 128_000,
+      supportsThinking: true,
+      longContextPricingThresholdTokens: 272_000,
+    },
+    {
       id: "gpt-5.5",
       displayName: "GPT-5.5",
       contextWindowTokens: 1_050_000,
@@ -148,8 +175,24 @@ export const MODELS_BY_PROVIDER = {
   ],
   gemini: [
     {
+      id: "gemini-3.6-flash",
+      displayName: "Gemini 3.6 Flash",
+      contextWindowTokens: 1_048_576,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 65_536,
+      supportsThinking: true,
+    },
+    {
       id: "gemini-3.5-flash",
       displayName: "Gemini 3.5 Flash",
+      contextWindowTokens: 1_048_576,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 65_536,
+      supportsThinking: true,
+    },
+    {
+      id: "gemini-3.5-flash-lite",
+      displayName: "Gemini 3.5 Flash-Lite",
       contextWindowTokens: 1_048_576,
       defaultContextWindowTokens: 200_000,
       maxOutputTokens: 65_536,
@@ -223,6 +266,15 @@ export const MODELS_BY_PROVIDER = {
     },
   ],
   fireworks: [
+    {
+      id: "accounts/fireworks/models/kimi-k3",
+      displayName: "Kimi K3",
+      contextWindowTokens: 1_048_576,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 131_072,
+      supportsThinking: true,
+      adaptiveThinkingOnly: true,
+    },
     {
       id: "accounts/fireworks/models/kimi-k2p6",
       displayName: "Kimi K2.6",
@@ -341,6 +393,14 @@ export const MODELS_BY_PROVIDER = {
       supportsThinking: true,
     },
     {
+      id: "x-ai/grok-4.5",
+      displayName: "Grok 4.5",
+      contextWindowTokens: 500_000,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 30_000,
+      supportsThinking: true,
+    },
+    {
       id: "x-ai/grok-4.20-beta",
       displayName: "Grok 4.20 Beta",
       contextWindowTokens: 256_000,
@@ -432,6 +492,15 @@ export const MODELS_BY_PROVIDER = {
       contextWindowTokens: 131_072,
       defaultContextWindowTokens: 131_072,
       maxOutputTokens: 8_192,
+    },
+    {
+      id: "moonshotai/kimi-k3",
+      displayName: "Kimi K3",
+      contextWindowTokens: 1_048_576,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 131_072,
+      supportsThinking: true,
+      adaptiveThinkingOnly: true,
     },
     {
       id: "moonshotai/kimi-k2.6",
@@ -560,6 +629,16 @@ export const MODELS_BY_PROVIDER = {
       maxOutputTokens: 262_144,
     },
   ],
+  baseten: [
+    {
+      id: "thinkingmachines/inkling",
+      displayName: "Inkling",
+      contextWindowTokens: 262_144,
+      defaultContextWindowTokens: 200_000,
+      maxOutputTokens: 32_768,
+      supportsThinking: true,
+    },
+  ],
   minimax: [
     {
       id: "MiniMax-M3",
@@ -589,6 +668,7 @@ export const DEFAULT_MODEL_BY_PROVIDER: Record<LlmProviderId, string> = {
   gemini: "gemini-2.5-flash",
   fireworks: "accounts/fireworks/models/kimi-k2p5",
   openrouter: "x-ai/grok-4.20-beta",
+  baseten: "thinkingmachines/inkling",
   minimax: "MiniMax-M2.7",
   "openai-compatible": "",
 };
@@ -607,6 +687,7 @@ export const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   fireworks: "Fireworks",
   openrouter: "OpenRouter",
   "openai-compatible": "OpenAI-compatible",
+  baseten: "Baseten",
   minimax: "MiniMax",
 };
 
@@ -625,6 +706,7 @@ export const PROVIDER_SUPPORTS_PLATFORM_AUTH: Record<string, boolean> = {
   fireworks: true,
   openrouter: false,
   "openai-compatible": false,
+  baseten: false,
   minimax: false,
 };
 

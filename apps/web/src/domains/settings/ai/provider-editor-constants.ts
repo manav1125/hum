@@ -24,6 +24,7 @@ export const CONNECTION_PROVIDERS: ConnectionProvider[] = [
   "ollama",
   "fireworks",
   "openrouter",
+  "baseten",
   "minimax",
   "openai-compatible",
 ];

@@ -154,6 +154,7 @@ export const INFERENCE_PROVIDERS = [
   "fireworks",
   "openrouter",
   "gemini",
+  "baseten",
   "minimax",
 ] as const;
 

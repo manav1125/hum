@@ -8269,6 +8269,7 @@ paths:
                               - openrouter
                               - openai-compatible
                               - minimax
+                              - baseten
                           model:
                             type: string
                             minLength: 1
@@ -8401,6 +8402,7 @@ paths:
                                 - openrouter
                                 - openai-compatible
                                 - minimax
+                                - baseten
                             model:
                               type: string
                               minLength: 1
@@ -8578,6 +8580,7 @@ paths:
                                     - openrouter
                                     - openai-compatible
                                     - minimax
+                                    - baseten
                                 model:
                                   type: string
                                   minLength: 1
@@ -8773,6 +8776,7 @@ paths:
                               - openrouter
                               - openai-compatible
                               - minimax
+                              - baseten
                           model:
                             type: string
                             minLength: 1
@@ -8905,6 +8909,7 @@ paths:
                                 - openrouter
                                 - openai-compatible
                                 - minimax
+                                - baseten
                             model:
                               type: string
                               minLength: 1
@@ -9082,6 +9087,7 @@ paths:
                                     - openrouter
                                     - openai-compatible
                                     - minimax
+                                    - baseten
                                 model:
                                   type: string
                                   minLength: 1
@@ -9272,6 +9278,7 @@ paths:
                                     - openrouter
                                     - openai-compatible
                                     - minimax
+                                    - baseten
                                 - type: "null"
                             model:
                               anyOf:
@@ -9432,6 +9439,7 @@ paths:
                                       - openrouter
                                       - openai-compatible
                                       - minimax
+                                      - baseten
                                   - type: "null"
                               model:
                                 anyOf:
@@ -9646,6 +9654,7 @@ paths:
                                       - openrouter
                                       - openai-compatible
                                       - minimax
+                                      - baseten
                                   - type: "null"
                               model:
                                 anyOf:
@@ -23386,6 +23395,7 @@ paths:
                             - fireworks
                             - openrouter
                             - openai-compatible
+                            - baseten
                             - minimax
                         auth:
                           oneOf:
@@ -23499,7 +23509,7 @@ paths:
             type: string
           description:
             "Filter by provider. One of: anthropic, openai, gemini, ollama, fireworks, openrouter, openai-compatible,
-            minimax"
+            baseten, minimax"
     post:
       operationId: inference_providerconnections_post
       summary: Create a provider connection
@@ -23527,6 +23537,7 @@ paths:
                       - fireworks
                       - openrouter
                       - openai-compatible
+                      - baseten
                       - minimax
                   auth:
                     oneOf:
@@ -23653,6 +23664,7 @@ paths:
                     - fireworks
                     - openrouter
                     - openai-compatible
+                    - baseten
                     - minimax
                 auth:
                   oneOf:
@@ -23800,6 +23812,7 @@ paths:
                       - fireworks
                       - openrouter
                       - openai-compatible
+                      - baseten
                       - minimax
                   auth:
                     oneOf:
@@ -23939,6 +23952,7 @@ paths:
                       - fireworks
                       - openrouter
                       - openai-compatible
+                      - baseten
                       - minimax
                   auth:
                     oneOf:

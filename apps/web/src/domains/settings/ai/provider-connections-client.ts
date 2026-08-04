@@ -60,6 +60,7 @@ function buildConnectionProviderDisplayNames(): Record<
     fireworks: CATALOG_PROVIDER_DISPLAY_NAMES.fireworks,
     openrouter: CATALOG_PROVIDER_DISPLAY_NAMES.openrouter,
     "openai-compatible": CATALOG_PROVIDER_DISPLAY_NAMES["openai-compatible"],
+    baseten: CATALOG_PROVIDER_DISPLAY_NAMES.baseten,
     minimax: CATALOG_PROVIDER_DISPLAY_NAMES.minimax,
   } satisfies Record<ConnectionProvider, string | undefined>;
   const out = {} as Record<ConnectionProvider, string>;
