@@ -113,7 +113,17 @@ const STUB_RUNTIME_CONFIG = {
     },
   },
 };
+// Spread the real module and override only the seams this suite drives. The
+// hand-written list this replaces named seven exports and deleted the rest, so
+// adding `withSuppressedConfigDiskWritesSync` to the loader broke this file at
+// import — the whole suite failed with a SyntaxError before a single
+// assertion ran, and the error named the loader rather than this stub.
+//
+// That is the documented failure mode: a factory that enumerates exports is a
+// standing bet that nobody will ever add one.
+const actualConfigLoader = await import("../../../config/loader.js");
 mock.module("../../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => STUB_RUNTIME_CONFIG,
   getConfigReadOnly: () => STUB_RUNTIME_CONFIG,
   loadConfig: () => STUB_RUNTIME_CONFIG,
