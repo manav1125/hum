@@ -159,7 +159,6 @@ import {
   migrateMemoryGraphImageRefs,
   migrateMemoryItemSupersession,
   migrateMemoryJobOutcome,
-  migrateVolumeValve,
   migrateMemoryRecallLogsQueryContext,
   migrateMemoryRetrospectiveRememberedLog,
   migrateMemoryRetrospectiveState,
@@ -246,6 +245,7 @@ import {
   migrateUsageLlmCallCount,
   migrateVoiceInviteColumns,
   migrateVoiceInviteDisplayMetadata,
+  migrateVolumeValve,
   migrateWorkItemAssessment,
   migrateWorkItemAutoRunEligibility,
   migrateWorkItemHygiene,
@@ -260,6 +260,7 @@ import {
   runLateMigrations,
   validateMigrationState,
 } from "./migrations/index.js";
+import { PLANNER_OPTIMIZE_PRAGMA } from "./planner-statistics.js";
 
 // ---------------------------------------------------------------------------
 // Test DB template — run migrations once, reuse across test files
@@ -604,6 +605,16 @@ export function initializeDb(): void {
       { failedMigrations: failures, count: failures.length },
       `DB initialization completed with ${failures.length} failed migration(s)`,
     );
+  }
+
+  // An index a migration creates has no sqlite_stat1 entry until something
+  // analyzes it, which SQLite calls out as a case to handle after a schema
+  // change. The steps above carry no applied/skipped signal, so this runs
+  // every boot; the mask's analysis_limit keeps it bounded either way.
+  try {
+    getSqlite().exec(PLANNER_OPTIMIZE_PRAGMA);
+  } catch (err) {
+    log.warn({ err }, "Post-migration PRAGMA optimize failed (non-fatal)");
   }
 
   try {
