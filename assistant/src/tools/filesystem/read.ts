@@ -12,6 +12,11 @@ import {
   readImageFile,
 } from "../shared/filesystem/image-read.js";
 import { sandboxPolicy } from "../shared/filesystem/path-policy.js";
+import {
+  invalidToolInputResult,
+  toToolInputSchema,
+} from "../shared/zod-tool-schema.js";
+import { fileReadInputSchema } from "../tool-input-schemas.js";
 import type {
   ToolContext,
   ToolDefinition,
@@ -26,42 +31,21 @@ export const fileReadTool = {
   executionTarget: "sandbox",
   defaultRiskLevel: RiskLevel.Low,
 
-  input_schema: {
-    type: "object",
-    properties: {
-      path: {
-        type: "string",
-        description:
-          "The path to the file to read (absolute or relative to working directory)",
-      },
-      offset: {
-        type: "number",
-        description: "Line number to start reading from (1-indexed)",
-      },
-      limit: {
-        type: "number",
-        description: "Maximum number of lines to read",
-      },
-      activity: {
-        type: "string",
-        description:
-          "Brief non-technical explanation of what you are doing and why, shown as a status update.",
-      },
-    },
-    required: ["path", "activity"],
-  },
+  // Derived from the same Zod source the pre-execution gate validates
+  // against (`TOOL_INPUT_SCHEMAS`), so contract and validation cannot drift.
+  input_schema: toToolInputSchema(fileReadInputSchema, {
+    advertiseRequired: ["activity"],
+  }),
 
   async execute(
     input: Record<string, unknown>,
     context: ToolContext,
   ): Promise<ToolExecutionResult> {
-    const rawPath = input.path as string;
-    if (!rawPath || typeof rawPath !== "string") {
-      return {
-        content: "Error: path is required and must be a string",
-        isError: true,
-      };
+    const parsed = fileReadInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return invalidToolInputResult("file_read", parsed.error);
     }
+    const { path: rawPath, offset, limit } = parsed.data;
 
     // For image files, delegate to the shared image reader.
     const ext = extname(rawPath).toLowerCase();
@@ -92,11 +76,7 @@ export const fileReadTool = {
       sandboxPolicy(path, context.workingDir, opts),
     );
 
-    const result = ops.readFileSafe({
-      path: rawPath,
-      offset: typeof input.offset === "number" ? input.offset : undefined,
-      limit: typeof input.limit === "number" ? input.limit : undefined,
-    });
+    const result = ops.readFileSafe({ path: rawPath, offset, limit });
 
     if (!result.ok) {
       const { error } = result;

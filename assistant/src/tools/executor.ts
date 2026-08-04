@@ -156,6 +156,13 @@ export class ToolExecutor {
     }
 
     const tool = gateResult.tool;
+    // The pre-execution gate parsed model-generated input against the tool's
+    // registered Zod schema (`TOOL_INPUT_SCHEMAS`) before any grant was
+    // consumed; substitute the parsed value (with `.catch()` recoveries
+    // applied) so validation and execution see the same input.
+    if (gateResult.parsedInput) {
+      input = gateResult.parsedInput;
+    }
 
     try {
       // CES shell lockdown: set forcePromptSideEffects BEFORE both the
