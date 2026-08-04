@@ -74,6 +74,7 @@ import {
   invalidateConfigCache,
   loadConfig,
   mergeDefaultWorkspaceConfig,
+  withSuppressedConfigDiskWritesSync,
 } from "../config/loader.js";
 import { seedInferenceProfiles } from "../config/seed-inference-profiles.js";
 import type { DrizzleDb } from "../memory/db-connection.js";
@@ -429,6 +430,25 @@ describe("loadConfig startup behavior", () => {
     // Sanity: schema-defaulted nested fields are materialized
     expect(raw.memory?.v2?.bm25_b).toBe(0.4);
     expect(raw.dataDir).toBeUndefined();
+  });
+
+  test("suppressed first-launch load reads config without writing it", () => {
+    // DB migrations run before workspace migrations and may read config
+    // (migration 140 reads llm.pricingOverrides). Under suppression the load
+    // must not create config.json — otherwise every schema default lands on
+    // disk pre-migration and defeats any workspace migration whose
+    // idempotency guard is "key already present in config".
+    expect(existsSync(CONFIG_PATH)).toBe(false);
+
+    const config = withSuppressedConfigDiskWritesSync(() => loadConfig());
+
+    expect(config.memory?.v2?.bm25_b).toBe(0.4);
+    expect(existsSync(CONFIG_PATH)).toBe(false);
+
+    // The next unsuppressed load performs the first-launch write as usual.
+    invalidateConfigCache();
+    loadConfig();
+    expect(existsSync(CONFIG_PATH)).toBe(true);
   });
 
   test("off-platform hatch seeds both managed and user anthropic profiles", () => {
