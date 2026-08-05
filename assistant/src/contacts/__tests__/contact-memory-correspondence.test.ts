@@ -44,7 +44,11 @@ mock.module("../../runtime/btw-sidechain.js", () => ({
 
 import { randomUUID } from "node:crypto";
 
-import { getDb, getSqliteFrom, getMemoryDb } from "../../memory/db-connection.js";
+import {
+  getDb,
+  getMemoryDb,
+  getSqliteFrom,
+} from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { enqueueMemoryJob } from "../../memory/jobs-store.js";
 import { runMemoryJobsOnce } from "../../memory/jobs-worker.js";

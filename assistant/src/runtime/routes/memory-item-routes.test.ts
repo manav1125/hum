@@ -66,7 +66,7 @@ mock.module("../../memory/qdrant-circuit-breaker.js", () => ({
 
 import { eq } from "drizzle-orm";
 
-import { getDb, getMemoryDb } from "../../memory/db-connection.js";
+import { getMemoryDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { memoryGraphNodes, memoryJobs } from "../../memory/schema.js";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.js";

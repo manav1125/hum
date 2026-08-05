@@ -9,7 +9,7 @@ mock.module("../util/logger.js", () => ({
 }));
 
 import type { AssistantConfig } from "../config/schema.js";
-import { getDb, getMemoryDb } from "../memory/db-connection.js";
+import { getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { pruneOldActivationLogsJob } from "../memory/job-handlers/cleanup.js";
 import type { MemoryJob } from "../memory/jobs-store.js";
@@ -101,7 +101,9 @@ describe("pruneOldActivationLogsJob", () => {
       memory: { cleanup: { activationLogRetentionDays: 0 } },
     } as unknown as AssistantConfig);
 
-    expect(getMemoryDb().select().from(memoryV2ActivationLogs).all()).toHaveLength(1);
+    expect(
+      getMemoryDb().select().from(memoryV2ActivationLogs).all(),
+    ).toHaveLength(1);
   });
 
   test("job payload retentionDays overrides config", async () => {
@@ -113,6 +115,8 @@ describe("pruneOldActivationLogsJob", () => {
       CONFIG,
     );
 
-    expect(getMemoryDb().select().from(memoryV2ActivationLogs).all()).toHaveLength(0);
+    expect(
+      getMemoryDb().select().from(memoryV2ActivationLogs).all(),
+    ).toHaveLength(0);
   });
 });
