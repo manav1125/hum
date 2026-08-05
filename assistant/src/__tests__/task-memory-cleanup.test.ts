@@ -40,7 +40,7 @@ mock.module("../config/loader.js", () => ({
   invalidateConfigCache: () => {},
 }));
 
-import { getDb } from "../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { enqueueMemoryJob } from "../memory/jobs-store.js";
 import {
@@ -72,8 +72,9 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
 
   beforeEach(() => {
     const db = getDb();
-    db.run("DELETE FROM memory_graph_nodes");
-    db.run("DELETE FROM memory_jobs");
+    // `memory_graph_nodes` and `memory_jobs` live in `assistant-memory.db`.
+    getMemoryDb().run("DELETE FROM memory_graph_nodes");
+    getMemoryDb().run("DELETE FROM memory_jobs");
     db.run("DELETE FROM messages");
     db.run("DELETE FROM cron_runs");
     db.run("DELETE FROM cron_jobs");
@@ -132,8 +133,8 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
   }
 
   function seedMemoryGraphNodes() {
-    const db = getDb();
-    db.insert(memoryGraphNodes)
+    getMemoryDb()
+      .insert(memoryGraphNodes)
       .values([
         {
           id: "item-assistant-inferred",
@@ -228,15 +229,14 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
 
     expect(affected).toBe(1);
 
-    const db = getDb();
-    const inferredItem = db
+    const inferredItem = getMemoryDb()
       .select()
       .from(memoryGraphNodes)
       .where(eq(memoryGraphNodes.id, "item-assistant-inferred"))
       .get();
     expect(inferredItem?.fidelity).toBe("gone");
 
-    const directItem = db
+    const directItem = getMemoryDb()
       .select()
       .from(memoryGraphNodes)
       .where(eq(memoryGraphNodes.id, "item-user-reported"))
@@ -251,8 +251,7 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
 
     invalidateAssistantInferredItemsForConversation(convId);
 
-    const db = getDb();
-    const otherItem = db
+    const otherItem = getMemoryDb()
       .select()
       .from(memoryGraphNodes)
       .where(eq(memoryGraphNodes.id, "item-other-conv"))
@@ -265,8 +264,8 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
     seedMessages();
 
     // Insert a node sourced from both conversations (corroboration).
-    const db = getDb();
-    db.insert(memoryGraphNodes)
+    getMemoryDb()
+      .insert(memoryGraphNodes)
       .values({
         id: "item-corroborated",
         content: "DMV appointment\nBooked a DMV appointment at 9 AM.",
@@ -294,7 +293,7 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
     // The item has sources from both conversations, so it should NOT be invalidated.
     expect(affected).toBe(0);
 
-    const item = db
+    const item = getMemoryDb()
       .select()
       .from(memoryGraphNodes)
       .where(eq(memoryGraphNodes.id, "item-corroborated"))
@@ -309,8 +308,7 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
 
     invalidateAssistantInferredItemsForConversation(convId);
 
-    const db = getDb();
-    const goneItem = db
+    const goneItem = getMemoryDb()
       .select()
       .from(memoryGraphNodes)
       .where(eq(memoryGraphNodes.id, "item-already-gone"))
@@ -411,7 +409,8 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
       .run();
 
     // A memory node sourced from both failed conversations
-    db.insert(memoryGraphNodes)
+    getMemoryDb()
+      .insert(memoryGraphNodes)
       .values({
         id: "item-cross-sourced",
         content: "cross-sourced claim\nClaim from two failed tasks.",
@@ -438,7 +437,7 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
     const affected = invalidateAssistantInferredItemsForConversation(convA);
     expect(affected).toBe(1);
 
-    const item = db
+    const item = getMemoryDb()
       .select()
       .from(memoryGraphNodes)
       .where(eq(memoryGraphNodes.id, "item-cross-sourced"))
@@ -522,7 +521,8 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
       ])
       .run();
 
-    db.insert(memoryGraphNodes)
+    getMemoryDb()
+      .insert(memoryGraphNodes)
       .values({
         id: "item-cross-sched",
         content:
@@ -549,7 +549,7 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
     const affected = invalidateAssistantInferredItemsForConversation(convA);
     expect(affected).toBe(1);
 
-    const item = db
+    const item = getMemoryDb()
       .select()
       .from(memoryGraphNodes)
       .where(eq(memoryGraphNodes.id, "item-cross-sched"))
@@ -628,7 +628,8 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
       ])
       .run();
 
-    db.insert(memoryGraphNodes)
+    getMemoryDb()
+      .insert(memoryGraphNodes)
       .values({
         id: "item-with-good-corroboration",
         content: "corroborated claim\nClaim corroborated by successful task.",
@@ -656,7 +657,7 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
       invalidateAssistantInferredItemsForConversation(convFailed);
     expect(affected).toBe(0);
 
-    const item = db
+    const item = getMemoryDb()
       .select()
       .from(memoryGraphNodes)
       .where(eq(memoryGraphNodes.id, "item-with-good-corroboration"))
@@ -743,8 +744,6 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
     seedConversations();
     seedMessages();
 
-    const db = getDb();
-
     // Enqueue graph_extract jobs for the target conversation
     enqueueMemoryJob("graph_extract", {
       conversationId: convId,
@@ -761,7 +760,7 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
     });
 
     // Verify all jobs are pending
-    const pendingBefore = db
+    const pendingBefore = getMemoryDb()
       .select()
       .from(memoryJobs)
       .where(eq(memoryJobs.type, "graph_extract"))
@@ -771,7 +770,7 @@ describe("invalidateAssistantInferredItemsForConversation", () => {
     invalidateAssistantInferredItemsForConversation(convId);
 
     // Jobs for the failed conversation should be cancelled (failed)
-    const allJobs = db
+    const allJobs = getMemoryDb()
       .select()
       .from(memoryJobs)
       .where(eq(memoryJobs.type, "graph_extract"))
