@@ -136,7 +136,16 @@ export function SettingsLayout() {
       <h2 className="shrink-0 text-title-small text-[var(--content-default)]">
         {pageTitle}
       </h2>
-      <div className="min-h-0 flex-1">
+      {/*
+        `overflow-y-auto` is load-bearing, not cosmetic. `flex-1 min-h-0`
+        without it lets the page's content paint past the bottom of its own
+        box, and the Log Out block below is pinned to where that box ends — so
+        on a long page (General, once Timezone and Media Embeds are there) Log
+        Out rendered *through* the Timezone card, sitting between its
+        description and its city picker as though it belonged to it. The
+        scroll belongs to this region so the footer stays a footer.
+      */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <Outlet />
       </div>
 

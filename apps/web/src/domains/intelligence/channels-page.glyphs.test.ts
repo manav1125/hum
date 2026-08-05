@@ -25,7 +25,7 @@ import { CHANNEL_GLYPH } from "./channels-page";
  * daemon's module graph into a web test, and the point is to notice when the
  * two drift, which a shared constant would hide.
  */
-const DAEMON_CHANNEL_ICONS = [
+const DAEMON_CHANNEL_ICONS: string[] = [
   "hash",
   "send",
   "phone",
@@ -33,11 +33,12 @@ const DAEMON_CHANNEL_ICONS = [
   "mail",
   "message-square",
   "bot",
-] as const;
+];
 
 describe("channel icon names resolve to glyphs", () => {
-  test.each(DAEMON_CHANNEL_ICONS)("%s has a glyph", (name) => {
-    expect(CHANNEL_GLYPH[name]).toBeDefined();
+  test("every catalog icon name has a glyph", () => {
+    const missing = DAEMON_CHANNEL_ICONS.filter((n) => !CHANNEL_GLYPH[n]);
+    expect(missing).toEqual([]);
   });
 
   test("the map holds components, never strings", () => {
