@@ -1,7 +1,55 @@
 # Voice re-platform — architecture plan
 
-Branch: `cue/voice-replatform` (off `cue/upstream-wave-c`). Status: DRAFT — engine
-sections pending the upstream deep-read.
+Branch: `cue/voice-replatform` (off `cue/upstream-wave-c`).
+
+## STATUS (2026-08-05): BUILT — flag-off, awaiting device QA
+
+Shipped on this branch: V-1a (`354dd16582`), V-2 (`95895cdac1`), V-1b+c
+(`daca355c0e`), V-3 (`b191f8d30f`). Everything is inert in production until
+flipped: server VAD activates only for sessions sending
+`turnDetection:"server_vad"` (web hands-free does, kill switch
+`cue.voiceServerVad=0`), and the speculative front door additionally requires
+`liveVoice.frontDoor.enabled` (default false).
+
+**Deferred:** V-1d detached barge-in continuation; V-4 mobile sheet + Live
+Activity (needs a native module — own project); capability-flagging the
+pre-existing `card` frame (Swift-client fatal — needs its own flag, not
+server_vad, else manual web sessions lose cards); upstream's `update_config`
+in-call settings gear UI (frame is implemented, no UI); multilingual STT
+code-switching (`699c1c889f`, independent).
+
+## Device QA checklist (the flip-on gate — needs a real mic)
+
+Setup: web app against a local daemon; set `liveVoice.frontDoor.enabled: true`
+in workspace config for the front-door items. Watch the `metrics` frames
+(`dispatchToFirstDeltaMs`, `endpointHoldCount`).
+
+1. **Endpointing feel** (server VAD alone, front door off): speak, pause
+   naturally — turn should start ~1.2s after you stop; no mid-sentence cuts on
+   brief pauses; ptt/tap release still works as manual override.
+2. **Front door on**: same flow — the answer should start noticeably sooner
+   after the silence boundary; a mid-thought pause ("what's on my… calendar
+   tomorrow") should NOT trigger a premature answer (hold) and should never
+   produce a spoken "[0]"/"[1]" or narrated deliberation.
+3. **Escalation**: ask something tool-needing ("check my calendar") — expect a
+   short spoken bridge, then the real answer; no double-announcement.
+4. **Barge-in**: interrupt mid-answer — audio should cut fast (sustained speech
+   ~250ms), your interruption should be honored and merged; background noise /
+   brief coughs should NOT interrupt.
+5. **Ladder**: collapse to bar (audio continuous), type in the composer
+   mid-call, navigate away (pill appears, audio continuous), click pill back.
+6. **Reveal**: ask for something that shows a card — Cue announces, THEN the
+   room drops to the bar and the card takes the space; scrolling the card is
+   never interrupted by auto-promotion.
+7. **Approval**: trigger a sensitive action mid-call — room minimizes at once,
+   the fixed phrase plays, amber card offers Approve/Deny/Ask-me-after;
+   "Ask me after" leaves the chat approval pending; narration stays quiet while
+   the card is up.
+8. **Fallbacks**: old-daemon fallback (kill switch on → client VAD unchanged);
+   `voiceFrontDoor` TTFT tail — if `dispatchToFirstDeltaMs` regularly exceeds
+   ~1200ms on our OpenRouter brain, the front door silently degrades to plain
+   server-VAD behavior (fail-open) — acceptable, but retune the call-site
+   model if it never wins.
 
 ## Why
 
