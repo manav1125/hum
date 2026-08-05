@@ -10,7 +10,7 @@ mock.module("../../../config/loader.js", () => ({
 }));
 
 import type { AssistantConfig } from "../../../config/types.js";
-import { getDb } from "../../db-connection.js";
+import { getDb, getMemoryDb } from "../../db-connection.js";
 import { initializeDb } from "../../db-init.js";
 import type { MemoryV2ConceptRowRecord } from "../../memory-v2-activation-log-store.js";
 import {
@@ -102,7 +102,7 @@ function insertRouterLog(
   createdAt: number,
 ): void {
   ensureConversation(conversationId);
-  getDb()
+  getMemoryDb()
     .insert(memoryV2ActivationLogs)
     .values({
       id: `log-${seq++}`,
@@ -129,9 +129,10 @@ function stubRetriever(name: string, selected: string[]): Retriever {
 }
 
 function reset(): void {
-  const db = getDb();
-  db.delete(memoryV2ActivationLogs).run();
-  db.delete(messages).run();
+  // Two databases: the v2 activation logs moved to `assistant-memory.db`,
+  // while `messages` stays in the main DB.
+  getMemoryDb().delete(memoryV2ActivationLogs).run();
+  getDb().delete(messages).run();
 }
 
 /** Seed one router turn: user msg, assistant anchor, and the logged picks. */

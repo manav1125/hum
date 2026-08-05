@@ -57,7 +57,7 @@ mock.module("../../../memory/embedding-backend.js", () => ({
 }));
 
 import type { ConversationCreateType } from "../../../memory/conversation-crud.js";
-import { getDb } from "../../../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../../../memory/db-connection.js";
 import { initializeDb } from "../../../memory/db-init.js";
 import {
   backfillMemoryV2ActivationMessageId,
@@ -109,7 +109,7 @@ function dispatchConversationLlmContext(queryParams: Record<string, string>) {
 function clearTables(): void {
   const db = getDb();
   db.delete(llmRequestLogs).run();
-  db.delete(memoryV2ActivationLogs).run();
+  getMemoryDb().delete(memoryV2ActivationLogs).run();
   db.delete(messages).run();
   db.delete(conversationKeys).run();
   db.delete(conversations).run();

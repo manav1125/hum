@@ -18,7 +18,7 @@ mock.module("../util/logger.js", () => ({
 }));
 
 import { getMemoryCheckpoint } from "../memory/checkpoints.js";
-import { getDb } from "../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import {
   MEMORY_JOBS_RETENTION_MS,
@@ -38,7 +38,7 @@ let idCounter = 0;
 function seedJob(status: string, updatedAt: number): string {
   idCounter += 1;
   const id = `job-reaper-${idCounter}`;
-  getDb()
+  getMemoryDb()
     .insert(memoryJobs)
     .values({
       id,
@@ -54,7 +54,7 @@ function seedJob(status: string, updatedAt: number): string {
 }
 
 function remainingIds(): string[] {
-  return getDb()
+  return getMemoryDb()
     .select({ id: memoryJobs.id })
     .from(memoryJobs)
     .all()
@@ -67,7 +67,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  getDb().run("DELETE FROM memory_jobs");
+  getMemoryDb().run("DELETE FROM memory_jobs");
   getDb().run("DELETE FROM memory_checkpoints");
 });
 
