@@ -44,7 +44,12 @@
  * session (the session is single-utterance — see above).
  *
  * ## Barge-in
- * While `speaking`, a captured amplitude over {@link BARGE_IN_AMPLITUDE_THRESHOLD}
+ * Hands-free (server_vad) sessions: barge-in is SERVER-detected. The daemon's
+ * sustained-speech guard fires `speech_started` (flush playback → listening,
+ * unconditional, even mid-thinking) and `turn_cancelled` (the turn it
+ * aborted); the client's amplitude heuristic stands down so two detectors
+ * never race. Manual sessions keep the client-side amplitude barge-in: while
+ * `speaking`, a captured amplitude over {@link BARGE_IN_AMPLITUDE_THRESHOLD}
  * stops playback and sends `interrupt` (once per response). In full-duplex the
  * daemon re-arms listening, so the controller resumes forwarding on the same
  * socket (→ `listening`). In half-duplex the interrupted session is terminal, so
@@ -275,8 +280,9 @@ interface SessionContext {
    * `turnDetection: "server_vad"` on the start frame; REVERTED to false on
    * `ready` when an older daemon fails to echo the mode, so the session
    * falls back to exactly today's client-side VAD instead of hanging with no
-   * release path. Client amplitude barge-in stays active either way until
-   * V-1b moves barge-in server-side.
+   * release path. Barge-in is server-detected in this mode (`speech_started`
+   * flushes playback; `turn_cancelled` reports the aborted turn), so the
+   * client's amplitude barge-in stands down; manual sessions keep it.
    */
   handsFree: boolean;
   /** A server-VAD utterance is open (between speech_started and utterance_end). */
@@ -534,10 +540,19 @@ export function useLiveVoice(
         }),
         client.on("speechStarted", () => {
           if (!live() || !session.handsFree) return;
-          // Server VAD heard the user. Barge-in stays client-side in this
-          // slice (V-1b moves it here), so onset only opens the utterance —
-          // playback is never flushed from this frame yet.
+          // Server VAD heard the user: flush tail playback unconditionally
+          // (even mid-`thinking`, when no cancellation follows) and open the
+          // next utterance. Barge-in is server-detected in server_vad mode —
+          // during assistant playback the daemon defers this frame behind
+          // its sustained-speech guard, so a flush here is always real user
+          // speech, never an echo blip.
           session.utteranceOpen = true;
+          flushPlaybackToListening(session);
+        }),
+        client.on("turnCancelled", () => {
+          if (!live() || !session.handsFree) return;
+          // Barge-in aborted the turn; no tts_done follows a cancelled turn.
+          flushPlaybackToListening(session);
         }),
         client.on("utteranceEnd", () => {
           if (!live() || !session.handsFree) return;
@@ -795,6 +810,15 @@ function handleAmplitude(
 ): void {
   if (!session.captureRunning) return;
   useLiveVoiceStore.getState().setInputAmplitude(amplitude);
+  // server_vad sessions: barge-in is server-detected (the daemon's
+  // sustained-speech guard fires `speech_started` / `turn_cancelled`), so
+  // the client's amplitude heuristic stands down — two independent
+  // barge-in detectors would race and double-interrupt. Manual sessions
+  // keep the client-side amplitude barge-in unchanged.
+  if (session.handsFree) {
+    session.bargeInSinceMs = null;
+    return;
+  }
   if (!isBargeInEnabled()) {
     session.bargeInSinceMs = null;
     return;
@@ -864,6 +888,21 @@ function releasePushToTalk(session: SessionContext): void {
   const s = useLiveVoiceStore.getState();
   if (s.state === "listening") s.setState("transcribing");
   s.setInputAmplitude(0);
+}
+
+/**
+ * Hands-free: flush local TTS playback immediately, drop expectations for
+ * the in-flight response, and keep the session live in `listening`. The
+ * server owns barge-in in server_vad mode — `speech_started` (sustained
+ * user speech) and `turn_cancelled` (the turn it aborted) both land here.
+ * Unconditional: even mid-`thinking`, when nothing is playing yet, the
+ * state returns to listening and the daemon drives what happens next.
+ */
+function flushPlaybackToListening(session: SessionContext): void {
+  session.player.stop();
+  session.responseAudioStarted = false;
+  session.interruptSent = false;
+  useLiveVoiceStore.getState().setState("listening");
 }
 
 /**

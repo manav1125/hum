@@ -16,6 +16,7 @@ const _LIVE_VOICE_SERVER_FRAME_TYPES = [
   "busy",
   "speech_started",
   "utterance_end",
+  "turn_cancelled",
   "stt_partial",
   "stt_final",
   "thinking",
@@ -157,10 +158,10 @@ export interface LiveVoiceClientStartFrame {
   /**
    * Per-session override for the sustained speech (ms) required before the
    * user's speech interrupts the assistant mid-reply — the "interrupt
-   * sensitivity" setting (higher = harder to interrupt; 0 disables the guard).
-   * Absent falls back to the daemon `liveVoice.vad.bargeInMinSpeechMs` config.
-   * Accepted and stored in this slice; the server-side barge-in guard that
-   * consumes it lands with V-1b. Bounded to
+   * sensitivity" setting (higher = harder to interrupt; 0 disables the guard,
+   * making barge-in instant). Absent falls back to the daemon
+   * `liveVoice.vad.bargeInMinSpeechMs` config. Consumed by the server-side
+   * sustained-speech barge-in guard. Bounded to
    * [{@link MIN_BARGE_IN_MIN_SPEECH_MS}, {@link MAX_BARGE_IN_MIN_SPEECH_MS}].
    */
   readonly bargeInMinSpeechMs?: number;
@@ -234,9 +235,10 @@ export interface LiveVoiceBusyServerFrame extends LiveVoiceServerFrameBase {
 
 /**
  * Emitted when the server VAD detects user speech. The client MUST
- * immediately stop local TTS playback once server-side barge-in lands (V-1b);
- * in this slice it marks the utterance opening. Sent ONLY to sessions that
- * opted in via `turnDetection: "server_vad"` on the start frame.
+ * immediately flush local TTS playback and return to listening — barge-in is
+ * server-detected, and during assistant playback this frame only fires once
+ * the sustained-speech guard is satisfied. Sent ONLY to sessions that opted
+ * in via `turnDetection: "server_vad"` on the start frame.
  */
 export interface LiveVoiceSpeechStartedServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "speech_started";
@@ -251,6 +253,19 @@ export interface LiveVoiceSpeechStartedServerFrame extends LiveVoiceServerFrameB
 export interface LiveVoiceUtteranceEndServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "utterance_end";
   readonly reason: "silence" | "max-duration";
+}
+
+/**
+ * Emitted when server-side barge-in cancels an in-flight assistant turn:
+ * sustained user speech aborted the reply (whether still thinking or already
+ * speaking). The client MUST flush any queued/playing TTS for the turn — no
+ * `tts_done` follows a cancelled turn. Always preceded by the barge-in's
+ * `speech_started`. Sent ONLY to sessions that opted in via
+ * `turnDetection: "server_vad"` on the start frame.
+ */
+export interface LiveVoiceTurnCancelledServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "turn_cancelled";
+  readonly turnId: string;
 }
 
 export interface LiveVoiceSttPartialServerFrame extends LiveVoiceServerFrameBase {
@@ -300,8 +315,20 @@ export interface LiveVoiceMetricsServerFrame extends LiveVoiceServerFrameBase {
   readonly metrics?: unknown;
   readonly sttMs: number | null;
   readonly llmFirstDeltaMs: number | null;
+  /**
+   * Dispatch-anchored felt latency (assistant-leg dispatch → first delta /
+   * first TTS audio). Additive-optional: absent on frames from older daemons.
+   */
+  readonly dispatchToFirstDeltaMs?: number | null;
+  readonly dispatchToFirstAudioMs?: number | null;
   readonly ttsFirstAudioMs: number | null;
   readonly totalMs: number | null;
+  /**
+   * Unified front-door endpointing figures. Present only on turns the front
+   * door actually judged, so untouched turns stay byte-identical.
+   */
+  readonly endpointHoldCount?: number;
+  readonly endpointDecisionMaxLatencyMs?: number;
 }
 
 export interface LiveVoiceArchivedServerFrame extends LiveVoiceServerFrameBase {
@@ -396,6 +423,7 @@ export type LiveVoiceServerFrame =
   | LiveVoiceBusyServerFrame
   | LiveVoiceSpeechStartedServerFrame
   | LiveVoiceUtteranceEndServerFrame
+  | LiveVoiceTurnCancelledServerFrame
   | LiveVoiceSttPartialServerFrame
   | LiveVoiceSttFinalServerFrame
   | LiveVoiceThinkingServerFrame
@@ -415,6 +443,7 @@ export type LiveVoiceServerFramePayload =
   | WithoutSeq<LiveVoiceBusyServerFrame>
   | WithoutSeq<LiveVoiceSpeechStartedServerFrame>
   | WithoutSeq<LiveVoiceUtteranceEndServerFrame>
+  | WithoutSeq<LiveVoiceTurnCancelledServerFrame>
   | WithoutSeq<LiveVoiceSttPartialServerFrame>
   | WithoutSeq<LiveVoiceSttFinalServerFrame>
   | WithoutSeq<LiveVoiceThinkingServerFrame>

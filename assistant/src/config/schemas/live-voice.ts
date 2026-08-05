@@ -3,13 +3,13 @@ import { z } from "zod";
 /**
  * Live-voice (Cue Live's in-app duplex audio) configuration.
  *
- * Adopted from upstream's voice cluster (WS-E). Our fork runs VAD / barge-in
- * detection client-side (the web + macOS clients emit explicit `ptt_release`
- * and `interrupt` frames), so the `vad` block here is a tuning surface the
- * clients read via config rather than a set of thresholds the daemon enforces.
- * The `frontModel` block drives the daemon-side presence layer (semantic
- * endpointing + spoken acknowledgements), which is fully server-side and
- * shippable inert behind its per-feature flags.
+ * Adopted from upstream's voice cluster (WS-E). The `vad` block tunes the
+ * daemon's server-side VAD for `turnDetection: "server_vad"` sessions (and
+ * remains the tuning surface manual clients read via config). The
+ * `frontModel` block drives the daemon-side presence layer (spoken
+ * acknowledgements + progress narration); the `frontDoor` block drives the
+ * unified speculative-dispatch endpointing + triage routing. Everything is
+ * fully server-side and shippable inert behind its per-feature flags.
  */
 
 export const VALID_LIVE_VOICE_MODES = ["ptt", "open-mic"] as const;
@@ -150,14 +150,6 @@ export const LiveVoiceProgressConfigSchema = z
 
 export const LiveVoiceFrontModelConfigSchema = z
   .object({
-    semanticEndpointing: z
-      .boolean({
-        error: "liveVoice.frontModel.semanticEndpointing must be a boolean",
-      })
-      .default(false)
-      .describe(
-        "Use a fast front model to decide whether a silence-fired turn-end means the speaker is actually done ('release') or mid-thought ('hold'). Ships OFF: the full hold loop additionally depends on client-side VAD cooperation, so enable only after real-device QA. The decider itself is fail-open (any failure releases).",
-      ),
     spokenAcks: z
       .boolean({ error: "liveVoice.frontModel.spokenAcks must be a boolean" })
       .default(false)
@@ -170,41 +162,6 @@ export const LiveVoiceFrontModelConfigSchema = z
       .describe(
         "When spoken acks are on, use the front model to phrase one short contextual ack; static rotation phrases otherwise. Fail-open to the static phrase on any front-model failure.",
       ),
-    endpointDecisionTimeoutMs: z
-      .number({
-        error:
-          "liveVoice.frontModel.endpointDecisionTimeoutMs must be a number",
-      })
-      .int("liveVoice.frontModel.endpointDecisionTimeoutMs must be an integer")
-      .positive(
-        "liveVoice.frontModel.endpointDecisionTimeoutMs must be a positive integer",
-      )
-      .default(1200)
-      .describe(
-        "Hard budget (ms) for the endpoint decision LLM call. Adds to end-of-turn latency when semantic endpointing is on, so keep it as tight as the decider model's real roundtrip allows — tighter budgets turn the feature into a fail-open no-op.",
-      ),
-    endpointExtensionMs: z
-      .number({
-        error: "liveVoice.frontModel.endpointExtensionMs must be a number",
-      })
-      .int("liveVoice.frontModel.endpointExtensionMs must be an integer")
-      .positive(
-        "liveVoice.frontModel.endpointExtensionMs must be a positive integer",
-      )
-      .default(1500)
-      .describe(
-        "How long (ms) a 'hold' decision keeps the turn open before turn-end replays",
-      ),
-    endpointMaxExtensions: z
-      .number({
-        error: "liveVoice.frontModel.endpointMaxExtensions must be a number",
-      })
-      .int("liveVoice.frontModel.endpointMaxExtensions must be an integer")
-      .nonnegative(
-        "liveVoice.frontModel.endpointMaxExtensions must be a nonnegative integer",
-      )
-      .default(2)
-      .describe("Cap on consecutive 'hold' extensions per utterance"),
     ackFirstDeltaTimeoutMs: z
       .number({
         error: "liveVoice.frontModel.ackFirstDeltaTimeoutMs must be a number",
@@ -232,7 +189,64 @@ export const LiveVoiceFrontModelConfigSchema = z
     ),
   })
   .describe(
-    "Front-model presence layer for live voice sessions (semantic endpointing + spoken acks + progress narration). Every behavior ships inert behind its own flag.",
+    "Front-model presence layer for live voice sessions (spoken acks + progress narration). Every behavior ships inert behind its own flag.",
+  );
+
+/**
+ * The unified front door (upstream's speculative-dispatch endpointing +
+ * triage-and-escalate routing): at a server-VAD silence boundary the answer
+ * leg is dispatched speculatively on the `voiceFrontDoor` call site, and its
+ * leading token doubles as the endpointing verdict (hold / escalate /
+ * answer). Only ever active in `turnDetection: "server_vad"` sessions; with
+ * `enabled` false the boundary releases exactly as V-1a did.
+ */
+export const LiveVoiceFrontDoorConfigSchema = z
+  .object({
+    enabled: z
+      .boolean({ error: "liveVoice.frontDoor.enabled must be a boolean" })
+      // Ships OFF: the flip-on gate is real-device QA (endpointing feel,
+      // escalation bridge audio). Fail-open everywhere once enabled.
+      .default(false)
+      .describe(
+        "Unified voice front door: speculative answer dispatch at the silence boundary, with the leg's leading token as the endpointing verdict and triage-and-escalate routing. server_vad sessions only. Ships OFF pending real-device QA.",
+      ),
+    endpointDecisionTimeoutMs: z
+      .number({
+        error: "liveVoice.frontDoor.endpointDecisionTimeoutMs must be a number",
+      })
+      .int("liveVoice.frontDoor.endpointDecisionTimeoutMs must be an integer")
+      .positive(
+        "liveVoice.frontDoor.endpointDecisionTimeoutMs must be a positive integer",
+      )
+      .default(1200)
+      .describe(
+        "Verdict deadline (ms) for a speculative leg: with no leading verdict inside this budget the turn commits anyway (fail-open), so a provider TTFT tail is bounded dead air instead of unbounded structural silence.",
+      ),
+    endpointExtensionMs: z
+      .number({
+        error: "liveVoice.frontDoor.endpointExtensionMs must be a number",
+      })
+      .int("liveVoice.frontDoor.endpointExtensionMs must be an integer")
+      .positive(
+        "liveVoice.frontDoor.endpointExtensionMs must be a positive integer",
+      )
+      .default(1500)
+      .describe(
+        "How long (ms) a hold verdict keeps the utterance open before the silence boundary replays",
+      ),
+    endpointMaxExtensions: z
+      .number({
+        error: "liveVoice.frontDoor.endpointMaxExtensions must be a number",
+      })
+      .int("liveVoice.frontDoor.endpointMaxExtensions must be an integer")
+      .nonnegative(
+        "liveVoice.frontDoor.endpointMaxExtensions must be a nonnegative integer",
+      )
+      .default(2)
+      .describe("Cap on consecutive hold extensions per utterance"),
+  })
+  .describe(
+    "Unified voice front door (speculative dispatch + verdict-first triage) for server-VAD live voice sessions",
   );
 
 export const LiveVoiceConfigSchema = z
@@ -255,6 +269,9 @@ export const LiveVoiceConfigSchema = z
     frontModel: LiveVoiceFrontModelConfigSchema.default(
       LiveVoiceFrontModelConfigSchema.parse({}),
     ),
+    frontDoor: LiveVoiceFrontDoorConfigSchema.default(
+      LiveVoiceFrontDoorConfigSchema.parse({}),
+    ),
     maxSessionDurationSeconds: z
       .number({
         error: "liveVoice.maxSessionDurationSeconds must be a number",
@@ -272,6 +289,9 @@ export const LiveVoiceConfigSchema = z
 
 export type LiveVoiceConfig = z.infer<typeof LiveVoiceConfigSchema>;
 export type LiveVoiceVadConfig = z.infer<typeof LiveVoiceVadConfigSchema>;
+export type LiveVoiceFrontDoorConfig = z.infer<
+  typeof LiveVoiceFrontDoorConfigSchema
+>;
 export type LiveVoiceFrontModelConfig = z.infer<
   typeof LiveVoiceFrontModelConfigSchema
 >;

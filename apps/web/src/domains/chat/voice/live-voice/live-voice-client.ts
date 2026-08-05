@@ -39,6 +39,7 @@ import {
   type LiveVoiceToolActivityServerFrame,
   type LiveVoiceTtsAudioServerFrame,
   type LiveVoiceTtsDoneServerFrame,
+  type LiveVoiceTurnCancelledServerFrame,
   type LiveVoiceTurnDetectionMode,
   type LiveVoiceUtteranceEndServerFrame,
   parseServerFrame,
@@ -81,6 +82,12 @@ export interface LiveVoiceClientEventMap {
    * own ptt_release). Only ever fires on `server_vad` sessions.
    */
   utteranceEnd: LiveVoiceUtteranceEndServerFrame;
+  /**
+   * Server-side barge-in cancelled the in-flight assistant turn: flush any
+   * queued/playing TTS — no `tts_done` follows. Only ever fires on
+   * `server_vad` sessions.
+   */
+  turnCancelled: LiveVoiceTurnCancelledServerFrame;
   sttPartial: LiveVoiceSttPartialServerFrame;
   sttFinal: LiveVoiceSttFinalServerFrame;
   thinking: LiveVoiceThinkingServerFrame;
@@ -174,6 +181,7 @@ export class LiveVoiceChannelClient {
     ready: new Set(),
     speechStarted: new Set(),
     utteranceEnd: new Set(),
+    turnCancelled: new Set(),
     sttPartial: new Set(),
     sttFinal: new Set(),
     thinking: new Set(),
@@ -396,6 +404,9 @@ export class LiveVoiceChannelClient {
         return;
       case "utterance_end":
         this.emit("utteranceEnd", frame);
+        return;
+      case "turn_cancelled":
+        this.emit("turnCancelled", frame);
         return;
       case "unknown_frame":
         // A newer daemon sent a frame type this client version does not

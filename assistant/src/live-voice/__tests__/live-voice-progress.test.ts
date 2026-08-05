@@ -104,7 +104,6 @@ function stubDecider(
   generateProgressText: VoiceFrontDecider["generateProgressText"],
 ): VoiceFrontDecider {
   return {
-    decideEndpoint: async () => ({ action: "release" }),
     generateAckText: async () => null,
     generateProgressText,
   };

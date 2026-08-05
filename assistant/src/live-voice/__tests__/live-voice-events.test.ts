@@ -309,9 +309,14 @@ describe("LiveVoiceSession archive and metrics events", () => {
       conversationId: "conversation-123",
       turnId: "live-turn-1",
       sttMs: 10,
-      llmFirstDeltaMs: 10,
+      // The assistant-dispatch mark sits between final transcript and first
+      // delta on the stepped test clock, so the transcript-anchored figure
+      // spans two ticks while the dispatch-anchored one spans one.
+      llmFirstDeltaMs: 20,
+      dispatchToFirstDeltaMs: 10,
+      dispatchToFirstAudioMs: 20,
       ttsFirstAudioMs: 10,
-      totalMs: 60,
+      totalMs: 70,
       metrics: {
         summary: {
           completedTurnCount: 1,

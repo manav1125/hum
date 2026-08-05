@@ -356,6 +356,13 @@ const CATALOG_RECORD: CatalogRecord = {
       "Cue Live's front-model presence layer: decides end-of-turn (mid-thought vs finished) and phrases short spoken acknowledgements while the main brain works. Sits on the end-of-turn hot path — pin a fast, cheap, low-latency model; depth does not matter.",
     domain: "agentLoop",
   },
+  voiceFrontDoor: {
+    id: "voiceFrontDoor",
+    displayName: "Voice front door",
+    description:
+      "Cue Live's unified front-door leg: the fast model fronting every hands-free voice turn. Its leading token is the endpointing verdict (hold / escalate / answer) and an answer streams straight to speech, so first-token latency is everything — pin a fast model with thinking off.",
+    domain: "agentLoop",
+  },
 };
 
 // Source of truth for call-site display metadata. API responses and usage

@@ -519,6 +519,38 @@ function appendThinkingToCurrentMessage(
   }
 }
 
+/**
+ * Settle the debounced partial-content flush at the turn-tail seam: cancel a
+ * pending timer and await an already-dispatched write. The happy path does
+ * this inside `handleMessageComplete`, but an ABORTED turn (barge-in, a
+ * discarded speculative voice leg) exits the loop with the timer still armed
+ * — a zombie flush firing after teardown would rewrite the assistant row
+ * with the raw partial content (leaking e.g. a voice verdict token back into
+ * a row the bridge's transcript-hygiene pass already cleaned or deleted).
+ * Called from the agent loop's `finally`, so every exit path — completion,
+ * cancellation, error — settles the flush before anything downstream (the
+ * voice bridge's hygiene pass) touches the row. Idempotent.
+ */
+export async function settlePendingPartialFlush(
+  state: Pick<
+    EventHandlerState,
+    "pendingPartialFlushTimer" | "pendingPartialFlushPromise"
+  >,
+): Promise<void> {
+  if (state.pendingPartialFlushTimer !== undefined) {
+    clearTimeout(state.pendingPartialFlushTimer);
+    state.pendingPartialFlushTimer = undefined;
+  }
+  if (state.pendingPartialFlushPromise !== undefined) {
+    try {
+      await state.pendingPartialFlushPromise;
+    } catch {
+      // The partial flush swallows its own pipeline errors; defensive only.
+    }
+    state.pendingPartialFlushPromise = undefined;
+  }
+}
+
 /** Reset partial-persist accumulator and any pending flush state. Idempotent. */
 function resetPartialPersistAccumulator(state: EventHandlerState): void {
   if (state.pendingPartialFlushTimer !== undefined) {

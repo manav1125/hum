@@ -734,11 +734,8 @@ describe("hands-free (server VAD)", () => {
     expect(h.client.sentAudio.length).toBe(sentBefore + 1);
   });
 
-  test("client amplitude barge-in stays active in hands-free (V-1a)", async () => {
-    const h = renderController({ fullDuplex: true });
-    await startHandsFree(h);
-
-    // Drive a full turn to speaking.
+  /** Drive a hands-free session through a full turn to `speaking`. */
+  function driveToSpeaking(h: ReturnType<typeof renderController>): void {
     act(() => {
       h.client.emit("utteranceEnd", {
         type: "utterance_end",
@@ -756,9 +753,17 @@ describe("hands-free (server VAD)", () => {
       });
     });
     expect(h.view.result.current.state).toBe("speaking");
+  }
 
-    // Sustained loud amplitude interrupts — barge-in is still client-owned
-    // until V-1b moves it server-side.
+  test("client amplitude barge-in stands down in hands-free — the server owns barge-in (V-1b)", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+    driveToSpeaking(h);
+
+    // Sustained loud amplitude must NOT interrupt: in server_vad mode the
+    // daemon's sustained-speech guard detects barge-in and drives the
+    // flush via speech_started/turn_cancelled. Two client+server detectors
+    // would race and double-interrupt.
     const realNow = Date.now;
     try {
       let now = realNow();
@@ -773,8 +778,109 @@ describe("hands-free (server VAD)", () => {
     } finally {
       Date.now = realNow;
     }
+    expect(h.client.interruptCount).toBe(0);
+    expect(h.view.result.current.state).toBe("speaking");
+  });
+
+  test("client amplitude barge-in stays active in manual (non-hands-free) sessions", async () => {
+    const h = renderController({ fullDuplex: true, handsFree: false });
+    await startListening(h);
+    act(() => {
+      h.client.emit("sttFinal", { type: "stt_final", seq: 2, text: "hi" });
+      h.client.emit("thinking", { type: "thinking", seq: 3, turnId: "t1" });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 4,
+        mimeType: "audio/pcm",
+        sampleRate: 16000,
+        dataBase64: "AAAA",
+      });
+    });
+    expect(h.view.result.current.state).toBe("speaking");
+    act(() => {
+      pushSustainedAmplitude(h.getCapture(), 0.5);
+    });
     expect(h.client.interruptCount).toBe(1);
     expect(h.view.result.current.state).toBe("listening");
+  });
+
+  test("speech_started flushes playback to listening mid-speaking (server barge-in)", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+    driveToSpeaking(h);
+    const stopsBefore = h.player.stopCount;
+
+    // The daemon's sustained-speech guard fired: flush the tail NOW.
+    act(() => {
+      h.client.emit("speechStarted", { type: "speech_started", seq: 6 });
+    });
+    expect(h.player.stopCount).toBe(stopsBefore + 1);
+    expect(h.view.result.current.state).toBe("listening");
+    // No client interrupt frame: the server already cancelled the turn.
+    expect(h.client.interruptCount).toBe(0);
+  });
+
+  test("speech_started flushes to listening even mid-thinking (no cancellation follows)", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+    act(() => {
+      h.client.emit("utteranceEnd", {
+        type: "utterance_end",
+        seq: 2,
+        reason: "silence",
+      });
+      h.client.emit("sttFinal", { type: "stt_final", seq: 3, text: "hi" });
+      h.client.emit("thinking", { type: "thinking", seq: 4, turnId: "t1" });
+    });
+    expect(h.view.result.current.state).toBe("thinking");
+
+    act(() => {
+      h.client.emit("speechStarted", { type: "speech_started", seq: 5 });
+    });
+    expect(h.view.result.current.state).toBe("listening");
+  });
+
+  test("turn_cancelled flushes the cancelled turn's playback (no tts_done follows)", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+    driveToSpeaking(h);
+
+    act(() => {
+      h.client.emit("speechStarted", { type: "speech_started", seq: 6 });
+      h.client.emit("turnCancelled", {
+        type: "turn_cancelled",
+        seq: 7,
+        turnId: "t1",
+      });
+    });
+    expect(h.view.result.current.state).toBe("listening");
+    expect(h.player.isPlaying).toBe(false);
+
+    // The next turn's audio still plays normally after the cancel.
+    act(() => {
+      h.client.emit("thinking", { type: "thinking", seq: 8, turnId: "t2" });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 9,
+        mimeType: "audio/pcm",
+        sampleRate: 16000,
+        dataBase64: "AAAA",
+      });
+    });
+    expect(h.view.result.current.state).toBe("speaking");
+  });
+
+  test("turn_cancelled is ignored on a manual session (defense in depth)", async () => {
+    const h = renderController({ fullDuplex: true, handsFree: false });
+    await startListening(h);
+    act(() => {
+      h.client.emit("turnCancelled", {
+        type: "turn_cancelled",
+        seq: 2,
+        turnId: "t1",
+      });
+    });
+    expect(h.player.stopCount).toBe(0);
   });
 });
 

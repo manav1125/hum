@@ -94,6 +94,7 @@ import {
   type EventHandlerDeps,
   finalizePendingToolResultRow,
   markHistoryStrippedBestEffort,
+  settlePendingPartialFlush,
 } from "./conversation-agent-loop-handlers.js";
 import {
   approveHostAttachmentRead,
@@ -1566,6 +1567,15 @@ export async function runAgentLoopImpl(
       publishLoopMessagesChanged();
     }
   } finally {
+    // Settle the debounced partial-content flush before anything downstream
+    // reads or rewrites the assistant row. The happy path settles it in
+    // `handleMessageComplete`; a cancelled/errored turn exits with the timer
+    // still armed, and a zombie flush firing after teardown would rewrite
+    // the row with raw partial content — e.g. re-leaking a voice verdict
+    // token into a row the voice bridge's transcript-hygiene pass (which
+    // runs right after this loop resolves) has already cleaned or deleted.
+    await settlePendingPartialFlush(state);
+
     // Terminal-path cleanup for the in-flight marker stamped at reserve time
     // (`handleLlmCallStarted`). The happy path clears it in
     // `handleMessageComplete`; error/cancellation exits leave the last

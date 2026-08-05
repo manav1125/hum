@@ -4,31 +4,28 @@
  * Two jobs, both driven by a tiny fast model on the `voiceFrontDecision` call
  * site:
  *
- * 1. Semantic endpointing (`decideEndpoint`): when the client signals a
- *    silence-based turn-end, the front model looks at the transcript and
- *    decides whether the speaker has actually finished their thought
- *    ("release" → launch the agent turn) or is mid-thought ("hold" → keep the
- *    utterance open through a bounded extension window). NOTE: in this fork the
- *    daemon does not run its own VAD — the web/macOS clients detect silence and
- *    emit `ptt_release` — so the full hold loop additionally depends on client
- *    cooperation. The decider is shipped ready; wire its `hold` outcome once the
- *    clients can re-open the mic on a hold.
- *
- * 2. Spoken acks (`generateAckText`): one short contextual sentence that
+ * 1. Spoken acks (`generateAckText`): one short contextual sentence that
  *    acknowledges the request without answering, used to hold the floor while
  *    the main brain works. Only used when `liveVoice.frontModel.llmAckText` is
  *    on; otherwise the caller falls back to a static rotation phrase.
  *
- * Fail-open is load-bearing: every failure mode of `decideEndpoint` — no
- * configured provider, timeout, provider error, caller abort, unparseable
- * output — resolves to "release" within `endpointDecisionTimeoutMs`, so the
- * front model can only ever add a bounded latency and never break turn-taking.
- * `generateAckText` fails to `null` so the static phrase always covers it.
+ * 2. Progress narration (`generateProgressText`): one short spoken sentence
+ *    describing a long-running turn's activity, spoken into audible dead air
+ *    on the narration cadence.
+ *
+ * Endpointing does NOT live here: the unified front door (V-1c) makes the
+ * speculative answer leg itself the endpoint decision — its leading token is
+ * the verdict (see calls/voice-triage-escalate.ts and the session's
+ * launchSpeculativeAssistantTurn).
+ *
+ * Fail-open is load-bearing: `generateAckText` and `generateProgressText`
+ * resolve to `null` on every failure mode (no provider, timeout, provider
+ * error, caller abort, unusable output), so the presence layer can only ever
+ * add a bounded latency and never break a turn.
  */
 
 import type { LiveVoiceFrontModelConfig } from "../config/schemas/live-voice.js";
 import {
-  extractText,
   extractToolUse,
   resolveConfiguredProvider,
   userMessage,
@@ -42,24 +39,6 @@ import { createAbortReason } from "../util/abort-reasons.js";
 import { getLogger } from "../util/logger.js";
 
 const log = getLogger("voice-front-decision");
-
-export interface VoiceEndpointDecisionInput {
-  /** Finalized transcript of the utterance so far. */
-  transcriptSoFar: string;
-  /** Latest non-final STT partial, when one is trailing the finals. */
-  latestPartial: string | null;
-  /** The silence duration (ms) that triggered this turn-end. */
-  silenceThresholdMs: number;
-  /** How many "hold" extensions this utterance has already consumed. */
-  extensionCount: number;
-}
-
-// The one spelling of the endpoint outcome, shared with the metrics mark and
-// the session's decision recording.
-export type VoiceEndpointAction = "release" | "hold";
-
-// Kept as an object shape (callers destructure it; it allows future payloads).
-export type VoiceEndpointDecision = { action: VoiceEndpointAction };
 
 export interface VoiceAckTextInput {
   /** Final transcript of the utterance the ack acknowledges. */
@@ -87,16 +66,6 @@ export interface VoiceProgressTextInput {
 
 export interface VoiceFrontDecider {
   /**
-   * Decide whether a silence-fired turn-end should release the turn to the
-   * agent or hold the utterance open. Never rejects — all failures resolve
-   * to `{ action: "release" }`.
-   */
-  decideEndpoint(
-    input: VoiceEndpointDecisionInput,
-    signal?: AbortSignal,
-  ): Promise<VoiceEndpointDecision>;
-
-  /**
    * Phrase one short contextual spoken ack for the utterance. Never rejects —
    * every failure mode (no provider, timeout past `ackGenerationTimeoutMs`,
    * provider error, caller abort, empty or overlong output) resolves to
@@ -119,41 +88,6 @@ export interface VoiceFrontDecider {
     signal?: AbortSignal,
   ): Promise<string | null>;
 }
-
-const RELEASE: VoiceEndpointDecision = { action: "release" };
-const HOLD: VoiceEndpointDecision = { action: "hold" };
-
-// Single-token wire protocol: the model answers with one bare character
-// instead of a forced tool call. A tool call spends 10-15 output tokens on
-// name + JSON scaffolding to convey one bit; a bare digit is one token, and
-// dropping the tool schema also shrinks the prompt. Only an exact leading
-// "0" holds — every other output (including non-compliance) releases, so the
-// fail-open contract carries the parsing risk.
-const HOLD_TOKEN = "0";
-
-// Output budget for the single-character answer: one token for the digit
-// plus headroom for a stray delimiter. Deliberately tiny — a model that
-// starts writing prose gets cut off and the unparseable prefix releases.
-const ENDPOINT_DECISION_MAX_TOKENS = 4;
-
-// Tie-break is 0 (hold): a wrong hold costs one bounded extension of silence
-// and self-corrects on the replay, while a wrong release cuts the speaker off
-// mid-thought — the failure this feature exists to prevent. The extension
-// ratchet keeps chronic uncertainty from burning every extension. This is
-// deliberately the opposite of the code-level fail-open (timeouts and failures
-// still release) — that one protects turn-taking from outages.
-const SYSTEM_PROMPT =
-  "You classify end-of-turn for a live voice assistant from a transcript captured up " +
-  "to a pause. Respond with exactly one character: 0 if the speaker is mid-thought, " +
-  "1 if finished. Never answer or explain.\n" +
-  "0 when the wording signals more speech: a trailing conjunction (and, but, or, so, " +
-  "because), dangling preposition or article, hesitation filler (um, uh, like, let me " +
-  "think), unfinished list, or clause cut off before its verb or object.\n" +
-  "1 when the wording stands alone: a complete sentence, question, command, or short " +
-  "reply (yes, no, stop).\n" +
-  "Judge wording only, not content. Missing punctuation or casing is not mid-thought. " +
-  "Longer pauses and more prior extensions favor 1. When unclear, answer 0 — a brief " +
-  "extra pause beats cutting the speaker off.";
 
 const ACK_TOOL_NAME = "ack";
 
@@ -291,16 +225,6 @@ function buildProgressPrompt(input: VoiceProgressTextInput): string {
   return parts.join("\n");
 }
 
-function buildPrompt(input: VoiceEndpointDecisionInput): string {
-  const parts = [
-    `Transcript so far: ${input.transcriptSoFar || "(empty)"}`,
-    `Latest partial: ${input.latestPartial ?? "(none)"}`,
-    `Pause length: ${input.silenceThresholdMs}ms`,
-    `Prior extensions this utterance: ${input.extensionCount}`,
-  ];
-  return parts.join("\n");
-}
-
 /**
  * Resolve `promise`, or reject with the abort reason as soon as `signal`
  * fires. Here the timeout bound is a hard product guarantee, so the race
@@ -424,70 +348,6 @@ export function createVoiceFrontDecider(options: {
       null);
 
   return {
-    async decideEndpoint(input, signal) {
-      if (signal?.aborted) {
-        return RELEASE;
-      }
-      const startedAt = performance.now();
-      let providerResolveMs: number | null = null;
-      let providerName: string | null = null;
-      try {
-        const response = await requestBoundedResponse({
-          getProvider,
-          timeoutMs: config.endpointDecisionTimeoutMs,
-          maxTokens: ENDPOINT_DECISION_MAX_TOKENS,
-          systemPrompt: SYSTEM_PROMPT,
-          prompt: buildPrompt(input),
-          signal,
-          onProviderResolved: (elapsedMs, provider) => {
-            providerResolveMs = Math.round(elapsedMs);
-            providerName = provider?.name ?? null;
-          },
-        });
-        const answer = response ? extractText(response) : "";
-        const held = answer.startsWith(HOLD_TOKEN);
-        log.info(
-          {
-            action: held ? "hold" : "release",
-            // "model" = the LLM answered; "no-provider" = call site resolved
-            // nothing; "no-text" = provider answered without a text block.
-            cause: answer
-              ? "model"
-              : providerName === null
-                ? "no-provider"
-                : "no-text",
-            providerName,
-            providerResolveMs,
-            totalMs: Math.round(performance.now() - startedAt),
-            timeoutMs: config.endpointDecisionTimeoutMs,
-            extensionCount: input.extensionCount,
-          },
-          "voice endpoint decision",
-        );
-        if (held) {
-          return HOLD;
-        }
-        // No provider, "1", an empty response, or any non-protocol output
-        // all release — only an explicit leading "0" holds.
-        return RELEASE;
-      } catch (error) {
-        // providerResolveMs null here means resolution itself never settled
-        // inside the budget; set-but-timed-out means the LLM roundtrip did.
-        log.info(
-          {
-            error,
-            providerName,
-            providerResolveMs,
-            totalMs: Math.round(performance.now() - startedAt),
-            timeoutMs: config.endpointDecisionTimeoutMs,
-            extensionCount: input.extensionCount,
-          },
-          "Endpoint decision failed — releasing turn",
-        );
-        return RELEASE;
-      }
-    },
-
     async generateAckText(input, signal) {
       if (signal?.aborted) {
         return null;

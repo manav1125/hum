@@ -14,6 +14,28 @@ export const CALL_OPENING_ACK_MARKER = "[CALL_OPENING_ACK]";
 export const CALL_VERIFICATION_COMPLETE_MARKER = "[CALL_VERIFICATION_COMPLETE]";
 export const END_CALL_MARKER = "[END_CALL]";
 
+/**
+ * Verdict tokens for the fast "front-door" model (triage-and-escalate voice
+ * routing — see voice-triage-escalate.ts). The protocol is verdict-first:
+ * the leg's output must BEGIN with its verdict on the turn —
+ * {@link HOLD_VERDICT_TOKEN} (the caller is mid-thought; unified front-door
+ * only), {@link ESCALATE_VERDICT_TOKEN} followed by one short spoken holding
+ * phrase (the turn is handed to the stronger model), or neither, in which
+ * case the output IS the answer. Bracketed like every other control marker
+ * so the shared partial-marker holdback and stripping apply; like the other
+ * markers they are swallowed before reaching TTS — never spoken aloud.
+ */
+export const HOLD_VERDICT_TOKEN = "[0]";
+export const ESCALATE_VERDICT_TOKEN = "[1]";
+
+/**
+ * Upstream's room-minimize marker. Registered here ONLY so the shared
+ * holdback/stripping machinery swallows it (a model can parrot it from
+ * visible history); the minimize behaviour itself is V-3 — nothing in this
+ * fork acts on the marker yet.
+ */
+export const MINIMIZE_ROOM_MARKER = "[-1]";
+
 // ---------------------------------------------------------------------------
 // Regexes
 // ---------------------------------------------------------------------------
@@ -31,6 +53,9 @@ const USER_INSTRUCTION_MARKER_REGEX = /\[USER_INSTRUCTION:\s*.+?\]/g;
 const CALL_OPENING_MARKER_REGEX = /\[CALL_OPENING\]/g;
 const CALL_OPENING_ACK_MARKER_REGEX = /\[CALL_OPENING_ACK\]/g;
 const END_CALL_MARKER_REGEX = /\[END_CALL\]/g;
+const HOLD_VERDICT_TOKEN_REGEX = /\[0\]/g;
+const ESCALATE_VERDICT_TOKEN_REGEX = /\[1\]/g;
+const MINIMIZE_ROOM_MARKER_REGEX = /\[-1\]/g;
 const GUARDIAN_TIMEOUT_MARKER_REGEX = /\[GUARDIAN_TIMEOUT\]/g;
 const GUARDIAN_UNAVAILABLE_MARKER_REGEX = /\[GUARDIAN_UNAVAILABLE\]/g;
 
@@ -145,6 +170,9 @@ export function stripInternalSpeechMarkers(text: string): string {
     .replace(CALL_OPENING_MARKER_REGEX, "")
     .replace(CALL_OPENING_ACK_MARKER_REGEX, "")
     .replace(END_CALL_MARKER_REGEX, "")
+    .replace(HOLD_VERDICT_TOKEN_REGEX, "")
+    .replace(ESCALATE_VERDICT_TOKEN_REGEX, "")
+    .replace(MINIMIZE_ROOM_MARKER_REGEX, "")
     .replace(GUARDIAN_TIMEOUT_MARKER_REGEX, "")
     .replace(GUARDIAN_UNAVAILABLE_MARKER_REGEX, "");
   return result;
@@ -167,6 +195,9 @@ const CONTROL_MARKER_STRINGS = [
   "[CALL_OPENING]",
   "[CALL_OPENING_ACK]",
   "[END_CALL]",
+  "[0]",
+  "[1]",
+  "[-1]",
   "[GUARDIAN_TIMEOUT]",
   "[GUARDIAN_UNAVAILABLE]",
 ];
@@ -182,4 +213,48 @@ export function couldBeControlMarker(text: string): boolean {
   return CONTROL_MARKER_STRINGS.some(
     (marker) => marker.startsWith(text) || text.startsWith(marker),
   );
+}
+
+// Colon-style markers whose bodies terminate at the first "]" — their strip
+// regexes are non-greedy (`.+?\]`), so the first bracket IS the terminator.
+// ASK_GUARDIAN_APPROVAL is deliberately absent: its balanced-JSON body may
+// itself contain "]" (arrays, string values), so only the balanced parser can
+// judge it complete.
+const FIRST_BRACKET_TERMINATED_PREFIXES = [
+  "[ASK_GUARDIAN:",
+  "[USER_ANSWERED:",
+  "[USER_INSTRUCTION:",
+];
+
+const GUARDIAN_APPROVAL_PREFIX = "[ASK_GUARDIAN_APPROVAL:";
+
+/**
+ * Whether `tail` (a buffer starting at a `[`) is a control marker that is
+ * still streaming — i.e. holding it back is required because
+ * {@link stripInternalSpeechMarkers} cannot yet remove it. Returns false for
+ * complete markers (safe to flush: stripping removes them) and for text that
+ * is not a marker at all (safe to flush: it is speech).
+ *
+ * Completion is judged per marker family: a strict prefix of any known
+ * marker string is always incomplete; an ASK_GUARDIAN_APPROVAL body is
+ * complete only when {@link extractBalancedJson} finds the balanced JSON and
+ * its closing bracket (a bare "]" inside the JSON does NOT terminate it);
+ * the other colon-style markers terminate at their first "]"; the fixed
+ * literal markers are complete the moment they match.
+ */
+export function isIncompleteControlMarkerTail(tail: string): boolean {
+  if (
+    CONTROL_MARKER_STRINGS.some(
+      (marker) => marker.length > tail.length && marker.startsWith(tail),
+    )
+  ) {
+    return true;
+  }
+  if (tail.startsWith(GUARDIAN_APPROVAL_PREFIX)) {
+    return extractBalancedJson(tail) === null;
+  }
+  if (FIRST_BRACKET_TERMINATED_PREFIXES.some((p) => tail.startsWith(p))) {
+    return !tail.includes("]");
+  }
+  return false;
 }

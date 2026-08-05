@@ -152,6 +152,7 @@ const LIVE_VOICE_SERVER_FRAME_TYPES = [
   "busy",
   "speech_started",
   "utterance_end",
+  "turn_cancelled",
   "stt_partial",
   "stt_final",
   "thinking",
@@ -191,9 +192,11 @@ export interface LiveVoiceBusyServerFrame extends LiveVoiceServerFrameBase {
 
 /**
  * Emitted when the server VAD detects user speech. Arrives only on sessions
- * that opted in via `turnDetection: "server_vad"`. In V-1a it marks the
- * utterance opening; V-1b makes it the flush-tail-playback signal when
- * barge-in moves server-side.
+ * that opted in via `turnDetection: "server_vad"`. Barge-in is
+ * server-detected: this frame is the flush-tail-playback signal — the client
+ * must stop local TTS playback immediately (even mid-`thinking`) and return
+ * to listening. During assistant playback the daemon defers it behind its
+ * sustained-speech guard, so a cough or echo blip never flushes a reply.
  */
 export interface LiveVoiceSpeechStartedServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "speech_started";
@@ -207,6 +210,19 @@ export interface LiveVoiceSpeechStartedServerFrame extends LiveVoiceServerFrameB
 export interface LiveVoiceUtteranceEndServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "utterance_end";
   readonly reason: "silence" | "max-duration";
+}
+
+/**
+ * Emitted when server-side barge-in cancels an in-flight assistant turn:
+ * sustained user speech aborted the reply (whether still thinking or already
+ * speaking). The client must flush any queued/playing TTS for the turn — no
+ * `tts_done` follows a cancelled turn. Always preceded by the barge-in's
+ * `speech_started`. Arrives only on sessions that opted in via
+ * `turnDetection: "server_vad"`.
+ */
+export interface LiveVoiceTurnCancelledServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "turn_cancelled";
+  readonly turnId: string;
 }
 
 export interface LiveVoiceSttPartialServerFrame extends LiveVoiceServerFrameBase {
@@ -248,8 +264,20 @@ export interface LiveVoiceMetricsServerFrame extends LiveVoiceServerFrameBase {
   readonly turnId: string;
   readonly sttMs: number | null;
   readonly llmFirstDeltaMs: number | null;
+  /**
+   * Dispatch-anchored felt latency (assistant-leg dispatch → first delta /
+   * first TTS audio). Additive-optional: absent on frames from older daemons.
+   */
+  readonly dispatchToFirstDeltaMs?: number | null;
+  readonly dispatchToFirstAudioMs?: number | null;
   readonly ttsFirstAudioMs: number | null;
   readonly totalMs: number | null;
+  /**
+   * Unified front-door endpointing figures. Present only on turns the front
+   * door actually judged.
+   */
+  readonly endpointHoldCount?: number;
+  readonly endpointDecisionMaxLatencyMs?: number;
 }
 
 export interface LiveVoiceArchivedServerFrame extends LiveVoiceServerFrameBase {
@@ -335,6 +363,7 @@ export type LiveVoiceServerFrame =
   | LiveVoiceBusyServerFrame
   | LiveVoiceSpeechStartedServerFrame
   | LiveVoiceUtteranceEndServerFrame
+  | LiveVoiceTurnCancelledServerFrame
   | LiveVoiceSttPartialServerFrame
   | LiveVoiceSttFinalServerFrame
   | LiveVoiceThinkingServerFrame

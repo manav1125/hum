@@ -4,6 +4,8 @@ import type {
   TurnChannelContext,
   TurnInterfaceContext,
 } from "../channels/types.js";
+import type { LiveVoiceConfig } from "../config/schemas/live-voice.js";
+import { LiveVoiceConfigSchema } from "../config/schemas/live-voice.js";
 import type { Conversation } from "../daemon/conversation.js";
 import { persistUserMessage as persistUserMessageImpl } from "../daemon/conversation-messaging.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
@@ -12,6 +14,9 @@ let mockedConfig: {
   secretDetection: { enabled: boolean };
   calls: { disclosure: { enabled: boolean; text: string } };
   memory: { enabled: boolean };
+  // Present so suites that share this process (mock.module replaces
+  // getConfig globally) still read a complete liveVoice block.
+  liveVoice: LiveVoiceConfig;
 } = {
   secretDetection: { enabled: false },
   calls: {
@@ -21,20 +26,29 @@ let mockedConfig: {
     },
   },
   memory: { enabled: false },
+  liveVoice: LiveVoiceConfigSchema.parse({}),
 };
 
+const actualLogger = await import("../util/logger.js");
 mock.module("../util/logger.js", () => ({
+  ...actualLogger,
   getLogger: () =>
     new Proxy({} as Record<string, unknown>, {
       get: () => () => {},
     }),
 }));
 
+// Spread the real module: mock.module mutates a process-global registry, so
+// an exhaustive factory here would delete every other config export for any
+// file that runs after this one in a combined run (see assistant/CLAUDE.md).
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => mockedConfig,
 }));
 
 import {
+  cutFrontDoorContentAtVerdict,
   setVoiceBridgeDeps,
   startVoiceTurn,
 } from "../calls/voice-session-bridge.js";
@@ -185,6 +199,7 @@ describe("voice-session-bridge", () => {
         },
       },
       memory: { enabled: false },
+      liveVoice: LiveVoiceConfigSchema.parse({}),
     };
     const db = getDb();
     db.run("DELETE FROM messages");
@@ -676,6 +691,7 @@ describe("voice-session-bridge", () => {
         },
       },
       memory: { enabled: false },
+      liveVoice: LiveVoiceConfigSchema.parse({}),
     };
 
     const conversation = createConversation(
@@ -1456,5 +1472,421 @@ describe("voice-session-bridge", () => {
     });
 
     expect(abortCalled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V-1c — unified front-door legs: discard rollback, transcript hygiene,
+// toolless bracket, routing-rule injection
+// ---------------------------------------------------------------------------
+
+import type { VoiceTurnOptions } from "../calls/voice-session-bridge.js";
+import { ESCALATION_CONTINUATION_CONTENT } from "../calls/voice-triage-escalate.js";
+import {
+  getMessageById,
+  reserveMessage,
+  updateMessageContent,
+} from "../memory/conversation-crud.js";
+
+async function waitForCondition(
+  predicate: () => boolean,
+  message = "Timed out waiting for voice bridge test condition",
+): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  if (!predicate()) throw new Error(message);
+}
+
+/**
+ * A persisting conversation mock whose agent loop is gated: the loop parks on
+ * a promise the test releases, so ordering-sensitive teardown behavior (the
+ * transcript-hygiene pass runs only after the loop settles) is deterministic.
+ */
+function makeVoiceLegSession(conversationId: string) {
+  type PersistUserMessageContext = Parameters<typeof persistUserMessageImpl>[0];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let onEvent: ((msg: ServerMessage) => void) | undefined;
+  let loopOptions: Record<string, unknown> | undefined;
+  let controlPrompt: string | null = null;
+  let processing = false;
+  let loopSettled = false;
+  const session = {
+    conversationId,
+    messages: [],
+    abortController: null,
+    currentRequestId: undefined,
+    trustContext: undefined,
+    toolsDisabledDepth: 0,
+    memoryPolicy: { scopeId: "default", includeDefaultFallback: false },
+    isProcessing: () => processing,
+    setProcessing: (value: boolean) => {
+      processing = value;
+    },
+    persistUserMessage: async (
+      ...args: Parameters<Conversation["persistUserMessage"]>
+    ) => persistUserMessageImpl(session, ...args),
+    getTurnChannelContext: () => null,
+    getTurnInterfaceContext: () => null,
+    setChannelCapabilities: () => {},
+    setAssistantId: () => {},
+    setTrustContext: () => {},
+    setCommandIntent: () => {},
+    setTurnChannelContext: () => {},
+    setTurnInterfaceContext: () => {},
+    setVoiceCallControlPrompt: (prompt: string | null) => {
+      controlPrompt = prompt;
+    },
+    updateClient: () => {},
+    ensureActorScopedHistory: async () => {},
+    loadFromDb: async () => {},
+    runAgentLoop: async (
+      _content: string,
+      _messageId: string,
+      options?: Record<string, unknown>,
+    ) => {
+      loopOptions = options;
+      onEvent = options?.onEvent as typeof onEvent;
+      await gate;
+      loopSettled = true;
+    },
+    handleConfirmationResponse: () => {},
+    abort: () => {},
+  } as unknown as Conversation &
+    PersistUserMessageContext & { toolsDisabledDepth: number };
+
+  return {
+    session,
+    release,
+    emit: (msg: ServerMessage) => onEvent?.(msg),
+    getLoopOptions: () => loopOptions,
+    getControlPrompt: () => controlPrompt,
+    loopSettled: () => loopSettled,
+  };
+}
+
+function makeLegTurnOptions(
+  conversationId: string,
+  overrides: Partial<VoiceTurnOptions> = {},
+): VoiceTurnOptions {
+  return {
+    conversationId,
+    userMessageChannel: "vellum",
+    assistantMessageChannel: "vellum",
+    userMessageInterface: "macos",
+    assistantMessageInterface: "macos",
+    voiceControlPrompt: "BASE VOICE PROMPT.",
+    content: "hello world",
+    isInbound: true,
+    ...overrides,
+  };
+}
+
+describe("voice-session-bridge front-door legs", () => {
+  test("handle.discard() rolls back the persisted user row (idempotent)", async () => {
+    const conversation = createConversation("voice discard test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    const handle = await startVoiceTurn(
+      makeLegTurnOptions(conversation.id, {
+        routingLeg: "front-door",
+        unifiedVerdict: true,
+        content: "hello wor",
+      }),
+    );
+    expect(getMessages(conversation.id)).toHaveLength(1);
+    expect(handle.discard).toBeDefined();
+
+    await handle.discard!();
+    expect(getMessages(conversation.id)).toHaveLength(0);
+    // Idempotent: a second discard is a no-op.
+    await handle.discard!();
+    expect(getMessages(conversation.id)).toHaveLength(0);
+    leg.release();
+    await waitForCondition(() => leg.loopSettled());
+  });
+
+  test("a discarded leg's reserved assistant row is deleted by the hygiene pass", async () => {
+    const conversation = createConversation("voice discard hygiene test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    const handle = await startVoiceTurn(
+      makeLegTurnOptions(conversation.id, {
+        routingLeg: "front-door",
+        unifiedVerdict: true,
+        content: "hello wor",
+      }),
+    );
+    const reserved = await reserveMessage(conversation.id, "assistant");
+    updateMessageContent(
+      reserved.id,
+      JSON.stringify([{ type: "text", text: "[0]" }]),
+    );
+    leg.emit({
+      type: "assistant_turn_start",
+      messageId: reserved.id,
+      conversationId: conversation.id,
+    });
+
+    // Discard lands BEFORE the loop settles (the hold verdict beat the
+    // model): the user row rolls back now, the reserved row at teardown.
+    await handle.discard!();
+    expect(getMessageById(reserved.id)).not.toBeNull();
+    leg.release();
+    await waitForCondition(() => getMessageById(reserved.id) === null);
+    expect(getMessages(conversation.id)).toHaveLength(0);
+  });
+
+  test("an escalated front-door row is reduced to its capped spoken bridge", async () => {
+    const conversation = createConversation("voice bridge cut test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    await startVoiceTurn(
+      makeLegTurnOptions(conversation.id, { routingLeg: "front-door" }),
+    );
+    const reserved = await reserveMessage(conversation.id, "assistant");
+    updateMessageContent(
+      reserved.id,
+      JSON.stringify([
+        {
+          type: "text",
+          text: "[1] Let me check your email. And rambling past the cap.",
+        },
+      ]),
+    );
+    leg.emit({
+      type: "assistant_turn_start",
+      messageId: reserved.id,
+      conversationId: conversation.id,
+    });
+    leg.release();
+
+    await waitForCondition(() => {
+      const row = getMessageById(reserved.id);
+      return row !== null && !row.content.includes("[1]");
+    });
+    const row = getMessageById(reserved.id)!;
+    expect(JSON.parse(row.content)).toEqual([
+      { type: "text", text: "Let me check your email." },
+    ]);
+  });
+
+  test("a bare escalate verdict (canned-fallback bridge) deletes the row", async () => {
+    const conversation = createConversation("voice bare verdict test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    await startVoiceTurn(
+      makeLegTurnOptions(conversation.id, { routingLeg: "front-door" }),
+    );
+    const reserved = await reserveMessage(conversation.id, "assistant");
+    updateMessageContent(
+      reserved.id,
+      JSON.stringify([{ type: "text", text: "[1]" }]),
+    );
+    leg.emit({
+      type: "assistant_turn_start",
+      messageId: reserved.id,
+      conversationId: conversation.id,
+    });
+    leg.release();
+
+    await waitForCondition(() => getMessageById(reserved.id) === null);
+  });
+
+  test("a terminal [-1] minimize marker is stripped from any leg's row; a marker-only row deletes", async () => {
+    const conversation = createConversation("voice minimize strip test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    await startVoiceTurn(makeLegTurnOptions(conversation.id));
+    const reserved = await reserveMessage(conversation.id, "assistant");
+    updateMessageContent(
+      reserved.id,
+      JSON.stringify([{ type: "text", text: "Done, take a look [-1]" }]),
+    );
+    leg.emit({
+      type: "assistant_turn_start",
+      messageId: reserved.id,
+      conversationId: conversation.id,
+    });
+    leg.release();
+
+    await waitForCondition(() => {
+      const row = getMessageById(reserved.id);
+      return row !== null && !row.content.includes("[-1]");
+    });
+    expect(JSON.parse(getMessageById(reserved.id)!.content)).toEqual([
+      { type: "text", text: "Done, take a look" },
+    ]);
+
+    // Marker-only row: stripping leaves nothing — delete, never render a
+    // blank assistant bubble.
+    const leg2 = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg2.session);
+    await startVoiceTurn(makeLegTurnOptions(conversation.id));
+    const reserved2 = await reserveMessage(conversation.id, "assistant");
+    updateMessageContent(
+      reserved2.id,
+      JSON.stringify([{ type: "text", text: "[-1]" }]),
+    );
+    leg2.emit({
+      type: "assistant_turn_start",
+      messageId: reserved2.id,
+      conversationId: conversation.id,
+    });
+    leg2.release();
+    await waitForCondition(() => getMessageById(reserved2.id) === null);
+  });
+
+  test("a mid-text [-1] is NOT a minimize marker and the row persists untouched", async () => {
+    const conversation = createConversation("voice mid-text marker test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    await startVoiceTurn(makeLegTurnOptions(conversation.id));
+    const reserved = await reserveMessage(conversation.id, "assistant");
+    const content = JSON.stringify([
+      { type: "text", text: "The array [-1] indexes the last element." },
+    ]);
+    updateMessageContent(reserved.id, content);
+    leg.emit({
+      type: "assistant_turn_start",
+      messageId: reserved.id,
+      conversationId: conversation.id,
+    });
+    leg.release();
+    await waitForCondition(() => leg.loopSettled());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(getMessageById(reserved.id)!.content).toBe(content);
+  });
+
+  test("the front-door leg runs toolless on the voiceFrontDoor call site with the verdict rule", async () => {
+    const conversation = createConversation("voice front-door leg test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    await startVoiceTurn(
+      makeLegTurnOptions(conversation.id, {
+        routingLeg: "front-door",
+        unifiedVerdict: true,
+        content: 'is it "raining" today',
+      }),
+    );
+    await waitForCondition(() => leg.getLoopOptions() !== undefined);
+
+    // Toolless bracket held for the duration of the leg.
+    expect(leg.session.toolsDisabledDepth).toBe(1);
+    expect(leg.getLoopOptions()?.callSite).toBe("voiceFrontDoor");
+
+    // The verdict rule rides the caller-supplied control prompt, with the
+    // hold branch (unifiedVerdict) and the JSON-hardened utterance anchor.
+    const prompt = leg.getControlPrompt()!;
+    expect(prompt).toContain("BASE VOICE PROMPT.");
+    expect(prompt).toContain("DECIDE SILENTLY");
+    expect(prompt).toContain("[0]");
+    expect(prompt).toContain(JSON.stringify('is it "raining" today'));
+
+    leg.release();
+    await waitForCondition(() => leg.loopSettled());
+    await waitForCondition(() => leg.session.toolsDisabledDepth === 0);
+  });
+
+  test("a non-unified front-door leg is not taught the hold token", async () => {
+    const conversation = createConversation("voice no-hold leg test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    await startVoiceTurn(
+      makeLegTurnOptions(conversation.id, { routingLeg: "front-door" }),
+    );
+    await waitForCondition(() => leg.getLoopOptions() !== undefined);
+    const prompt = leg.getControlPrompt()!;
+    expect(prompt).not.toContain("[0]");
+    expect(prompt).toContain("has finished their turn");
+    leg.release();
+  });
+
+  test("the escalated leg gets the continuation rule and persists its prompt hidden", async () => {
+    const conversation = createConversation("voice escalated leg test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    await startVoiceTurn(
+      makeLegTurnOptions(conversation.id, {
+        routingLeg: "escalated",
+        spokenEscalationBridge: "Let me check your email.",
+        content: ESCALATION_CONTINUATION_CONTENT,
+      }),
+    );
+    await waitForCondition(() => leg.getLoopOptions() !== undefined);
+
+    // Ordinary call-agent resolution and full tools for the strong leg.
+    expect(leg.getLoopOptions()?.callSite).toBe("callAgent");
+    expect(leg.session.toolsDisabledDepth).toBe(0);
+    const prompt = leg.getControlPrompt()!;
+    expect(prompt).toContain('"Let me check your email."');
+    expect(prompt.toLowerCase()).toContain("re-announce");
+
+    // The synthetic continuation prompt persists hidden, so it never renders
+    // as a user bubble after a reload.
+    const rows = getMessages(conversation.id);
+    expect(rows).toHaveLength(1);
+    expect(parsePersistedMetadata(rows[0]!.metadata)).toMatchObject({
+      voiceTurn: true,
+      hidden: true,
+    });
+    leg.release();
+  });
+
+  test("a plain voice turn (no routing leg) keeps today's prompt and callAgent path", async () => {
+    const conversation = createConversation("voice plain leg test");
+    const leg = makeVoiceLegSession(conversation.id);
+    injectDeps(() => leg.session);
+
+    await startVoiceTurn(makeLegTurnOptions(conversation.id));
+    await waitForCondition(() => leg.getLoopOptions() !== undefined);
+    expect(leg.getLoopOptions()?.callSite).toBe("callAgent");
+    expect(leg.getControlPrompt()).toBe("BASE VOICE PROMPT.");
+    expect(leg.session.toolsDisabledDepth).toBe(0);
+    const rows = getMessages(conversation.id);
+    expect(parsePersistedMetadata(rows[0]!.metadata).hidden).toBeUndefined();
+    leg.release();
+  });
+});
+
+describe("cutFrontDoorContentAtVerdict", () => {
+  test("null for a clean front-door answer (nothing to rewrite)", () => {
+    expect(
+      cutFrontDoorContentAtVerdict([{ type: "text", text: "It is Tuesday." }]),
+    ).toBeNull();
+  });
+
+  test("reduces a leading escalate verdict to the capped bridge", () => {
+    const cut = cutFrontDoorContentAtVerdict([
+      { type: "text", text: "[1] One sec. And more text past the sentence." },
+    ]);
+    expect(cut?.spokenText).toBe("One sec.");
+    expect(cut?.blocks).toEqual([{ type: "text", text: "One sec." }]);
+  });
+
+  test("empty spoken text for a bare verdict (caller should delete the row)", () => {
+    const cut = cutFrontDoorContentAtVerdict([{ type: "text", text: "[1]" }]);
+    expect(cut?.spokenText).toBe("");
+    expect(cut?.blocks).toEqual([]);
+  });
+
+  test("strips stray verdict tokens inside an answer (never spoken live)", () => {
+    const cut = cutFrontDoorContentAtVerdict([
+      { type: "text", text: "hey [0] there" },
+    ]);
+    expect(cut?.spokenText).toBe("hey  there");
   });
 });

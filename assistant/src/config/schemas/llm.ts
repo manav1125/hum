@@ -99,6 +99,12 @@ export const LLMCallSiteEnum = z.enum([
   // acknowledgements. Pin a fast, cheap, low-latency model here — it sits on
   // the end-of-turn hot path, so latency matters far more than depth.
   "voiceFrontDecision",
+  // Cue Live's unified front-door leg (V-1c): the fast model that fronts
+  // every server-VAD voice turn under the verdict-first protocol — its
+  // leading token IS the endpointing verdict (hold / escalate / answer), and
+  // an answer streams straight to TTS. Sits on the end-of-turn hot path; pin
+  // a fast model with thinking off.
+  "voiceFrontDoor",
 ]);
 export type LLMCallSite = z.infer<typeof LLMCallSiteEnum>;
 

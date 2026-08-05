@@ -22,18 +22,63 @@ import type { Conversation } from "../daemon/conversation.js";
 import { resolveChannelCapabilities } from "../daemon/conversation-runtime-assembly.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
 import type { TrustContext } from "../daemon/trust-context.js";
+import {
+  deleteMessageById,
+  getMessageById,
+  updateMessageContent,
+} from "../memory/conversation-crud.js";
+import type { ContentBlock } from "../providers/types.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import { DAEMON_INTERNAL_ASSISTANT_ID } from "../runtime/assistant-scope.js";
 import * as pendingInteractions from "../runtime/pending-interactions.js";
+import { publishConversationMessagesChanged } from "../runtime/sync/resource-sync-events.js";
 import { computeToolApprovalDigest } from "../security/tool-approval-digest.js";
+import { getAllTools } from "../tools/registry.js";
 import { createAbortReason } from "../util/abort-reasons.js";
 import { getLogger } from "../util/logger.js";
 import {
   CALL_OPENING_MARKER,
   CALL_VERIFICATION_COMPLETE_MARKER,
+  ESCALATE_VERDICT_TOKEN,
+  HOLD_VERDICT_TOKEN,
+  MINIMIZE_ROOM_MARKER,
+  stripInternalSpeechMarkers,
 } from "./voice-control-protocol.js";
+import {
+  escalatedContinuationRule,
+  ESCALATION_CONTINUATION_CONTENT,
+  frontDoorCapabilityDigest,
+  frontDoorDecisionRule,
+  spokenBridgeText,
+  type VoiceRoutingLeg,
+} from "./voice-triage-escalate.js";
 
 const log = getLogger("voice-session-bridge");
+
+/**
+ * Front-door decision rule with the registry-derived capability digest. The
+ * front-door leg runs toolless (see the `toolsDisabledDepth` bracket in
+ * `startVoiceTurn`), so the digest is its only knowledge of what the
+ * escalated leg can do. Registry unavailability degrades to the bare rule.
+ * `includeHold` adds the mid-thought verdict branch (unified front-door
+ * speculative legs only).
+ */
+function frontDoorRuleWithDigest(
+  includeHold: boolean,
+  callerUtterance?: string,
+): string {
+  let toolNames: string[] = [];
+  try {
+    toolNames = getAllTools().map((tool) => tool.name);
+  } catch {
+    // Tool registry not initialized (e.g. unit tests): digest-less rule.
+  }
+  return frontDoorDecisionRule({
+    includeHold,
+    capabilityDigest: frontDoorCapabilityDigest(toolNames),
+    ...(callerUtterance !== undefined ? { callerUtterance } : {}),
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Module-level dependency injection
@@ -66,6 +111,22 @@ let deps: VoiceBridgeDeps | undefined;
 export function setVoiceBridgeDeps(d: VoiceBridgeDeps): void {
   deps = d;
 }
+
+/**
+ * Pending teardown of the most recent voice turn, per conversation id.
+ *
+ * The processing lock releases inside the agent loop's own `finally`, BEFORE
+ * the bridge's `finally` runs `cleanup()` (per-turn conversation state reset)
+ * and the transcript-hygiene pass. A next leg that starts on the lock release
+ * alone — the escalated leg of a front-door hand-off, or a hold-replay leg —
+ * could install its per-turn state and then have the prior leg's cleanup null
+ * it mid-turn, or snapshot history the hygiene pass is still rewriting. The
+ * next turn awaits this promise (bounded) so teardown always completes first.
+ */
+const pendingTurnTeardowns = new Map<string, Promise<void>>();
+
+/** Bounded wait for a prior voice turn's teardown to settle. */
+const TEARDOWN_WAIT_MS = 3000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -181,6 +242,37 @@ export interface VoiceTurnOptions {
   callbacks?: VoiceTurnCallbacks;
   /** Optional AbortSignal for external cancellation (e.g. barge-in). */
   signal?: AbortSignal;
+  /**
+   * Which leg of a triaged turn this is (unified front-door routing, V-1c).
+   * `"front-door"` runs toolless on the `voiceFrontDoor` call site with the
+   * verdict-first decision rule appended to its control prompt;
+   * `"escalated"` runs the ordinary call-agent resolution with the
+   * continuation rule appended. Undefined = routing off; the turn runs
+   * exactly as before (the phone channel never sets this).
+   */
+  routingLeg?: VoiceRoutingLeg;
+  /**
+   * The holding phrase the caller actually heard before this leg started
+   * (the front-door leg's own capped bridge, or the canned fallback).
+   * Quoted verbatim in the escalated continuation rule so the quality model
+   * knows the exact words already spoken and does not re-announce them.
+   * Only meaningful with `routingLeg: "escalated"`.
+   */
+  spokenEscalationBridge?: string;
+  /**
+   * Marks this turn's `content` as an internal instruction rather than user
+   * speech: it persists `hidden` so `/messages` filters it after a reload.
+   * Set by callers whose synthetic prompt text is not a fixed sentinel.
+   */
+  hiddenSyntheticPrompt?: boolean;
+  /**
+   * Unified front-door: this leg was dispatched speculatively at a silence
+   * boundary, so its decision rule includes the hold branch (leading token
+   * `[0]` = the caller is mid-thought). Only ever set on front-door legs —
+   * a leg that doesn't know the hold token can't accidentally emit it, and
+   * a leg that does must be one whose leading tokens are interpreted.
+   */
+  unifiedVerdict?: boolean;
 }
 
 export interface VoiceTurnHandle {
@@ -188,6 +280,18 @@ export interface VoiceTurnHandle {
   turnId: string;
   /** Abort the in-flight turn (e.g. for barge-in). */
   abort: () => void;
+  /**
+   * Abort the turn AND roll back its persisted user message, restoring the
+   * conversation to its pre-turn state (delete row + reload in-memory
+   * history, then notify sync consumers). The leg's reserved assistant row
+   * is removed too, by the teardown transcript-hygiene pass once the agent
+   * loop settles. Used by the unified front-door hold verdict: a
+   * mid-thought pause must leave no trace of the fragment in history.
+   * Idempotent; safe to call after abort. Optional so the PHONE PATH and
+   * test doubles aren't forced to model rollback — a missing discard
+   * degrades to abort-without-rollback.
+   */
+  discard?: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -312,6 +416,142 @@ function buildVoiceCallControlPrompt(opts: {
 }
 
 // ---------------------------------------------------------------------------
+// Transcript hygiene
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a persisted message row's `content` string into content blocks.
+ * Assistant rows store `JSON.stringify(ContentBlock[])`; a plain-text or
+ * single-object payload is wrapped so the hygiene pass can treat every row
+ * uniformly.
+ */
+function parseRowContentBlocks(content: string): ContentBlock[] {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (Array.isArray(parsed)) {
+      return parsed as ContentBlock[];
+    }
+    if (parsed !== null && typeof parsed === "object") {
+      return [parsed as ContentBlock];
+    }
+    return [{ type: "text", text: String(parsed) }];
+  } catch {
+    return [{ type: "text", text: content }];
+  }
+}
+
+/** The concatenated text of a row's text blocks. */
+function joinedTextOfBlocks(blocks: ContentBlock[]): string {
+  return blocks
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("");
+}
+
+/**
+ * Strip internal speech markers from every text block, dropping text blocks
+ * the strip leaves empty; non-text blocks pass through untouched. Shared by
+ * the front-door stray-token rewrite and the terminal minimize-marker
+ * rewrite.
+ */
+function stripMarkersFromBlocks(blocks: ContentBlock[]): ContentBlock[] {
+  const kept: ContentBlock[] = [];
+  for (const block of blocks) {
+    if (block.type !== "text") {
+      kept.push(block);
+      continue;
+    }
+    const cleaned = stripInternalSpeechMarkers(block.text);
+    if (cleaned.trim().length > 0) {
+      kept.push({ ...block, text: cleaned });
+    }
+  }
+  return kept;
+}
+
+/**
+ * Remove the terminal MINIMIZE_ROOM_MARKER from the end of a row's text,
+ * walking text blocks from the last one backward so a marker split across
+ * block boundaries (e.g. `"Done [-"` + `"1]"`) is removed whole — the
+ * per-block strip in {@link stripMarkersFromBlocks} only sees fragments and
+ * would leave both halves in place. Callers must have established that the
+ * row's joined text ends with the marker after trimming trailing whitespace.
+ */
+function stripTerminalMinimizeMarker(blocks: ContentBlock[]): ContentBlock[] {
+  const result = blocks.map((block) => ({ ...block }));
+  const joined = joinedTextOfBlocks(result);
+  const cutAt = joined.trimEnd().length - MINIMIZE_ROOM_MARKER.length;
+  let blockEnd = joined.length;
+  for (let i = result.length - 1; i >= 0 && blockEnd > cutAt; i--) {
+    const block = result[i]!;
+    if (block.type !== "text") {
+      continue;
+    }
+    const blockStart = blockEnd - block.text.length;
+    block.text = block.text.slice(0, Math.max(0, cutAt - blockStart));
+    blockEnd = blockStart;
+  }
+  return result;
+}
+
+/**
+ * Trim whitespace stranded at a rewritten row's outer edges by a stripped
+ * edge marker (e.g. "Done, take a look [-1]"), leaving inter-block spacing
+ * untouched.
+ */
+function trimOuterTextEdges(blocks: ContentBlock[]): ContentBlock[] {
+  const result = blocks.map((block) => ({ ...block }));
+  for (const block of result) {
+    if (block.type === "text") {
+      block.text = block.text.trimStart();
+      break;
+    }
+  }
+  for (let i = result.length - 1; i >= 0; i--) {
+    const block = result[i]!;
+    if (block.type === "text") {
+      block.text = block.text.trimEnd();
+      break;
+    }
+  }
+  return result;
+}
+
+/**
+ * Reduce a front-door leg's persisted content to what was actually spoken
+ * under the verdict-first protocol.
+ *
+ * Returns null when the content carries no verdict token (a committed
+ * front-door answer — nothing to do). A leg that led with
+ * `ESCALATE_VERDICT_TOKEN` reduces to a single text block holding the
+ * capped bridge; empty spoken text means the caller heard only the canned
+ * fallback bridge, which is audio-only and never a transcript row, so the
+ * caller should delete the row. Stray verdict tokens elsewhere in an
+ * answer were never spoken (the live gate strips them) and are stripped
+ * from the persisted text to match.
+ */
+export function cutFrontDoorContentAtVerdict(
+  blocks: ContentBlock[],
+): { blocks: ContentBlock[]; spokenText: string } | null {
+  const joinedText = joinedTextOfBlocks(blocks);
+  if (joinedText.trimStart().startsWith(ESCALATE_VERDICT_TOKEN)) {
+    const spokenText = spokenBridgeText(joinedText);
+    return {
+      blocks: spokenText.length > 0 ? [{ type: "text", text: spokenText }] : [],
+      spokenText,
+    };
+  }
+  if (
+    !joinedText.includes(ESCALATE_VERDICT_TOKEN) &&
+    !joinedText.includes(HOLD_VERDICT_TOKEN)
+  ) {
+    return null;
+  }
+  const kept = stripMarkersFromBlocks(blocks);
+  const spokenText = joinedTextOfBlocks(kept).trim();
+  return { blocks: kept, spokenText };
+}
+
+// ---------------------------------------------------------------------------
 // startVoiceTurn
 // ---------------------------------------------------------------------------
 
@@ -402,7 +642,7 @@ export async function startVoiceTurn(
   // control markers (ASK_GUARDIAN, END_CALL, etc.) and recognize opener turns.
   const isCallerGuardian = opts.trustContext?.trustClass === "guardian";
 
-  const voiceCallControlPrompt =
+  let voiceCallControlPrompt =
     opts.voiceControlPrompt === undefined
       ? buildVoiceCallControlPrompt({
           isInbound: opts.isInbound,
@@ -411,6 +651,33 @@ export async function startVoiceTurn(
           skipDisclosure: opts.skipDisclosure,
         })
       : opts.voiceControlPrompt;
+
+  // Triage-and-escalate routing rules (unified front door, V-1c). The
+  // caller-supplied live-voice prompt bypasses buildVoiceCallControlPrompt,
+  // so the leg rule is appended here — without it the front-door leg would
+  // run on the fast call site but never learn the verdict protocol, so it
+  // could not hold or hand off to the escalated leg. The front-door rule
+  // quotes the caller's utterance (JSON-serialized — it is caller-controlled
+  // STT text) so the model judges exactly those words.
+  const routingLegRule =
+    opts.routingLeg === "front-door"
+      ? frontDoorRuleWithDigest(opts.unifiedVerdict === true, opts.content)
+      : opts.routingLeg === "escalated"
+        ? escalatedContinuationRule(opts.spokenEscalationBridge)
+        : null;
+  if (voiceCallControlPrompt != null && routingLegRule) {
+    voiceCallControlPrompt = `${voiceCallControlPrompt}\n\n${routingLegRule}`;
+  }
+
+  // The escalation-continuation prompt is a pure internal instruction ("give
+  // the full answer now"), not a real utterance — persist it `hidden` so
+  // `/messages` filters it out after a refetch/reload. The escalated model
+  // still sees the row in context; `hidden` only affects client display. A
+  // caller whose prompt text is not a fixed sentinel opts into the same
+  // treatment with `hiddenSyntheticPrompt`.
+  const isHiddenSyntheticPrompt =
+    opts.hiddenSyntheticPrompt === true ||
+    opts.content === ESCALATION_CONTINUATION_CONTENT;
 
   // Get or create the conversation
   const transport = {
@@ -439,6 +706,25 @@ export async function startVoiceTurn(
     }
     if (conversation.isProcessing()) {
       throw new Error("Conversation is already processing a message");
+    }
+  }
+
+  // The prior voice leg's teardown (per-turn state cleanup + transcript
+  // hygiene) runs AFTER the processing lock releases; wait it out — bounded —
+  // so this leg neither has its installed state clobbered by the prior leg's
+  // cleanup nor snapshots history mid-rewrite. On timeout proceed anyway (the
+  // teardown is best-effort and a wedged prior leg must not dead-lock voice).
+  const priorTeardown = pendingTurnTeardowns.get(opts.conversationId);
+  if (priorTeardown) {
+    await Promise.race([
+      priorTeardown,
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, TEARDOWN_WAIT_MS);
+        (timer as { unref?: () => void }).unref?.();
+      }),
+    ]);
+    if (opts.signal?.aborted) {
+      throw new Error("Turn aborted while waiting for conversation");
     }
   }
 
@@ -495,7 +781,10 @@ export async function startVoiceTurn(
       // can render voice-originated turns distinctly after a history reload.
       // Metadata only — capability resolution stays driven by the
       // channel/interface contexts above.
-      metadata: { voiceTurn: true },
+      metadata: {
+        voiceTurn: true,
+        ...(isHiddenSyntheticPrompt ? { hidden: true } : {}),
+      },
     });
     messageId = persistResult.id;
   } catch (err) {
@@ -629,6 +918,154 @@ export async function startVoiceTurn(
   });
   clientCallbackInstalled = true;
 
+  // Pairs the front-door leg's toolsDisabledDepth increment with its
+  // decrement in the IIFE's finally, even when runAgentLoop throws.
+  let frontDoorToolsSuppressed = false;
+
+  // The reserved assistant row of the leg's LLM call, captured from
+  // `assistant_turn_start`. Voice legs are single-call in practice (the
+  // front-door leg is toolless), so the last id observed is the leg's
+  // transcript row — the target of the teardown transcript-hygiene pass.
+  let reservedAssistantRowId: string | null = null;
+  // Set by the handle's discard(): the whole leg must leave no trace.
+  let discarded = false;
+
+  /**
+   * Teardown transcript hygiene. Runs after the agent loop has fully settled
+   * (the loop's own tail settles the debounced partial-content flush first,
+   * so a zombie flush timer can no longer rewrite the row after this pass —
+   * see `settlePendingPartialFlush` in conversation-agent-loop):
+   *
+   * - A discarded leg (unified front-door hold verdict) deletes its
+   *   reserved assistant row: `discard` already rolled back the user row,
+   *   and without this a stray row holding the leg's unspoken partial
+   *   output (typically the bare hold token) survives.
+   * - A front-door leg that escalated reduces to its capped spoken bridge —
+   *   never the verdict token or the text streamed past the cap. A row with
+   *   no spoken bridge (canned-fallback case — that bridge is audio-only) is
+   *   deleted.
+   * - Any leg whose row ENDS with the `[-1]` minimize marker (swallowed
+   *   before TTS on the live path) has its text blocks rewritten through
+   *   `stripInternalSpeechMarkers` so the marker never renders in the chat
+   *   transcript. Deliberately scoped to that marker: rows without it
+   *   persist byte-identical.
+   *
+   * After a rewrite, in-memory history is reloaded from the clean DB so the
+   * escalated leg's snapshot never sees the marker text either. Best-effort:
+   * a hiccup here must not escalate into a turn-level failure.
+   */
+  const finalizeVoiceLegTranscript = async (): Promise<void> => {
+    if (reservedAssistantRowId == null) {
+      if (discarded || opts.routingLeg === "front-door") {
+        // A leg the pass should cover never announced a reserved row: either
+        // the leg died before its LLM call, or `assistant_turn_start` did not
+        // reach this bridge — the latter would leave raw verdict tokens in
+        // the transcript, so make the skip loud.
+        log.warn(
+          { turnId, routingLeg: opts.routingLeg ?? null, discarded },
+          "Voice leg transcript hygiene skipped: no reserved row observed",
+        );
+      }
+      return;
+    }
+    try {
+      let action = "none";
+      if (discarded) {
+        deleteMessageById(reservedAssistantRowId);
+        action = "delete_discarded";
+      } else {
+        const row = getMessageById(reservedAssistantRowId, opts.conversationId);
+        const blocks = row ? parseRowContentBlocks(row.content) : null;
+        const cut =
+          blocks && opts.routingLeg === "front-door"
+            ? cutFrontDoorContentAtVerdict(blocks)
+            : null;
+        if (!row || !blocks) {
+          action = "row_missing";
+        } else if (cut) {
+          if (cut.spokenText.length > 0) {
+            updateMessageContent(
+              reservedAssistantRowId,
+              JSON.stringify(cut.blocks),
+            );
+            action = "rewrite_spoken";
+          } else {
+            deleteMessageById(reservedAssistantRowId);
+            action = "delete_empty";
+          }
+        } else if (
+          // Terminal position only — mirrors the live holdback latch: a
+          // reply whose CONTENT contains "[-1]" mid-text never acted on it,
+          // so its transcript keeps that content untouched too. Front-door
+          // answer rows (no verdict token to cut) take this branch as well.
+          joinedTextOfBlocks(blocks).trimEnd().endsWith(MINIMIZE_ROOM_MARKER)
+        ) {
+          // Terminal marker first (boundary-aware — it may span text
+          // blocks), then the per-block strip for any interior complete
+          // markers.
+          const cleaned = trimOuterTextEdges(
+            stripMarkersFromBlocks(stripTerminalMinimizeMarker(blocks)),
+          );
+          // A marker-only reply strips to nothing at all; keeping the row
+          // would render a blank assistant bubble, so delete it like the
+          // front-door empty case. Any surviving block — including non-text
+          // blocks like tool_use — keeps the row.
+          if (cleaned.length === 0) {
+            deleteMessageById(reservedAssistantRowId);
+            action = "delete_empty";
+          } else {
+            updateMessageContent(
+              reservedAssistantRowId,
+              JSON.stringify(cleaned),
+            );
+            action = "strip_minimize_marker";
+          }
+        }
+      }
+      // Main legs run the pass on every voice turn; keep the no-op case
+      // out of the logs.
+      const isMainLegNoOp =
+        action === "none" && !discarded && opts.routingLeg !== "front-door";
+      if (!isMainLegNoOp) {
+        log.info(
+          {
+            turnId,
+            messageId: reservedAssistantRowId,
+            routingLeg: opts.routingLeg ?? null,
+            discarded,
+            action,
+          },
+          "Voice leg transcript hygiene",
+        );
+      }
+      if (action !== "none" && action !== "row_missing") {
+        await conversation.loadFromDb();
+        publishConversationMessagesChanged(opts.conversationId);
+      }
+    } catch (err) {
+      log.warn(
+        { err, turnId, messageId: reservedAssistantRowId },
+        "Voice leg transcript hygiene failed",
+      );
+    }
+  };
+
+  // Registered before the agent loop starts so the NEXT leg on this
+  // conversation waits for this turn's `finally` (cleanup + transcript
+  // hygiene) — not just the processing-flag release — before installing its
+  // own per-turn state.
+  let resolveTeardown!: () => void;
+  const teardownSettled = new Promise<void>((resolve) => {
+    resolveTeardown = resolve;
+  });
+  pendingTurnTeardowns.set(opts.conversationId, teardownSettled);
+  const settleTurnTeardown = () => {
+    if (pendingTurnTeardowns.get(opts.conversationId) === teardownSettled) {
+      pendingTurnTeardowns.delete(opts.conversationId);
+    }
+    resolveTeardown();
+  };
+
   // Fire-and-forget the agent loop
   void (async () => {
     try {
@@ -641,8 +1078,19 @@ export async function startVoiceTurn(
       // flag into subsequent non-voice turns on the same conversation.
       conversation.forcePromptSideEffects =
         !isGuardian && !usesLocalInteractiveApprovals;
+      // The front-door leg runs toolless: no schemas on the wire and the
+      // executor gate closed (the shared depth-counter bracket). Anything
+      // needing a tool must escalate — the capability digest in its control
+      // prompt tells it what the escalated leg can do.
+      if (opts.routingLeg === "front-door") {
+        conversation.toolsDisabledDepth++;
+        frontDoorToolsSuppressed = true;
+      }
       await conversation.runAgentLoop(persistedContent, messageId, {
         onEvent: (msg: ServerMessage) => {
+          if (msg.type === "assistant_turn_start") {
+            reservedAssistantRowId = msg.messageId;
+          }
           if (msg.type === "error") {
             lastError = msg.message;
           } else if (msg.type === "conversation_error") {
@@ -692,7 +1140,11 @@ export async function startVoiceTurn(
           // Note: tool_use_preview_start is intentionally not handled here.
           // Voice only reacts to the definitive tool_use_start event.
         },
-        callSite: "callAgent",
+        // Front-door legs resolve through their own call site, whose shipped
+        // default pins the fast verdict model (see call-site-defaults.ts
+        // `voiceFrontDoor`); every other leg keeps the callAgent resolution.
+        callSite:
+          opts.routingLeg === "front-door" ? "voiceFrontDoor" : "callAgent",
       });
       if (lastError) {
         log.error(
@@ -705,7 +1157,12 @@ export async function startVoiceTurn(
       log.error({ err, turnId }, "Voice turn failed");
       eventSink.onError(message);
     } finally {
+      if (frontDoorToolsSuppressed) {
+        conversation.toolsDisabledDepth--;
+      }
       cleanup();
+      await finalizeVoiceLegTranscript();
+      settleTurnTeardown();
     }
   })();
 
@@ -731,8 +1188,31 @@ export async function startVoiceTurn(
     }
   }
 
+  const discardFn = async () => {
+    if (discarded) {
+      return;
+    }
+    discarded = true;
+    abortFn();
+    try {
+      // Same rollback pattern upstream uses: delete the row, then rebuild
+      // in-memory history from the clean DB (a plain pop is fragile against
+      // concurrent compaction reassigning the array), then notify sync
+      // consumers so attached clients drop the fragment too.
+      deleteMessageById(messageId);
+      await conversation.loadFromDb();
+      publishConversationMessagesChanged(opts.conversationId);
+    } catch (err) {
+      log.warn(
+        { err, turnId, messageId },
+        "Voice turn discard could not roll back the persisted user message",
+      );
+    }
+  };
+
   return {
     turnId,
     abort: abortFn,
+    discard: discardFn,
   };
 }

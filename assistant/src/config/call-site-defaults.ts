@@ -37,6 +37,20 @@ export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
     temperature: 0,
     disableCache: true,
   },
+  // The unified front-door leg (V-1c): every server-VAD voice turn's first
+  // leg. Verdict-first — the leading token decides hold/escalate/answer — so
+  // TTFT is everything: cost-optimized is our latency intent (decision 2 in
+  // docs/voice-replatform-plan.md; upstream pins latency-optimized, a profile
+  // key this fork does not carry), thinking hard-off, small output budget (a
+  // verdict token, one bridge sentence, or a 1-3 sentence spoken answer), and
+  // never cached (each prompt embeds the unique caller utterance).
+  voiceFrontDoor: {
+    profile: "cost-optimized",
+    maxTokens: 300,
+    effort: "low",
+    thinking: { enabled: false, streamThinking: false },
+    disableCache: true,
+  },
   subagentSpawn: { profile: "balanced" },
   compactionAgent: { profile: "balanced" },
   analyzeConversation: { profile: "balanced" },
