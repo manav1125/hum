@@ -4,7 +4,7 @@
  * GET    /v1/plugins                — list installed plugins under `<workspaceDir>/plugins/`.
  * GET    /v1/plugins/search         — search the canonical GitHub catalog of installable plugins.
  * GET    /v1/plugins/:name          — resolve a single plugin's detail view (metadata + README).
- * POST   /v1/plugins/install        — install a plugin by name from the canonical source.
+ * POST   /v1/plugins/install        — install a plugin by name from the curated registry catalog.
  * POST   /v1/plugins/:name/enable   — clear a plugin's `.disabled` sentinel.
  * POST   /v1/plugins/:name/disable  — write a plugin's `.disabled` sentinel.
  * DELETE /v1/plugins/:name          — uninstall a plugin from `<workspaceDir>/plugins/<name>/`.
@@ -38,17 +38,18 @@ import {
   PluginInspectNotFoundError,
 } from "../../cli/lib/inspect-plugin.js";
 import {
-  DEFAULT_PLUGIN_REF,
   installPlugin,
   InvalidPluginNameError,
   PluginAlreadyInstalledError,
   PluginNotFoundError,
   PluginSourceUnavailableError,
+  sanitizePluginName,
 } from "../../cli/lib/install-from-github.js";
 import {
   type InstalledPluginInfo,
   listInstalledPlugins,
 } from "../../cli/lib/list-installed-plugins.js";
+import { resolvePluginSourceFromCatalog } from "../../cli/lib/plugin-catalog-resolve.js";
 import {
   getPluginDetails,
   PluginDetailsNotFoundError,
@@ -798,22 +799,45 @@ async function handleGetPluginDetails({
 // ---------------------------------------------------------------------------
 
 async function handleInstallPlugin({ body = {} }: RouteHandlerArgs) {
-  const name = typeof body.name === "string" ? body.name : "";
-  if (!name) {
+  const rawName = typeof body.name === "string" ? body.name : "";
+  if (!rawName) {
     throw new BadRequestError("`name` is required");
   }
   const force = typeof body.force === "boolean" ? body.force : undefined;
 
-  // The ref is pinned to the curated `DEFAULT_PLUGIN_REF` rather than taken
-  // from the request: a caller-supplied ref would let any `settings.write`
-  // principal install from an unreviewed revision (a PR branch, fork ref,
-  // ...) whose marketplace manifest could carry attacker code that the loader
-  // then dynamically imports. Installs over HTTP therefore only ever resolve
-  // against the reviewed catalog on the default ref. Operators who need
-  // another ref use the local CLI's `assistant plugins install --ref`.
+  // The install source is never taken from the request: a caller-supplied
+  // ref/repo would let any `settings.write` principal install from an
+  // unreviewed revision (a PR branch, fork ref, ...) whose code the loader
+  // then dynamically imports. The name resolves — server-side — against the
+  // curated, commit-pinned `plugins/registry.json` catalog: the SAME source of
+  // truth `handleSearchPlugins` and the detail route read, so a card that
+  // appears in search always resolves here on install, at exactly the pinned
+  // revision the card advertised. The pre-resolved source is validated against
+  // the marketplace github-source schema (full-SHA pin) and handed to the
+  // installer as trusted coordinates — no `plugins/marketplace.json` fetch.
+  // Operators who need another ref use the local CLI's
+  // `assistant plugins install --ref`.
   try {
+    // Validate the name up front — before any catalog work — so a malformed
+    // name (`../escape`) is a deterministic 400 rather than a 404 from the
+    // catalog lookup. `installPlugin` sanitizes too; this preserves the
+    // advertised 400.
+    const name = sanitizePluginName(rawName);
+    const source = resolvePluginSourceFromCatalog(name);
+    if (!source) {
+      throw new NotFoundError(`No plugin named "${name}" in the catalog.`);
+    }
     const result = await installPlugin(
-      { name, ref: DEFAULT_PLUGIN_REF, force },
+      {
+        name,
+        force,
+        trustedSource: {
+          owner: source.owner,
+          repo: source.repo,
+          rootPath: source.path,
+          ref: source.ref,
+        },
+      },
       { fetch: globalThis.fetch.bind(globalThis) },
     );
     return {
@@ -824,6 +848,11 @@ async function handleInstallPlugin({ body = {} }: RouteHandlerArgs) {
       ref: result.ref,
     };
   } catch (err) {
+    // The not-in-catalog case above is already a RouteError; re-throw it
+    // verbatim rather than masking it as a 500.
+    if (err instanceof NotFoundError) {
+      throw err;
+    }
     if (err instanceof InvalidPluginNameError) {
       throw new BadRequestError(err.message);
     }
@@ -914,9 +943,10 @@ async function handleUpgradePlugin({
     if (err instanceof PluginNotFoundError) {
       throw new NotFoundError(err.message);
     }
-    // The install exists but has no marketplace entry to advance to — a
-    // permanent state the caller cannot resolve by retrying. 409 marks the
-    // request as well-formed but not actionable in the current state.
+    // The install has neither a marketplace entry nor a recorded GitHub
+    // source to advance to — a permanent state the caller cannot resolve by
+    // retrying. 409 marks the request as well-formed but not actionable in
+    // the current state.
     if (err instanceof PluginNotUpgradableError) {
       throw new ConflictError(err.message);
     }
@@ -1090,7 +1120,7 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "Install a plugin",
     description:
-      "Install a plugin by name from the canonical source — a whitelisted `plugins/marketplace.json` entry. Always resolves against the curated default git ref (no caller-supplied ref): installing from an unreviewed revision would bypass the marketplace curation boundary and let attacker-controlled code be loaded. Materializes the plugin under `<workspaceDir>/plugins/<name>/`; the assistant must be restarted to load it. Mirrors the CLI's `assistant plugins install <name>`. An already-installed name without `force` returns 409; a name that resolves to nothing returns 404. Sibling to `POST /v1/skills/install`.",
+      "Install a plugin by name from the curated, commit-pinned `plugins/registry.json` catalog — the SAME on-disk source the search and detail routes read, so any card returned by `GET /v1/plugins/search` installs here at exactly the pinned revision it advertised. The install source is resolved server-side (no caller-supplied ref/repo): installing from an unreviewed revision would bypass the curation boundary and let attacker-controlled code be loaded. Materializes the plugin under `<workspaceDir>/plugins/<name>/`; the assistant must be restarted to load it. An already-installed name without `force` returns 409; a name the catalog does not claim returns 404. Sibling to `POST /v1/skills/install`.",
     tags: ["plugins"],
     requestBody: pluginInstallRequestSchema,
     responseBody: pluginInstallResponseSchema,
@@ -1100,8 +1130,7 @@ export const ROUTES: RouteDefinition[] = [
           "The request body was missing `name` or the name failed sanitization.",
       },
       "404": {
-        description:
-          "No plugin resolves to the given name at the requested ref.",
+        description: "No catalog entry claims the given name.",
       },
       "409": {
         description:
@@ -1224,9 +1253,9 @@ export const ROUTES: RouteDefinition[] = [
       requiredScopes: ["settings.write"],
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
-    summary: "Upgrade a plugin to the marketplace pin",
+    summary: "Upgrade a plugin to its source's current revision",
     description:
-      'Move an installed plugin to the marketplace\'s current pinned commit, re-materializing it under `<workspaceDir>/plugins/<name>/`. Always resolves against the curated marketplace pin (no caller-supplied ref), mirroring `plugins install`\'s curation boundary. A no-op (`outcome: "already-up-to-date"`) when the installed commit already equals the pin; pass `dryRun` to preview the move (`outcome: "would-upgrade"`) without touching the install. Installs lacking provenance are re-pinned to the current SHA. The assistant must be restarted to load the upgraded code. This does not gate on local edits — callers should consult `GET /v1/plugins/:name/inspect` (`local.localChanges`) first and confirm before overwriting. Mirrors the CLI\'s `assistant plugins upgrade <name>`.',
+      "Move an installed plugin to its source's current revision, re-materializing it under `<workspaceDir>/plugins/<name>/`. A marketplace plugin advances to the curated pin; a plugin the marketplace does not claim but whose provenance records a GitHub source (an untrusted direct install) advances to whatever its recorded ref now resolves to — a branch/tag/HEAD moves as upstream does, and a full-SHA pin follows the repo's default branch — re-materialized verbatim with no curated adapter overlay. The target ref is never taken from the request (no caller-supplied ref), mirroring `plugins install`'s curation boundary. A no-op (`outcome: \"already-up-to-date\"`) when the installed commit already equals the target; pass `dryRun` to preview the move (`outcome: \"would-upgrade\"`) without touching the install. Installs lacking provenance are re-pinned to the current SHA. The assistant must be restarted to load the upgraded code. This does not gate on local edits — callers should consult `GET /v1/plugins/:name/inspect` (`local.localChanges`) first and confirm before overwriting. Mirrors the CLI's `assistant plugins upgrade <name>`.",
     tags: ["plugins"],
     pathParams: [
       {
@@ -1249,7 +1278,7 @@ export const ROUTES: RouteDefinition[] = [
       },
       "409": {
         description:
-          "The install exists but has no marketplace entry to advance to.",
+          "The install has neither a marketplace entry nor a recorded GitHub source to advance to.",
       },
       "503": {
         description:

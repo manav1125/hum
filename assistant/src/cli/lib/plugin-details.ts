@@ -23,9 +23,11 @@
  * plugin's adapter stub, not a standalone plugin, so it does not override the
  * claim.
  *
- * Installs still resolve through the full-SHA `plugins/marketplace.json` pin
- * flow (see {@link ./install-from-github}); the registry is the browse/search/
- * detail source of truth, not the install-resolution layer.
+ * HTTP installs resolve from this same registry catalog (see
+ * {@link ./plugin-catalog-resolve}), so a card that appears in search installs
+ * at exactly the pinned revision the detail page describes. The CLI's
+ * `plugins install <name>` stays on the full-SHA `plugins/marketplace.json`
+ * pin flow (see {@link ./install-from-github}) by design.
  *
  * Designed for direct programmatic use with an injected `fetch`, mirroring the
  * sibling plugin libraries.

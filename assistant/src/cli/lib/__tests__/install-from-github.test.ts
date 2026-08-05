@@ -28,10 +28,13 @@ import {
   installPlugin,
   InvalidPluginNameError,
   PluginAlreadyInstalledError,
+  type PluginFetchSource,
   PluginNotFoundError,
   PluginPostinstallError,
   PluginSourceUnavailableError,
   type PostinstallRunner,
+  readInstallMeta,
+  resolveRefCommit,
   sanitizePluginName,
 } from "../install-from-github.js";
 
@@ -803,6 +806,311 @@ describe("installPlugin — marketplace resolution", () => {
       ),
     ).rejects.toBeInstanceOf(PluginSourceUnavailableError);
     expect(readdirSync(pluginsDir)).toEqual([]);
+  });
+});
+
+describe("installPlugin — dependency installation", () => {
+  let ws: string;
+  let pluginsDir: string;
+
+  beforeEach(() => {
+    ws = mkdtempSync(join(tmpdir(), "vellum-plugins-deps-"));
+    pluginsDir = join(ws, "plugins");
+    mkdirSync(pluginsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(ws, { recursive: true, force: true });
+  });
+
+  test("installs the plugin's declared dependencies into the staged tree", async () => {
+    // GIVEN a plugin whose package.json declares a runtime dependency
+    const fetch = makeContentsFetch({ tree: {}, manifest: CAVEMAN_MANIFEST });
+    const runGit = fakeGitRunner({
+      tree: {
+        "package.json": JSON.stringify({
+          name: "caveman",
+          dependencies: { "date-fns": "3.0.0" },
+        }),
+      },
+      commit: CAVEMAN_SHA,
+    });
+
+    // AND a dependency installer that materializes a node_modules tree in the
+    // directory it is handed (standing in for a real `bun install`)
+    const installedInto: string[] = [];
+    const runInstallDeps = async ({ cwd }: { cwd: string }): Promise<void> => {
+      installedInto.push(cwd);
+      mkdirSync(join(cwd, "node_modules", "date-fns"), { recursive: true });
+      writeFileSync(join(cwd, "node_modules", "date-fns", "index.js"), "x");
+    };
+
+    // WHEN we install
+    await installPlugin(
+      { name: "caveman", ref: "main" },
+      { fetch, runGit, workspacePluginsDir: pluginsDir, runInstallDeps },
+    );
+
+    // THEN the installer ran against the staging dir, and its node_modules rode
+    // the atomic swap into the installed plugin
+    expect(installedInto).toHaveLength(1);
+    const target = join(pluginsDir, "caveman");
+    expect(
+      existsSync(join(target, "node_modules", "date-fns", "index.js")),
+    ).toBe(true);
+
+    // AND node_modules is excluded from the recorded fingerprint — it is a
+    // derived directory, not tracked source, so it never reads as drift
+    const meta = readInstallMeta(target);
+    const fingerprintPaths = Object.keys(meta?.fingerprint?.files ?? {});
+    expect(fingerprintPaths).toContain("package.json");
+    expect(fingerprintPaths.some((p) => p.startsWith("node_modules"))).toBe(
+      false,
+    );
+  });
+
+  test("skips dependency installation when the plugin declares none", async () => {
+    // GIVEN a plugin with no runtime dependencies
+    const fetch = makeContentsFetch({ tree: {}, manifest: CAVEMAN_MANIFEST });
+    const runGit = fakeGitRunner({
+      tree: { "package.json": '{"name":"caveman"}' },
+      commit: CAVEMAN_SHA,
+    });
+
+    let ran = false;
+    const runInstallDeps = async (): Promise<void> => {
+      ran = true;
+    };
+
+    // WHEN we install
+    await installPlugin(
+      { name: "caveman", ref: "main" },
+      { fetch, runGit, workspacePluginsDir: pluginsDir, runInstallDeps },
+    );
+
+    // THEN the dependency installer is never invoked
+    expect(ran).toBe(false);
+  });
+});
+
+describe("installPlugin — trusted catalog source", () => {
+  let ws: string;
+  let pluginsDir: string;
+
+  beforeEach(() => {
+    ws = mkdtempSync(join(tmpdir(), "vellum-plugins-trusted-"));
+    pluginsDir = join(ws, "plugins");
+    mkdirSync(pluginsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(ws, { recursive: true, force: true });
+  });
+
+  const TRUSTED: PluginFetchSource = {
+    owner: "JuliusBrussee",
+    repo: "caveman",
+    rootPath: "",
+    ref: CAVEMAN_SHA,
+  };
+
+  test("installs from the pre-resolved source without consulting the marketplace", async () => {
+    // GIVEN a fetch whose marketplace manifest is absent (a name lookup would
+    // yield not-found) — the pre-resolved trusted source must not need it
+    const fetch = makeContentsFetch({ tree: {}, manifest: undefined });
+    const runGit = fakeGitRunner({
+      tree: { "package.json": '{"name":"caveman"}' },
+      commit: CAVEMAN_SHA,
+    });
+
+    // WHEN we install with a trusted source
+    const result = await installPlugin(
+      { name: "caveman", trustedSource: TRUSTED },
+      { fetch, runGit, workspacePluginsDir: pluginsDir },
+    );
+
+    // THEN the install lands at the pinned commit and records the coordinates
+    expect(result.commit).toBe(CAVEMAN_SHA);
+    expect(result.ref).toBe(CAVEMAN_SHA);
+    const meta = readInstallMeta(join(pluginsDir, "caveman"));
+    expect(meta?.source).toEqual({
+      kind: "github",
+      owner: "JuliusBrussee",
+      repo: "caveman",
+      path: undefined,
+      ref: CAVEMAN_SHA,
+    });
+  });
+
+  test("still refuses a clone that diverges from the pinned SHA", async () => {
+    // GIVEN a clone whose checked-out commit is not the pinned SHA
+    const fetch = makeContentsFetch({ tree: {}, manifest: undefined });
+    const runGit = fakeGitRunner({
+      tree: { "package.json": '{"name":"caveman"}' },
+      commit: "d".repeat(40),
+    });
+
+    // WHEN we install with the trusted pin
+    // THEN the defense-in-depth pin check still applies
+    await expect(
+      installPlugin(
+        { name: "caveman", trustedSource: TRUSTED },
+        { fetch, runGit, workspacePluginsDir: pluginsDir },
+      ),
+    ).rejects.toBeInstanceOf(PluginSourceUnavailableError);
+  });
+});
+
+describe("installPlugin — direct (untrusted) source", () => {
+  let ws: string;
+  let pluginsDir: string;
+
+  beforeEach(() => {
+    ws = mkdtempSync(join(tmpdir(), "vellum-plugins-direct-"));
+    pluginsDir = join(ws, "plugins");
+    mkdirSync(pluginsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(ws, { recursive: true, force: true });
+  });
+
+  /** A fetch that fails the test if any HTTP request is made. */
+  const unusedFetch: FetchLike = async (input) => {
+    throw new Error(
+      `fetch should not run for a direct install: ${String(input)}`,
+    );
+  };
+
+  test("materializes a mutable-ref source verbatim with no marketplace or stub fetch", async () => {
+    // GIVEN a direct source tracking a branch, whose clone resolves to a commit
+    const commit = "e".repeat(40);
+    const runGit = fakeGitRunner({
+      tree: { "package.json": '{"name":"level-up"}', "hooks/init.ts": "//" },
+      commit,
+    });
+
+    // WHEN we install directly (fetch must never run: no marketplace lookup,
+    // no curated adapter-stub overlay)
+    const result = await installPlugin(
+      {
+        name: "level-up",
+        directSource: {
+          owner: "example-org",
+          repo: "level-up",
+          rootPath: "",
+          ref: "main",
+        },
+      },
+      { fetch: unusedFetch, runGit, workspacePluginsDir: pluginsDir },
+    );
+
+    // THEN the branch ref is recorded as the tracking ref, with the resolved
+    // commit alongside — the mutable ref does not trip the SHA pin check
+    expect(result.ref).toBe("main");
+    expect(result.commit).toBe(commit);
+    const meta = readInstallMeta(join(pluginsDir, "level-up"));
+    expect(meta?.source.ref).toBe("main");
+    expect(meta?.commit).toBe(commit);
+  });
+
+  test("synthesizes a minimal package.json when the clone ships none", async () => {
+    // GIVEN a direct clone with no manifest
+    const runGit = fakeGitRunner({
+      tree: { "hooks/init.ts": "//" },
+      commit: "e".repeat(40),
+    });
+
+    // WHEN we install directly
+    await installPlugin(
+      {
+        name: "level-up",
+        directSource: {
+          owner: "example-org",
+          repo: "level-up",
+          rootPath: "",
+          ref: "main",
+        },
+      },
+      { fetch: unusedFetch, runGit, workspacePluginsDir: pluginsDir },
+    );
+
+    // THEN a loader-compatible manifest exists whose name is the install name
+    const pkg = JSON.parse(
+      readFileSync(join(pluginsDir, "level-up", "package.json"), "utf-8"),
+    );
+    expect(pkg.name).toBe("level-up");
+    expect(pkg.peerDependencies["@vellumai/plugin-api"]).toBeDefined();
+  });
+});
+
+describe("resolveRefCommit", () => {
+  const SOURCE: PluginFetchSource = {
+    owner: "example-org",
+    repo: "level-up",
+    rootPath: "",
+    ref: "main",
+  };
+
+  test("a full-SHA ref resolves to itself with no git invocation", async () => {
+    const sha = "f".repeat(40);
+    const result = await resolveRefCommit(
+      { ...SOURCE, ref: sha },
+      unusedGitRunner,
+    );
+    expect(result).toBe(sha);
+  });
+
+  test("resolves a branch ref via a single ls-remote", async () => {
+    const sha = "1".repeat(40);
+    const calls: string[][] = [];
+    const runGit: GitRunner = async (args) => {
+      calls.push([...args]);
+      return { stdout: `${sha}\trefs/heads/main\n` };
+    };
+
+    const result = await resolveRefCommit(SOURCE, runGit);
+
+    expect(result).toBe(sha);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toBe("ls-remote");
+    expect(calls[0]?.at(-1)).toBe("main");
+  });
+
+  test("prefers the peeled commit of an annotated tag", async () => {
+    const tagObject = "2".repeat(40);
+    const peeled = "3".repeat(40);
+    const runGit: GitRunner = async () => ({
+      stdout:
+        `${tagObject}\trefs/tags/v1.0.0\n` + `${peeled}\trefs/tags/v1.0.0^{}\n`,
+    });
+
+    const result = await resolveRefCommit({ ...SOURCE, ref: "v1.0.0" }, runGit);
+
+    expect(result).toBe(peeled);
+  });
+
+  test("returns null when the ref no longer exists on the remote", async () => {
+    const runGit: GitRunner = async () => ({ stdout: "" });
+    expect(
+      await resolveRefCommit({ ...SOURCE, ref: "gone" }, runGit),
+    ).toBeNull();
+  });
+
+  test("returns null when the repo itself is unreachable as a hard failure", async () => {
+    const runGit: GitRunner = async () => {
+      throw new Error("fatal: repository not found");
+    };
+    expect(await resolveRefCommit(SOURCE, runGit)).toBeNull();
+  });
+
+  test("surfaces a transient git failure as a retryable 503", async () => {
+    const runGit: GitRunner = async () => {
+      throw new Error("network down");
+    };
+    await expect(resolveRefCommit(SOURCE, runGit)).rejects.toBeInstanceOf(
+      PluginSourceUnavailableError,
+    );
   });
 });
 

@@ -123,15 +123,33 @@ const installSpy = mock(
 // the canonical definition lives in install-from-github.js. The
 // handler imports from install-from-github.js, so mock that too so the
 // `instanceof` checks inside the handler resolve to the same classes as
-// the ones the spies throw. The error classes are passed through real so
-// `instanceof` aligns.
+// the ones the spies throw. The real module is spread so every other export
+// (error classes, `sanitizePluginName`, …) passes through unchanged — a
+// hand-written export list would silently delete them for every later test
+// file in the run.
+const actualInstallFromGithub =
+  await import("../../../cli/lib/install-from-github.js");
 mock.module("../../../cli/lib/install-from-github.js", () => ({
-  DEFAULT_PLUGIN_REF: "main",
-  InvalidPluginNameError,
-  PluginAlreadyInstalledError,
-  PluginNotFoundError,
-  PluginSourceUnavailableError,
+  ...actualInstallFromGithub,
   installPlugin: installSpy,
+}));
+
+// Mock the registry-backed catalog resolver the install handler uses to map a
+// name onto trusted install coordinates. The lib's own validation is covered
+// by plugin-catalog-resolve.test.ts; here the wiring under test is that the
+// handler resolves from the SAME catalog search reads and 404s when the
+// catalog does not claim the name.
+const resolveCatalogSpy = mock(
+  (
+    _name: string,
+  ): { owner: string; repo: string; path: string; ref: string } | null => null,
+);
+
+const actualCatalogResolve =
+  await import("../../../cli/lib/plugin-catalog-resolve.js");
+mock.module("../../../cli/lib/plugin-catalog-resolve.js", () => ({
+  ...actualCatalogResolve,
+  resolvePluginSourceFromCatalog: resolveCatalogSpy,
 }));
 
 // Mock getPluginDetails: the detail handler unions disk + manifest + repo
@@ -842,18 +860,36 @@ async function invokeInstall(args: RouteHandlerArgs = {}): Promise<{
   };
 }
 
+/** A registry-pinned source the catalog resolver returns for `name`. */
+const CATALOG_SHA = "c".repeat(40);
+
+function catalogSource(name: string): {
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+} {
+  return { owner: "example-org", repo: name, path: "", ref: CATALOG_SHA };
+}
+
 describe("POST /v1/plugins/install", () => {
   beforeEach(() => {
     installSpy.mockReset();
+    resolveCatalogSpy.mockReset();
+    resolveCatalogSpy.mockImplementation(() => null);
   });
 
-  test("forwards name/force and shapes the result, pinning ref to the default", async () => {
+  test("resolves the install source from the catalog and installs it as trusted", async () => {
+    // The install source comes from the SAME curated registry catalog the
+    // search/detail routes read — so a card that appears in search installs
+    // here at exactly the pinned revision it advertised, never a 404.
+    resolveCatalogSpy.mockImplementation((name) => catalogSource(name));
     installSpy.mockImplementation(async (opts) => ({
       name: opts.name,
       target: `/workspace/.vellum/plugins/${opts.name}`,
       fileCount: 7,
-      ref: opts.ref ?? "main",
-      commit: null,
+      ref: opts.trustedSource?.ref ?? "main",
+      commit: opts.trustedSource?.ref ?? null,
       committedAt: null,
     }));
 
@@ -866,25 +902,31 @@ describe("POST /v1/plugins/install", () => {
       name: "caveman",
       target: "/workspace/.vellum/plugins/caveman",
       fileCount: 7,
-      ref: "main",
+      ref: CATALOG_SHA,
     });
+    expect(resolveCatalogSpy.mock.calls[0]?.[0]).toBe("caveman");
     expect(installSpy.mock.calls[0]?.[0]).toEqual({
       name: "caveman",
-      ref: "main",
       force: true,
+      trustedSource: {
+        owner: "example-org",
+        repo: "caveman",
+        rootPath: "",
+        ref: CATALOG_SHA,
+      },
     });
   });
 
-  test("ignores a caller-supplied ref and pins to the curated default", async () => {
+  test("ignores a caller-supplied ref — the catalog pin is the only source", async () => {
     // Security boundary: installing from an unreviewed ref (a PR branch,
-    // fork ref, ...) could load attacker-controlled marketplace code, so the
-    // HTTP route never honors a body `ref` — it always resolves
-    // against the curated default ref.
+    // fork ref, ...) could load attacker-controlled code, so the HTTP route
+    // never honors a body `ref` — the server-side catalog pin wins.
+    resolveCatalogSpy.mockImplementation((name) => catalogSource(name));
     installSpy.mockImplementation(async (opts) => ({
       name: opts.name,
       target: `/workspace/.vellum/plugins/${opts.name}`,
       fileCount: 7,
-      ref: opts.ref ?? "main",
+      ref: opts.trustedSource?.ref ?? "main",
       commit: null,
       committedAt: null,
     }));
@@ -893,12 +935,29 @@ describe("POST /v1/plugins/install", () => {
       body: { name: "caveman", ref: "attacker-pr-branch" },
     });
 
-    expect(result.ref).toBe("main");
+    expect(result.ref).toBe(CATALOG_SHA);
     expect(installSpy.mock.calls[0]?.[0]).toEqual({
       name: "caveman",
-      ref: "main",
       force: undefined,
+      trustedSource: {
+        owner: "example-org",
+        repo: "caveman",
+        rootPath: "",
+        ref: CATALOG_SHA,
+      },
     });
+  });
+
+  test("a name the catalog does not claim → NotFoundError (404) without calling the installer", async () => {
+    // The consistency guard: install resolves from the same catalog search
+    // lists, so "not in the catalog" is a deterministic 404 — never a
+    // spurious install from some other source.
+    resolveCatalogSpy.mockImplementation(() => null);
+
+    await expect(
+      invokeInstall({ body: { name: "ghost" } }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(installSpy).not.toHaveBeenCalled();
   });
 
   test("a missing name short-circuits to BadRequestError without calling the lib", async () => {
@@ -908,17 +967,27 @@ describe("POST /v1/plugins/install", () => {
     expect(installSpy).not.toHaveBeenCalled();
   });
 
-  test("InvalidPluginNameError → BadRequestError (400)", async () => {
+  test("a malformed name → BadRequestError (400) before any catalog lookup", async () => {
+    await expect(
+      invokeInstall({ body: { name: "../escape" } }),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(resolveCatalogSpy).not.toHaveBeenCalled();
+    expect(installSpy).not.toHaveBeenCalled();
+  });
+
+  test("InvalidPluginNameError from the lib → BadRequestError (400)", async () => {
+    resolveCatalogSpy.mockImplementation((name) => catalogSource(name));
     installSpy.mockImplementation(async () => {
-      throw new InvalidPluginNameError("../escape");
+      throw new InvalidPluginNameError("escape");
     });
 
     await expect(
-      invokeInstall({ body: { name: "../escape" } }),
+      invokeInstall({ body: { name: "caveman" } }),
     ).rejects.toBeInstanceOf(BadRequestError);
   });
 
   test("PluginAlreadyInstalledError → ConflictError (409)", async () => {
+    resolveCatalogSpy.mockImplementation((name) => catalogSource(name));
     installSpy.mockImplementation(async (opts) => {
       throw new PluginAlreadyInstalledError(
         opts.name,
@@ -932,6 +1001,7 @@ describe("POST /v1/plugins/install", () => {
   });
 
   test("PluginNotFoundError → NotFoundError (404)", async () => {
+    resolveCatalogSpy.mockImplementation((name) => catalogSource(name));
     installSpy.mockImplementation(async (opts) => {
       throw new PluginNotFoundError(opts.name, "main", "example-org/ghost");
     });
@@ -945,6 +1015,7 @@ describe("POST /v1/plugins/install", () => {
     // A rate-limited or temporarily-down GitHub source is retryable: the
     // route surfaces 503 so the client can back off and try again, rather
     // than a misleading 500 that reads as a permanent failure.
+    resolveCatalogSpy.mockImplementation((name) => catalogSource(name));
     installSpy.mockImplementation(async () => {
       throw new PluginSourceUnavailableError(
         "GitHub tree listing for JuliusBrussee/caveman @ v1.8.2: HTTP 403",
@@ -958,6 +1029,7 @@ describe("POST /v1/plugins/install", () => {
   });
 
   test("unknown errors → InternalError with original message preserved", async () => {
+    resolveCatalogSpy.mockImplementation((name) => catalogSource(name));
     installSpy.mockImplementation(async () => {
       throw new Error("ECONNRESET");
     });

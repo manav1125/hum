@@ -243,3 +243,43 @@ describe("computeContentHash", () => {
     expect(second).not.toBe(first);
   });
 });
+
+describe("node_modules exclusion (derived, never tracked source)", () => {
+  test("computeFingerprint skips node_modules at any depth", () => {
+    // GIVEN a tree with installed dependencies at the root and nested
+    write("package.json", "{}");
+    write("node_modules/date-fns/index.js", "x");
+    write("apps/panel/node_modules/left-pad/index.js", "y");
+
+    // WHEN it is fingerprinted
+    const fp = computeFingerprint(root);
+
+    // THEN no dependency file enters the baseline — a re-materialized tree
+    // (which has no node_modules) must still match what install recorded
+    expect(Object.keys(fp.files).sort()).toEqual(["package.json"]);
+  });
+
+  test("an added node_modules never reads as local drift", () => {
+    // GIVEN a fingerprint taken before dependencies were installed
+    write("package.json", "{}");
+    const fp = computeFingerprint(root);
+
+    // WHEN dependencies appear on disk afterwards
+    write("node_modules/date-fns/index.js", "x");
+
+    // THEN the comparison still reports a clean tree
+    expect(compareFingerprint(root, fp).clean).toBe(true);
+  });
+
+  test("computeContentHash is invariant to node_modules", () => {
+    // GIVEN a tree hashed without dependencies
+    write("package.json", "{}");
+    const before = computeContentHash(root);
+
+    // WHEN dependencies are installed
+    write("node_modules/date-fns/index.js", "x");
+
+    // THEN the whole-tree digest is unchanged
+    expect(computeContentHash(root)).toBe(before);
+  });
+});

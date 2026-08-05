@@ -567,7 +567,7 @@ Examples:
       plugins
         .command("upgrade <name>")
         .description(
-          "Upgrade an installed plugin to the marketplace's current pin",
+          "Upgrade an installed plugin to its source's current revision (the marketplace pin, or — for an install whose provenance records a GitHub source outside the marketplace — whatever its recorded branch/tag/ref now resolves to)",
         )
         .option(
           "--dry-run",

@@ -19,6 +19,19 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+/**
+ * Directory names skipped at any depth by every fingerprint walk.
+ * `node_modules` holds a plugin's installed dependencies — derived from the
+ * pinned `package.json` and re-installed on every (re)install and upgrade (see
+ * {@link ./install-plugin-dependencies}), never tracked source. Excluding it
+ * keeps installed dependencies out of the install fingerprint / content hash,
+ * so a re-materialized baseline — which has no `node_modules/` — still matches
+ * what install recorded and dependencies never read as local drift.
+ */
+export const EXCLUDED_DIRS_ANYWHERE: ReadonlySet<string> = new Set([
+  "node_modules",
+]);
+
 /** Digest algorithm recorded alongside the file map, for forward compatibility. */
 export type FingerprintAlgorithm = "sha256";
 
@@ -56,7 +69,9 @@ function hashFile(absPath: string): string {
  * Walk `root` and return a content digest for every regular file, keyed by its
  * POSIX-relative path. Symlinks are skipped (the loader does not follow them,
  * and install never materializes them); top-level entries named in `exclude`
- * are skipped so the provenance sidecar never fingerprints itself.
+ * are skipped so the provenance sidecar never fingerprints itself, and
+ * directories named in {@link EXCLUDED_DIRS_ANYWHERE} are skipped at any depth
+ * so derived trees (`node_modules/`) never enter the baseline.
  */
 export function computeFingerprint(
   root: string,
@@ -74,6 +89,7 @@ export function computeFingerprint(
       if (entry.isSymbolicLink()) continue;
       const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
+        if (EXCLUDED_DIRS_ANYWHERE.has(entry.name)) continue;
         walk(rel);
       } else if (entry.isFile()) {
         files[rel] = hashFile(join(root, rel));
@@ -157,8 +173,9 @@ export function parseFingerprint(value: unknown): Fingerprint | null {
  * boundaries nor reordering can collide. The `v2:` prefix marks the hashing
  * scheme so it can evolve without ambiguity. Unlike {@link Fingerprint}, this
  * is a single whole-tree digest — useful as a compact integrity signal
- * alongside the per-file map. Symlinks are skipped and top-level entries named
- * in `exclude` (e.g. the sidecar itself) are omitted, matching
+ * alongside the per-file map. Symlinks are skipped, top-level entries named
+ * in `exclude` (e.g. the sidecar itself) are omitted, and directories named in
+ * {@link EXCLUDED_DIRS_ANYWHERE} are skipped at any depth, matching
  * {@link computeFingerprint}.
  */
 export function computeContentHash(
@@ -175,6 +192,7 @@ export function computeContentHash(
       if (entry.isSymbolicLink()) continue;
       const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
+        if (EXCLUDED_DIRS_ANYWHERE.has(entry.name)) continue;
         walk(rel);
       } else if (entry.isFile()) {
         entries.push({ rel, abs: join(root, rel) });

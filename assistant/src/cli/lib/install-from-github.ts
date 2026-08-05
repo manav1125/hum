@@ -35,11 +35,16 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import { ensureBun } from "../../util/bun-runtime.js";
 import { getWorkspacePluginsDir } from "../../util/platform.js";
+import {
+  type DependencyInstaller,
+  installPluginDependencies,
+} from "./install-plugin-dependencies.js";
 import {
   computeContentHash,
   computeFingerprint,
@@ -60,6 +65,18 @@ const PLUGIN_SOURCE_REPO = "vellum-assistant";
 const PLUGIN_SOURCE_PATH_PREFIX = "plugins";
 /** Default git ref to fetch from when callers don't override. */
 export const DEFAULT_PLUGIN_REF = "main";
+/**
+ * Ref a direct (untrusted) install tracks when none is otherwise recorded —
+ * the remote's default branch. Also the tracking ref a SHA-pinned direct
+ * install falls back to on upgrade, since a full SHA has no later revision of
+ * itself to advance to.
+ */
+export const DEFAULT_DIRECT_REF = "HEAD";
+
+/** Full Git commit SHA — 40 hex chars (SHA-1) or 64 (SHA-256). */
+export function isFullCommitSha(ref: string): boolean {
+  return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(ref);
+}
 
 /** Entry shape returned by the GitHub Contents API for a directory listing. */
 interface GitHubContentEntry {
@@ -112,6 +129,25 @@ export interface InstallPluginOptions {
   readonly force?: boolean;
   /** Git ref (branch, tag, SHA) to fetch from. Defaults to {@link DEFAULT_PLUGIN_REF}. */
   readonly ref?: string;
+  /**
+   * Pre-resolved source for a direct (untrusted) install — used by
+   * `plugins upgrade` to re-materialize a GitHub-URL install verbatim from its
+   * recorded provenance. When set, marketplace resolution AND the curated
+   * adapter-stub overlay are both skipped: the tree is installed exactly as the
+   * remote serves it, and `directSource.ref` selects the revision to clone (a
+   * branch/tag/`HEAD` tracking ref, or a full commit SHA).
+   */
+  readonly directSource?: PluginFetchSource;
+  /**
+   * Pre-resolved source from a reviewed catalog (the curated
+   * `plugins/registry.json`). Skips marketplace resolution but — unlike
+   * {@link InstallPluginOptions.directSource} — the source is trusted and the
+   * curated adapter-stub overlay is kept. The stub lives in the canonical repo,
+   * not in `trustedSource` (the external plugin repo), so it is read at
+   * {@link DEFAULT_PLUGIN_REF}; `trustedSource.ref` (the reviewed pin) selects
+   * the commit to clone.
+   */
+  readonly trustedSource?: PluginFetchSource;
 }
 
 /** Dependencies injected by the caller. */
@@ -124,6 +160,8 @@ export interface InstallPluginDeps {
   readonly runGit?: GitRunner;
   /** Override the runner used to execute a plugin's postinstall adapter. Falls back to {@link defaultPostinstallRunner}. */
   readonly runPostinstall?: PostinstallRunner;
+  /** Override the runner used to install a plugin's dependencies. Falls back to {@link defaultDependencyInstaller} (see {@link ./install-plugin-dependencies}). */
+  readonly runInstallDeps?: DependencyInstaller;
 }
 
 /** Successful install result. */
@@ -221,7 +259,7 @@ function isTransientUpstreamStatus(res: Response): boolean {
 }
 
 /** Resolved GitHub coordinates a plugin name is fetched from. */
-interface PluginFetchSource {
+export interface PluginFetchSource {
   readonly owner: string;
   readonly repo: string;
   /** Repo-relative directory holding the plugin root; `""` = repo root. */
@@ -337,7 +375,18 @@ export async function installPlugin(
   const marketplaceRef = opts.ref ?? DEFAULT_PLUGIN_REF;
   const force = opts.force ?? false;
 
-  const source = await resolvePluginSource(name, marketplaceRef, deps.fetch);
+  // A direct install re-materializes verbatim from its pre-resolved coordinates
+  // (no marketplace lookup, no curated adapter overlay); a trusted catalog
+  // install skips the marketplace lookup but keeps the curated overlay. The
+  // default path resolves the name through the marketplace manifest.
+  let source: PluginFetchSource | null;
+  if (opts.directSource) {
+    source = opts.directSource;
+  } else if (opts.trustedSource) {
+    source = opts.trustedSource;
+  } else {
+    source = await resolvePluginSource(name, marketplaceRef, deps.fetch);
+  }
   if (!source) {
     throw new PluginNotFoundError(
       name,
@@ -346,6 +395,16 @@ export async function installPlugin(
     );
   }
   const ref = source.ref;
+  const isDirect = opts.directSource !== undefined;
+  // The adapter stub lives in the canonical repo. A marketplace install reads
+  // it at the caller's marketplace ref; a trusted catalog install has no
+  // canonical-repo ref in play (the pin names the EXTERNAL repo), so the stub
+  // is read at the default ref; a direct install overlays nothing.
+  const stubRef = isDirect
+    ? null
+    : opts.trustedSource
+      ? DEFAULT_PLUGIN_REF
+      : marketplaceRef;
 
   const pluginsDir = deps.workspacePluginsDir ?? getWorkspacePluginsDir();
   const target = join(pluginsDir, name);
@@ -387,10 +446,20 @@ export async function installPlugin(
     // An external clone is often a foreign-ecosystem plugin (e.g. a Claude
     // Code plugin) that the Vellum loader can't run as-is. When we curate an
     // adapter stub for it, overlay the stub and run its transform so the
-    // materialized tree is a valid Vellum plugin. Raw clones (no stub) are
-    // left untouched.
-    if (fileCount > 0) {
-      await applyAdapterStub(name, marketplaceRef, stagingDir, deps);
+    // materialized tree is a valid Vellum plugin. Raw clones (no stub) and
+    // direct (untrusted) installs are left untouched.
+    if (fileCount > 0 && stubRef !== null) {
+      await applyAdapterStub(name, stubRef, stagingDir, deps);
+    }
+    // A direct install has no curated overlay to supply a manifest, and the
+    // loader requires one whose `name` matches the install directory — the only
+    // identity we trust for an untrusted direct install.
+    if (
+      fileCount > 0 &&
+      isDirect &&
+      !existsSync(join(stagingDir, "package.json"))
+    ) {
+      synthesizeMinimalPackageJson(name, stagingDir);
     }
   } catch (err) {
     rmSync(stagingDir, { recursive: true, force: true });
@@ -401,6 +470,14 @@ export async function installPlugin(
     rmSync(stagingDir, { recursive: true, force: true });
     throw new PluginNotFoundError(name, ref, sourceLabel(source));
   }
+
+  // Install the plugin's own runtime dependencies into the staged tree before
+  // it is fingerprinted and swapped, so its hooks/tools can resolve their bare
+  // imports. A no-op for a plugin that declares none; fail-soft on error.
+  // Dependencies land in `<stagingDir>/node_modules/` — a derived directory
+  // every fingerprint walk excludes — so they never pollute the fingerprint
+  // computed just below, and they ride the atomic swap into place.
+  await installPluginDependencies(stagingDir, deps.runInstallDeps);
 
   // Hash the materialized tree before the sidecar is written (so the sidecar
   // never hashes itself) — the baseline `plugins inspect` uses to detect later
@@ -606,8 +683,14 @@ async function copyExternalViaGit(
     // Defense in depth: external marketplace refs are full commit SHAs (the
     // manifest schema rejects mutable tags/branches), so the checked-out
     // commit must equal the requested ref. If it ever diverges, refuse the
-    // install rather than materialize and `import()` unexpected code.
-    if (commit && commit.toLowerCase() !== source.ref.toLowerCase()) {
+    // install rather than materialize and `import()` unexpected code. A direct
+    // (untrusted) install may legitimately track a mutable branch/tag/HEAD, so
+    // the check only applies when the ref is itself a full SHA.
+    if (
+      commit &&
+      isFullCommitSha(source.ref) &&
+      commit.toLowerCase() !== source.ref.toLowerCase()
+    ) {
       throw new PluginSourceUnavailableError(
         `git checkout of ${sourceLabel(source)} resolved to ${commit}, ` +
           `which does not match the pinned commit ${source.ref}`,
@@ -760,6 +843,22 @@ function normalizeInstalledManifest(
     }
   }
 
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+/**
+ * Write a minimal `package.json` for a direct (untrusted) install whose clone
+ * shipped none. The loader requires a manifest whose `name` matches the
+ * install directory before any surface data is read — the install name is the
+ * only identity we trust for an untrusted direct install.
+ */
+function synthesizeMinimalPackageJson(name: string, stagingDir: string): void {
+  const manifestPath = join(stagingDir, "package.json");
+  const manifest: PackageManifest = {
+    name,
+    version: "0.0.0",
+    peerDependencies: { "@vellumai/plugin-api": PLUGIN_API_PEER_RANGE },
+  };
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
@@ -982,6 +1081,70 @@ function pluginGitEnv(): NodeJS.ProcessEnv {
     env.PATH = [...current, ...missing].join(":");
   }
   return env;
+}
+
+/**
+ * Resolve the commit SHA a plugin source's recorded ref points at *now*, using
+ * a single `git ls-remote` — no clone. `plugins upgrade` uses this to detect
+ * drift for a directly-installed plugin (one whose provenance records a
+ * GitHub source outside the curated marketplace), whose "latest" is whatever
+ * its recorded branch / tag / `HEAD` currently resolves to.
+ *
+ * A full-SHA ref is immutable, so it resolves to itself with no network call
+ * (ls-remote lists refs, never arbitrary commits). For an annotated tag the
+ * peeled commit (`<ref>^{}`) is preferred — the commit a checkout lands on.
+ * Returns `null` when the ref no longer exists on the remote (a deleted branch /
+ * tag) or the repo is unreachable as a hard failure; throws
+ * {@link PluginSourceUnavailableError} on a transient git / network failure so
+ * the caller can surface a retryable 503.
+ */
+export async function resolveRefCommit(
+  source: PluginFetchSource,
+  runGit: GitRunner = defaultGitRunner,
+): Promise<string | null> {
+  if (isFullCommitSha(source.ref)) {
+    return source.ref;
+  }
+  const repoUrl = `https://github.com/${source.owner}/${source.repo}.git`;
+
+  let stdout: string;
+  try {
+    // ls-remote takes the URL explicitly and never reads a local working tree,
+    // so the OS temp dir is a safe, always-present cwd.
+    ({ stdout } = await runGit(["ls-remote", repoUrl, source.ref], {
+      cwd: tmpdir(),
+    }));
+  } catch (err) {
+    // A missing repo / ref (or a private one we can't reach) is a hard failure
+    // the caller maps to not-found; anything else — network loss, a transient
+    // GitHub outage — is retryable, so surface a 503.
+    if (isGitRefNotFound(err)) {
+      return null;
+    }
+    throw new PluginSourceUnavailableError(
+      `git ls-remote failed for ${source.owner}/${source.repo} @ ${source.ref}: ${subprocessErrorText(err)}`,
+      503,
+    );
+  }
+
+  // Each line is `<sha>\t<refname>`. Prefer the peeled commit of an annotated
+  // tag (`<ref>^{}`) — the commit a checkout resolves to — over the tag object.
+  let peeled: string | null = null;
+  let direct: string | null = null;
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    const [sha, refname] = trimmed.split(/\s+/);
+    if (sha === undefined || refname === undefined || !isFullCommitSha(sha)) {
+      continue;
+    }
+    if (refname.endsWith("^{}")) {
+      peeled = sha;
+    } else {
+      direct ??= sha;
+    }
+  }
+  return peeled ?? direct;
 }
 
 /** Inputs for {@link writeInstallMeta}, resolved during a fresh install. */

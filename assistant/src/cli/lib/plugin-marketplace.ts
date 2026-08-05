@@ -51,7 +51,14 @@ const PLUGIN_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/;
  */
 const COMMIT_SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 
-const githubSourceSchema = z.object({
+/**
+ * Canonical validation for a GitHub plugin source: `owner/repo` slug, clean
+ * repo-relative path, full-commit-SHA ref. Exported so the registry-backed
+ * catalog resolver ({@link ../plugin-catalog-resolve}) can hold catalog rows to
+ * the exact same rules the marketplace manifest enforces before they become
+ * trusted install coordinates.
+ */
+export const githubSourceSchema = z.object({
   /** Discriminator. Only GitHub sources are resolved today. */
   source: z.literal("github"),
   /** `owner/repo` of the external plugin repository. */
