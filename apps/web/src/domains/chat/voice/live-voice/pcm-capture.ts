@@ -49,6 +49,18 @@ const AMPLITUDE_SCALE = 14.0;
 
 const WORKLET_PROCESSOR_NAME = "pcm-downsample";
 
+// Coalesce worklet output (one ~43-sample post per 128-frame render quantum,
+// ~375/s) into 50 ms / 800-sample frames before handing chunks to the
+// consumer. Each chunk becomes its own WebSocket frame on every relay leg
+// downstream (client → gateway → daemon → speech relay), so per-quantum
+// granularity floods per-message buffers with ~2.7 ms of audio a frame. The
+// server-VAD constants (pre-roll ring depth, V-1b's barge-in gap tolerance)
+// also assume this 50 ms frame size. Batching lives on the main thread (not
+// in the worklet) so flush() is synchronous with the consumer's forwarding
+// gate — a push-to-talk release can drain the tail before the release frame
+// is sent.
+const BATCH_SAMPLES = 800;
+
 /** Reason a capture failed to start, mapped from `getUserMedia` DOMExceptions. */
 export type LiveVoiceCaptureError =
   | "unsupported"
@@ -122,6 +134,10 @@ export class LiveVoiceAudioCapture {
   private source: MediaStreamAudioSourceNode | null = null;
   private worklet: AudioWorkletNode | null = null;
   private smoothedAmplitude = 0;
+  // Batch accumulator for onChunk (see BATCH_SAMPLES). Amplitude metering
+  // stays per-quantum; only chunk delivery is coalesced.
+  private batch = new Int16Array(BATCH_SAMPLES);
+  private batchLength = 0;
   private disposed = false;
   // Incremented by stop()/shutdown() so an in-flight start() can detect that
   // it was cancelled mid-await and fully tear down instead of wiring up a mic
@@ -182,7 +198,7 @@ export class LiveVoiceAudioCapture {
       worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
         const buf = event.data;
         this.emitAmplitude(buf);
-        this.onChunk(buf);
+        this.accumulate(buf);
       };
       source.connect(worklet);
 
@@ -206,6 +222,38 @@ export class LiveVoiceAudioCapture {
     if (!this.stream) return;
     for (const track of this.stream.getAudioTracks()) {
       track.enabled = !muted;
+    }
+  }
+
+  /**
+   * Emit any partially-filled batch immediately. Call at a forwarding
+   * boundary (push-to-talk release) so the final <50ms of captured speech is
+   * not stranded in the accumulator when the consumer closes its gate.
+   * Synchronous: onChunk fires before this returns.
+   */
+  flush(): void {
+    if (this.batchLength === 0) {
+      return;
+    }
+    const tail = this.batch.buffer.slice(0, this.batchLength * 2);
+    this.batchLength = 0;
+    this.onChunk(tail);
+  }
+
+  /** Copy a worklet quantum into the batch, emitting each full 50ms frame. */
+  private accumulate(buf: ArrayBuffer): void {
+    let samples = new Int16Array(buf);
+    while (samples.length > 0) {
+      const take = Math.min(BATCH_SAMPLES - this.batchLength, samples.length);
+      this.batch.set(samples.subarray(0, take), this.batchLength);
+      this.batchLength += take;
+      samples = samples.subarray(take);
+      if (this.batchLength === BATCH_SAMPLES) {
+        this.batchLength = 0;
+        const full = this.batch;
+        this.batch = new Int16Array(BATCH_SAMPLES);
+        this.onChunk(full.buffer);
+      }
     }
   }
 
@@ -243,6 +291,9 @@ export class LiveVoiceAudioCapture {
   }
 
   private async teardown(): Promise<void> {
+    // Drop any sub-batch tail: a stopped graph has no forwarding consumer
+    // left, and a stale tail must not leak into a later start().
+    this.batchLength = 0;
     if (this.worklet) {
       this.worklet.port.onmessage = null;
       this.worklet.disconnect();

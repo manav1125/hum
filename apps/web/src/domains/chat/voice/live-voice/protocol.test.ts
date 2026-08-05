@@ -8,7 +8,17 @@ import {
 describe("parseServerFrame", () => {
   const frames: LiveVoiceServerFrame[] = [
     { type: "ready", seq: 1, sessionId: "s1", conversationId: "c1" },
+    {
+      type: "ready",
+      seq: 1,
+      sessionId: "s1",
+      conversationId: "c1",
+      turnDetection: "server_vad",
+    },
     { type: "busy", seq: 2, activeSessionId: "s9" },
+    { type: "speech_started", seq: 2 },
+    { type: "utterance_end", seq: 3, reason: "silence" },
+    { type: "utterance_end", seq: 3, reason: "max-duration" },
     { type: "stt_partial", seq: 3, text: "hel" },
     { type: "stt_final", seq: 4, text: "hello" },
     { type: "thinking", seq: 5, turnId: "t1" },
@@ -88,15 +98,16 @@ describe("parseServerFrame", () => {
     }
   });
 
-  test("returns invalid_json for unknown frame type", () => {
+  test("returns an ignorable unknown_frame for unknown frame types", () => {
+    // Newer daemons may emit frame types this client version does not know
+    // (e.g. the V-1b/V-1c additions). They must parse to an ignorable
+    // unknown_frame, NOT a fatal invalid_json — an unknown frame killing the
+    // call is the compatibility failure the capability-flag convention
+    // exists to prevent.
     const result = parseServerFrame(
       JSON.stringify({ type: "made_up", seq: 1 }),
     );
-    expect(result).toEqual({
-      type: "error",
-      code: "invalid_json",
-      message: expect.any(String),
-    });
+    expect(result).toEqual({ type: "unknown_frame", frameType: "made_up" });
   });
 
   test("returns invalid_json for missing type", () => {

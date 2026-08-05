@@ -43,6 +43,8 @@ export const LIVE_VOICE_AUDIO_FORMAT: LiveVoiceAudioConfig = {
   channels: 1,
 };
 
+export type LiveVoiceTurnDetectionMode = "manual" | "server_vad";
+
 export interface LiveVoiceClientStartFrame {
   readonly type: "start";
   readonly conversationId?: string;
@@ -87,6 +89,39 @@ export interface LiveVoiceClientStartFrame {
    * today's behaviour.
    */
   readonly toolActivity?: boolean;
+  /**
+   * Turn-detection mode for the session. Absent means "manual" (push-to-talk).
+   * "server_vad" opts into server-side utterance boundaries: the daemon emits
+   * `speech_started` / `utterance_end` frames and runs repeated
+   * utterance→turn cycles. Like `toolActivity`, it is a capability flag —
+   * the daemon sends the new frame types ONLY to sessions that asked. Mirrors
+   * the runtime contract in `assistant/src/live-voice/protocol.ts`.
+   */
+  readonly turnDetection?: LiveVoiceTurnDetectionMode;
+  /**
+   * Per-session override for the trailing-silence duration (ms) that ends the
+   * user's turn — the "pause before reply" voice setting. Absent lets the
+   * daemon use its configured default. Only meaningful for `server_vad`.
+   */
+  readonly silenceThresholdMs?: number;
+  /**
+   * Per-session override for the sustained speech (ms) required to interrupt
+   * the assistant mid-reply — the "interrupt sensitivity" voice setting
+   * (higher = harder to interrupt; 0 = instant barge-in). Absent lets the
+   * daemon use its configured default.
+   */
+  readonly bargeInMinSpeechMs?: number;
+}
+
+/**
+ * Mid-session tuning update — retunes "pause before reply" / "interrupt
+ * sensitivity" on the running server_vad session without reconnecting. Each
+ * field is optional; the daemon applies changes from the next utterance.
+ */
+export interface LiveVoiceClientUpdateConfigFrame {
+  readonly type: "update_config";
+  readonly silenceThresholdMs?: number;
+  readonly bargeInMinSpeechMs?: number;
 }
 
 export interface LiveVoiceClientPttReleaseFrame {
@@ -105,7 +140,8 @@ export type LiveVoiceClientFrame =
   | LiveVoiceClientStartFrame
   | LiveVoiceClientPttReleaseFrame
   | LiveVoiceClientInterruptFrame
-  | LiveVoiceClientEndFrame;
+  | LiveVoiceClientEndFrame
+  | LiveVoiceClientUpdateConfigFrame;
 
 // ---------------------------------------------------------------------------
 // Server frames (text/JSON; every frame carries `seq`)
@@ -114,6 +150,8 @@ export type LiveVoiceClientFrame =
 const LIVE_VOICE_SERVER_FRAME_TYPES = [
   "ready",
   "busy",
+  "speech_started",
+  "utterance_end",
   "stt_partial",
   "stt_final",
   "thinking",
@@ -138,11 +176,37 @@ export interface LiveVoiceReadyServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "ready";
   readonly sessionId: string;
   readonly conversationId: string;
+  /**
+   * Echoes the turn-detection mode the session is actually running. Absent
+   * (older daemons that ignore the start frame's `turnDetection`) means
+   * "manual" — hands-free callers must fall back accordingly.
+   */
+  readonly turnDetection?: LiveVoiceTurnDetectionMode;
 }
 
 export interface LiveVoiceBusyServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "busy";
   readonly activeSessionId: string;
+}
+
+/**
+ * Emitted when the server VAD detects user speech. Arrives only on sessions
+ * that opted in via `turnDetection: "server_vad"`. In V-1a it marks the
+ * utterance opening; V-1b makes it the flush-tail-playback signal when
+ * barge-in moves server-side.
+ */
+export interface LiveVoiceSpeechStartedServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "speech_started";
+}
+
+/**
+ * Emitted when the server VAD closes the utterance and the turn's
+ * transcription begins (plays the role ptt_release plays in manual mode).
+ * Arrives only on sessions that opted in via `turnDetection: "server_vad"`.
+ */
+export interface LiveVoiceUtteranceEndServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "utterance_end";
+  readonly reason: "silence" | "max-duration";
 }
 
 export interface LiveVoiceSttPartialServerFrame extends LiveVoiceServerFrameBase {
@@ -179,6 +243,8 @@ export interface LiveVoiceTtsDoneServerFrame extends LiveVoiceServerFrameBase {
 
 export interface LiveVoiceMetricsServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "metrics";
+  /** Turn-detection mode the session is running; absent on older daemons. */
+  readonly turnDetection?: LiveVoiceTurnDetectionMode;
   readonly turnId: string;
   readonly sttMs: number | null;
   readonly llmFirstDeltaMs: number | null;
@@ -267,6 +333,8 @@ export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
 export type LiveVoiceServerFrame =
   | LiveVoiceReadyServerFrame
   | LiveVoiceBusyServerFrame
+  | LiveVoiceSpeechStartedServerFrame
+  | LiveVoiceUtteranceEndServerFrame
   | LiveVoiceSttPartialServerFrame
   | LiveVoiceSttFinalServerFrame
   | LiveVoiceThinkingServerFrame
@@ -281,7 +349,7 @@ export type LiveVoiceServerFrame =
 
 /**
  * Error frame returned by {@link parseServerFrame} when the raw payload cannot
- * be JSON-parsed or lacks a recognized `type` discriminator.
+ * be JSON-parsed or lacks a `type` discriminator.
  */
 export interface LiveVoiceInvalidJsonFrame {
   readonly type: "error";
@@ -289,6 +357,20 @@ export interface LiveVoiceInvalidJsonFrame {
   readonly message: string;
   /** Always fatal — a frame we cannot parse is not a condition to continue on. */
   readonly fatal?: true;
+}
+
+/**
+ * Result returned by {@link parseServerFrame} for a structurally valid frame
+ * whose `type` is not in this client's allowlist. Newer daemons may emit frame
+ * types this client version does not know; callers must ignore these rather
+ * than treat them as protocol errors — an unknown frame killing the call is
+ * exactly the compatibility failure the capability-flag convention exists to
+ * prevent.
+ */
+export interface LiveVoiceUnknownServerFrame {
+  readonly type: "unknown_frame";
+  /** The wire `type` this client does not recognize. */
+  readonly frameType: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,12 +391,17 @@ function isLiveVoiceServerFrameType(
  * {@link LiveVoiceServerFrame}.
  *
  * Returns a {@link LiveVoiceInvalidJsonFrame} (`code: "invalid_json"`) when the
- * payload is not valid JSON, is not an object, or carries an unknown/missing
- * `type` discriminator.
+ * payload is not valid JSON, is not an object, or lacks a string `type`
+ * discriminator. A well-formed frame whose `type` is not in this client's
+ * allowlist parses to a {@link LiveVoiceUnknownServerFrame} instead, so future
+ * protocol additions are ignorable rather than session-fatal.
  */
 export function parseServerFrame(
   raw: string,
-): LiveVoiceServerFrame | LiveVoiceInvalidJsonFrame {
+):
+  | LiveVoiceServerFrame
+  | LiveVoiceInvalidJsonFrame
+  | LiveVoiceUnknownServerFrame {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -326,17 +413,20 @@ export function parseServerFrame(
     };
   }
 
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    Array.isArray(parsed) ||
-    !isLiveVoiceServerFrameType((parsed as { type?: unknown }).type)
-  ) {
+  const frameType =
+    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as { type?: unknown }).type
+      : undefined;
+  if (typeof frameType !== "string") {
     return {
       type: "error",
       code: "invalid_json",
-      message: "Live voice server frame has missing or unknown type",
+      message: "Live voice server frame has a missing or non-string type",
     };
+  }
+
+  if (!isLiveVoiceServerFrameType(frameType)) {
+    return { type: "unknown_frame", frameType };
   }
 
   return parsed as LiveVoiceServerFrame;

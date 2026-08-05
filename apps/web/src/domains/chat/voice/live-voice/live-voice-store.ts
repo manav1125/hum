@@ -149,6 +149,14 @@ export interface LiveVoiceState {
    */
   turns: LiveVoiceTurn[];
   /**
+   * Whether the active session is running hands-free (server-side VAD owns
+   * utterance boundaries via `speech_started` / `utterance_end` frames)
+   * rather than the client's own silence-detection auto-release. Set on
+   * `ready` — a daemon that ignored the requested `server_vad` mode reverts
+   * this to `false` and the session runs with full client-side VAD.
+   */
+  handsFree: boolean;
+  /**
    * The REGISTERED NAME of the tool the open turn is executing right now, from
    * the daemon's `tool_activity` frame — or `null` when nothing is known.
    *
@@ -172,6 +180,8 @@ export interface LiveVoiceActions {
   setState: (state: LiveVoiceSessionState) => void;
   /** Record which engine the active session negotiated. */
   setEngine: (engine: "cascade" | "gemini-live") => void;
+  /** Record whether the session negotiated hands-free (server VAD) mode. */
+  setHandsFree: (handsFree: boolean) => void;
   setPartialTranscript: (text: string) => void;
   setFinalTranscript: (text: string) => void;
   /** Append a delta to the accumulated assistant transcript. */
@@ -213,6 +223,7 @@ export type LiveVoiceStore = LiveVoiceState & LiveVoiceActions;
 const INITIAL_STATE: LiveVoiceState = {
   state: "idle",
   engine: "cascade",
+  handsFree: false,
   partialTranscript: "",
   finalTranscript: "",
   assistantTranscript: "",
@@ -257,6 +268,7 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
 
   setState: (state) => set({ state }),
   setEngine: (engine) => set({ engine }),
+  setHandsFree: (handsFree) => set({ handsFree }),
   // The three transcript writers below all open a new turn when the previous
   // exchange is closed, so whichever of them the engine happens to send first
   // (the cascade leads with `stt_*`, the realtime engine can lead with a

@@ -459,3 +459,163 @@ describe("tool_activity is opt-in on the wire", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Server VAD (V-1a): turnDetection opt-in, tuning bounds, update_config,
+// and the new server frames.
+// ---------------------------------------------------------------------------
+
+describe("turnDetection is opt-in on the wire", () => {
+  const audio = { mimeType: "audio/pcm", sampleRate: 16_000, channels: 1 };
+
+  test("a client that asks for server_vad has its request preserved", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, turnDetection: "server_vad" }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.frame).toMatchObject({ turnDetection: "server_vad" });
+  });
+
+  test("manual parses through; absence stays absent", () => {
+    const manual = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, turnDetection: "manual" }),
+    );
+    expect(manual.ok).toBe(true);
+    if (manual.ok) {
+      expect(manual.frame).toMatchObject({ turnDetection: "manual" });
+    }
+
+    const absent = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio }),
+    );
+    expect(absent.ok).toBe(true);
+    if (absent.ok) {
+      expect("turnDetection" in absent.frame).toBe(false);
+    }
+  });
+
+  test("an unknown turnDetection mode is rejected", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, turnDetection: "client_vad" }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.field).toBe("turnDetection");
+  });
+
+  test("start-frame tuning overrides are bounds-checked", () => {
+    const valid = parseLiveVoiceClientTextFrame(
+      JSON.stringify({
+        type: "start",
+        audio,
+        turnDetection: "server_vad",
+        silenceThresholdMs: 900,
+        bargeInMinSpeechMs: 0,
+      }),
+    );
+    expect(valid.ok).toBe(true);
+    if (valid.ok) {
+      expect(valid.frame).toMatchObject({
+        silenceThresholdMs: 900,
+        bargeInMinSpeechMs: 0,
+      });
+    }
+
+    for (const bad of [
+      { silenceThresholdMs: 99 },
+      { silenceThresholdMs: 5_001 },
+      { silenceThresholdMs: 900.5 },
+      { silenceThresholdMs: "900" },
+      { bargeInMinSpeechMs: -1 },
+      { bargeInMinSpeechMs: 3_001 },
+    ]) {
+      const result = parseLiveVoiceClientTextFrame(
+        JSON.stringify({ type: "start", audio, ...bad }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("invalid_field");
+      }
+    }
+  });
+});
+
+describe("update_config client frame", () => {
+  test("parses with either or both tuning fields", () => {
+    const both = parseLiveVoiceClientTextFrame(
+      JSON.stringify({
+        type: "update_config",
+        silenceThresholdMs: 1_500,
+        bargeInMinSpeechMs: 400,
+      }),
+    );
+    expect(both.ok).toBe(true);
+    if (both.ok) {
+      expect(both.frame).toEqual({
+        type: "update_config",
+        silenceThresholdMs: 1_500,
+        bargeInMinSpeechMs: 400,
+      });
+    }
+
+    const bare = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "update_config" }),
+    );
+    expect(bare.ok).toBe(true);
+    if (bare.ok) {
+      expect(bare.frame).toEqual({ type: "update_config" });
+    }
+  });
+
+  test("applies the same bounds as the start frame", () => {
+    for (const bad of [
+      { silenceThresholdMs: 50 },
+      { silenceThresholdMs: 10_000 },
+      { bargeInMinSpeechMs: -5 },
+      { bargeInMinSpeechMs: 9_999 },
+    ]) {
+      const result = parseLiveVoiceClientTextFrame(
+        JSON.stringify({ type: "update_config", ...bad }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.frameType).toBe("update_config");
+      }
+    }
+  });
+});
+
+describe("server VAD frames sequence like any other server frame", () => {
+  test("speech_started and utterance_end", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    expect(sequencer.next({ type: "speech_started" })).toEqual({
+      type: "speech_started",
+      seq: 1,
+    });
+    expect(
+      sequencer.next({ type: "utterance_end", reason: "silence" }),
+    ).toEqual({ type: "utterance_end", reason: "silence", seq: 2 });
+    expect(
+      sequencer.next({ type: "utterance_end", reason: "max-duration" }),
+    ).toEqual({ type: "utterance_end", reason: "max-duration", seq: 3 });
+  });
+
+  test("ready may echo turnDetection", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    expect(
+      sequencer.next({
+        type: "ready",
+        sessionId: "s1",
+        conversationId: "c1",
+        turnDetection: "server_vad",
+      }),
+    ).toEqual({
+      type: "ready",
+      sessionId: "s1",
+      conversationId: "c1",
+      turnDetection: "server_vad",
+      seq: 1,
+    });
+  });
+});

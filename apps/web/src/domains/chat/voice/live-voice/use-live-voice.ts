@@ -109,6 +109,23 @@ function isBargeInEnabled(): boolean {
   }
 }
 
+/**
+ * Whether hands-free (server-side VAD) mode is enabled. On by default: the
+ * session connects with `turnDetection: "server_vad"` and, when the daemon
+ * echoes the mode on `ready`, the client's own silence-detection auto-release
+ * is disabled — the server owns utterance boundaries. Kill switch for devices
+ * where the server endpointing misbehaves:
+ * `localStorage["cue.voiceServerVad"]="0"` reverts to full client-side VAD
+ * (consistent with `cue.voiceBargeIn`).
+ */
+function isServerVadEnabled(): boolean {
+  try {
+    return window.localStorage.getItem("cue.voiceServerVad") !== "0";
+  } catch {
+    return true;
+  }
+}
+
 /** Mic amplitude above which a chunk counts as speech (for silence detection). */
 const SPEECH_AMPLITUDE_THRESHOLD = 0.03;
 
@@ -201,6 +218,14 @@ export interface UseLiveVoiceOptions {
    * `localStorage["cue.voicePersona"]`, falling back to companion.
    */
   persona?: string;
+  /**
+   * Opt in/out of hands-free (server-side VAD) turn detection. Defaults to
+   * the `cue.voiceServerVad` kill switch (on unless set to "0"). Only
+   * meaningful for full-duplex sessions; when the daemon does not echo
+   * `server_vad` on `ready` the session falls back to full client-side VAD
+   * regardless.
+   */
+  handsFree?: boolean;
 }
 
 /**
@@ -243,6 +268,27 @@ interface SessionContext {
   forwardingAudio: boolean;
   /** Whether this session negotiated continuous full-duplex mode. */
   fullDuplex: boolean;
+  /**
+   * Whether this session runs hands-free: the daemon's server-side VAD owns
+   * utterance boundaries (`speech_started` / `utterance_end` frames) and the
+   * client's silence-detection auto-release is disabled. Requested via
+   * `turnDetection: "server_vad"` on the start frame; REVERTED to false on
+   * `ready` when an older daemon fails to echo the mode, so the session
+   * falls back to exactly today's client-side VAD instead of hanging with no
+   * release path. Client amplitude barge-in stays active either way until
+   * V-1b moves barge-in server-side.
+   */
+  handsFree: boolean;
+  /** A server-VAD utterance is open (between speech_started and utterance_end). */
+  utteranceOpen: boolean;
+  /**
+   * Count of `utterance_end` frames seen this session. The post-`tts_done`
+   * drain waiter snapshots it to tell a `transcribing` phase that belongs to
+   * a NEWER utterance (closed while the previous turn's audio tail drained —
+   * the server owns its state) from this turn's own answerless close (which
+   * must cycle back to `listening` or the session sticks deaf).
+   */
+  utteranceEndSeq: number;
   /** Whether the assistant has sent any TTS audio for the current response. */
   responseAudioStarted: boolean;
   /** Whether an interrupt was already sent for the current response. */
@@ -415,6 +461,9 @@ export function useLiveVoice(
       const fullDuplex = opts.fullDuplex !== false;
       const engine = resolveVoiceEngine(opts.engine);
       const persona = resolveVoicePersona(opts.persona);
+      // Hands-free (server VAD) rides on full-duplex multi-turn sessions
+      // only; a forced single-utterance session keeps manual semantics.
+      const handsFree = fullDuplex && (opts.handsFree ?? isServerVadEnabled());
       // Consumers that render inside a chat thread need to know whether the
       // daemon is also streaming this session's turns into that thread.
       store.setEngine(engine);
@@ -440,6 +489,9 @@ export function useLiveVoice(
         captureRunning: false,
         forwardingAudio: false,
         fullDuplex,
+        handsFree,
+        utteranceOpen: false,
+        utteranceEndSeq: 0,
         responseAudioStarted: false,
         interruptSent: false,
         releaseInFlight: false,
@@ -462,29 +514,74 @@ export function useLiveVoice(
       const live = () =>
         sessionRef.current === session && session.generation === generation;
 
+      // Publish the requested mode; the `ready` echo below is what confirms it.
+      store.setHandsFree(handsFree);
+
       session.unsubscribes.push(
-        client.on("ready", () => {
+        client.on("ready", (frame) => {
           if (!live()) return;
+          // Version skew: an older daemon ignores the start frame's
+          // turnDetection and runs a manual session without echoing the mode.
+          // Fall back to full client-side VAD (auto-release stays armed) so
+          // the session works instead of hanging with no release path.
+          if (session.handsFree && frame.turnDetection !== "server_vad") {
+            session.handsFree = false;
+            useLiveVoiceStore.getState().setHandsFree(false);
+          }
           // A healthy connection clears the reconnect budget.
           reconnectAttemptsRef.current = 0;
           void startCapture(session, teardown, mutedRef.current);
+        }),
+        client.on("speechStarted", () => {
+          if (!live() || !session.handsFree) return;
+          // Server VAD heard the user. Barge-in stays client-side in this
+          // slice (V-1b moves it here), so onset only opens the utterance —
+          // playback is never flushed from this frame yet.
+          session.utteranceOpen = true;
+        }),
+        client.on("utteranceEnd", () => {
+          if (!live() || !session.handsFree) return;
+          session.utteranceOpen = false;
+          session.utteranceEndSeq += 1;
+          // Server VAD closed the utterance; its transcription is finishing.
+          // The hands-free analog of the client's own auto-release transition.
+          const s = useLiveVoiceStore.getState();
+          if (s.state === "listening") s.setState("transcribing");
         }),
         client.on("sttPartial", (frame) => {
           if (!live()) return;
           const s = useLiveVoiceStore.getState();
           s.setPartialTranscript(frame.text);
-          // Only while still forwarding (the user's turn) does a partial keep
-          // us in `listening`; after ptt-release we're transcribing/thinking.
-          if (session.forwardingAudio) s.setState("listening");
+          // Manual mode: only while still forwarding (the user's turn) does a
+          // partial keep us in `listening`; after ptt-release we're
+          // transcribing/thinking. Hands-free transitions are frame-driven
+          // (`speech_started`/`utterance_end`), so partials never move state.
+          if (!session.handsFree && session.forwardingAudio) {
+            s.setState("listening");
+          }
         }),
         client.on("sttFinal", (frame) => {
           if (!live()) return;
           const s = useLiveVoiceStore.getState();
           s.setFinalTranscript(frame.text);
           s.setPartialTranscript("");
-          // Forwarding ⇒ the user is still speaking (stay listening); otherwise
-          // ptt was released and the server is about to think.
-          s.setState(session.forwardingAudio ? "listening" : "thinking");
+          // Manual mode: forwarding ⇒ the user is still speaking (stay
+          // listening); otherwise ptt was released and the server is about to
+          // think.
+          if (!session.handsFree && session.forwardingAudio) {
+            s.setState("listening");
+            return;
+          }
+          if (session.handsFree) {
+            // Hands-free: only a closed utterance (`transcribing`, entered on
+            // `utterance_end`) advances to `thinking`. An empty final never
+            // starts a server turn — the daemon closes it with a bare
+            // `tts_done` — and a final while still `listening` belongs to an
+            // utterance the server has not closed yet.
+            if (frame.text.trim().length === 0) return;
+            if (s.state !== "transcribing") return;
+          }
+          s.setState("thinking");
         }),
         client.on("thinking", () => {
           if (!live()) return;
@@ -596,6 +693,7 @@ export function useLiveVoice(
         fullDuplex,
         engine,
         persona,
+        ...(handsFree ? { turnDetection: "server_vad" as const } : {}),
       });
     },
     [teardown, attemptReconnect],
@@ -672,13 +770,16 @@ async function startCapture(
  * Forward a captured PCM chunk to the server and drive silence detection.
  *
  * The mic stays open across the whole session, but PCM is only streamed while
- * `forwardingAudio` is on (i.e. during the user's turn). Silence detection runs
- * on the same gate so auto-release only fires while we are actually forwarding.
+ * `forwardingAudio` is on (i.e. during the user's turn; hands-free sessions
+ * keep it on across turns — the server VAD needs the continuous stream).
+ * Client-local silence detection is manual-mode only: in hands-free the
+ * server VAD owns utterance boundaries, so the auto-release path
+ * (SILENCE_DURATION_BEFORE_RELEASE_MS) is disabled.
  */
 function handleChunk(session: SessionContext, buf: ArrayBuffer): void {
   if (!session.captureRunning || !session.forwardingAudio) return;
   session.client.sendAudio(buf);
-  updateAutomaticRelease(session, buf);
+  if (!session.handsFree) updateAutomaticRelease(session, buf);
 }
 
 /**
@@ -750,7 +851,15 @@ function updateAutomaticRelease(
 function releasePushToTalk(session: SessionContext): void {
   if (session.releaseInFlight || !session.forwardingAudio) return;
   session.releaseInFlight = true;
-  session.forwardingAudio = false;
+  // Drain the capture's sub-batch tail while the forwarding gate is still
+  // open: the last <50ms of the utterance may sit in the batch accumulator,
+  // and the daemon rejects audio that arrives after the release frame.
+  // Synchronous — the flushed chunk passes through handleChunk before the
+  // gate closes below (re-entry is blocked by releaseInFlight above).
+  session.capture.flush();
+  // Hands-free keeps forwarding: the release is a manual override on a
+  // session whose server VAD still needs the continuous stream.
+  if (!session.handsFree) session.forwardingAudio = false;
   session.client.pttRelease();
   const s = useLiveVoiceStore.getState();
   if (s.state === "listening") s.setState("transcribing");
@@ -769,6 +878,7 @@ function resumeListening(session: SessionContext): void {
   session.releaseInFlight = false;
   session.responseAudioStarted = false;
   session.interruptSent = false;
+  session.utteranceOpen = false;
   session.speechMs = 0;
   session.silenceMs = 0;
   const s = useLiveVoiceStore.getState();
@@ -838,8 +948,12 @@ async function finishResponseAfterPlayback(
   teardown: () => void,
 ): Promise<void> {
   const generation = session.generation;
+  const utteranceEndSeqAtStart = session.utteranceEndSeq;
   session.responseAudioStarted = false;
-  session.forwardingAudio = false;
+  // Hands-free keeps the forwarding gate open through the drain: the server
+  // VAD hears the room continuously and parks anything the user says during
+  // the tail for the next utterance.
+  if (!session.handsFree) session.forwardingAudio = false;
 
   // Bound the drain wait. Normal playback drains in a few seconds; this cap only
   // fires if playback can't complete (e.g. a context that failed to resume),
@@ -867,6 +981,19 @@ async function finishResponseAfterPlayback(
     phase === "idle" ||
     phase === "ending" ||
     phase === "failed"
+  ) {
+    return;
+  }
+
+  // Hands-free: a `transcribing` phase from an `utterance_end` that landed
+  // MID-DRAIN belongs to the next utterance — the server owns its state, so
+  // leave it alone. An unchanged seq means the `transcribing` is this turn's
+  // own answerless close (empty utterance → bare `tts_done`), which must
+  // cycle back to `listening` or the session sticks deaf.
+  if (
+    session.handsFree &&
+    phase === "transcribing" &&
+    session.utteranceEndSeq !== utteranceEndSeqAtStart
   ) {
     return;
   }

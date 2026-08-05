@@ -1,6 +1,10 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
+import {
+  MediaTurnDetector,
+  type TurnDetectorConfig,
+} from "../calls/media-turn-detector.js";
 import { sanitizeForTts } from "../calls/tts-text-sanitizer.js";
 import type {
   VoiceTurnHandle,
@@ -66,6 +70,7 @@ import {
   supportsBoundary,
 } from "../providers/speech-to-text/provider-catalog.js";
 import type { ResolveStreamingTranscriberOptions } from "../providers/speech-to-text/resolve.js";
+import { detectPcm16SpeechActivity } from "../stt/speech-energy.js";
 import type {
   StreamingTranscriber,
   SttStreamServerEvent,
@@ -106,8 +111,12 @@ import type {
 import { pickProgressPhrase } from "./progress-phrases.js";
 import {
   type LiveVoiceClientFrame,
+  type LiveVoiceClientUpdateConfigFrame,
   LiveVoiceProtocolErrorCode,
   type LiveVoiceServerFramePayload,
+  type LiveVoiceSpeechStartedServerFrame,
+  type LiveVoiceTurnDetectionMode,
+  type LiveVoiceUtteranceEndServerFrame,
 } from "./protocol.js";
 import { synthesizeLiveVoiceSession } from "./synthesize-live-voice-session.js";
 import { resolveVoicePersona } from "./voice-personas.js";
@@ -210,6 +219,15 @@ function findLastIncompleteOp(
  */
 const LIVE_VOICE_FULL_DUPLEX_IDLE_TIMEOUT_MS = 120_000;
 
+/**
+ * Idle-mic chunks retained while the server-VAD detector is idle; flushed on
+ * speech onset so the transcriber gets leading context (~1.25 s at the web
+ * client's 50 ms batching) without streaming an open quiet mic. The same
+ * bounded ring parks speech that lands in the release→re-arm window so the
+ * next armed utterance captures it from its onset.
+ */
+const SERVER_VAD_PRE_ROLL_MAX_CHUNKS = 25;
+
 export type LiveVoiceStreamingTranscriberResolver = (
   options: ResolveStreamingTranscriberOptions,
 ) => Promise<StreamingTranscriber | null>;
@@ -273,6 +291,25 @@ export interface LiveVoiceSessionOptions {
    * feature is enabled; injectable for tests. `null` forces static-only acks.
    */
   frontDecider?: VoiceFrontDecider | null;
+  /**
+   * Overrides the server-VAD turn detector thresholds (test hook). Unset
+   * fields fall back to the start frame's per-session overrides, then the
+   * `liveVoice.vad` config (whose schema carries the in-code defaults).
+   */
+  turnDetectorConfig?: TurnDetectorConfig;
+  /**
+   * Overrides the mean-amplitude energy gate that classifies a server-VAD
+   * audio chunk as speech (test hook). Defaults to
+   * `DEFAULT_SPEECH_ENERGY_THRESHOLD` in `stt/speech-energy.ts`.
+   */
+  speechEnergyThreshold?: number;
+  /**
+   * Overrides the sustained-speech barge-in guard duration (test hook).
+   * Stored and retunable via `update_config` in this slice; the server-side
+   * guard that consumes it lands with V-1b. Unset falls back to the start
+   * frame, then `liveVoice.vad.bargeInMinSpeechMs` config.
+   */
+  bargeInMinSpeechMs?: number;
 }
 
 interface ActiveAssistantTurn {
@@ -396,6 +433,48 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
    * daemon keeps, not a VAD.
    */
   private assistantPlaybackTailUntilMs = 0;
+  /**
+   * Server-side turn detector. Non-null iff the start frame requested
+   * `turnDetection: "server_vad"` (built at `start()`, after config resolves).
+   * Its presence IS the capability gate: `speech_started` / `utterance_end`
+   * frames are only ever emitted through {@link sendServerVadFrame}, which
+   * no-ops when this is null.
+   */
+  private turnDetector: MediaTurnDetector | null = null;
+  /**
+   * Energy gate for server-VAD speech classification; undefined defers to
+   * `DEFAULT_SPEECH_ENERGY_THRESHOLD`.
+   */
+  private speechEnergyThreshold: number | undefined;
+  /**
+   * Effective trailing-silence threshold, mirroring the detector's private
+   * copy (start seed + `update_config`).
+   */
+  private silenceThresholdMs = 0;
+  /**
+   * Sustained-speech barge-in guard duration (ms). Seeded at `start()` and
+   * retunable via `update_config`; consumed by the V-1b server-side barge-in
+   * guard (stored but not yet read in this slice).
+   */
+  private bargeInMinSpeechMs = 0;
+  /**
+   * Bounded ring of idle-mic chunks skipped while the VAD detector is idle,
+   * flushed ahead of the first routed chunk on speech onset. Doubles as the
+   * parking buffer for speech that lands while the session is between
+   * utterances (release → turn → re-arm), flushed by
+   * {@link deliverParkedVadSpeech} once listening re-arms.
+   */
+  private vadPreRollChunks: Buffer[] = [];
+  /**
+   * The ring holds speech parked during the release→re-arm window; protected
+   * from silent-chunk eviction until it flushes.
+   */
+  private vadPreRollHasSpeech = false;
+  /**
+   * Detector turn-end that fired while its speech sat parked in the ring;
+   * replayed once the parked speech flushes into the next listening turn.
+   */
+  private vadPendingTurnEnd: "silence" | "max-duration" | null = null;
 
   constructor(
     context: LiveVoiceSessionFactoryContext,
@@ -488,6 +567,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     if (this.state !== "initializing") return;
 
     const liveVoiceConfig = this.resolveLiveVoiceSettings();
+    this.configureTurnDetection(liveVoiceConfig);
 
     try {
       // Credential preflight (WS-E): reject the session at `start` when the STT
@@ -562,6 +642,10 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         type: "ready",
         sessionId: this.context.sessionId,
         conversationId: this.conversationId,
+        // Echo the mode the session actually runs so a hands-free client can
+        // detect a daemon that ignored its requested turnDetection and fall
+        // back to client-side VAD. Additive-optional: old clients ignore it.
+        turnDetection: this.turnDetection,
       });
     } catch (err) {
       if (err instanceof LiveVoiceSessionStartupError) {
@@ -588,7 +672,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         await this.handleAudio(Buffer.from(frame.dataBase64, "base64"));
         return;
       case "ptt_release":
-        await this.releaseUtterance();
+        await this.releaseFromClient();
         return;
       case "interrupt":
         await this.interrupt();
@@ -597,6 +681,80 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         return;
       case "start":
         return;
+      case "update_config":
+        this.applyConfigUpdate(frame);
+        return;
+    }
+  }
+
+  /**
+   * Resolve the server-VAD tunables and build the turn detector when the
+   * start frame opted into `turnDetection: "server_vad"`. Precedence for each
+   * knob: per-session start-frame override (the client's user setting) >
+   * `options` override (test hook) > daemon `liveVoice.vad` config (whose
+   * schema defaults are the in-code defaults: 1200 ms silence, 250 ms
+   * barge-in guard, 30 s hard cap).
+   */
+  private configureTurnDetection(config: LiveVoiceConfig): void {
+    const vad = config.vad;
+    this.speechEnergyThreshold = this.options.speechEnergyThreshold;
+    this.bargeInMinSpeechMs =
+      this.context.startFrame.bargeInMinSpeechMs ??
+      this.options.bargeInMinSpeechMs ??
+      vad.bargeInMinSpeechMs;
+    this.silenceThresholdMs =
+      this.context.startFrame.silenceThresholdMs ??
+      this.options.turnDetectorConfig?.silenceThresholdMs ??
+      vad.silenceThresholdMs;
+    if (this.context.startFrame.turnDetection !== "server_vad") return;
+
+    const detectorConfig: TurnDetectorConfig = {
+      silenceThresholdMs: this.silenceThresholdMs,
+      maxTurnDurationMs:
+        this.options.turnDetectorConfig?.maxTurnDurationMs ??
+        vad.maxTurnDurationMs,
+    };
+    this.turnDetector = new MediaTurnDetector(detectorConfig, {
+      onTurnStart: () => this.handleVadSpeechStart(),
+      onTurnEnd: (reason) => this.handleVadUtteranceEnd(reason),
+    });
+  }
+
+  /** The turn-detection mode this session is actually running. */
+  private get turnDetection(): LiveVoiceTurnDetectionMode {
+    return this.turnDetector ? "server_vad" : "manual";
+  }
+
+  /**
+   * Effective barge-in guard duration (start seed + `update_config`). The
+   * V-1b server-side sustained-speech guard consumes this; exposed so tests
+   * can assert the retune path until then.
+   */
+  get effectiveBargeInMinSpeechMs(): number {
+    return this.bargeInMinSpeechMs;
+  }
+
+  /** Effective trailing-silence threshold (start seed + `update_config`). */
+  get effectiveSilenceThresholdMs(): number {
+    return this.silenceThresholdMs;
+  }
+
+  /**
+   * Apply a mid-session `update_config` frame: retune the live turn
+   * detector's pause ("pause before reply") and/or the barge-in guard
+   * ("interrupt sensitivity") without reconnecting. Each field is optional
+   * and independent; the detector applies threshold changes from the next
+   * silence-timer arm. A no-op on manual (non-server_vad) sessions, which
+   * have no turn detector.
+   */
+  private applyConfigUpdate(frame: LiveVoiceClientUpdateConfigFrame): void {
+    if (!this.turnDetector) return;
+    if (frame.silenceThresholdMs !== undefined) {
+      this.turnDetector.setSilenceThresholdMs(frame.silenceThresholdMs);
+      this.silenceThresholdMs = frame.silenceThresholdMs;
+    }
+    if (frame.bargeInMinSpeechMs !== undefined) {
+      this.bargeInMinSpeechMs = frame.bargeInMinSpeechMs;
     }
   }
 
@@ -612,6 +770,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     const shouldEmitSessionEndMetrics = this.state !== "failed";
     this.state = "closed";
     this.clearIdleTimer();
+    this.turnDetector?.dispose();
     stopTranscriberBestEffort(this.transcriber);
     this.transcriber = null;
     await this.cancelAssistantTurn("session_closed");
@@ -639,6 +798,12 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   }
 
   private async handleAudio(chunk: Buffer): Promise<void> {
+    const detector = this.turnDetector;
+    if (detector) {
+      await this.handleServerVadAudio(detector, chunk);
+      return;
+    }
+
     if (
       this.state === "utterance_released" ||
       this.state === "transcriber_closed"
@@ -677,6 +842,204 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         LiveVoiceProtocolErrorCode.InvalidAudioPayload,
       );
     }
+  }
+
+  /**
+   * server_vad ingress: every chunk feeds the energy VAD (never an error
+   * frame — audio is accepted in every non-terminal state). While listening,
+   * chunks route to the live transcriber; idle silence is held in the bounded
+   * pre-roll ring so an open quiet mic never reaches STT; speech that lands
+   * in the release→turn→re-arm window parks in the same ring and flushes into
+   * the next listening turn ({@link deliverParkedVadSpeech}).
+   */
+  private async handleServerVadAudio(
+    detector: MediaTurnDetector,
+    chunk: Buffer,
+  ): Promise<void> {
+    if (this.isTerminal || this.state === "initializing") return;
+
+    const hasSpeech = detectPcm16SpeechActivity(
+      chunk,
+      this.speechEnergyThreshold,
+    );
+    // May fire onTurnStart (speech_started) / onTurnEnd synchronously.
+    detector.onMediaChunk(hasSpeech);
+
+    // Idle mic: hold silent chunks in the bounded pre-roll instead of
+    // collecting or streaming them; flushed on speech onset so the
+    // transcriber still gets leading context ahead of the first syllable.
+    if (!hasSpeech && !detector.isActive) {
+      this.pushVadPreRoll(chunk, false);
+      return;
+    }
+
+    if (this.state !== "active") {
+      // Between utterances (released / turn in flight / re-arming): park
+      // speech so the next armed utterance captures it from onset. Silence
+      // with no parked speech is droppable; silence behind parked speech is
+      // utterance interior and must stay ordered with it.
+      if (!hasSpeech && !this.vadPreRollHasSpeech) return;
+      this.pushVadPreRoll(chunk, hasSpeech);
+      return;
+    }
+
+    for (const preRollChunk of this.takeVadPreRoll()) {
+      await this.routeVadAudio(preRollChunk);
+    }
+    await this.routeVadAudio(chunk);
+  }
+
+  /** Forward one server-VAD chunk into the live utterance (mirrors manual). */
+  private async routeVadAudio(chunk: Buffer): Promise<void> {
+    if (this.state !== "active") return;
+    this.collectUserAudio(chunk);
+    try {
+      this.transcriber?.sendAudio(
+        chunk,
+        this.context.startFrame.audio.mimeType,
+      );
+      await this.drainOutboundFrames();
+    } catch (err) {
+      // Same recovery as the manual path: the broken transcriber cannot carry
+      // the next utterance — drop it and let the turn close resolve a fresh one.
+      stopTranscriberBestEffort(this.transcriber);
+      this.transcriber = null;
+      await this.failTurnKeepingSession(
+        `Live voice audio could not be sent to transcription: ${errorMessage(
+          err,
+        )}`,
+        "audio_error",
+        LiveVoiceProtocolErrorCode.InvalidAudioPayload,
+      );
+    }
+  }
+
+  private pushVadPreRoll(chunk: Buffer, hasSpeech: boolean): void {
+    // A full ring never lets idle silence evict parked speech.
+    if (
+      !hasSpeech &&
+      this.vadPreRollHasSpeech &&
+      this.vadPreRollChunks.length >= SERVER_VAD_PRE_ROLL_MAX_CHUNKS
+    ) {
+      return;
+    }
+    if (hasSpeech) {
+      this.vadPreRollHasSpeech = true;
+    }
+    this.vadPreRollChunks.push(Buffer.from(chunk));
+    while (this.vadPreRollChunks.length > SERVER_VAD_PRE_ROLL_MAX_CHUNKS) {
+      this.vadPreRollChunks.shift();
+    }
+  }
+
+  private takeVadPreRoll(): Buffer[] {
+    this.vadPreRollHasSpeech = false;
+    return this.vadPreRollChunks.splice(0);
+  }
+
+  /**
+   * Re-arm-time flush: speech parked in the ring while the previous turn
+   * wound down belongs to the freshly armed listening turn. Routes it into
+   * the new transcriber and, when the detector already closed that parked
+   * utterance ({@link vadPendingTurnEnd}), replays its boundary so it turns
+   * without requiring more speech. A silence-only ring stays parked as
+   * onset leading context. Called by `beginNextListeningTurn` once the
+   * session is listening again.
+   */
+  private async deliverParkedVadSpeech(): Promise<void> {
+    if (!this.turnDetector || this.state !== "active") return;
+    if (!this.vadPreRollHasSpeech) return;
+    const replayTurnEnd = this.vadPendingTurnEnd;
+    this.vadPendingTurnEnd = null;
+    for (const chunk of this.takeVadPreRoll()) {
+      await this.routeVadAudio(chunk);
+    }
+    if (replayTurnEnd) {
+      await this.sendServerVadFrame({
+        type: "utterance_end",
+        reason: replayTurnEnd,
+      });
+      await this.releaseUtterance();
+    }
+  }
+
+  /**
+   * VAD speech onset. In this slice the onset frame is unconditional — the
+   * V-1b server-side barge-in guard (sustained-speech accumulation before
+   * `speech_started` fires during assistant playback) is not here yet, and
+   * the client keeps its own amplitude barge-in until it is.
+   */
+  private handleVadSpeechStart(): void {
+    if (this.isTerminal) return;
+    void this.sendServerVadFrame({ type: "speech_started" });
+  }
+
+  /**
+   * VAD closed the utterance — the analog of ptt_release: emit
+   * `utterance_end`, then run the standard release path (which stops the
+   * transcriber and starts the assistant turn exactly as a client
+   * `ptt_release` does today). A boundary that fires while the session is
+   * between utterances belongs to speech parked in the pre-roll ring; it is
+   * recorded and replayed once the next listening turn arms.
+   */
+  private handleVadUtteranceEnd(reason: "silence" | "max-duration"): void {
+    void (async () => {
+      if (this.isTerminal) return;
+      if (this.state !== "active") {
+        if (this.vadPreRollHasSpeech) {
+          this.vadPendingTurnEnd = reason;
+        }
+        return;
+      }
+      await this.sendServerVadFrame({ type: "utterance_end", reason });
+      await this.releaseUtterance();
+    })().catch(() => {});
+  }
+
+  /**
+   * Client `ptt_release` frame. In server_vad mode it still works as a manual
+   * override: force the detector's utterance boundary so the release runs the
+   * same `utterance_end` path; without an open detector turn, emit the frame
+   * (the hands-free client only leaves `listening` on `utterance_end`) and
+   * fall back to a plain release. Manual sessions keep today's behavior
+   * byte-for-byte.
+   */
+  private async releaseFromClient(): Promise<void> {
+    const detector = this.turnDetector;
+    if (!detector) {
+      await this.releaseUtterance();
+      return;
+    }
+    if (detector.isActive) {
+      // Fires handleVadUtteranceEnd synchronously, which emits utterance_end
+      // (reason "silence" — the manual-release convention) and releases.
+      detector.forceEnd();
+      await this.drainOutboundFrames();
+      return;
+    }
+    if (this.state === "active") {
+      await this.sendServerVadFrame({
+        type: "utterance_end",
+        reason: "silence",
+      });
+    }
+    await this.releaseUtterance();
+  }
+
+  /**
+   * Emit a server-VAD protocol frame — but ONLY when this session opted into
+   * `turnDetection: "server_vad"` on its start frame. This is the single
+   * choke point for the new frame types: a client that never asked has never
+   * heard of them and would treat them as fatal unparseable payloads (the
+   * same compatibility rule as `tool_activity`).
+   */
+  private async sendServerVadFrame(
+    frame:
+      | Omit<LiveVoiceSpeechStartedServerFrame, "seq">
+      | Omit<LiveVoiceUtteranceEndServerFrame, "seq">,
+  ): Promise<void> {
+    if (!this.turnDetector) return;
+    await this.sendFrame(frame);
   }
 
   private async releaseUtterance(): Promise<void> {
@@ -859,6 +1222,10 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     }
 
     this.state = "active";
+
+    // Speech that landed while the previous turn wound down sits parked in
+    // the server-VAD pre-roll ring; it belongs to this fresh listening turn.
+    await this.deliverParkedVadSpeech();
   }
 
   /**
@@ -2290,6 +2657,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       event,
       sessionId: this.context.sessionId,
       conversationId: this.conversationId,
+      turnDetection: this.turnDetection,
       turnId,
       metrics,
       ...getLiveVoiceMetricsAggregateFields(metrics, turnId),

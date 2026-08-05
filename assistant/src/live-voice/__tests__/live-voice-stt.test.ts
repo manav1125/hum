@@ -122,6 +122,8 @@ describe("LiveVoiceSession STT", () => {
         seq: 1,
         sessionId: "session-123",
         conversationId: "conversation-123",
+        // A session that never asked for server_vad echoes manual.
+        turnDetection: "manual",
       },
     ]);
   });

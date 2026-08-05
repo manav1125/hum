@@ -729,3 +729,119 @@ describe("teardown", () => {
     expect(errors[0]!.reason).toBe("connection-failed");
   });
 });
+
+// ---------------------------------------------------------------------------
+// server VAD (hands-free) protocol
+// ---------------------------------------------------------------------------
+
+describe("server VAD protocol", () => {
+  /** Connect with server_vad requested and drive the socket to active. */
+  async function activeServerVadSocket(client: LiveVoiceChannelClientType) {
+    await client.connect({
+      assistantId: "assistant-1",
+      turnDetection: "server_vad",
+    });
+    const ws = FakeWebSocket.instances.at(-1);
+    if (!ws) throw new Error("no WebSocket was constructed");
+    ws.open();
+    ws.receive({
+      type: "ready",
+      seq: 1,
+      sessionId: "s1",
+      conversationId: "c1",
+      turnDetection: "server_vad",
+    });
+    return ws;
+  }
+
+  test("start frame asks for server_vad only when requested", async () => {
+    const client = makeClient();
+    await client.connect({
+      assistantId: "assistant-1",
+      turnDetection: "server_vad",
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    ws.open();
+    expect(ws.sentJson[0]).toMatchObject({ turnDetection: "server_vad" });
+
+    // A default connect never asks — the daemon must not send the new frame
+    // types to a session that has not opted in.
+    const manual = makeClient();
+    const manualWs = await connectAndGetSocket(manual);
+    manualWs.open();
+    expect("turnDetection" in manualWs.sentJson[0]!).toBe(false);
+  });
+
+  test("ready passes the turnDetection echo through to the consumer", async () => {
+    const client = makeClient();
+    const readyFrames: { turnDetection?: string }[] = [];
+    client.on("ready", (f) => readyFrames.push(f));
+    await activeServerVadSocket(client);
+    expect(readyFrames).toHaveLength(1);
+    expect(readyFrames[0]!.turnDetection).toBe("server_vad");
+  });
+
+  test("speech_started and utterance_end dispatch to their events", async () => {
+    const client = makeClient();
+    const events: string[] = [];
+    client.on("speechStarted", () => events.push("speech_started"));
+    client.on("utteranceEnd", (f) => events.push(`utterance_end:${f.reason}`));
+    const ws = await activeServerVadSocket(client);
+
+    ws.receive({ type: "speech_started", seq: 2 });
+    ws.receive({ type: "utterance_end", seq: 3, reason: "silence" });
+    ws.receive({ type: "utterance_end", seq: 4, reason: "max-duration" });
+
+    expect(events).toEqual([
+      "speech_started",
+      "utterance_end:silence",
+      "utterance_end:max-duration",
+    ]);
+  });
+
+  test("updateConfig sends an update_config frame while active", async () => {
+    const client = makeClient();
+    const ws = await activeServerVadSocket(client);
+
+    client.updateConfig({ silenceThresholdMs: 900, bargeInMinSpeechMs: 400 });
+    client.updateConfig({ silenceThresholdMs: 1500 });
+
+    expect(ws.sentJson.slice(1)).toEqual([
+      {
+        type: "update_config",
+        silenceThresholdMs: 900,
+        bargeInMinSpeechMs: 400,
+      },
+      { type: "update_config", silenceThresholdMs: 1500 },
+    ]);
+  });
+
+  test("updateConfig is a no-op before the session is active", async () => {
+    const client = makeClient();
+    const ws = await connectAndGetSocket(client);
+    ws.open();
+    // No ready yet — still connecting.
+    client.updateConfig({ silenceThresholdMs: 900 });
+    expect(ws.sentJson.filter((f) => f.type === "update_config")).toHaveLength(
+      0,
+    );
+  });
+
+  test("an unknown server frame type is ignored, not fatal", async () => {
+    const client = makeClient();
+    const errors: unknown[] = [];
+    let closed = false;
+    client.on("error", (e) => errors.push(e));
+    client.on("closed", () => {
+      closed = true;
+    });
+    const ws = await activeServerVadSocket(client);
+
+    // A frame type from a future protocol slice must not kill the call.
+    ws.receive({ type: "utterance_discarded", seq: 5 });
+    ws.receive({ type: "turn_cancelled", seq: 6, turnId: "t1" });
+
+    expect(errors).toHaveLength(0);
+    expect(closed).toBe(false);
+  });
+});

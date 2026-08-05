@@ -28,15 +28,19 @@ import {
   type LiveVoiceBusyServerFrame,
   type LiveVoiceCardServerFrame,
   type LiveVoiceClientStartFrame,
+  type LiveVoiceClientUpdateConfigFrame,
   LIVE_VOICE_AUDIO_FORMAT,
   type LiveVoiceMetricsServerFrame,
   type LiveVoiceReadyServerFrame,
+  type LiveVoiceSpeechStartedServerFrame,
   type LiveVoiceSttFinalServerFrame,
   type LiveVoiceSttPartialServerFrame,
   type LiveVoiceThinkingServerFrame,
   type LiveVoiceToolActivityServerFrame,
   type LiveVoiceTtsAudioServerFrame,
   type LiveVoiceTtsDoneServerFrame,
+  type LiveVoiceTurnDetectionMode,
+  type LiveVoiceUtteranceEndServerFrame,
   parseServerFrame,
 } from "@/domains/chat/voice/live-voice/protocol";
 
@@ -67,6 +71,16 @@ export interface LiveVoiceClientError {
  */
 export interface LiveVoiceClientEventMap {
   ready: LiveVoiceReadyServerFrame;
+  /**
+   * Server VAD heard the user start speaking. Only ever fires on sessions
+   * that connected with `turnDetection: "server_vad"`.
+   */
+  speechStarted: LiveVoiceSpeechStartedServerFrame;
+  /**
+   * Server VAD closed the utterance (the hands-free analog of the client's
+   * own ptt_release). Only ever fires on `server_vad` sessions.
+   */
+  utteranceEnd: LiveVoiceUtteranceEndServerFrame;
   sttPartial: LiveVoiceSttPartialServerFrame;
   sttFinal: LiveVoiceSttFinalServerFrame;
   thinking: LiveVoiceThinkingServerFrame;
@@ -116,6 +130,13 @@ export interface LiveVoiceConnectArgs {
    * Absent → the daemon defaults to companion. Shapes tone only.
    */
   persona?: string;
+  /**
+   * Turn-detection mode. `"server_vad"` opts into server-side utterance
+   * boundaries (`speech_started` / `utterance_end` frames); absent/`"manual"`
+   * keeps push-to-talk semantics. The `ready` frame echoes the mode the
+   * daemon actually runs — callers must fall back when the echo is missing.
+   */
+  turnDetection?: LiveVoiceTurnDetectionMode;
 }
 
 /** Factory so tests can inject a mock WebSocket. Defaults to the global. */
@@ -145,11 +166,14 @@ export class LiveVoiceChannelClient {
   private fullDuplex = false;
   private engine: "cascade" | "gemini-live" = "cascade";
   private persona: string | undefined;
+  private turnDetection: LiveVoiceTurnDetectionMode | undefined;
 
   private readonly listeners: {
     [E in LiveVoiceClientEventName]: Set<LiveVoiceClientEventHandler<E>>;
   } = {
     ready: new Set(),
+    speechStarted: new Set(),
+    utteranceEnd: new Set(),
     sttPartial: new Set(),
     sttFinal: new Set(),
     thinking: new Set(),
@@ -205,6 +229,7 @@ export class LiveVoiceChannelClient {
     fullDuplex,
     engine,
     persona,
+    turnDetection,
   }: LiveVoiceConnectArgs): Promise<void> {
     if (this.state !== "idle") return;
     this.state = "connecting";
@@ -212,6 +237,7 @@ export class LiveVoiceChannelClient {
     this.fullDuplex = fullDuplex === true;
     this.engine = engine === "gemini-live" ? "gemini-live" : "cascade";
     this.persona = persona;
+    this.turnDetection = turnDetection;
 
     let url: string;
     try {
@@ -266,6 +292,28 @@ export class LiveVoiceChannelClient {
     this.sendControlFrame("ptt_release");
   }
 
+  /**
+   * Retune the running server_vad session's "pause before reply" /
+   * "interrupt sensitivity" without reconnecting. No-op unless the session is
+   * active; the daemon ignores it on manual sessions.
+   */
+  updateConfig(config: {
+    silenceThresholdMs?: number;
+    bargeInMinSpeechMs?: number;
+  }): void {
+    if (this.state !== "active") return;
+    const frame: LiveVoiceClientUpdateConfigFrame = {
+      type: "update_config",
+      ...(config.silenceThresholdMs !== undefined
+        ? { silenceThresholdMs: config.silenceThresholdMs }
+        : {}),
+      ...(config.bargeInMinSpeechMs !== undefined
+        ? { bargeInMinSpeechMs: config.bargeInMinSpeechMs }
+        : {}),
+    };
+    this.trySend(JSON.stringify(frame));
+  }
+
   /** Interrupt assistant speech for barge-in. */
   interrupt(): void {
     this.sendControlFrame("interrupt");
@@ -315,6 +363,11 @@ export class LiveVoiceChannelClient {
       // unconditional broadcast would kill calls on every already-shipped
       // client. Asking is the handshake that makes the new frame safe.
       toolActivity: true,
+      // Same capability-flag convention: asking for server_vad is what makes
+      // it safe for the daemon to emit `speech_started` / `utterance_end`.
+      ...(this.turnDetection === "server_vad"
+        ? { turnDetection: "server_vad" as const }
+        : {}),
     };
     this.trySend(JSON.stringify(startFrame));
   }
@@ -337,6 +390,17 @@ export class LiveVoiceChannelClient {
       case "busy":
         this.emit("busy", frame);
         this.close();
+        return;
+      case "speech_started":
+        this.emit("speechStarted", frame);
+        return;
+      case "utterance_end":
+        this.emit("utteranceEnd", frame);
+        return;
+      case "unknown_frame":
+        // A newer daemon sent a frame type this client version does not
+        // know. Ignorable by contract — treating it as fatal is how live
+        // calls used to die on protocol additions.
         return;
       case "stt_partial":
         this.emit("sttPartial", frame);

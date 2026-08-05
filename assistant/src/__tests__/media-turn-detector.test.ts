@@ -245,6 +245,30 @@ describe("MediaTurnDetector", () => {
     detector.dispose();
   });
 
+  // ── Live retune (setSilenceThresholdMs) ──────────────────────────
+
+  test("setSilenceThresholdMs applies from the next silence-timer arm", () => {
+    const onTurnEnd = jest.fn();
+    const detector = new MediaTurnDetector(
+      { silenceThresholdMs: 500 },
+      { onTurnEnd },
+    );
+
+    detector.onMediaChunk(true);
+    detector.setSilenceThresholdMs(100);
+    // The countdown armed at 500ms keeps its duration until speech resets it.
+    advance(200);
+    expect(onTurnEnd).not.toHaveBeenCalled();
+
+    // A speech chunk re-arms the timer, now at the retuned 100ms.
+    detector.onMediaChunk(true);
+    advance(150);
+    expect(onTurnEnd).toHaveBeenCalledTimes(1);
+    expect(onTurnEnd).toHaveBeenCalledWith("silence", expect.any(Number));
+
+    detector.dispose();
+  });
+
   // ── onTurnStart only fires once per turn ─────────────────────────
 
   test("onTurnStart fires only once even with many chunks", () => {

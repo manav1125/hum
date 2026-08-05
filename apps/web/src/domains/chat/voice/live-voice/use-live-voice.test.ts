@@ -140,6 +140,11 @@ class FakeCapture {
   async shutdown(): Promise<void> {
     this.shutdownCount++;
   }
+  /** Batch-tail drain (see pcm-capture BATCH_SAMPLES); a no-op for the fake. */
+  flush(): void {
+    this.flushCount++;
+  }
+  flushCount = 0;
 
   /** Feed a captured PCM chunk to the controller. */
   pushChunk(buf: ArrayBuffer): void {
@@ -236,7 +241,9 @@ function pushSustainedAmplitude(
   }
 }
 
-function renderController(overrides: { fullDuplex?: boolean } = {}) {
+function renderController(
+  overrides: { fullDuplex?: boolean; handsFree?: boolean } = {},
+) {
   const client = new FakeClient();
   const player = new FakePlayer();
   let capture!: FakeCapture;
@@ -253,6 +260,9 @@ function renderController(overrides: { fullDuplex?: boolean } = {}) {
       // default full-duplex mode so they exercise the half-duplex path. The
       // dedicated "full-duplex" suite opts back in explicitly.
       fullDuplex: overrides.fullDuplex ?? false,
+      ...(overrides.handsFree !== undefined
+        ? { handsFree: overrides.handsFree }
+        : {}),
     }),
   );
 
@@ -554,6 +564,216 @@ describe("automatic ptt_release", () => {
     });
 
     expect(h.client.pttReleaseCount).toBe(0);
+    expect(h.view.result.current.state).toBe("listening");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hands-free (server VAD owns utterance boundaries)
+// ---------------------------------------------------------------------------
+
+describe("hands-free (server VAD)", () => {
+  /** Start a full-duplex session whose daemon confirms server_vad on ready. */
+  async function startHandsFree(h: ReturnType<typeof renderController>) {
+    await act(async () => {
+      await h.view.result.current.start("assistant-1", "conv-1");
+    });
+    await act(async () => {
+      h.client.emit("ready", {
+        type: "ready",
+        seq: 1,
+        sessionId: "s1",
+        conversationId: "conv-1",
+        turnDetection: "server_vad",
+      });
+      await Promise.resolve();
+    });
+  }
+
+  test("full-duplex sessions request server_vad on connect; half-duplex never does", async () => {
+    const h = renderController({ fullDuplex: true });
+    await act(async () => {
+      await h.view.result.current.start("assistant-1", "conv-1");
+    });
+    expect(
+      (h.client.connectArgs as { turnDetection?: string } | null)
+        ?.turnDetection,
+    ).toBe("server_vad");
+
+    cleanup();
+    useLiveVoiceStore.getState().reset();
+
+    const manual = renderController({ fullDuplex: false });
+    await act(async () => {
+      await manual.view.result.current.start("assistant-1", "conv-1");
+    });
+    expect(
+      "turnDetection" in
+        (manual.client.connectArgs as unknown as Record<string, unknown>),
+    ).toBe(false);
+  });
+
+  test("handsFree: false opts out of server_vad even in full-duplex", async () => {
+    const h = renderController({ fullDuplex: true, handsFree: false });
+    await act(async () => {
+      await h.view.result.current.start("assistant-1", "conv-1");
+    });
+    expect(
+      "turnDetection" in
+        (h.client.connectArgs as unknown as Record<string, unknown>),
+    ).toBe(false);
+  });
+
+  test("ready echoing server_vad disables the client auto-release VAD", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+    expect(h.view.result.current.state).toBe("listening");
+    expect(useLiveVoiceStore.getState().handsFree).toBe(true);
+
+    // Speech then a silence window far past SILENCE_DURATION_BEFORE_RELEASE_MS:
+    // in manual mode this releases push-to-talk; hands-free must NOT — the
+    // server VAD owns the boundary.
+    act(() => {
+      h.getCapture().pushAmplitude(0.2);
+      h.getCapture().pushChunk(pcmChunk(200));
+      h.getCapture().pushAmplitude(0);
+      h.getCapture().pushChunk(pcmChunk(2000));
+    });
+    expect(h.client.pttReleaseCount).toBe(0);
+    expect(h.view.result.current.state).toBe("listening");
+    // The audio itself still streamed (the server VAD needs the raw feed).
+    expect(h.client.sentAudio.length).toBe(2);
+  });
+
+  test("ready without the echo falls back to full client-side VAD", async () => {
+    const h = renderController({ fullDuplex: true });
+    // The daemon is old: ready has no turnDetection echo.
+    await startListening(h);
+    expect(useLiveVoiceStore.getState().handsFree).toBe(false);
+
+    act(() => {
+      h.getCapture().pushAmplitude(0.2);
+      h.getCapture().pushChunk(pcmChunk(200));
+      h.getCapture().pushAmplitude(0);
+      h.getCapture().pushChunk(pcmChunk(1200));
+    });
+    // Exactly today's behavior: the client auto-release fires.
+    expect(h.client.pttReleaseCount).toBe(1);
+    expect(h.view.result.current.state).toBe("transcribing");
+  });
+
+  test("utterance_end drives listening → transcribing → thinking on a real final", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+
+    act(() => {
+      h.client.emit("speechStarted", { type: "speech_started", seq: 2 });
+    });
+    expect(h.view.result.current.state).toBe("listening");
+
+    act(() => {
+      h.client.emit("utteranceEnd", {
+        type: "utterance_end",
+        seq: 3,
+        reason: "silence",
+      });
+    });
+    expect(h.view.result.current.state).toBe("transcribing");
+
+    act(() => {
+      h.client.emit("sttFinal", {
+        type: "stt_final",
+        seq: 4,
+        text: "hello there",
+      });
+    });
+    expect(h.view.result.current.state).toBe("thinking");
+  });
+
+  test("an empty final never advances a hands-free session to thinking", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+
+    act(() => {
+      h.client.emit("utteranceEnd", {
+        type: "utterance_end",
+        seq: 2,
+        reason: "silence",
+      });
+      h.client.emit("sttFinal", { type: "stt_final", seq: 3, text: "  " });
+    });
+    expect(h.view.result.current.state).toBe("transcribing");
+  });
+
+  test("an answerless close (bare tts_done) cycles back to listening", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+
+    // A noise-only utterance: the server closes it and, finding no
+    // transcript, ends the turn with a bare tts_done (no thinking, no audio).
+    act(() => {
+      h.client.emit("utteranceEnd", {
+        type: "utterance_end",
+        seq: 2,
+        reason: "silence",
+      });
+    });
+    expect(h.view.result.current.state).toBe("transcribing");
+
+    await act(async () => {
+      h.client.emit("ttsDone", { type: "tts_done", seq: 3, turnId: "t1" });
+      await Promise.resolve();
+    });
+    expect(h.view.result.current.state).toBe("listening");
+    // The mic gate stayed open throughout.
+    const sentBefore = h.client.sentAudio.length;
+    act(() => {
+      h.getCapture().pushAmplitude(0.1);
+      h.getCapture().pushChunk(pcmChunk(20));
+    });
+    expect(h.client.sentAudio.length).toBe(sentBefore + 1);
+  });
+
+  test("client amplitude barge-in stays active in hands-free (V-1a)", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startHandsFree(h);
+
+    // Drive a full turn to speaking.
+    act(() => {
+      h.client.emit("utteranceEnd", {
+        type: "utterance_end",
+        seq: 2,
+        reason: "silence",
+      });
+      h.client.emit("sttFinal", { type: "stt_final", seq: 3, text: "hi" });
+      h.client.emit("thinking", { type: "thinking", seq: 4, turnId: "t1" });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 5,
+        mimeType: "audio/pcm",
+        sampleRate: 16000,
+        dataBase64: "AAAA",
+      });
+    });
+    expect(h.view.result.current.state).toBe("speaking");
+
+    // Sustained loud amplitude interrupts — barge-in is still client-owned
+    // until V-1b moves it server-side.
+    const realNow = Date.now;
+    try {
+      let now = realNow();
+      Date.now = () => now;
+      act(() => {
+        h.getCapture().pushAmplitude(0.5);
+      });
+      now += 400; // > BARGE_IN_MIN_SPEECH_MS
+      act(() => {
+        h.getCapture().pushAmplitude(0.5);
+      });
+    } finally {
+      Date.now = realNow;
+    }
+    expect(h.client.interruptCount).toBe(1);
     expect(h.view.result.current.state).toBe("listening");
   });
 });

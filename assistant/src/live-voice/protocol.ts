@@ -6,6 +6,7 @@ const LIVE_VOICE_CLIENT_FRAME_TYPES = [
   "ptt_release",
   "interrupt",
   "end",
+  "update_config",
 ] as const;
 
 type LiveVoiceClientFrameType = (typeof LIVE_VOICE_CLIENT_FRAME_TYPES)[number];
@@ -13,6 +14,8 @@ type LiveVoiceClientFrameType = (typeof LIVE_VOICE_CLIENT_FRAME_TYPES)[number];
 const _LIVE_VOICE_SERVER_FRAME_TYPES = [
   "ready",
   "busy",
+  "speech_started",
+  "utterance_end",
   "stt_partial",
   "stt_final",
   "thinking",
@@ -61,6 +64,22 @@ export interface LiveVoiceAudioConfig {
   readonly sampleRate: number;
   readonly channels: 1;
 }
+
+const LIVE_VOICE_TURN_DETECTION_MODES = ["manual", "server_vad"] as const;
+
+export type LiveVoiceTurnDetectionMode =
+  (typeof LIVE_VOICE_TURN_DETECTION_MODES)[number];
+
+/**
+ * Bounds for the per-session turn-detection overrides carried on the start
+ * frame. Kept deliberately wide — they only reject nonsensical values (a
+ * sub-100 ms pause would end turns mid-word; a 10 s barge-in guard would make
+ * the assistant uninterruptible). The daemon config defaults sit inside these.
+ */
+export const MIN_SILENCE_THRESHOLD_MS = 100;
+export const MAX_SILENCE_THRESHOLD_MS = 5_000;
+export const MIN_BARGE_IN_MIN_SPEECH_MS = 0;
+export const MAX_BARGE_IN_MIN_SPEECH_MS = 3_000;
 
 export interface LiveVoiceClientStartFrame {
   readonly type: "start";
@@ -113,6 +132,38 @@ export interface LiveVoiceClientStartFrame {
    * makes that impossible: silence is the old behaviour, exactly.
    */
   readonly toolActivity?: boolean;
+  /**
+   * Turn-detection mode for the session. Absent means "manual" (push-to-talk,
+   * exactly today's behavior). "server_vad" opts the session into server-side
+   * utterance boundaries: the daemon detects speech onset and trailing
+   * silence, emits `speech_started` / `utterance_end` frames, and runs
+   * repeated utterance→turn cycles without `ptt_release` frames.
+   *
+   * Like `toolActivity`, this is a CAPABILITY FLAG: the `speech_started` and
+   * `utterance_end` frames are sent ONLY to sessions that opted in, because a
+   * client that has never heard of those frame types treats them as fatal
+   * unparseable payloads. A client that never asks keeps the old protocol
+   * exactly.
+   */
+  readonly turnDetection?: LiveVoiceTurnDetectionMode;
+  /**
+   * Per-session override for the trailing-silence duration (ms) that ends the
+   * user's turn — the "pause before reply" the client exposes as a setting.
+   * Absent falls back to the daemon `liveVoice.vad.silenceThresholdMs` config.
+   * Only meaningful for `turnDetection: "server_vad"`. Bounded to
+   * [{@link MIN_SILENCE_THRESHOLD_MS}, {@link MAX_SILENCE_THRESHOLD_MS}].
+   */
+  readonly silenceThresholdMs?: number;
+  /**
+   * Per-session override for the sustained speech (ms) required before the
+   * user's speech interrupts the assistant mid-reply — the "interrupt
+   * sensitivity" setting (higher = harder to interrupt; 0 disables the guard).
+   * Absent falls back to the daemon `liveVoice.vad.bargeInMinSpeechMs` config.
+   * Accepted and stored in this slice; the server-side barge-in guard that
+   * consumes it lands with V-1b. Bounded to
+   * [{@link MIN_BARGE_IN_MIN_SPEECH_MS}, {@link MAX_BARGE_IN_MIN_SPEECH_MS}].
+   */
+  readonly bargeInMinSpeechMs?: number;
 }
 
 export interface LiveVoiceClientAudioFrame {
@@ -132,12 +183,26 @@ export interface LiveVoiceClientEndFrame {
   readonly type: "end";
 }
 
+/**
+ * Mid-session tuning update: applies the same turn-detection knobs the start
+ * frame carries to the *running* session, so the client can retune "pause
+ * before reply" / "interrupt sensitivity" without reconnecting. Each field is
+ * optional and independently applied; the same bounds as the start frame apply.
+ * Only meaningful for `server_vad` sessions (a no-op on manual sessions).
+ */
+export interface LiveVoiceClientUpdateConfigFrame {
+  readonly type: "update_config";
+  readonly silenceThresholdMs?: number;
+  readonly bargeInMinSpeechMs?: number;
+}
+
 export type LiveVoiceClientFrame =
   | LiveVoiceClientStartFrame
   | LiveVoiceClientAudioFrame
   | LiveVoiceClientPttReleaseFrame
   | LiveVoiceClientInterruptFrame
-  | LiveVoiceClientEndFrame;
+  | LiveVoiceClientEndFrame
+  | LiveVoiceClientUpdateConfigFrame;
 
 interface LiveVoiceBinaryAudioFrame {
   readonly type: "binary_audio";
@@ -153,11 +218,39 @@ export interface LiveVoiceReadyServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "ready";
   readonly sessionId: string;
   readonly conversationId: string;
+  /**
+   * Echoes the turn-detection mode the session is actually running, so
+   * clients can detect a daemon that ignored a requested mode. Absent
+   * (older daemons) means "manual" — hands-free clients must fall back to
+   * their own client-side VAD accordingly.
+   */
+  readonly turnDetection?: LiveVoiceTurnDetectionMode;
 }
 
 export interface LiveVoiceBusyServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "busy";
   readonly activeSessionId: string;
+}
+
+/**
+ * Emitted when the server VAD detects user speech. The client MUST
+ * immediately stop local TTS playback once server-side barge-in lands (V-1b);
+ * in this slice it marks the utterance opening. Sent ONLY to sessions that
+ * opted in via `turnDetection: "server_vad"` on the start frame.
+ */
+export interface LiveVoiceSpeechStartedServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "speech_started";
+}
+
+/**
+ * Emitted when the server VAD closes the utterance and the turn's
+ * transcription begins (plays the role ptt_release plays in manual mode).
+ * Sent ONLY to sessions that opted in via `turnDetection: "server_vad"` on
+ * the start frame.
+ */
+export interface LiveVoiceUtteranceEndServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "utterance_end";
+  readonly reason: "silence" | "max-duration";
 }
 
 export interface LiveVoiceSttPartialServerFrame extends LiveVoiceServerFrameBase {
@@ -197,6 +290,12 @@ export interface LiveVoiceMetricsServerFrame extends LiveVoiceServerFrameBase {
   readonly event?: string;
   readonly sessionId?: string;
   readonly conversationId?: string;
+  /**
+   * Turn-detection mode the session is running ("manual" | "server_vad"), so
+   * latency metrics can be segmented by endpointing mode. Additive-optional:
+   * absent on frames from older daemons.
+   */
+  readonly turnDetection?: LiveVoiceTurnDetectionMode;
   readonly turnId: string;
   readonly metrics?: unknown;
   readonly sttMs: number | null;
@@ -295,6 +394,8 @@ export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
 export type LiveVoiceServerFrame =
   | LiveVoiceReadyServerFrame
   | LiveVoiceBusyServerFrame
+  | LiveVoiceSpeechStartedServerFrame
+  | LiveVoiceUtteranceEndServerFrame
   | LiveVoiceSttPartialServerFrame
   | LiveVoiceSttFinalServerFrame
   | LiveVoiceThinkingServerFrame
@@ -312,6 +413,8 @@ type WithoutSeq<T extends LiveVoiceServerFrameBase> = Omit<T, "seq">;
 export type LiveVoiceServerFramePayload =
   | WithoutSeq<LiveVoiceReadyServerFrame>
   | WithoutSeq<LiveVoiceBusyServerFrame>
+  | WithoutSeq<LiveVoiceSpeechStartedServerFrame>
+  | WithoutSeq<LiveVoiceUtteranceEndServerFrame>
   | WithoutSeq<LiveVoiceSttPartialServerFrame>
   | WithoutSeq<LiveVoiceSttFinalServerFrame>
   | WithoutSeq<LiveVoiceThinkingServerFrame>
@@ -406,7 +509,56 @@ export function validateLiveVoiceClientFrame(
       return { ok: true, frame: { type: "interrupt" } };
     case "end":
       return { ok: true, frame: { type: "end" } };
+    case "update_config":
+      return validateUpdateConfigFrame(value);
   }
+}
+
+function validateUpdateConfigFrame(
+  value: Record<string, unknown>,
+): LiveVoiceParseResult<LiveVoiceClientUpdateConfigFrame> {
+  if (
+    "silenceThresholdMs" in value &&
+    !isIntegerInRange(
+      value.silenceThresholdMs,
+      MIN_SILENCE_THRESHOLD_MS,
+      MAX_SILENCE_THRESHOLD_MS,
+    )
+  ) {
+    return protocolError(
+      "invalid_field",
+      `update_config field silenceThresholdMs must be an integer in [${MIN_SILENCE_THRESHOLD_MS}, ${MAX_SILENCE_THRESHOLD_MS}]`,
+      "silenceThresholdMs",
+      "update_config",
+    );
+  }
+  if (
+    "bargeInMinSpeechMs" in value &&
+    !isIntegerInRange(
+      value.bargeInMinSpeechMs,
+      MIN_BARGE_IN_MIN_SPEECH_MS,
+      MAX_BARGE_IN_MIN_SPEECH_MS,
+    )
+  ) {
+    return protocolError(
+      "invalid_field",
+      `update_config field bargeInMinSpeechMs must be an integer in [${MIN_BARGE_IN_MIN_SPEECH_MS}, ${MAX_BARGE_IN_MIN_SPEECH_MS}]`,
+      "bargeInMinSpeechMs",
+      "update_config",
+    );
+  }
+  return {
+    ok: true,
+    frame: {
+      type: "update_config",
+      ...(typeof value.silenceThresholdMs === "number"
+        ? { silenceThresholdMs: value.silenceThresholdMs }
+        : {}),
+      ...(typeof value.bargeInMinSpeechMs === "number"
+        ? { bargeInMinSpeechMs: value.bargeInMinSpeechMs }
+        : {}),
+    },
+  };
 }
 
 export function parseLiveVoiceBinaryAudioFrame(
@@ -524,6 +676,50 @@ function validateStartFrame(
     );
   }
 
+  if (
+    "turnDetection" in value &&
+    !isLiveVoiceTurnDetectionMode(value.turnDetection)
+  ) {
+    return protocolError(
+      "invalid_field",
+      "start frame field turnDetection must be manual or server_vad",
+      "turnDetection",
+      "start",
+    );
+  }
+
+  if (
+    "silenceThresholdMs" in value &&
+    !isIntegerInRange(
+      value.silenceThresholdMs,
+      MIN_SILENCE_THRESHOLD_MS,
+      MAX_SILENCE_THRESHOLD_MS,
+    )
+  ) {
+    return protocolError(
+      "invalid_field",
+      `start frame field silenceThresholdMs must be an integer in [${MIN_SILENCE_THRESHOLD_MS}, ${MAX_SILENCE_THRESHOLD_MS}]`,
+      "silenceThresholdMs",
+      "start",
+    );
+  }
+
+  if (
+    "bargeInMinSpeechMs" in value &&
+    !isIntegerInRange(
+      value.bargeInMinSpeechMs,
+      MIN_BARGE_IN_MIN_SPEECH_MS,
+      MAX_BARGE_IN_MIN_SPEECH_MS,
+    )
+  ) {
+    return protocolError(
+      "invalid_field",
+      `start frame field bargeInMinSpeechMs must be an integer in [${MIN_BARGE_IN_MIN_SPEECH_MS}, ${MAX_BARGE_IN_MIN_SPEECH_MS}]`,
+      "bargeInMinSpeechMs",
+      "start",
+    );
+  }
+
   return {
     ok: true,
     frame: {
@@ -542,6 +738,15 @@ function validateStartFrame(
       // anything else to the default rather than rejecting the session.
       ...(isVoicePersonaId(value.persona) ? { persona: value.persona } : {}),
       ...(value.toolActivity === true ? { toolActivity: true } : {}),
+      ...(isLiveVoiceTurnDetectionMode(value.turnDetection)
+        ? { turnDetection: value.turnDetection }
+        : {}),
+      ...(typeof value.silenceThresholdMs === "number"
+        ? { silenceThresholdMs: value.silenceThresholdMs }
+        : {}),
+      ...(typeof value.bargeInMinSpeechMs === "number"
+        ? { bargeInMinSpeechMs: value.bargeInMinSpeechMs }
+        : {}),
       audio: audioConfig.frame,
     },
   };
@@ -644,6 +849,24 @@ function isLiveVoiceClientFrameType(
   value: string,
 ): value is LiveVoiceClientFrameType {
   return (LIVE_VOICE_CLIENT_FRAME_TYPES as readonly string[]).includes(value);
+}
+
+function isLiveVoiceTurnDetectionMode(
+  value: unknown,
+): value is LiveVoiceTurnDetectionMode {
+  return (
+    typeof value === "string" &&
+    (LIVE_VOICE_TURN_DETECTION_MODES as readonly string[]).includes(value)
+  );
+}
+
+function isIntegerInRange(value: unknown, min: number, max: number): boolean {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= min &&
+    value <= max
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
