@@ -57,6 +57,7 @@ import type {
   ProviderResponse,
   SendMessageOptions,
 } from "../providers/types.js";
+import { renderAdvisorEnvironmentBlock } from "../subagent/consult-context.js";
 import { getLogger } from "../util/logger.js";
 
 const log = getLogger("advisor");
@@ -305,12 +306,20 @@ function assistantTextOf(content: readonly ContentBlock[]): string {
  * appending a user turn after an unanswered tool_use would violate the
  * tool_use/tool_result invariant on the consult call. The prior history (up to
  * but not including this round's assistant message) supplies the context.
+ *
+ * `situationalContext` is the runtime context pack from `buildAdvisorContext`
+ * (`subagent/consult-context.ts`): the agent's live tool set, the skill
+ * catalog it can load, its workspace, and trust-gated personal memory. It
+ * rides in this request turn rather than the system prompt so the system
+ * prompt stays minimal, and it is fenced as untrusted data because it embeds
+ * externally authored text.
  */
 export function buildAdvisorConsultMessages(opts: {
   proposedContent: readonly ContentBlock[];
   reason: AdvisorSignal;
+  situationalContext?: string | null;
 }): { systemPrompt: string; userMessage: Message } {
-  const { proposedContent, reason } = opts;
+  const { proposedContent, reason, situationalContext } = opts;
   const proposedText = assistantTextOf(proposedContent);
   const toolLines = proposedContent
     .map(summarizeToolUse)
@@ -331,6 +340,9 @@ export function buildAdvisorConsultMessages(opts: {
     "Proposed tool call(s):",
     toolLines.length > 0 ? toolLines.join("\n") : "(none)",
     "",
+    ...(situationalContext
+      ? [renderAdvisorEnvironmentBlock(situationalContext), ""]
+      : []),
     "Give your second opinion now.",
     "</advisor_consult>",
   ];
@@ -427,12 +439,18 @@ export async function consultAdvisor(opts: {
   proposedContent: readonly ContentBlock[];
   route: AdvisorRoute;
   advisor: AdvisorConfig;
+  /**
+   * Situational context pack from `buildAdvisorContext`
+   * (`subagent/consult-context.ts`); rides in the consult request turn.
+   */
+  situationalContext?: string | null;
   selectionSeed?: string;
   signal?: AbortSignal;
 }): Promise<AdvisorAdvice | null> {
   const { systemPrompt, userMessage } = buildAdvisorConsultMessages({
     proposedContent: opts.proposedContent,
     reason: opts.route.reason,
+    situationalContext: opts.situationalContext,
   });
   const consultHistory = [...opts.priorHistory, userMessage];
 

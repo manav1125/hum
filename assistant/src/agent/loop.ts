@@ -42,6 +42,7 @@ import type {
   ToolResultContent,
 } from "../providers/types.js";
 import { isContextOverflowError } from "../providers/types.js";
+import { buildAdvisorContext } from "../subagent/consult-context.js";
 import type { SensitiveOutputBinding } from "../tools/sensitive-output-placeholders.js";
 import {
   applyStreamingSubstitution,
@@ -1923,6 +1924,20 @@ export class AgentLoop {
             },
             "advisor_consult_start",
           );
+          // Situational context pack (`subagent/consult-context.ts`, ported
+          // from upstream 08d59ec3cd): the turn's live tool set, the loadable
+          // skill catalog, the workspace, and trust-gated personal memory —
+          // assembled off the per-turn `trust` snapshot, best-effort and
+          // per-section time-bounded. A null pack just means the consult runs
+          // on transcript + system prompt alone.
+          const situationalContext = await buildAdvisorContext({
+            conversationId: this.conversationId,
+            trust,
+            tools: currentTools,
+            recallQuery:
+              assistantTextOf(response.content) ||
+              toolUseBlocks.map((t) => t.name).join(", "),
+          });
           const advice = await consultAdvisor({
             send: (h, o) => this.provider.sendMessage(h, o),
             // The assistant tool_use message is already appended to `history`;
@@ -1931,6 +1946,7 @@ export class AgentLoop {
             proposedContent: response.content,
             route: advisorRoute,
             advisor: getConfig().llm.advisor,
+            situationalContext,
             selectionSeed: this.conversationId,
             ...(signal ? { signal } : {}),
           });
