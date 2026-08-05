@@ -12,6 +12,11 @@ import {
   type ChatComposerProps,
 } from "@/domains/chat/components/chat-composer/chat-composer";
 import { InChatVoiceOverlay } from "@/domains/chat/components/in-chat-voice-overlay";
+import {
+  ConversationVoiceBar,
+  ConversationVoiceRoomOverlay,
+} from "@/domains/chat/voice/voice-call-conversation-slot";
+import { useVoiceCallStore } from "@/domains/chat/voice/voice-call-store";
 import { QuestionPromptSlot } from "@/domains/chat/components/question-prompt-slot";
 import { canvasElement } from "@/domains/chat/home-canvas/home-canvas-model";
 import { SpawnedWorkSlot } from "@/domains/chat/components/spawned-work-slot";
@@ -135,6 +140,13 @@ export interface ChatBodyProps {
   readonlyBannerSlot?: ReactNode;
 
   /**
+   * Title of the active conversation, for the desktop voice-call surfaces
+   * (the room's header and the minimized bar's ▤ chip fallback). Optional —
+   * side panels omit it.
+   */
+  conversationTitle?: string | null;
+
+  /**
    * Optional conversation-starter chip grid rendered inside the max-width
    * wrapper directly below the composer. Visible only on the empty state;
    * the parent passes `undefined` once messages arrive. Rendered as a
@@ -194,18 +206,39 @@ export function ChatBody({
   queuedDrawerSlot,
   channelFooterSlot,
   readonlyBannerSlot,
+  conversationTitle,
   startersSlot,
 }: ChatBodyProps) {
   const isEmptyState = scrollAreaProps.showEmptyState;
 
-  // In-chat voice mode: the composer mic opens an orb overlay covering this
-  // chat panel, bound to the active conversation. Owned here (not in the
-  // composer) so the overlay can span messages + composer via this `relative`
-  // root. The overlay self-gates on the `voice-mode` flag; the composer mic
-  // does too, so it can't be opened when the flag is off. App-editing side
-  // panels never pass `onEnterVoiceMode`, so the mic + overlay don't appear.
+  // In-chat voice mode. Two paths behind the composer mic:
+  //
+  //  · Main panel with a conversation → the v37 call LADDER. (`ChatBody` is
+  //    the desktop composition — the mobile main chat is `MobileChatView`,
+  //    which keeps its own thread-voice bar.) The mic asks the
+  //    app-shell-level `VoiceCallHost` (via the voice-call store) to start a
+  //    session bound to this conversation; this component then merely
+  //    PROJECTS the call — the room overlay while expanded, the minimized
+  //    bar above a fully usable composer while collapsed. The controller
+  //    lives above the route switch, so navigating away demotes to the
+  //    title-bar pill instead of hanging up.
+  //  · A panel with no conversation id yet → the legacy full-panel overlay,
+  //    which owns its own controller for exactly as long as it is open.
+  //
+  // Both paths self-gate on the `voice-mode` flag via the composer mic.
+  // App-editing side panels never pass `onEnterVoiceMode`, so neither
+  // appears there.
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
-  const handleEnterVoiceMode = useCallback(() => setVoiceOverlayOpen(true), []);
+  const { assistantId, conversationId } = composerProps;
+  const usesCallLadder =
+    variant === "main" && !!assistantId && !!conversationId;
+  const handleEnterVoiceMode = useCallback(() => {
+    if (usesCallLadder && assistantId && conversationId) {
+      useVoiceCallStore.getState().startCall(assistantId, conversationId);
+      return;
+    }
+    setVoiceOverlayOpen(true);
+  }, [usesCallLadder, assistantId, conversationId]);
   const handleExitVoiceMode = useCallback(() => setVoiceOverlayOpen(false), []);
   const supportsVoiceMode =
     !!composerProps.onVoiceTranscript && !!composerProps.assistantId;
@@ -282,6 +315,16 @@ export function ChatBody({
           <SpawnedWorkSlot />
           <QuestionPromptSlot />
           {channelFooterSlot}
+          {/* v37 §W1 rung 2 — the minimized call bar, above a composer that
+              stays FULLY usable (typing mid-call is a feature). Renders null
+              unless the active call is bound to this conversation and
+              collapsed. */}
+          {usesCallLadder ? (
+            <ConversationVoiceBar
+              conversationId={conversationId}
+              conversationTitle={conversationTitle}
+            />
+          ) : null}
           {isChannelReadonly ? (
             readonlyBannerSlot ? (
               <div className="flex items-center gap-2">
@@ -328,6 +371,15 @@ export function ChatBody({
           onExit={handleExitVoiceMode}
         />
       )}
+      {/* v37 §W1 rung 1 — the room, covering this chat panel while the call
+          is expanded. A projection of the app-shell-owned session: mounting
+          and unmounting it never touches the socket or the mic. */}
+      {usesCallLadder ? (
+        <ConversationVoiceRoomOverlay
+          conversationId={conversationId}
+          conversationTitle={conversationTitle}
+        />
+      ) : null}
       {isAttachmentDragOver && (
         <div
           aria-hidden="true"

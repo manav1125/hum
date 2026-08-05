@@ -1067,6 +1067,7 @@ export function ChatMainPanel({
         bannerSlot={isSidePanel ? undefined : mainBannerSlot}
         queuedDrawerSlot={isSidePanel ? undefined : mainQueuedDrawerSlot}
         readonlyBannerSlot={slackReadonlyBannerSlot}
+        conversationTitle={activeConversation?.title ?? null}
         // Positions 3–4 of the home canvas, and nothing beside them. The
         // `ChatLauncher` that used to be spliced in here (six hardcoded
         // capability pills over three needs-you cards) is gone: needs-you is

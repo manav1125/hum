@@ -68,6 +68,8 @@ export interface DictationStreamOptions {
   captureFactory?: (options: LiveVoiceAudioCaptureOptions) => {
     start(): Promise<LiveVoiceCaptureResult>;
     shutdown(): void;
+    /** Drain the capture's sub-batch tail synchronously (see pcm-capture). */
+    flush?(): void;
   };
 }
 
@@ -160,6 +162,10 @@ export function startDictationStream(
 
   const teardown = (): void => {
     if (closed) return;
+    // Drain the capture's sub-batch tail (<50ms) into the still-open socket
+    // before the gate closes, so the utterance's last syllable isn't stranded
+    // in the batch accumulator (the `end` frame below asks for the flush).
+    capture.flush?.();
     closed = true;
     live = false;
     capture.shutdown();

@@ -52,6 +52,7 @@ import { useElectronIconSync } from "@/hooks/use-electron-icon-sync";
 import { useElectronStatusSync } from "@/hooks/use-electron-status-sync";
 import { useElectronFeatureFlagBridge } from "@/runtime/electron-feature-flags";
 import { GlobalPushToTalkBridge } from "@/domains/chat/voice/global-push-to-talk-bridge";
+import { VoiceCallHost } from "@/domains/chat/voice/voice-call-host";
 import { TimezoneSync } from "@/components/timezone-sync";
 import { UpdateToast } from "@/components/update-toast";
 import { retireAssistant } from "@/assistant/retire-service";
@@ -415,6 +416,13 @@ export function RootLayout() {
         isAssistantActive={isAssistantActive}
       />
       <GlobalPushToTalkBridge assistantId={assistantId} />
+
+      {/* The desktop voice-call session owner (v37 ladder). Mounted HERE —
+          above the route switch — so a live call survives every navigation:
+          the conversation view projects the room/bar, this host projects the
+          title-bar pill, and none of those swaps touches the socket or mic.
+          Renders nothing until a call is started. */}
+      <VoiceCallHost />
 
       {feedbackOpen ? (
         <LazyBoundary>

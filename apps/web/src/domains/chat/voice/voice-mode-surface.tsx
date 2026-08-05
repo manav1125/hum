@@ -60,6 +60,8 @@ import {
   type LiveVoiceCard,
 } from "@/domains/chat/voice/live-voice/live-voice-store";
 import { VoiceDictationSurface } from "@/domains/chat/voice/voice-dictation-surface";
+import { VoiceFullScreen } from "@/domains/chat/voice/voice-fullscreen";
+import { useVoiceCallStore } from "@/domains/chat/voice/voice-call-store";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { ttsProvidersGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import { LS_TTS_PROVIDER, TTS_PROVIDERS } from "@/domains/settings/ai/ai-types";
@@ -195,11 +197,17 @@ export function VoiceModeSurface({
     start,
     stop,
     setMuted,
+    interrupt,
   } = useLiveVoice();
   // Visual result cards for the current turn, driven by `card` server frames
   // (the `ui_show` tool output). Rendered above the orb via the shared
   // SurfaceRouter — see the card stack below.
   const cards = useLiveVoiceStore.use.cards();
+  // The desktop room needs the per-turn boundary (caption the CURRENT
+  // sentence only) and the honest thinking caption — same fields the mobile
+  // call screen reads.
+  const turnClosed = useLiveVoiceStore.use.turnClosed();
+  const activityTool = useLiveVoiceStore.use.activityTool();
 
   // Slice 1 cards are display-only (list/table/card), so actions don't round-trip
   // yet; wiring to the surface-action route is a later slice.
@@ -222,9 +230,22 @@ export function VoiceModeSurface({
     if (active) {
       void stop();
     } else {
+      // One live-voice session, ever. While the desktop call ladder owns a
+      // session (its title-bar pill is on screen right now), starting here
+      // would open a SECOND socket and mic — the shared store can't stop it
+      // because this surface's own controller is idle. Refuse instead.
+      if (useVoiceCallStore.getState().session) return;
       void start(assistantId, conversationId ?? undefined);
     }
   }, [active, connecting, start, stop, assistantId, conversationId]);
+
+  // The room clock: a real epoch start for THIS surface's session. Set when
+  // the session leaves idle, cleared when it returns — never a made-up time.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (state === "idle") setStartedAt(null);
+    else setStartedAt((prev) => prev ?? Date.now());
+  }, [state]);
 
   // --- Voice engine ---------------------------------------------------------
   // There is NO engine control on this screen any more. v35: "the engine
@@ -272,6 +293,9 @@ export function VoiceModeSurface({
     if (!autoStart || autoStarted) return;
     if (!voiceMode || !assistantId) return;
     if (state !== "idle") return;
+    // Same one-session rule as handleToggle: never auto-start under a live
+    // desktop ladder call.
+    if (useVoiceCallStore.getState().session) return;
     setAutoStarted(true);
     void start(assistantId, conversationId ?? undefined);
   }, [
@@ -363,6 +387,48 @@ export function VoiceModeSurface({
         providerOptions={providerOptions}
         onProviderChange={handleProviderChange}
       />
+    );
+  }
+
+  // DESKTOP, in a call (connecting, live, or failed) → the v35 room, shared
+  // byte-for-byte with the mobile call screen (`VoiceFullScreen`) so the two
+  // renderings cannot drift. v35's rules land here by construction: the mark
+  // IS the state, captions carry the CURRENT sentence only, the thinking
+  // caption names a real tool or admits it's thinking, and the call screen
+  // carries exactly its controls — no persona pill, no voice picker (those
+  // stay on the idle screen below, which is a start screen, not a call).
+  // There is no collapse control on this standalone route: it has no inline
+  // conversation view to collapse into, and a ⤓ that really hung up would be
+  // a lie (the in-chat path gets the full ladder instead).
+  if (state !== "idle") {
+    return (
+      <div style={{ position: "relative", height: "100%" }}>
+        <VoiceFullScreen
+          layout="fill"
+          title={null}
+          currentUser={
+            turnClosed
+              ? ""
+              : [finalTranscript, partialTranscript]
+                  .filter(Boolean)
+                  .join(" ")
+                  .trim()
+          }
+          currentAssistant={turnClosed ? "" : assistantTranscript.trim()}
+          state={state}
+          activityTool={activityTool}
+          muted={muted}
+          startedAt={startedAt}
+          error={error}
+          failureKind={failureKind}
+          cards={cards}
+          onCardAction={handleCardAction}
+          onEnd={() => void stop()}
+          onToggleMute={() => setMuted(!muted)}
+          onInterrupt={interrupt}
+          onRetry={handleToggle}
+        />
+      </div>
     );
   }
 
@@ -717,75 +783,9 @@ export function VoiceModeSurface({
           </div>
         ) : null}
 
-        {/* Controls row: mute (active only) + stop (active only). */}
-        {active ? (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setMuted(!muted)}
-              aria-label={muted ? "Unmute microphone" : "Mute microphone"}
-              aria-pressed={muted}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                fontFamily: mono,
-                fontSize: 12,
-                color: muted ? "#FFFFFF" : TEXT_2,
-                background: muted ? "rgba(255,255,255,.14)" : "transparent",
-                border: `1px solid ${LINE_2}`,
-                borderRadius: 999,
-                padding: "11px 18px",
-                minHeight: 44,
-                cursor: "pointer",
-              }}
-            >
-              {muted ? (
-                <MicOff size={14} aria-hidden />
-              ) : (
-                <Mic size={14} aria-hidden />
-              )}
-              {muted ? "Unmute" : "Mute"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void stop()}
-              aria-label="Stop voice mode"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                fontFamily: mono,
-                fontSize: 12,
-                color: DANGER,
-                background: `${DANGER}1A`,
-                border: `1px solid ${DANGER}59`,
-                borderRadius: 999,
-                padding: "11px 20px",
-                minHeight: 44,
-                cursor: "pointer",
-              }}
-            >
-              <span
-                aria-hidden
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: DANGER,
-                }}
-              />
-              Stop
-            </button>
-          </div>
-        ) : null}
+        {/* No in-call controls here any more: everything past `idle` renders
+            the v35 room above (mute · end live there), so this screen is only
+            ever the pre-call start screen. */}
 
         {/* Voice / TTS-provider picker — only while idle, so a turn isn't
               interrupted; persists to the shared LS_TTS_PROVIDER key. Hidden in

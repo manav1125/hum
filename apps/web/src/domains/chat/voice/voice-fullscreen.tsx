@@ -54,7 +54,12 @@ import { createPortal } from "react-dom";
 
 import { ChevronDown, MicOff, X } from "lucide-react";
 
-import type { LiveVoiceSessionState } from "@/domains/chat/voice/live-voice/live-voice-store";
+import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router";
+import type { Surface } from "@/domains/chat/types/types";
+import type {
+  LiveVoiceCard,
+  LiveVoiceSessionState,
+} from "@/domains/chat/voice/live-voice/live-voice-store";
 import { thinkingLabel } from "@/domains/chat/voice/live-voice/tool-activity-words";
 import {
   readVoiceEngine,
@@ -123,6 +128,20 @@ const FULLSCREEN_CSS = `
 }
 `;
 
+/**
+ * Build a `Surface` from a live-voice card — the same 1:1 map every voice
+ * surface uses before handing cards to the shared SurfaceRouter.
+ */
+function toSurface(card: LiveVoiceCard): Surface {
+  return {
+    surfaceId: card.surfaceId,
+    surfaceType: card.surfaceType,
+    data: card.data,
+    ...(card.title !== undefined ? { title: card.title } : {}),
+    ...(card.actions ? { actions: card.actions.map((a) => ({ ...a })) } : {}),
+  };
+}
+
 /** The three drawn states. Everything else resolves onto one of them. */
 type CallState = "listening" | "thinking" | "speaking";
 
@@ -155,8 +174,14 @@ export interface VoiceFullScreenProps {
   /** Failure message when `state === "failed"`. */
   error: string | null;
   failureKind: "mic" | "session" | null;
-  /** ⤓ — back to the inline bar. Same call, same socket. */
-  onCollapse: () => void;
+  /**
+   * ⤓ — back to the inline bar. Same call, same socket. Optional because one
+   * surface has nothing to collapse INTO: the standalone `/voice` route
+   * (no conversation view behind it). When omitted the collapse control is
+   * not drawn — a collapse that would really hang up is a lie, and hiding it
+   * is the smaller deviation from v35's three controls.
+   */
+  onCollapse?: () => void;
   /** Hang up. Drops into the thread, at the end of this call's transcript. */
   onEnd: () => void;
   onToggleMute: () => void;
@@ -164,6 +189,26 @@ export interface VoiceFullScreenProps {
   onInterrupt: () => void;
   /** Restart a failed session. */
   onRetry: () => void;
+  /**
+   * `"overlay"` (default) — the mobile shape: `position: fixed` over the
+   * viewport, portaled into `#viewport-overlays` on mobile. `"fill"` — the
+   * desktop ladder's shape: fill the nearest positioned ancestor (the chat
+   * panel) so the app chrome around the room stays navigable. Presentation
+   * only; the room itself is identical.
+   */
+  layout?: "overlay" | "fill";
+  /**
+   * Visual result cards for the current turn (the `ui_show` path). Optional:
+   * when omitted the room draws exactly the v35 frames (mobile's shape,
+   * where cards land in the thread instead). The desktop ladder passes them
+   * so a surface shown mid-call is visible in the room.
+   */
+  cards?: LiveVoiceCard[];
+  onCardAction?: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void;
 }
 
 export function VoiceFullScreen({
@@ -181,6 +226,9 @@ export function VoiceFullScreen({
   onToggleMute,
   onInterrupt,
   onRetry,
+  layout = "overlay",
+  cards,
+  onCardAction,
 }: VoiceFullScreenProps) {
   const target = useMobileOverlayTarget();
   const failed = state === "failed";
@@ -208,7 +256,7 @@ export function VoiceFullScreen({
       aria-modal="true"
       aria-label="Voice call"
       style={{
-        position: "fixed",
+        position: layout === "fill" ? "absolute" : "fixed",
         inset: 0,
         zIndex: 40,
         display: "flex",
@@ -313,6 +361,39 @@ export function VoiceFullScreen({
         )}
       </div>
 
+      {/* Visual result cards (optional — see the prop). Rendered by the same
+          SurfaceRouter chat uses, scoped to the dark theme so its design-token
+          children resolve against the room's ground. Not a fourth control:
+          cards are content, and they are per-turn. */}
+      {cards && cards.length > 0 ? (
+        <div
+          data-theme="dark"
+          style={{
+            flexShrink: 0,
+            width: "100%",
+            maxWidth: 560,
+            margin: "0 auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            overflowY: "auto",
+            maxHeight: "34vh",
+            textAlign: "left",
+            padding: "0 24px 14px",
+            position: "relative",
+            zIndex: 5,
+          }}
+        >
+          {cards.map((card) => (
+            <SurfaceRouter
+              key={card.surfaceId}
+              surface={toSurface(card)}
+              onAction={onCardAction ?? (() => {})}
+            />
+          ))}
+        </div>
+      ) : null}
+
       {/* THE THREE CONTROLS. mute · end · collapse. Nothing else. */}
       <div
         style={{
@@ -357,13 +438,15 @@ export function VoiceFullScreen({
             <X size={22} aria-hidden color={END_INK} strokeWidth={2.4} />
           </CallControl>
 
-          <CallControl
-            label="collapse"
-            ariaLabel="Back to the conversation"
-            onClick={onCollapse}
-          >
-            <ChevronDown size={18} aria-hidden color={SOFT} />
-          </CallControl>
+          {onCollapse ? (
+            <CallControl
+              label="collapse"
+              ariaLabel="Back to the conversation"
+              onClick={onCollapse}
+            >
+              <ChevronDown size={18} aria-hidden color={SOFT} />
+            </CallControl>
+          ) : null}
         </div>
       </div>
 
@@ -373,7 +456,8 @@ export function VoiceFullScreen({
     </div>
   );
 
-  return target ? createPortal(view, target) : view;
+  // "fill" renders in place by definition; the portal is the mobile overlay's.
+  return layout === "overlay" && target ? createPortal(view, target) : view;
 }
 
 // ---------------------------------------------------------------------------
