@@ -18,7 +18,7 @@ mock.module("../config/loader.js", () => ({
   }),
 }));
 
-import { getDb } from "../memory/db-connection.js";
+import { getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import {
   backfillMemoryRecallLogMessageId,
@@ -31,8 +31,7 @@ import { memoryRecallLogs } from "../memory/schema.js";
 initializeDb();
 
 function resetTables(): void {
-  const db = getDb();
-  db.delete(memoryRecallLogs).run();
+  getMemoryDb().delete(memoryRecallLogs).run();
 }
 
 describe("memory-recall-log-store", () => {
