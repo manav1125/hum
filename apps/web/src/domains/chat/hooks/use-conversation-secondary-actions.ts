@@ -140,12 +140,12 @@ export function useConversationSecondaryActions({
           toast.error(
             response?.status === 409
               ? "The assistant is busy — try again when the current response finishes"
-              : "Couldn't summarize the conversation",
+              : "I couldn't summarize this conversation",
           );
         }
       } catch (err) {
         captureError(err, { context: "summarize_up_to_here" });
-        toast.error("Couldn't summarize the conversation");
+        toast.error("I couldn't summarize this conversation");
       }
     },
     [],
