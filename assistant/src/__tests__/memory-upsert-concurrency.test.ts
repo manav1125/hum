@@ -60,7 +60,7 @@ mock.module("../config/loader.js", () => ({
   invalidateConfigCache: () => {},
 }));
 
-import { getDb } from "../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { indexMessageNow } from "../memory/indexer.js";
 import { conversations, memorySegments, messages } from "../memory/schema.js";
@@ -69,11 +69,13 @@ import { conversations, memorySegments, messages } from "../memory/schema.js";
 initializeDb();
 
 function resetTables() {
+  // Only `memory_graph_nodes` and `memory_jobs` moved to `assistant-memory.db`;
+  // embeddings, segments, messages and conversations stay in the main DB.
   const db = getDb();
   db.run("DELETE FROM memory_embeddings");
-  db.run("DELETE FROM memory_graph_nodes");
+  getMemoryDb().run("DELETE FROM memory_graph_nodes");
   db.run("DELETE FROM memory_segments");
-  db.run("DELETE FROM memory_jobs");
+  getMemoryDb().run("DELETE FROM memory_jobs");
   db.run("DELETE FROM messages");
   db.run("DELETE FROM conversations");
 }

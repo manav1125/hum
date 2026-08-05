@@ -14,7 +14,7 @@ import {
   getMessages,
   wipeConversation,
 } from "../memory/conversation-crud.js";
-import { getDb } from "../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { enqueueMemoryJob } from "../memory/jobs-store.js";
 
@@ -24,11 +24,11 @@ initializeDb();
 describe("wipeConversation", () => {
   beforeEach(() => {
     const db = getDb();
-    db.run(`DELETE FROM memory_graph_nodes`);
+    getMemoryDb().run(`DELETE FROM memory_graph_nodes`);
     db.run(`DELETE FROM memory_segments`);
     db.run(`DELETE FROM memory_summaries`);
     db.run(`DELETE FROM memory_embeddings`);
-    db.run(`DELETE FROM memory_jobs`);
+    getMemoryDb().run(`DELETE FROM memory_jobs`);
     db.run(`DELETE FROM tool_invocations`);
     db.run(`DELETE FROM llm_request_logs`);
     db.run(`DELETE FROM messages`);
@@ -53,6 +53,8 @@ describe("wipeConversation", () => {
 
     const now = Date.now();
 
+    // `memory_summaries` was NOT part of the memory-DB split — it stays in the
+    // main DB, so this block keeps the main connection.
     const raw = (
       getDb() as unknown as {
         $client: import("bun:sqlite").Database;
@@ -99,8 +101,7 @@ describe("wipeConversation", () => {
     });
 
     // Clear any jobs that might have been created by prior operations
-    const db = getDb();
-    db.run(`DELETE FROM memory_jobs`);
+    getMemoryDb().run(`DELETE FROM memory_jobs`);
 
     enqueueMemoryJob("graph_extract", { conversationId: conv.id });
     enqueueMemoryJob("build_conversation_summary", {
@@ -109,8 +110,10 @@ describe("wipeConversation", () => {
 
     const result = wipeConversation(conv.id);
 
+    // `memory_jobs` moved to `assistant-memory.db`, so the raw client has to
+    // be that connection rather than the main one.
     const raw = (
-      getDb() as unknown as {
+      getMemoryDb() as unknown as {
         $client: import("bun:sqlite").Database;
       }
     ).$client;

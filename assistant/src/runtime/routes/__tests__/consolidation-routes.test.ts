@@ -38,10 +38,10 @@ mock.module("../../../util/logger.js", () => ({
 
 import { invalidateConfigCache } from "../../../config/loader.js";
 import { createConversation } from "../../../memory/conversation-crud.js";
-import { getDb } from "../../../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../../../memory/db-connection.js";
 import { initializeDb } from "../../../memory/db-init.js";
 import { recordUsageEvent } from "../../../memory/llm-usage-store.js";
-import { rawAll, rawRun } from "../../../memory/raw-query.js";
+import { memRawAll, rawRun } from "../../../memory/raw-query.js";
 import { ROUTES } from "../consolidation-routes.js";
 import type { RouteDefinition } from "../types.js";
 
@@ -56,7 +56,7 @@ function resetTables(): void {
   db.run(`DELETE FROM llm_usage_events`);
   db.run(`DELETE FROM messages`);
   db.run(`DELETE FROM conversations`);
-  db.run(`DELETE FROM memory_jobs`);
+  getMemoryDb().run(`DELETE FROM memory_jobs`);
 }
 
 function findHandler(operationId: string): RouteDefinition["handler"] {
@@ -117,7 +117,7 @@ function readMemoryJobRows(): Array<{
   lastError: string | null;
   payload: string;
 }> {
-  return rawAll<{
+  return memRawAll<{
     id: string;
     status: string;
     lastError: string | null;
