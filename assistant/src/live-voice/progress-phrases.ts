@@ -4,10 +4,13 @@
 // phrase stays strictly neutral: no claims about running tools or tasks.
 // Persona-neutral, no domain content, ≤ 8 words.
 // Exported so tests can assert the neutrality invariant against the list.
+// Wording is design-owned (Wave C answers, v37 W3). Design's third fallback
+// ("That didn't come through — let me try again.") is error-flavored and
+// belongs to a retry path, not this idle slot, so it is deliberately not here.
 export const PROGRESS_FALLBACK_PHRASES: readonly string[] = [
-  "Still on it — one moment.",
-  "Still thinking this through.",
-  "Almost there — thanks for waiting.",
+  "Still with you — give me a moment.",
+  "Taking longer than it should. Hold on.",
+  "Nearly there.",
 ];
 
 // Deterministic rotation through the phrase list: callers hold a nonnegative

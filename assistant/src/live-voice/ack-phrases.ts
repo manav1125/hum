@@ -4,23 +4,23 @@ import type { LiveVoiceSpokenAckKind } from "./live-voice-metrics.js";
 // slow to produce its first delta. Pure floor-holders: they must never carry
 // content or require domain knowledge, and they stay short (≤ 6 words) so they
 // finish before the real reply's audio arrives.
+// Wording is design-owned (Wave C answers, v37 W3): a capable colleague
+// mid-task — brief, plain, no enthusiasm about its own work.
 const ACK_PHRASES: readonly string[] = [
-  "One sec — let me think.",
-  "Let me look into that.",
-  "Give me a moment.",
-  "Hmm, let me check.",
-  "Just a moment.",
+  "On it.",
+  "Give me a second.",
+  "Let me look.",
+  "Checking.",
 ];
 
 // Tool-flavored variant spoken the moment a turn starts tool use (a
 // guaranteed-slow turn). Same rules as ACK_PHRASES: persona-neutral, no
 // domain content, ≤ 6 words.
 const TOOL_ACK_PHRASES: readonly string[] = [
-  "Let me check that.",
-  "Looking that up now.",
-  "Let me pull that up.",
-  "One moment, checking.",
-  "Give me a second here.",
+  "Pulling that up now.",
+  "Let me look.",
+  "Checking.",
+  "On it.",
 ];
 
 const PHRASES_BY_KIND: Record<LiveVoiceSpokenAckKind, readonly string[]> = {
