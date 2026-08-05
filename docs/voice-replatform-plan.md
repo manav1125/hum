@@ -18,6 +18,30 @@ server_vad, else manual web sessions lose cards); upstream's `update_config`
 in-call settings gear UI (frame is implemented, no UI); multilingual STT
 code-switching (`699c1c889f`, independent).
 
+## Synthetic E2E result (2026-08-06, local instance, real speech via `say`)
+
+The full pipeline verified against a hatched local instance (`voiceqa`):
+`ready(server_vad)` 760ms → `speech_started` 1.2s → Deepgram finals →
+`utterance_end(silence)` → front-door dispatch → answer "132" + 51KB TTS →
+clean re-arm. Findings:
+
+- **Front-door TTFT reality**: `dispatchToFirstDeltaMs` = 3303ms on
+  DeepSeek — the 1200ms verdict deadline fails open every time, so the front
+  door currently adds nothing (and costs nothing — the leg IS the answer leg).
+  To make it win, front `voiceFrontDoor` with a genuinely fast model. This is
+  exactly what decision 2's instrumentation was for.
+- Fixed en route (`71a66cf194`): local-mode voice was entirely broken
+  client-side — the relative `__gateway` ingress URL threw inside
+  `new URL()` before any socket/mic activity ("connecting…" forever). The WS
+  now dials the loopback gateway directly; this also unblocks the packaged
+  Electron app's local mode (its protocol handler can't upgrade WS either).
+- QA-rig gotchas: the daemon's disk-pressure guard (≥95% volume) silently
+  fails voice turns — `VELLUM_DISABLE_DISK_PRESSURE=1` for dev instances on
+  full Macs; STT key comes from env (`DEEPGRAM_API_KEY`), TTS key must be in
+  the vault (`credentials set --service elevenlabs --field api_key`); a
+  Vite dev proxy cannot carry the WS (and vite's http-proxy crashes on Bun's
+  missing `socket.destroySoon` if it tries).
+
 ## Device QA checklist (the flip-on gate — needs a real mic)
 
 Setup: web app against a local daemon; set `liveVoice.frontDoor.enabled: true`
