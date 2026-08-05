@@ -199,6 +199,45 @@ describe("buildSelfHostedLiveVoiceWsUrl", () => {
     expect(url.pathname).toBe("/v1/live-voice");
   });
 
+  test("local-mode __gateway ingress dials the loopback gateway port directly", () => {
+    // The proxy path is request/response-only in every host that serves it
+    // (Vite dev middleware, Electron protocol handler) — a WS through it hangs.
+    const url = new URL(
+      buildSelfHostedLiveVoiceWsUrl({
+        ingressUrl: "/assistant/__gateway/7830",
+        token: "actor-tok",
+        conversationId: "conv-1",
+      }),
+    );
+    expect(url.protocol).toBe("ws:");
+    expect(url.host).toBe("127.0.0.1:7830");
+    expect(url.pathname).toBe("/v1/live-voice");
+    expect(url.searchParams.get("token")).toBe("actor-tok");
+    expect(url.searchParams.get("conversationId")).toBe("conv-1");
+  });
+
+  test("unprefixed __gateway ingress also dials direct", () => {
+    const url = new URL(
+      buildSelfHostedLiveVoiceWsUrl({
+        ingressUrl: "/__gateway/9012/",
+        token: "actor-tok",
+      }),
+    );
+    expect(url.host).toBe("127.0.0.1:9012");
+    expect(url.pathname).toBe("/v1/live-voice");
+  });
+
+  test("a relative non-gateway ingress resolves against the page origin", () => {
+    const url = new URL(
+      buildSelfHostedLiveVoiceWsUrl({
+        ingressUrl: "/some/prefix",
+        token: "actor-tok",
+      }),
+    );
+    expect(url.host).toBe(window.location.host);
+    expect(url.pathname).toBe("/some/prefix/v1/live-voice");
+  });
+
   test("preserves the ingress path prefix (local Docker proxy) and drops query/hash", () => {
     // Local mode reaches the gateway at a path-based proxy under the SPA origin.
     const url = new URL(

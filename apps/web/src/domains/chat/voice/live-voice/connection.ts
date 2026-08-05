@@ -194,12 +194,30 @@ export interface BuildSelfHostedLiveVoiceWsUrlArgs {
  * (`rewriteForSelfHostedIngress`) splices it. Any query/hash on the ingress is
  * dropped.
  */
+/**
+ * Local-mode gateway proxy path (`[/assistant]/__gateway/<port>`), as produced
+ * by `getLocalGatewayUrl`. WS upgrades cannot ride this proxy: it is served by
+ * hosts that only speak request/response (the Vite dev middleware's plain
+ * `http.request`, the Electron `app://` protocol handler), so the socket must
+ * dial the loopback gateway port directly. HTTP requests keep using the proxy
+ * path — this rewrite applies to the live-voice WebSocket only.
+ */
+const LOCAL_GATEWAY_INGRESS_PATTERN =
+  /^(?:\/assistant)?\/__gateway\/(\d+)(?:\/|$)/;
+
 export function buildSelfHostedLiveVoiceWsUrl({
   ingressUrl,
   conversationId,
   token,
 }: BuildSelfHostedLiveVoiceWsUrlArgs): string {
-  const url = new URL(ingressUrl);
+  const localMatch = LOCAL_GATEWAY_INGRESS_PATTERN.exec(ingressUrl);
+  const url = localMatch
+    ? // http:// so the scheme mapping below lands on ws:.
+      new URL(`http://127.0.0.1:${localMatch[1]}`)
+    : // A relative ingress that isn't the local proxy shape resolves against
+      // the page origin (`new URL(relative)` alone throws — this was the
+      // silent "connecting…" hang in local mode).
+      new URL(ingressUrl, window.location.origin);
   url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
   const prefix = url.pathname.replace(/\/+$/, "");
   url.pathname = `${prefix}/v1/live-voice`;
