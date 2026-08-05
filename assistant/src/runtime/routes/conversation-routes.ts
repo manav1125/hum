@@ -725,6 +725,7 @@ export function handleListMessages({
     let interruptedAt: number | undefined;
     let voiceTurn: boolean | undefined;
     let taskRunContext: boolean | undefined;
+    let systemCard: string | undefined;
     let subagentNotification:
       | {
           subagentId: string;
@@ -756,6 +757,17 @@ export function handleListMessages({
         // the row into a quiet "Project context" affordance.
         if (meta.taskRunContext === true && msg.role === "user") {
           taskRunContext = true;
+        }
+        // Daemon-authored system card marker (the /compact, /clean, and
+        // summarize-up-to result cards) — stamped by the canned-card persist
+        // paths. Only assistant rows carry it; clients render marked rows
+        // with the quiet centered system-card treatment (design ruling 4).
+        if (
+          typeof meta.systemCard === "string" &&
+          meta.systemCard.length > 0 &&
+          msg.role === "assistant"
+        ) {
+          systemCard = meta.systemCard;
         }
         if (meta.subagentNotification) {
           const n = meta.subagentNotification;
@@ -802,6 +814,7 @@ export function handleListMessages({
       interruptedAt,
       voiceTurn,
       taskRunContext,
+      systemCard,
       subagentNotification,
       slackMessage,
       clientMessageId: msg.clientMessageId ?? undefined,
@@ -968,6 +981,7 @@ export function handleListMessages({
       ...(contentBlocks.length > 0 ? { contentBlocks } : {}),
       ...(m.voiceTurn ? { voiceTurn: true } : {}),
       ...(m.taskRunContext ? { taskRunContext: true } : {}),
+      ...(m.systemCard ? { systemCard: m.systemCard } : {}),
       ...(m.subagentNotification
         ? { subagentNotification: m.subagentNotification }
         : {}),
@@ -2138,7 +2152,7 @@ async function handleSendMessageImpl(
           conversation,
           conversationId,
           text: formatCompactResult(result),
-          metadata: channelMeta,
+          metadata: { ...channelMeta, systemCard: "compact" },
           originClientId,
         });
       } catch (err) {
@@ -2213,7 +2227,7 @@ async function handleSendMessageImpl(
           conversation,
           conversationId,
           text: formatCleanResult(result),
-          metadata: channelMeta,
+          metadata: { ...channelMeta, systemCard: "clean" },
           originClientId,
         });
       } catch (err) {

@@ -505,6 +505,18 @@ export const ConversationMessageSchema = z.object({
    */
   taskRunContext: z.boolean().optional(),
   /**
+   * Present when this assistant row is a daemon-authored system card — a
+   * canned result notice that bypassed the agent loop (the /compact, /clean,
+   * and summarize-up-to result cards; future error/skipped notices). The
+   * value names the card kind ("compact" | "clean" | "summarize" | ...), kept
+   * open so new notice kinds don't break clients. Stamped in message metadata
+   * at persist time and surfaced here so clients render the row centered with
+   * no avatar and no bubble (mono microlabel + muted body — design ruling 4).
+   * Only assistant rows carry it; absent on rows persisted by older daemons,
+   * which render as plain assistant text.
+   */
+  systemCard: z.string().optional(),
+  /**
    * True when this assistant turn died without finishing (the daemon was
    * restarted or crashed mid-generation) and boot recovery marked it. Any
    * partially-streamed content the row holds is still shipped; clients

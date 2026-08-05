@@ -1,7 +1,8 @@
-import { CheckCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { Button } from "@vellumai/design-library";
+import { decisionStatusPresentation } from "@/domains/chat/utils/decision-status";
 import type { Surface } from "@/domains/chat/types/types";
 
 interface SurfaceContainerProps {
@@ -46,14 +47,26 @@ export function SurfaceContainer({
       <div>{children}</div>
 
       {surface.completed
-        ? surface.completionSummary && (
-            <div className="mt-4 flex justify-end">
-              <span className="flex items-center gap-1.5 text-body-medium-default text-[var(--system-positive-strong)]">
-                <CheckCircle className="h-4 w-4 shrink-0" />
-                {surface.completionSummary}
-              </span>
-            </div>
-          )
+        ? surface.completionSummary &&
+          (() => {
+            // Decided-card treatment (design ruling 5): the status line
+            // replaces the buttons in place — card content stays above —
+            // with the shared wording and the in-app glyph per state
+            // (Approved ✓ green · Denied ✕ red · Expired ◷ grey).
+            const { Icon, textClass } = decisionStatusPresentation(
+              surface.completionSummary,
+            );
+            return (
+              <div className="mt-4 flex justify-end">
+                <span
+                  className={`flex items-center gap-1.5 text-body-medium-default ${textClass}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {surface.completionSummary}
+                </span>
+              </div>
+            );
+          })()
         : surface.actions &&
           surface.actions.length > 0 && (
             <div className="mt-4 flex gap-2">

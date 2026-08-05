@@ -158,7 +158,9 @@ describe("in-app access-request decision rehydration", () => {
 
     const surface = rehydratedSurface();
     expect(surface?.completed).toBe(true);
-    expect(surface?.completionSummary).toBe("Denied");
+    expect(surface?.completionSummary).toMatch(
+      /^Denied · by you · \d{2}:\d{2}$/,
+    );
     // The card keeps its content for the audit trail; only the live
     // affordances stop rendering, which the client drives off `completed`.
     expect(surface?.data).toMatchObject({ title: "Alice" });
@@ -175,7 +177,9 @@ describe("in-app access-request decision rehydration", () => {
 
     const surface = rehydratedSurface();
     expect(surface?.completed).toBe(true);
-    expect(surface?.completionSummary).toBe("Approved");
+    expect(surface?.completionSummary).toMatch(
+      /^Approved · by you · \d{2}:\d{2}$/,
+    );
   });
 
   test("an in-app decision does not re-broadcast over the acting client's own summary", async () => {
@@ -201,7 +205,9 @@ describe("in-app access-request decision rehydration", () => {
       originChannel: "telegram",
     });
 
-    expect(rehydratedSurface()?.completionSummary).toBe("Denied");
+    expect(rehydratedSurface()?.completionSummary).toMatch(
+      /^Denied · by you · \d{2}:\d{2}$/,
+    );
     expect(
       broadcasts.filter((m) => m.type === "ui_surface_complete"),
     ).toHaveLength(1);

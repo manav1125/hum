@@ -6,6 +6,7 @@ import type { TranscriptItem } from "@/domains/chat/transcript/types";
 import { PendingConfirmationRow } from "@/domains/chat/transcript/pending-confirmation-row";
 import { PendingContactRequestRow } from "@/domains/chat/transcript/pending-contact-request-row";
 import { PendingSecretRow } from "@/domains/chat/transcript/pending-secret-row";
+import { SystemCardRow } from "@/domains/chat/transcript/system-card-row";
 import { TranscriptMessageBody } from "@/domains/chat/transcript/transcript-message-body";
 import type { ConfirmationDecision } from "@/types/event-types";
 import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
@@ -101,6 +102,13 @@ export const TranscriptRow = memo(function TranscriptRow({
 }: TranscriptRowProps) {
   switch (item.kind) {
     case "message": {
+      // Daemon-authored system cards (summarize/compact/clean result
+      // notices) render with the quiet centered treatment — no avatar, no
+      // bubble, no hover actions (design ruling 4). Model-authored turns are
+      // untouched.
+      if (item.message.role !== "user" && item.message.systemCard) {
+        return <SystemCardRow message={item.message} />;
+      }
       return (
         <TranscriptMessageBody
           message={item.message}

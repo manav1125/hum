@@ -234,7 +234,11 @@ async function handleSummarizeConversation({
       conversation,
       conversationId,
       text,
-      metadata: channelMeta,
+      // `systemCard` marks the row as a daemon-authored system card so
+      // clients render it with the quiet centered treatment (design ruling
+      // 4). Additive marker only — older clients ignore it and render the
+      // plain text.
+      metadata: { ...channelMeta, systemCard: "summarize" },
       originClientId,
     });
 
@@ -262,7 +266,9 @@ async function handleSummarizeConversation({
       // failures: surface them as a skipped card rather than an error event.
       if (err instanceof UserError) {
         try {
-          await persistCard(`Summarization skipped — ${err.message}`);
+          // System-card copy contract (ruling 4): first line is the
+          // microlabel, the rest is the muted body; facts only, never "I".
+          await persistCard(`Summarization skipped\n${err.message}`);
           return;
         } catch (cardErr) {
           err = cardErr;

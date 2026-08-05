@@ -17,9 +17,11 @@ import type { NotificationSourceChannel } from "../../../notifications/signal.js
 import { getLogger } from "../../../util/logger.js";
 import { runApprovalConversationTurn } from "../../approval-conversation-turn.js";
 import { composeApprovalMessageGenerative } from "../../approval-message-composer.js";
-import type {
-  ApprovalAction,
-  ApprovalDecisionResult,
+import {
+  type ApprovalAction,
+  type ApprovalDecisionResult,
+  composeDecisionStatusLine,
+  resolveDecisionStatusTimeZone,
 } from "../../channel-approval-types.js";
 import { deliverChannelReply } from "../../gateway-client.js";
 import type {
@@ -695,8 +697,14 @@ function editSlackApprovalMessage(params: {
     conversationId,
   } = params;
 
+  // Shared decided-card wording (design ruling 5) \u2014 "Approved \u00b7 by you \u00b7
+  // 14:02" \u2014 composed from the same source as the in-app and Telegram
+  // cards; only the \u2713/\u2717 glyph is Slack's own.
   const statusEmoji = decision === "approved" ? "\u2713" : "\u2717";
-  const statusLabel = decision === "approved" ? "Approved" : "Denied";
+  const statusLabel = composeDecisionStatusLine(decision, {
+    decidedAtMs: Date.now(),
+    timeZone: resolveDecisionStatusTimeZone(),
+  });
   const statusText = `${statusEmoji} ${statusLabel}`;
 
   // Build Block Kit blocks matching the resolved approval layout:
@@ -710,7 +718,7 @@ function editSlackApprovalMessage(params: {
     },
     {
       type: "context",
-      elements: [{ type: "mrkdwn", text: `${statusEmoji} ${statusLabel}` }],
+      elements: [{ type: "mrkdwn", text: statusText }],
     },
   ];
 

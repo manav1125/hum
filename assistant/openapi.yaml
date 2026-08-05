@@ -29548,6 +29548,8 @@ paths:
                           type: boolean
                         taskRunContext:
                           type: boolean
+                        systemCard:
+                          type: string
                         interrupted:
                           type: boolean
                         interruptedAt:

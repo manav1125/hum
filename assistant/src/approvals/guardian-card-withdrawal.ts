@@ -33,7 +33,10 @@ import {
 import { withdrawTelegramApprovalCard } from "../messaging/providers/telegram-bot/withdraw.js";
 import { approvalCardSurfaceId } from "../notifications/access-request-copy.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
-import { resolveDecisionStatusWord } from "../runtime/channel-approval-types.js";
+import {
+  composeDecisionStatusLine,
+  resolveDecisionStatusTimeZone,
+} from "../runtime/channel-approval-types.js";
 import { getLogger } from "../util/logger.js";
 
 const log = getLogger("guardian-card-withdrawal");
@@ -99,14 +102,25 @@ export async function withdrawGuardianRequestCards(
     return;
   }
 
+  // One composed status line shared by every surface (design ruling 5):
+  // "Approved · by you · 14:02" / "Denied · by you · 14:02" /
+  // "Expired · never answered — nothing was sent". Surfaces add only their
+  // own glyphs. Withdrawal runs immediately after the CAS resolution, so
+  // `Date.now()` is the decision instant.
+  const statusLine = composeDecisionStatusLine(status, {
+    decidedAtMs: Date.now(),
+    timeZone: resolveDecisionStatusTimeZone(),
+  });
+
   for (const delivery of deliveries) {
     try {
       if (delivery.destinationChannel === "vellum") {
-        withdrawVellumCard(request, delivery, status, originChannel);
+        withdrawVellumCard(request, delivery, statusLine, originChannel);
       } else if (delivery.destinationChannel === "telegram") {
         await withdrawTelegramCard(
           delivery,
           status,
+          statusLine,
           originChannel,
           hasOriginGuardianReply ?? false,
         );
@@ -147,7 +161,7 @@ export async function withdrawGuardianRequestCards(
 function withdrawVellumCard(
   request: WithdrawableGuardianRequest,
   delivery: WithdrawableDelivery,
-  status: CanonicalRequestStatus,
+  statusLine: string,
   originChannel: string | undefined,
 ): void {
   if (!delivery.destinationConversationId) {
@@ -157,7 +171,7 @@ function withdrawVellumCard(
   if (!surfaceId) {
     return;
   }
-  const summary = resolveDecisionStatusWord(status);
+  const summary = statusLine;
   markSurfaceCompleted(
     { conversationId: delivery.destinationConversationId },
     surfaceId,
@@ -192,6 +206,7 @@ function withdrawVellumCard(
 async function withdrawTelegramCard(
   delivery: WithdrawableDelivery,
   status: CanonicalRequestStatus,
+  statusLine: string,
   originChannel: string | undefined,
   hasOriginGuardianReply: boolean,
 ): Promise<void> {
@@ -202,6 +217,7 @@ async function withdrawTelegramCard(
     chatId: delivery.destinationChatId,
     messageId: delivery.destinationMessageId,
     status,
+    statusLine,
     postStatusReply: !(originChannel === "telegram" && hasOriginGuardianReply),
   });
 }

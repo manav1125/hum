@@ -444,7 +444,7 @@ export async function processMessage(
       conversationId,
       "assistant",
       JSON.stringify(assistantMsg.content),
-      { metadata: compactChannelMeta },
+      { metadata: { ...compactChannelMeta, systemCard: "compact" } },
     );
     conversation.getMessages().push(assistantMsg);
     publishConversationMessagesChanged(conversationId);
@@ -498,7 +498,7 @@ export async function processMessage(
       conversationId,
       "assistant",
       JSON.stringify(assistantMsg.content),
-      { metadata: cleanChannelMeta },
+      { metadata: { ...cleanChannelMeta, systemCard: "clean" } },
     );
     conversation.getMessages().push(assistantMsg);
     publishConversationMessagesChanged(conversationId);

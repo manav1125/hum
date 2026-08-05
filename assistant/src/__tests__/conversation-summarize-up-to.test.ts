@@ -1049,7 +1049,11 @@ describe("formatSummarizeUpToResult", () => {
       estimatedInputTokens: 4_000,
     });
 
-    expect(card).toContain("Summarized 12 earlier messages.");
-    expect(card).toContain("4 recent messages kept in full.");
+    // System-card copy contract (ruling 4): microlabel first line, quiet
+    // facts, never "I".
+    expect(card).toContain("Summarized · 12 messages → 1 summary");
+    expect(card).toContain("4 recent messages kept in full");
+    expect(card).toContain("12,000 → 4,000 tokens (8,000 saved)");
+    expect(card).not.toMatch(/\bI\b/);
   });
 });

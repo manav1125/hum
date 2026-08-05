@@ -31,6 +31,7 @@ describe("withdrawTelegramApprovalCard", () => {
       chatId: "chat-1",
       messageId: "42",
       status: "approved",
+      statusLine: "Approved · by you · 14:02",
       postStatusReply: true,
     });
 
@@ -42,13 +43,28 @@ describe("withdrawTelegramApprovalCard", () => {
       reply_markup: null,
     });
 
+    // The reply carries the shared composed status line (ruling 5); the
+    // glyph is Telegram's own.
     const sends = callsTo("sendMessage");
     expect(sends).toHaveLength(1);
     expect(sends[0]?.[1]).toEqual({
       chat_id: "chat-1",
-      text: "✅ Approved",
+      text: "✅ Approved · by you · 14:02",
       reply_parameters: { message_id: 42, allow_sending_without_reply: true },
       disable_notification: true,
+    });
+  });
+
+  test("composes the shared status line itself when a caller omits it", async () => {
+    await withdrawTelegramApprovalCard({
+      chatId: "chat-1",
+      messageId: "42",
+      status: "approved",
+      postStatusReply: true,
+    });
+
+    expect(callsTo("sendMessage")[0]?.[1]).toMatchObject({
+      text: "✅ Approved · by you",
     });
   });
 
@@ -84,8 +100,10 @@ describe("withdrawTelegramApprovalCard", () => {
       reply_markup: { inline_keyboard: [] },
     });
     expect(callsTo("sendMessage")).toHaveLength(1);
+    // Expiry must state the consequence (ruling 5) — "expired" alone is
+    // ambiguous about whether the action ran.
     expect(callsTo("sendMessage")[0]?.[1]).toMatchObject({
-      text: "⌛ Expired",
+      text: "⌛ Expired · never answered — nothing was sent",
     });
   });
 

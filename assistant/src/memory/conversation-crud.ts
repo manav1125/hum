@@ -157,6 +157,17 @@ export const messageMetadataSchema = z
      * "Project context" affordance. Display marker only.
      */
     taskRunContext: z.boolean().optional(),
+    /**
+     * Present when this assistant row is a daemon-authored system card (the
+     * /compact, /clean, and summarize-up-to result cards; future error/
+     * skipped notices). Value names the card kind ("compact" | "clean" |
+     * "summarize" | ...). Stamped at persist time by the canned-card paths;
+     * surfaced on the messages wire so clients can render the row with the
+     * quiet centered system-card treatment instead of an assistant bubble
+     * (design ruling 4, Wave C). Display marker only — additive, so older
+     * clients simply render the plain text.
+     */
+    systemCard: z.string().optional(),
     forkSourceMessageId: z.string().optional(),
     /** Image source paths from desktop attachments, keyed by filename. */
     imageSourcePaths: z.record(z.string(), z.string()).optional(),

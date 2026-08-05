@@ -23,7 +23,7 @@
  * "already resolved" handling.
  */
 
-import { resolveDecisionStatusWord } from "../../../runtime/channel-approval-types.js";
+import { composeDecisionStatusLine } from "../../../runtime/channel-approval-types.js";
 import { getLogger } from "../../../util/logger.js";
 import { callTelegramBotApi } from "./api.js";
 
@@ -44,6 +44,14 @@ export interface WithdrawTelegramApprovalCardParams {
   /** Terminal status of the request (e.g. "approved", "denied", "expired"). */
   status: string;
   /**
+   * Pre-composed shared status line ("Approved · by you · 14:02" /
+   * "Expired · never answered — nothing was sent"). Wording is composed once
+   * by the withdrawal orchestrator via `composeDecisionStatusLine` so every
+   * surface says the same thing; this module contributes only the Telegram
+   * glyph. When absent (older callers), composed here from `status`.
+   */
+  statusLine?: string;
+  /**
    * Whether to post the quoted status reply. False when the decision's own
    * flow already delivers a guardian-facing outcome message in this chat.
    */
@@ -51,10 +59,10 @@ export interface WithdrawTelegramApprovalCardParams {
 }
 
 /** Build the plain-text outcome line for the quoted status reply. */
-function buildStatusText(status: string): string {
+function buildStatusText(status: string, statusLine?: string): string {
   const glyph = STATUS_GLYPH[status] ?? "";
-  const word = resolveDecisionStatusWord(status);
-  return glyph ? `${glyph} ${word}` : word;
+  const line = statusLine ?? composeDecisionStatusLine(status);
+  return glyph ? `${glyph} ${line}` : line;
 }
 
 /** True for the Bot API's "message is not modified" no-op edit rejection. */
@@ -134,7 +142,7 @@ export async function withdrawTelegramApprovalCard(
   // keeps the outcome notice deliverable even if the card was deleted.
   await callTelegramBotApi("sendMessage", {
     chat_id: params.chatId,
-    text: buildStatusText(params.status),
+    text: buildStatusText(params.status, params.statusLine),
     reply_parameters: {
       message_id: parsedMessageId,
       allow_sending_without_reply: true,

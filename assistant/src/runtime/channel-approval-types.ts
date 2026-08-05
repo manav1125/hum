@@ -7,6 +7,8 @@
  * same approval flow can be reused across transports.
  */
 
+import { getConfig } from "../config/loader.js";
+import { canonicalizeTimeZone } from "../daemon/date-context.js";
 import type { GuardianDecisionAction } from "./guardian-decision-types.js";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +39,104 @@ const DECISION_STATUS_WORDS: Record<string, string> = {
  */
 export function resolveDecisionStatusWord(status: string): string {
   return DECISION_STATUS_WORDS[status] ?? "Resolved";
+}
+
+/**
+ * Consequence clause per terminal status whose bare outcome word is ambiguous
+ * about whether the action ran. "Expired" alone doesn't say whether the thing
+ * happened, so the card must state the consequence (design ruling 5, Wave C:
+ * "Expired · never answered — nothing was sent").
+ */
+const DECISION_STATUS_CONSEQUENCES: Record<string, string> = {
+  expired: "never answered — nothing was sent",
+};
+
+/** Optional context for composing a decided card's full status line. */
+export interface DecisionStatusLineContext {
+  /**
+   * Who decided, as shown to the reader ("you" for the guardian's own
+   * surfaces). Defaults to "you" — every surface a decided card lives on
+   * today is guardian-facing.
+   */
+  decidedBy?: string;
+  /** Epoch ms of the decision; renders as a wall-clock `HH:mm` segment. */
+  decidedAtMs?: number;
+  /**
+   * IANA zone the decision time is rendered in. Defaults to the daemon
+   * host's zone; callers that know the user's configured zone should pass it
+   * (prod daemons run in UTC).
+   */
+  timeZone?: string;
+}
+
+/**
+ * The zone a decided card's `HH:mm` segment is rendered in: the user's
+ * configured/detected timezone when known, else undefined (the formatter
+ * falls back to the daemon host's zone). Prod daemons run in UTC, so the
+ * configured zone should win whenever set.
+ */
+export function resolveDecisionStatusTimeZone(): string | undefined {
+  try {
+    const ui = getConfig().ui;
+    return (
+      canonicalizeTimeZone(ui?.userTimezone) ??
+      canonicalizeTimeZone(ui?.detectedTimezone) ??
+      undefined
+    );
+  } catch {
+    // Config unreadable (early boot, test harness) — host zone fallback.
+    return undefined;
+  }
+}
+
+/** `HH:mm` wall-clock rendering of a decision instant, per ruling 5. */
+function formatDecisionClockTime(ms: number, timeZone?: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      ...(timeZone ? { timeZone } : {}),
+    }).format(new Date(ms));
+  } catch {
+    // Invalid zone from config — fall back to the host zone.
+    return new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(ms));
+  }
+}
+
+/**
+ * The full status line for a decided approval card, shared by every surface
+ * so in-app, Slack, and Telegram cannot drift (design ruling 5): decided
+ * statuses compose "Approved · by you · 14:02" / "Denied · by you · 14:02";
+ * expiry composes "Expired · never answered — nothing was sent" (the
+ * consequence must be stated). Surfaces add only their own glyph vocabulary
+ * (in-app ✓/✕/◷ tints, Telegram/Slack emoji) around this line.
+ */
+export function composeDecisionStatusLine(
+  status: string,
+  context: DecisionStatusLineContext = {},
+): string {
+  const word = resolveDecisionStatusWord(status);
+  const consequence = DECISION_STATUS_CONSEQUENCES[status];
+  if (consequence) {
+    return `${word} · ${consequence}`;
+  }
+  if (status !== "approved" && status !== "denied") {
+    // Cancelled and unknown terminal statuses keep the bare word — no ruled
+    // by-whom/consequence copy exists for them.
+    return word;
+  }
+  const segments = [word, `by ${context.decidedBy ?? "you"}`];
+  if (context.decidedAtMs != null) {
+    segments.push(
+      formatDecisionClockTime(context.decidedAtMs, context.timeZone),
+    );
+  }
+  return segments.join(" · ");
 }
 
 /**

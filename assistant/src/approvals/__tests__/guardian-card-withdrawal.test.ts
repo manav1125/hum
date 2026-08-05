@@ -92,10 +92,13 @@ describe("withdrawGuardianRequestCards — Telegram projection", () => {
     });
 
     expect(withdrawTelegramApprovalCard).toHaveBeenCalledTimes(1);
+    // The wording rides the shared composed status line (ruling 5) —
+    // Telegram adds only its glyph around it.
     expect(withdrawTelegramApprovalCard).toHaveBeenCalledWith({
       chatId: "chat-9",
       messageId: "314",
       status: "approved",
+      statusLine: expect.stringMatching(/^Approved · by you · \d{2}:\d{2}$/),
       postStatusReply: true,
     });
   });
@@ -200,10 +203,12 @@ describe("withdrawGuardianRequestCards — in-app projection", () => {
     // terminal state still has to reach history or a re-entry re-renders the
     // undecided button group.
     expect(markSurfaceCompleted).toHaveBeenCalledTimes(1);
+    // Composed decided-card status line (ruling 5): shared wording with
+    // by-whom and wall-clock time.
     expect(markSurfaceCompleted).toHaveBeenCalledWith(
       { conversationId: "conv-1" },
       `access-request-${req.id}`,
-      "Approved",
+      expect.stringMatching(/^Approved · by you · \d{2}:\d{2}$/),
     );
     // No broadcast: it would replace the resolver's reply text already on
     // screen with the canonical status label.
@@ -229,14 +234,14 @@ describe("withdrawGuardianRequestCards — in-app projection", () => {
     expect(markSurfaceCompleted).toHaveBeenCalledWith(
       { conversationId: "conv-1" },
       `access-request-${req.id}`,
-      "Denied",
+      expect.stringMatching(/^Denied · by you · \d{2}:\d{2}$/),
     );
     expect(broadcasts.filter((m) => m.type === "ui_surface_complete")).toEqual([
       {
         type: "ui_surface_complete",
         conversationId: "conv-1",
         surfaceId: `access-request-${req.id}`,
-        summary: "Denied",
+        summary: expect.stringMatching(/^Denied · by you · \d{2}:\d{2}$/),
       },
     ]);
   });
@@ -251,10 +256,12 @@ describe("withdrawGuardianRequestCards — in-app projection", () => {
 
     await withdrawGuardianRequestCards({ request: req, status: "expired" });
 
+    // The expired card must state the consequence — "expired" alone is
+    // ambiguous about whether the action ran (ruling 5).
     expect(markSurfaceCompleted).toHaveBeenCalledWith(
       { conversationId: "conv-1" },
       `access-request-${req.id}`,
-      "Expired",
+      "Expired · never answered — nothing was sent",
     );
     expect(
       broadcasts.filter((m) => m.type === "ui_surface_complete"),

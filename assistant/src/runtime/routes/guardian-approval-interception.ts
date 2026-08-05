@@ -18,7 +18,11 @@ import {
 import { getLogger } from "../../util/logger.js";
 import { runApprovalConversationTurn } from "../approval-conversation-turn.js";
 import { composeApprovalMessageGenerative } from "../approval-message-composer.js";
-import type { ApprovalDecisionResult } from "../channel-approval-types.js";
+import {
+  type ApprovalDecisionResult,
+  composeDecisionStatusLine,
+  resolveDecisionStatusTimeZone,
+} from "../channel-approval-types.js";
 import {
   getApprovalInfoByConversation,
   getChannelApprovalPrompt,
@@ -538,8 +542,12 @@ export async function handleApprovalInterception(
             cbDecision.action === "reject" ? "denied" : "approved";
           const statusEmoji =
             decisionOutcome === "approved" ? "\u2713" : "\u2717";
-          const statusLabel =
-            decisionOutcome === "approved" ? "Approved" : "Denied";
+          // Shared decided-card wording (design ruling 5); the glyph is
+          // Slack's own.
+          const statusLabel = composeDecisionStatusLine(decisionOutcome, {
+            decidedAtMs: Date.now(),
+            timeZone: resolveDecisionStatusTimeZone(),
+          });
           deliverChannelReply(replyCallbackUrl, {
             chatId: conversationExternalId,
             text: `${statusEmoji} ${statusLabel}`,

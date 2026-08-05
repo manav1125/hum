@@ -166,6 +166,11 @@ export function mapRuntimeToDisplayMessage(
   // wire type may lag codegen, so read it as a typed optional extension).
   if ((m as ConversationMessage & { taskRunContext?: boolean }).taskRunContext)
     msg.taskRunContext = true;
+  // Daemon-authored system-card marker (compact/clean/summarize result
+  // cards) — same typed-optional-extension guard as `taskRunContext`.
+  const systemCard = (m as ConversationMessage & { systemCard?: string })
+    .systemCard;
+  if (systemCard) msg.systemCard = systemCard;
   if (toolCalls) msg.toolCalls = toolCalls;
   if (timestamp != null) msg.timestamp = timestamp;
 

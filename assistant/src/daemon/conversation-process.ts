@@ -60,26 +60,34 @@ const log = getLogger("conversation-process");
 /** Locale-formatted count for the user-facing context stats cards. */
 const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("en-US");
 
-/** Format the result of a forced compaction into a user-facing message. */
+/**
+ * Format the result of a forced compaction into a system-card body.
+ *
+ * System-card copy contract (design ruling 4, ANSWERS-V37): the daemon
+ * states facts and never says "I" — that pronoun is reserved for Cue. The
+ * first line is the card's microlabel (clients render it uppercased in the
+ * mono face, e.g. "COMPACTED · 41 MESSAGES → 1 SUMMARY"); any following
+ * lines are the muted body. The same contract applies to the clean and
+ * summarize cards below, and to future error/skipped notices.
+ */
 export function formatCompactResult(result: ContextWindowResult): string {
   if (!result.compacted) {
     return [
-      `Context compaction skipped — ${result.reason ?? "nothing to compact"}.`,
-      `Context: ${fmt(result.estimatedInputTokens)} / ${fmt(
-        result.maxInputTokens,
-      )} tokens`,
+      "Compaction skipped",
+      `${result.reason ?? "nothing to compact"} · context ${fmt(
+        result.estimatedInputTokens,
+      )} / ${fmt(result.maxInputTokens)} tokens`,
     ].join("\n");
   }
   const saved =
     result.previousEstimatedInputTokens - result.estimatedInputTokens;
   return [
-    "Context Compacted\n",
-    `Tokens:   ${fmt(result.previousEstimatedInputTokens)} → ${fmt(result.estimatedInputTokens)} (${fmt(saved)} saved)`,
-    `Context:  ${fmt(result.estimatedInputTokens)} / ${fmt(
-      result.maxInputTokens,
-    )} tokens`,
-    `Messages: ${fmt(result.compactedMessages)} compacted`,
-    `Tail:     ${fmt(result.preservedTailMessages)} preserved`,
+    `Compacted · ${fmt(result.compactedMessages)} messages → 1 summary`,
+    `Context ${fmt(result.previousEstimatedInputTokens)} → ${fmt(
+      result.estimatedInputTokens,
+    )} tokens (${fmt(saved)} saved) · ${fmt(
+      result.preservedTailMessages,
+    )} recent messages kept in full`,
   ].join("\n");
 }
 
@@ -99,43 +107,48 @@ const SUMMARIZE_SKIP_REASON_COPY: Record<string, string> = {
 };
 
 /**
- * Format the result of a "summarize up to here" compaction into a user-facing
- * card.
+ * Format the result of a "summarize up to here" compaction into a
+ * system-card body. Same copy contract as {@link formatCompactResult}:
+ * first line is the microlabel, quiet fact statements, never "I".
  */
 export function formatSummarizeUpToResult(result: ContextWindowResult): string {
   if (!result.compacted) {
     const reason = result.reason
       ? (SUMMARIZE_SKIP_REASON_COPY[result.reason] ?? result.reason)
       : "nothing to summarize";
-    return `Summarization skipped — ${reason}.`;
+    return ["Summarization skipped", reason].join("\n");
   }
   const saved =
     result.previousEstimatedInputTokens - result.estimatedInputTokens;
   return [
-    "**Conversation summarized**",
     // Persisted (row-space) count — `compactedMessages` is history-space and
     // counts the synthetic summary head on a repeat summarize, which is not
     // a message the user ever saw. The kept tail never contains the head.
-    `Summarized ${fmt(result.compactedPersistedMessages)} earlier messages. ${fmt(
+    `Summarized · ${fmt(
+      result.compactedPersistedMessages,
+    )} messages → 1 summary`,
+    `${fmt(
       result.preservedTailMessages,
-    )} recent messages kept in full.`,
-    `Context: ${fmt(result.previousEstimatedInputTokens)} → ${fmt(
-      result.estimatedInputTokens,
-    )} tokens (${fmt(saved)} saved)`,
+    )} recent messages kept in full · context ${fmt(
+      result.previousEstimatedInputTokens,
+    )} → ${fmt(result.estimatedInputTokens)} tokens (${fmt(saved)} saved)`,
   ].join("\n");
 }
 
-/** Format the result of a forced clean into a user-facing message. */
+/**
+ * Format the result of a forced clean into a system-card body. Same copy
+ * contract as {@link formatCompactResult}.
+ */
 export function formatCleanResult(result: CleanResult): string {
   const reclaimed =
     result.previousEstimatedInputTokens - result.estimatedInputTokens;
   return [
-    "Context Cleaned\n",
-    `Tokens:   ${fmt(result.previousEstimatedInputTokens)} → ${fmt(result.estimatedInputTokens)} (${fmt(reclaimed)} reclaimed)`,
-    `Context:  ${fmt(result.estimatedInputTokens)} / ${fmt(
-      result.maxInputTokens,
-    )} tokens`,
-    `Messages: ${fmt(result.preservedMessages)} preserved`,
+    `Cleaned · ${fmt(reclaimed)} tokens reclaimed`,
+    `Context ${fmt(result.previousEstimatedInputTokens)} → ${fmt(
+      result.estimatedInputTokens,
+    )} / ${fmt(result.maxInputTokens)} tokens · ${fmt(
+      result.preservedMessages,
+    )} messages preserved`,
   ].join("\n");
 }
 
@@ -686,7 +699,13 @@ async function drainSingleMessage(
         conversation.conversationId,
         "assistant",
         JSON.stringify(assistantMsg.content),
-        { metadata: { ...drainChannelMeta, sentAt: Date.now() } },
+        {
+          metadata: {
+            ...drainChannelMeta,
+            sentAt: Date.now(),
+            systemCard: "compact",
+          },
+        },
       );
       conversation.messages.push(assistantMsg);
 
@@ -774,7 +793,13 @@ async function drainSingleMessage(
         conversation.conversationId,
         "assistant",
         JSON.stringify(assistantMsg.content),
-        { metadata: { ...drainChannelMeta, sentAt: Date.now() } },
+        {
+          metadata: {
+            ...drainChannelMeta,
+            sentAt: Date.now(),
+            systemCard: "clean",
+          },
+        },
       );
       conversation.messages.push(assistantMsg);
 
@@ -1721,7 +1746,7 @@ export async function processMessage(
         conversation.conversationId,
         "assistant",
         JSON.stringify(assistantMsg.content),
-        { metadata: pmChannelMeta },
+        { metadata: { ...pmChannelMeta, systemCard: "compact" } },
       );
       conversation.messages.push(assistantMsg);
 
@@ -1800,7 +1825,7 @@ export async function processMessage(
         conversation.conversationId,
         "assistant",
         JSON.stringify(assistantMsg.content),
-        { metadata: pmChannelMeta },
+        { metadata: { ...pmChannelMeta, systemCard: "clean" } },
       );
       conversation.messages.push(assistantMsg);
 

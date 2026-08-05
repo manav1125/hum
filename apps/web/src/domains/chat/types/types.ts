@@ -147,6 +147,16 @@ export interface DisplayMessage {
    * of rendering the injected prompt as a user bubble.
    */
   taskRunContext?: boolean;
+  /**
+   * Present when this assistant row is a daemon-authored system card (wire
+   * `ConversationMessage.systemCard`, stamped in message metadata by the
+   * canned-card paths: the /compact, /clean, and summarize-up-to result
+   * cards, plus future error/skipped notices). Value names the card kind
+   * ("compact" | "clean" | "summarize" | ...). The transcript renders these
+   * centered with no avatar and no bubble — hairline-bounded row, mono
+   * microlabel, muted body, timestamp (design ruling 4, Wave C).
+   */
+  systemCard?: string;
 }
 
 /**

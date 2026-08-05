@@ -276,10 +276,13 @@ describe("POST /v1/conversations/summarize", () => {
     expect(content).toContain("Conversation summarized");
     // Metadata mirrors the /compact card shape (channel keys + provenance);
     // interface keys are omitted because the route receives no interface id.
+    // `systemCard` is the ruling-4 marker clients use to render the row with
+    // the quiet centered system-card treatment.
     expect(options?.metadata).toEqual({
       provenanceTrustClass: "unknown",
       userMessageChannel: "vellum",
       assistantMessageChannel: "vellum",
+      systemCard: "summarize",
     });
     expect(ctx.messages).toHaveLength(1);
 
@@ -384,8 +387,10 @@ describe("POST /v1/conversations/summarize", () => {
     expect(addMessageMock).toHaveBeenCalledTimes(1);
     const [, role, content] = addMessageMock.mock.calls[0];
     expect(role).toBe("assistant");
+    // Microlabel-first system-card shape (ruling 4): headline line, then
+    // the reason as the muted body line.
     expect(content).toContain(
-      "Summarization skipped — Nothing to summarize before this message",
+      "Summarization skipped\\nNothing to summarize before this message",
     );
     expect(broadcastEvents.some((e) => e.type === "conversation_error")).toBe(
       false,

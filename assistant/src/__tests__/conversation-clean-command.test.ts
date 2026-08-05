@@ -28,10 +28,12 @@ describe("formatCleanResult", () => {
       maxInputTokens: 200_000,
       preservedMessages: 250,
     });
-    expect(out).toContain("Context Cleaned");
-    expect(out).toContain("100,000 → 95,000 (5,000 reclaimed)");
-    expect(out).toContain("95,000 / 200,000 tokens");
-    expect(out).toContain("250 preserved");
+    // System-card copy contract (ruling 4): microlabel first line, quiet
+    // facts, never "I".
+    expect(out).toContain("Cleaned · 5,000 tokens reclaimed");
+    expect(out).toContain("Context 100,000 → 95,000 / 200,000 tokens");
+    expect(out).toContain("250 messages preserved");
+    expect(out).not.toMatch(/\bI\b/);
   });
 
   test("renders zero reclaimed when nothing was stripped", () => {
@@ -41,8 +43,9 @@ describe("formatCleanResult", () => {
       maxInputTokens: 200_000,
       preservedMessages: 10,
     });
-    expect(out).toContain("12,345 → 12,345 (0 reclaimed)");
-    expect(out).toContain("10 preserved");
+    expect(out).toContain("Cleaned · 0 tokens reclaimed");
+    expect(out).toContain("12,345 → 12,345");
+    expect(out).toContain("10 messages preserved");
   });
 });
 

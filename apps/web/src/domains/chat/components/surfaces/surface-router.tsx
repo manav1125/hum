@@ -1,8 +1,7 @@
-import { CheckCircle, XCircle } from "lucide-react";
-
 import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
 import { INHERENTLY_INTERACTIVE_SURFACE_TYPES } from "@/domains/chat/types/types";
 import type { Surface } from "@/domains/chat/types/types";
+import { decisionStatusPresentation } from "@/domains/chat/utils/decision-status";
 
 import { AdjacentOfferRow } from "@/domains/chat/partner/adjacent-offer-row";
 import { ArtefactCard } from "@/domains/chat/partner/artefact-card";
@@ -57,18 +56,17 @@ export function SurfaceRouter({
     surface.completed &&
     INHERENTLY_INTERACTIVE_SURFACE_TYPES.includes(surface.surfaceType)
   ) {
-    const isCancelled = surface.completionSummary === "Cancelled";
-    if (isCancelled) {
-      return (
-        <div className="flex items-center gap-2 rounded-lg border border-[var(--border-element)] bg-[var(--surface-base)] px-3 py-2 text-body-medium-lighter text-[var(--content-secondary)]">
-          <XCircle className="h-4 w-4 shrink-0" />
-          Cancelled
-        </div>
-      );
-    }
+    // Decided-state pill (design ruling 5): shared wording from the
+    // completion summary, in-app glyph + tint per state (Approved ✓ green ·
+    // Denied ✕ red · Expired ◷ grey · Cancelled ✕ grey). Summaries without
+    // a decision word keep the green done treatment.
+    const { Icon, textClass, borderClass, bgClass } =
+      decisionStatusPresentation(surface.completionSummary);
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-[var(--system-positive-strong)] bg-[var(--system-positive-weak)] px-3 py-2 text-body-medium-lighter text-[var(--system-positive-strong)]">
-        <CheckCircle className="h-4 w-4 shrink-0" />
+      <div
+        className={`flex items-center gap-2 rounded-lg border ${borderClass} ${bgClass} px-3 py-2 text-body-medium-lighter ${textClass}`}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
         {surface.completionSummary ?? surface.title ?? "Done"}
       </div>
     );
