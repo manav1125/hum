@@ -1,1 +1,0 @@
-import{H as e}from"./design-library-B1b70XPK.js";import{r as t}from"./react-vendor-DxDeHucJ.js";import{i as n}from"./routes-CYGBdEqs.js";var r=e();function i(){return(0,r.jsx)(t,{to:n.account.login,replace:!0})}export{i as PasswordResetPage};
