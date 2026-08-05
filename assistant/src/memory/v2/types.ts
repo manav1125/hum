@@ -67,6 +67,17 @@ export const ConceptPageFrontmatterSchema = z
     // card surface so state-shaped questions can select the page. Distinct
     // from `status:` (the article-model draft marker, e.g. "cc-draft").
     current: z.string().optional(),
+    // Page-level provenance tag for pages not authored by consolidation;
+    // convention `import:<provider>` (e.g. `import:chatgpt`, `import:fathom`).
+    // Absent on organically consolidated pages.
+    source: z.string().optional(),
+    // ISO 8601 date (or datetime) the page's content originally dates from,
+    // for imported/backfilled material whose file mtime reflects when it was
+    // written to this workspace rather than when its content was true. The
+    // page index resolves it into an effective-recency signal (`freshAt`)
+    // via `parseOriginDate` so recency-aware consumers can rank imported
+    // archives by their content's own timeline.
+    origin_date: z.string().optional(),
   })
   .strict();
 

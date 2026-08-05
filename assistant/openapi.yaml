@@ -14028,7 +14028,10 @@ paths:
     post:
       operationId: conversations_import_post
       summary: Import conversations
-      description: Import conversations from a standard JSON payload.
+      description:
+        Import conversations from a standard JSON payload. Created conversations record a provenance source of
+        `import:<provider>` derived from the `sourceKey` prefix (e.g. `chatgpt:abc123` -> `import:chatgpt`), or
+        `import:unknown` when no prefix is present.
       tags:
         - conversations
       responses:
@@ -28102,6 +28105,90 @@ paths:
                 importance:
                   type: number
               additionalProperties: false
+  /v1/memory/ingest:
+    post:
+      operationId: memory_ingest_post
+      summary:
+        Batch-ingest fully-formed concept pages directly into memory/concepts/ (bypassing the consolidation buffer) and
+        enqueue reindex jobs
+      tags:
+        - memory
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        slug:
+                          type: string
+                        action:
+                          type: string
+                          enum:
+                            - written
+                            - skipped_exists
+                            - invalid
+                        warnings:
+                          type: array
+                          items:
+                            type: string
+                        error:
+                          type: string
+                      required:
+                        - slug
+                        - action
+                        - warnings
+                      additionalProperties: false
+                  written:
+                    type: number
+                  skipped:
+                    type: number
+                  invalid:
+                    type: number
+                  dryRun:
+                    type: boolean
+                required:
+                  - results
+                  - written
+                  - skipped
+                  - invalid
+                  - dryRun
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pages:
+                  minItems: 1
+                  maxItems: 200
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      slug:
+                        type: string
+                      content:
+                        type: string
+                    required:
+                      - slug
+                      - content
+                    additionalProperties: false
+                dryRun:
+                  type: boolean
+                overwrite:
+                  type: boolean
+              required:
+                - pages
+              additionalProperties: false
   /v1/memory/v2/backfill:
     post:
       operationId: memory_v2_backfill_post
@@ -34621,16 +34708,19 @@ paths:
   /v1/plugins/{name}/upgrade:
     post:
       operationId: plugins_by_name_upgrade_post
-      summary: Upgrade a plugin to the marketplace pin
+      summary: Upgrade a plugin to its source's current revision
       description:
-        'Move an installed plugin to the marketplace''s current pinned commit, re-materializing it under
-        `<workspaceDir>/plugins/<name>/`. Always resolves against the curated marketplace pin (no caller-supplied ref),
-        mirroring `plugins install`''s curation boundary. A no-op (`outcome: "already-up-to-date"`) when the installed
-        commit already equals the pin; pass `dryRun` to preview the move (`outcome: "would-upgrade"`) without touching
-        the install. Installs lacking provenance are re-pinned to the current SHA. The assistant must be restarted to
-        load the upgraded code. This does not gate on local edits — callers should consult `GET
-        /v1/plugins/:name/inspect` (`local.localChanges`) first and confirm before overwriting. Mirrors the CLI''s
-        `assistant plugins upgrade <name>`.'
+        'Move an installed plugin to its source''s current revision, re-materializing it under
+        `<workspaceDir>/plugins/<name>/`. A marketplace plugin advances to the curated pin; a plugin the marketplace
+        does not claim but whose provenance records a GitHub source (an untrusted direct install) advances to whatever
+        its recorded ref now resolves to — a branch/tag/HEAD moves as upstream does, and a full-SHA pin follows the
+        repo''s default branch — re-materialized verbatim with no curated adapter overlay. The target ref is never taken
+        from the request (no caller-supplied ref), mirroring `plugins install`''s curation boundary. A no-op (`outcome:
+        "already-up-to-date"`) when the installed commit already equals the target; pass `dryRun` to preview the move
+        (`outcome: "would-upgrade"`) without touching the install. Installs lacking provenance are re-pinned to the
+        current SHA. The assistant must be restarted to load the upgraded code. This does not gate on local edits —
+        callers should consult `GET /v1/plugins/:name/inspect` (`local.localChanges`) first and confirm before
+        overwriting. Mirrors the CLI''s `assistant plugins upgrade <name>`.'
       tags:
         - plugins
       responses:
@@ -34706,7 +34796,7 @@ paths:
         "404":
           description: No copy of the plugin is installed, or its source resolves to nothing.
         "409":
-          description: The install exists but has no marketplace entry to advance to.
+          description: The install has neither a marketplace entry nor a recorded GitHub source to advance to.
         "503":
           description: The plugin source (GitHub) was temporarily unavailable; the upgrade is retryable.
       parameters:
@@ -34731,12 +34821,13 @@ paths:
       operationId: plugins_install_post
       summary: Install a plugin
       description:
-        "Install a plugin by name from the canonical source — a whitelisted `plugins/marketplace.json` entry.
-        Always resolves against the curated default git ref (no caller-supplied ref): installing from an unreviewed
-        revision would bypass the marketplace curation boundary and let attacker-controlled code be loaded. Materializes
-        the plugin under `<workspaceDir>/plugins/<name>/`; the assistant must be restarted to load it. Mirrors the CLI's
-        `assistant plugins install <name>`. An already-installed name without `force` returns 409; a name that resolves
-        to nothing returns 404. Sibling to `POST /v1/skills/install`."
+        "Install a plugin by name from the curated, commit-pinned `plugins/registry.json` catalog — the SAME
+        on-disk source the search and detail routes read, so any card returned by `GET /v1/plugins/search` installs here
+        at exactly the pinned revision it advertised. The install source is resolved server-side (no caller-supplied
+        ref/repo): installing from an unreviewed revision would bypass the curation boundary and let attacker-controlled
+        code be loaded. Materializes the plugin under `<workspaceDir>/plugins/<name>/`; the assistant must be restarted
+        to load it. An already-installed name without `force` returns 409; a name the catalog does not claim returns
+        404. Sibling to `POST /v1/skills/install`."
       tags:
         - plugins
       responses:
@@ -34772,7 +34863,7 @@ paths:
         "400":
           description: The request body was missing `name` or the name failed sanitization.
         "404":
-          description: No plugin resolves to the given name at the requested ref.
+          description: No catalog entry claims the given name.
         "409":
           description: A plugin with the same name is already installed and `force` was not set.
       requestBody:

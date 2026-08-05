@@ -107,6 +107,7 @@ import { ROUTES as MAINTENANCE_ROUTES } from "./maintenance-routes.js";
 import { ROUTES as MARKETPLACE_ROUTES } from "./marketplace-routes.js";
 import { ROUTES as MCP_AUTH_ROUTES } from "./mcp-auth-routes.js";
 import { ROUTES as MEETING_ROUTES } from "./meeting-routes.js";
+import { ROUTES as MEMORY_INGEST_ROUTES } from "./memory-ingest-routes.js";
 import { ROUTES as MEMORY_ITEM_ROUTES } from "./memory-item-routes.js";
 import { ROUTES as MEMORY_V2_ROUTES } from "./memory-v2-routes.js";
 import { ROUTES as MEMORY_V3_ROUTES } from "./memory-v3-routes.js";
@@ -270,6 +271,7 @@ export const ROUTES: RouteDefinition[] = [
   ...LLM_CALL_SITES_ROUTES,
   ...MAINTENANCE_ROUTES,
   ...MEETING_ROUTES,
+  ...MEMORY_INGEST_ROUTES,
   ...MEMORY_ITEM_ROUTES,
   ...MEMORY_V2_ROUTES,
   ...MEMORY_V3_ROUTES,

@@ -34,6 +34,7 @@ import {
   deletePage,
   listPages,
   pageExists,
+  parsePageContentStrict,
   readPage,
   slugify,
   validateSlug,
@@ -652,5 +653,70 @@ describe("deletePage", () => {
 
     expect(await pageExists(workspaceDir, "alice")).toBe(false);
     expect(await pageExists(workspaceDir, "bob")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePageContentStrict + provenance frontmatter
+// ---------------------------------------------------------------------------
+
+describe("parsePageContentStrict", () => {
+  test("parses frontmatter + body, including source and origin_date", () => {
+    const page = parsePageContentStrict(
+      "archive",
+      "---\nsource: import:chatgpt\norigin_date: 2025-03-14\nedges: []\n---\nBody.\n",
+    );
+    expect(page.slug).toBe("archive");
+    expect(page.frontmatter.source).toBe("import:chatgpt");
+    expect(page.frontmatter.origin_date).toBe("2025-03-14");
+    expect(page.body.trim()).toBe("Body.");
+    expect(page.parseWarning).toBeUndefined();
+  });
+
+  test("treats content with no frontmatter as body-only", () => {
+    const page = parsePageContentStrict("plain", "Just a body.\n");
+    expect(page.frontmatter.edges).toEqual([]);
+    expect(page.body).toBe("Just a body.\n");
+    expect(page.parseWarning).toBeUndefined();
+  });
+
+  test("flags an unterminated frontmatter fence with a parseWarning", () => {
+    const page = parsePageContentStrict(
+      "broken",
+      "---\nsource: import:chatgpt\nno closing fence\n",
+    );
+    expect(page.parseWarning).toContain("closing --- fence is missing");
+  });
+
+  test("throws on YAML syntax errors and schema violations (no salvage)", () => {
+    expect(() =>
+      parsePageContentStrict("bad-yaml", "---\nedges: [unclosed\n---\nbody\n"),
+    ).toThrow();
+    expect(() =>
+      parsePageContentStrict(
+        "bad-schema",
+        "---\nedges: not-an-array\n---\nbody\n",
+      ),
+    ).toThrow();
+  });
+});
+
+describe("provenance frontmatter round-trip", () => {
+  test("source and origin_date survive writePage → readPage", async () => {
+    await writePage(workspaceDir, {
+      slug: "imported",
+      frontmatter: {
+        edges: [],
+        ref_files: [],
+        ref_urls: [],
+        source: "import:fathom",
+        origin_date: "2024-11-02",
+      },
+      body: "Imported page.",
+    });
+
+    const page = await readPage(workspaceDir, "imported");
+    expect(page?.frontmatter.source).toBe("import:fathom");
+    expect(page?.frontmatter.origin_date).toBe("2024-11-02");
   });
 });

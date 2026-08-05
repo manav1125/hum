@@ -158,6 +158,7 @@ const ASSISTANT_SUPPORTED_COMMAND_PATHS = [
   "mcp auth",
   "mcp remove",
   "memory",
+  "memory ingest",
   "memory v2",
   "memory v2 reembed",
   "memory v2 reembed-skills",
@@ -482,6 +483,12 @@ const riskOverrides: AssistantRiskOverride[] = [
   { path: "mcp add", risk: "high" },
   { path: "mcp auth", risk: "medium" },
   { path: "mcp remove", risk: "low" },
+  {
+    path: "memory ingest",
+    risk: "medium",
+    reason:
+      "Writes concept pages directly into assistant memory, bypassing the consolidation buffer, and enqueues reindex jobs",
+  },
   {
     path: "memory v2 reembed",
     risk: "medium",

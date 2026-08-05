@@ -246,6 +246,57 @@ function parsePageContent(raw: string): {
   }
 }
 
+/** Matches the frontmatter fence OPENER alone. Content that matches this but
+ *  not {@link FRONTMATTER_REGEX} opens a frontmatter block that never closes. */
+const FRONTMATTER_OPENER_REGEX = /^---\r?\n/;
+
+/** Warning attached to a page whose frontmatter fence never closes. */
+const UNTERMINATED_FENCE_WARNING =
+  "frontmatter opens with --- but the closing --- fence is missing; the " +
+  "whole file is treated as body and its frontmatter fields are ignored";
+
+/**
+ * STRICT parse of full page content (frontmatter + body) into a
+ * `ConceptPage`. Unlike {@link parsePageContent} (the lenient salvage path
+ * behind `readPage`, which must never throw because a page already on disk
+ * is better partially visible than lost), this variant THROWS on a YAML
+ * syntax error or a frontmatter schema violation, and flags an unterminated
+ * frontmatter fence via `parseWarning` instead of silently degrading.
+ *
+ * It exists for callers validating content that has NOT touched disk yet
+ * (batch ingest staging): there the author can still fix the input, so a
+ * loud per-page rejection beats a silent salvage that quietly drops the
+ * malformed fields.
+ *
+ * If no frontmatter block is present the entire input is treated as body
+ * with an empty frontmatter block; the schema's defaults guarantee `edges`
+ * and `ref_files` are always arrays.
+ */
+export function parsePageContentStrict(
+  slug: string,
+  content: string,
+): ConceptPage & { parseWarning?: string } {
+  const match = content.match(FRONTMATTER_REGEX);
+  if (!match) {
+    return {
+      slug,
+      frontmatter: ConceptPageFrontmatterSchema.parse({}),
+      body: content,
+      ...(FRONTMATTER_OPENER_REGEX.test(content)
+        ? { parseWarning: UNTERMINATED_FENCE_WARNING }
+        : {}),
+    };
+  }
+  const yamlBlock = match[1];
+  const body = content.slice(match[0].length);
+  const parsed = parseYaml(yamlBlock) ?? {};
+  return {
+    slug,
+    frontmatter: ConceptPageFrontmatterSchema.parse(parsed),
+    body,
+  };
+}
+
 /**
  * Best-effort recovery of a frontmatter block that failed the strict parse.
  * Never throws. Handles both failure modes:
@@ -274,6 +325,8 @@ const SCALAR_FIELDS = [
   "kind",
   "status",
   "current",
+  "source",
+  "origin_date",
 ] as const;
 
 /** Known string-array frontmatter fields. */

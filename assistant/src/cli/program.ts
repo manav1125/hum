@@ -34,6 +34,7 @@ import { registerImageGenerationCommand } from "./commands/image-generation.js";
 import { registerInferenceCommand } from "./commands/inference.js";
 import { registerKeysCommand } from "./commands/keys.js";
 import { registerMcpCommand } from "./commands/mcp.js";
+import { registerMemoryIngestCommand } from "./commands/memory/memory-ingest.js";
 import { registerMemoryV2Command } from "./commands/memory-v2.js";
 import { registerMemoryV3Command } from "./commands/memory-v3.js";
 import { registerNotificationsCommand } from "./commands/notifications.js";
@@ -133,6 +134,7 @@ Examples:
   registerMcpCommand(program);
   registerMemoryV2Command(program);
   registerMemoryV3Command(program);
+  registerMemoryIngestCommand(program);
   registerNotificationsCommand(program);
   registerOAuthCommand(program);
   registerPendingCommand(program);

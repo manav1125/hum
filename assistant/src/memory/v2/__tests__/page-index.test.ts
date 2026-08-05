@@ -53,8 +53,12 @@ mock.module("../page-store.js", () => ({
   },
 }));
 
-const { getPageIndex, invalidatePageIndex, partitionPageIndex } =
-  await import("../page-index.js");
+const {
+  getPageIndex,
+  invalidatePageIndex,
+  parseOriginDate,
+  partitionPageIndex,
+} = await import("../page-index.js");
 const { writePage } = await import("../page-store.js");
 const { invalidateEdgeIndex } = await import("../edge-index.js");
 
@@ -756,5 +760,91 @@ describe("splitTier2", () => {
     const { tier2, rest } = splitTier2(idx, 100, scores);
     expect(tier2!.entries.length).toBe(3);
     expect(rest.entries.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseOriginDate + freshAt
+// ---------------------------------------------------------------------------
+
+describe("parseOriginDate", () => {
+  test("parses ISO dates and datetimes", () => {
+    expect(parseOriginDate("2025-03-14")).toBe(Date.parse("2025-03-14"));
+    expect(parseOriginDate("2025-03-14T10:30:00Z")).toBe(
+      Date.parse("2025-03-14T10:30:00Z"),
+    );
+    expect(parseOriginDate("2025-03-14T10:30:00+02:00")).toBe(
+      Date.parse("2025-03-14T10:30:00+02:00"),
+    );
+  });
+
+  test("reads an offset-less datetime as UTC, not host-local time", () => {
+    expect(parseOriginDate("2026-06-10T14:23:00")).toBe(
+      Date.parse("2026-06-10T14:23:00Z"),
+    );
+  });
+
+  test("keeps pre-epoch dates (zero or negative epoch ms)", () => {
+    expect(parseOriginDate("1970-01-01")).toBe(0);
+    expect(parseOriginDate("1969-07-20")).toBeLessThan(0);
+  });
+
+  test("rejects non-ISO shapes and impossible calendar dates", () => {
+    expect(parseOriginDate("03/04/2025")).toBeNull();
+    expect(parseOriginDate("Apr 3 2025")).toBeNull();
+    expect(parseOriginDate("sometime last spring")).toBeNull();
+    // Date.parse would silently normalize these to the next month.
+    expect(parseOriginDate("2025-02-30")).toBeNull();
+    expect(parseOriginDate("2025-04-31")).toBeNull();
+    expect(parseOriginDate("2025-13-01")).toBeNull();
+  });
+});
+
+describe("freshAt", () => {
+  test("declared origin_date wins over mtime; absent or unparseable falls back; synthetic is null", async () => {
+    await writePage(workspaceDir, {
+      slug: "archive",
+      frontmatter: {
+        edges: [],
+        ref_files: [],
+        ref_urls: [],
+        source: "import:fathom",
+        origin_date: "2023-06-30",
+      },
+      body: "Imported archive slice.",
+    });
+    await writePage(workspaceDir, {
+      slug: "organic",
+      frontmatter: { edges: [], ref_files: [], ref_urls: [] },
+      body: "Freshly consolidated page.",
+    });
+    await writePage(workspaceDir, {
+      slug: "bad-date",
+      frontmatter: {
+        edges: [],
+        ref_files: [],
+        ref_urls: [],
+        origin_date: "sometime last spring",
+      },
+      body: "Unparseable origin date.",
+    });
+    skillState.entries = [{ id: "browser", content: "Browse the web" }];
+
+    const index = await getPageIndex(workspaceDir);
+
+    // The imported page's freshAt is its declared origin_date, which is far
+    // older than its just-written mtime.
+    const archive = index.bySlug.get("archive")!;
+    expect(archive.freshAt).toBe(Date.parse("2023-06-30"));
+    expect(archive.modifiedAt).toBeGreaterThan(Date.parse("2024-01-01"));
+
+    // Organic pages and unparseable declared dates fall back to mtime.
+    const organic = index.bySlug.get("organic")!;
+    expect(organic.freshAt).toBe(organic.modifiedAt);
+    const badDate = index.bySlug.get("bad-date")!;
+    expect(badDate.freshAt).toBe(badDate.modifiedAt);
+
+    // Synthetic entries carry no recency signal.
+    expect(index.bySlug.get("skills/browser")!.freshAt).toBeNull();
   });
 });

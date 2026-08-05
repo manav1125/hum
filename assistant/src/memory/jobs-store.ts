@@ -371,6 +371,24 @@ export function upsertContactMemoryExtractJob(
 }
 
 /**
+ * Check whether a PENDING (not yet claimed) job of the given type exists.
+ * Used to coalesce payload-free follow-up enqueues: a pending row of the same
+ * type covers any number of completed batches because it reads all state at
+ * execution time. A RUNNING row deliberately does not match — it may have
+ * already read a pre-write snapshot, so a fresh enqueue must survive it.
+ */
+export function hasPendingJobOfType(type: MemoryJobType): boolean {
+  const db = getDb();
+  return (
+    db
+      .select({ id: memoryJobs.id })
+      .from(memoryJobs)
+      .where(and(eq(memoryJobs.type, type), eq(memoryJobs.status, "pending")))
+      .get() != null
+  );
+}
+
+/**
  * Check whether a pending or running job of the given type already exists.
  * Used to prevent duplicate enqueues for long-running maintenance jobs.
  */
