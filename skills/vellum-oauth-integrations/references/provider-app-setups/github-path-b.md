@@ -38,7 +38,7 @@ Tell the user:
 > 1. Click the **OAuth Apps** tab if not already selected
 > 2. Click **New OAuth App**
 > 3. Fill in:
->    - **Application name:** `Vellum Assistant`
+>    - **Application name:** `Cue Assistant`
 >    - **Homepage URL:** `https://vellum.ai`
 >    - **Authorization callback URL:** `OAUTH_CALLBACK_URL`
 > 4. Click **Register application**

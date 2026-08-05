@@ -4,7 +4,7 @@ title: Sandbox Mode
 
 ## Overview
 
-In **Sandbox Mode**, the assistant runs tmux sessions inside its own sandbox environment. The user can attach to any of these sessions live via the Vellum terminal UI.
+In **Sandbox Mode**, the assistant runs tmux sessions inside its own sandbox environment. The user can attach to any of these sessions live via the Cue terminal UI.
 
 This is the **default mode** for Claude Code orchestration tasks and any work that doesn't require access to the user's host machine. For tmux operational details (quoting, scrollback, naming, etc.) see [tmux-best-practices.md](tmux-best-practices.md).
 
@@ -20,7 +20,7 @@ This is the **default mode** for Claude Code orchestration tasks and any work th
 
    > **Note:** `vellum terminal attach` requires a managed (cloud-hosted) assistant. For local/Docker setups, use `tmux attach -t <session-name>` directly.
 
-   This opens a live, read-write terminal view of that session in the Vellum UI.
+   This opens a live, read-write terminal view of that session in the Cue UI.
 
 ## Benefits
 
@@ -39,7 +39,7 @@ tmux send-keys -t frontend 'npm run dev' Enter
 # Check on it after a few turns
 tmux capture-pane -t frontend -p -S -50
 
-# User attaches to watch live output in Vellum terminal:
+# User attaches to watch live output in Cue terminal:
 # vellum terminal attach frontend
 ```
 

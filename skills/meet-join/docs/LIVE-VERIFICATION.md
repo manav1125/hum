@@ -13,7 +13,7 @@ criteria, and what to capture when something goes wrong.
 
 ### Prerequisites
 
-- A running Vellum assistant on the machine under test (bare-metal or Docker).
+- A running Cue assistant on the machine under test (bare-metal or Docker).
 - The `meet` feature flag enabled — default on. Check with
   `cat ~/.vellum/protected/feature-flags.json 2>/dev/null` and
   `rg '"meet"' meta/feature-flags/feature-flag-registry.json`.
@@ -31,7 +31,7 @@ criteria, and what to capture when something goes wrong.
 1. Create or open a Meet meeting: `https://meet.google.com/xxx-yyyy-zzz`.
 2. Keep the meeting open on your host so you can admit the bot from the
    "Asking to join" lobby. The bot's display name is configurable via
-   `services.meet.botDisplayName` — the default shows up as "Vellum".
+   `services.meet.botDisplayName` — the default shows up as "Cue".
 3. From the assistant UI (or a conversation thread), ask:
    `"Join this Meet: https://meet.google.com/xxx-yyyy-zzz"`. The skill's
    `SKILL.md` requires an explicit request verb and a valid Meet URL.
@@ -78,7 +78,7 @@ rg '"MeetConsentMonitor: objection detected"' "$VELLUM_WORKSPACE_DIR"/logs/daemo
 
 ## Test 1: Multi-party scraper accuracy
 
-**Goal**: a 3-person meeting (the Vellum bot + 2 humans) produces correct
+**Goal**: a 3-person meeting (the Cue bot + 2 humans) produces correct
 `participant.change` and `speaker.change` events as humans join, leave, and
 take turns speaking.
 

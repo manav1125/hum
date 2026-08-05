@@ -1,7 +1,7 @@
 ---
 name: time-based-actions
 description: Unified routing guide for reminders, schedules, notifications, and tasks - prevents common misrouting
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "⏰"
   vellum:

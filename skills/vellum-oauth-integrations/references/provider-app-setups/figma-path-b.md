@@ -36,7 +36,7 @@ Tell the user:
 > `https://www.figma.com/developers/apps`
 >
 > 1. Click **Create a new app** (or the **+** button)
-> 2. Set the app name to **Vellum Assistant**
+> 2. Set the app name to **Cue Assistant**
 > 3. Set the website URL to any URL (e.g., `https://vellum.ai`)
 > 4. Click **Save** or **Create**
 >

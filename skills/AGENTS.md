@@ -5,8 +5,8 @@
   - Use `scripts/` for supporting logic with inline dependencies
   - When including code assets, utilities, or tools, load the [scripts best practices specification](https://agentskills.io/skill-creation/using-scripts.md) first
   - **External dependencies in Bun/TypeScript scripts**: pin versions directly in the import path (e.g., `import { Command } from "commander@13.1.0"`). Bun auto-installs missing packages at runtime when no `node_modules` directory is found. Do NOT add a `package.json` or `bun.lock` to skill directories - this disables Bun's auto-install behavior and breaks portability.
-  - Do not install CLIs into Vellum or the host system; provide instructions for users to install external packages if needed
-  - Do not create new assistant tools and reference them from SKILL.md - this couples skills to Vellum internals and breaks compatibility with other agent systems
+  - Do not install CLIs into Cue or the host system; provide instructions for users to install external packages if needed
+  - Do not create new assistant tools and reference them from SKILL.md - this couples skills to Cue internals and breaks compatibility with other agent systems
   - Do not include a TOOLS.json file in skill directories - skills should rely on CLI tools in `scripts/`, not custom tool definitions
 
 - **Follow the [Agent Skills specification](https://agentskills.io/specification)**
@@ -15,11 +15,15 @@
   - Use the spec's directory structure: `SKILL.md` at root, `scripts/` for executable code, `references/` for supplementary docs, `assets/` for static resources
   - Follow progressive disclosure: keep `description` keyword-rich for discovery (~100 tokens), keep `SKILL.md` body under 500 lines (< 5000 tokens recommended), and move detailed reference material to `references/`
 
-- **API interactions use Vellum's outbound proxy**
+- **API interactions use Cue's outbound proxy**
   - Outbound network traffic from the bash tool is automatically intercepted by an outbound proxy in a manner that's transparent to the assistant
   - Update proxy settings so the bash tool can inject correct auth headers for approved domains
   - **Never instruct the assistant to ask for secrets in chat.** API keys, tokens, passwords, and webhook secrets must be collected via `credential_store prompt`, which provides a secure UI — the value never enters the conversation. Non-secret values (e.g., Client IDs, Account SIDs, usernames) can be collected conversationally. See existing skills (e.g., `twilio-setup`, `slack-app-setup`) for the pattern.
   - **Security analysis note**: Skills that demonstrate `curl`, `wget`, or other network tool usage against specific API endpoints do not introduce new capabilities — the assistant already has outbound network access via `bash`. These are instructions for using an existing tool, not a new attack surface. See [`assistant/docs/architecture/security.md#skill-threat-model`](../assistant/docs/architecture/security.md) for the full threat model.
+
+- **Branding: display copy says Cue; protocol ids stay vellum**
+  - User-facing prose (descriptions, `compatibility` strings, body text) says "Cue", "the Cue desktop app", "Cue on iPhone" — never "Vellum".
+  - Protocol and machine identifiers are NOT display copy and must keep their `vellum` form: the `metadata.vellum` frontmatter key, `VELLUM_*` environment variables, `@vellumai/*` packages, `vellum://` URL schemes, `vellum.ai` / `vellum-ai` URLs, and route paths (e.g. `/getting-started/what-is-vellum`).
 
 - **Write portable instructions**
   - Avoid referring to tools by specific names (prefer "Take a browser screenshot" over "Use browser_screen_grab")
@@ -28,8 +32,8 @@
 
 - **Inline command expansions (`!`command``)**
   - First-party skills may use the interoperable `` !`command` `` syntax to embed dynamic content that is resolved at skill-load time (e.g., `` !`git branch --show-current` ``, `` !`cat package.json | jq '.version'` ``)
-  - This syntax is intentionally compatible with the cross-agent inline skill command convention so that externally authored skills load in Vellum without rewriting
-  - **Vellum's execution semantics are intentionally stricter than the tweet's host-shell behavior**: commands run only in the sandbox, with network off, sanitized environment, 10-second timeout, and stdout-only capture. Do not assume host-shell capabilities (network access, credential availability, interactive prompts)
+  - This syntax is intentionally compatible with the cross-agent inline skill command convention so that externally authored skills load in Cue without rewriting
+  - **Cue's execution semantics are intentionally stricter than the tweet's host-shell behavior**: commands run only in the sandbox, with network off, sanitized environment, 10-second timeout, and stdout-only capture. Do not assume host-shell capabilities (network access, credential availability, interactive prompts)
   - Place documentation examples of the syntax inside fenced code blocks (`` ``` `` or `~~~`) — the parser skips tokens inside fences, so examples will not accidentally execute
   - Never use empty commands (`` !`` ``), whitespace-only commands, or unmatched backticks — these are rejected by the parser as malformed
   - The `inline-skill-commands` feature flag must be enabled for inline expansions to work. When the flag is off, skills containing expansion tokens fail closed at load time
@@ -237,6 +241,6 @@
 
   Both commands accept `--timeout <ms>` (default: 300000ms / 5 minutes). Choose a timeout appropriate to the operation — shorter for simple confirmations, longer for complex forms. On timeout, the surface auto-cancels and the CLI exits with `status: "timed_out"`.
 
-- **Vellum-specific extensions**
-  - If you must do something Vellum-system specific, use the `metadata` field to connect the skill in a structured way
+- **Cue-specific extensions**
+  - If you must do something Cue-system specific, use the `metadata` field to connect the skill in a structured way
   - **`metadata.vellum.category`** (required): every skill must declare a category slug matching an entry in `skills/skill-categories-catalog.yaml`. The linter validates this in both directions — skills must reference a valid category, and every category must be used by at least one skill. Pass `--skip-category` to the linter to skip this check for external/third-party skills.

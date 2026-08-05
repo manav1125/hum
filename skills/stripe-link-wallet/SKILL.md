@@ -7,7 +7,7 @@ metadata:
   vellum:
     category: "commerce"
     display-name: "Stripe Link Wallet"
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 ---
 
 # Stripe Link Wallet

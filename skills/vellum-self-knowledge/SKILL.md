@@ -1,15 +1,15 @@
 ---
 name: vellum-self-knowledge
-description: Answer questions about Vellum, the assistant's architecture, capabilities, and current configuration by routing to live sources of truth
-compatibility: "Designed for Vellum personal assistants"
+description: Answer questions about Cue, the assistant's architecture, capabilities, and current configuration by routing to live sources of truth
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🪞"
   vellum:
     category: "system"
-    display-name: "Vellum Self-Knowledge"
+    display-name: "Cue Self-Knowledge"
     activation-hints:
       - "When the user asks what model the assistant is running on"
-      - "When the user asks about Vellum, how the assistant works, or its architecture"
+      - "When the user asks about Cue, how the assistant works, or its architecture"
       - "When the user asks about the assistant's current configuration or settings"
       - "When the user asks what the assistant can do or what skills/tools are available"
     avoid-when:
@@ -18,7 +18,7 @@ metadata:
 
 ## Critical Rule
 
-**Never answer from memory or general knowledge about Vellum.** Always go to a source of truth.
+**Never answer from memory or general knowledge about Cue.** Always go to a source of truth.
 This skill contains zero static information — only pointers to where the truth lives.
 
 ## Sources of Truth
@@ -47,14 +47,14 @@ The CLI is the single source of truth for anything about the running assistant's
 
 Run `assistant --help` or `assistant <command> --help` to discover more.
 
-### 2. Vellum Docs Site — Conceptual Knowledge
+### 2. Cue Docs Site — Conceptual Knowledge
 
 For "what is", "how does", and "why" questions, fetch the relevant page from the docs site.
 Base URL: `https://www.vellum.ai/docs`
 
 | Topic                    | Path                                      |
 | ------------------------ | ----------------------------------------- |
-| What is Vellum           | `/getting-started/what-is-vellum`         |
+| What is Cue           | `/getting-started/what-is-vellum`         |
 | Installation             | `/getting-started/installation`           |
 | Quick start              | `/getting-started/quick-start`            |
 | Your first skill         | `/getting-started/your-first-skill`       |

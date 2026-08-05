@@ -10,7 +10,7 @@ metadata:
 
 ## Overview
 
-This skill walks through analyzing and reducing LLM spend on a Vellum assistant. There are three layers:
+This skill walks through analyzing and reducing LLM spend on a Cue assistant. There are three layers:
 
 1. **Provider connections** — named auth configs (e.g. `anthropic-managed`, `my-personal-key`)
 2. **Model profiles** — named presets (model + effort + thinking + contextWindow). Three managed defaults: `balanced`, `quality-optimized`, `cost-optimized`.

@@ -17,7 +17,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -32,13 +32,13 @@
           "display-name": "API Mapping"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
       "id": "assistant-migration",
       "name": "assistant-migration",
-      "description": "Migrate from ChatGPT, Claude, OpenClaw, Hermes, Manus, and other AI assistants into Vellum by inspecting their data exports, conversation archives, files, prompts, custom instructions, memory, saved memories, tools, GPTs, workflows, integrations, and relationships, then mapping as much as safely possible into Vellum primitives. Handles single-source and multi-source migrations with a unified, deduplicated inventory.",
+      "description": "Migrate from ChatGPT, Claude, OpenClaw, Hermes, Manus, and other AI assistants into Cue by inspecting their data exports, conversation archives, files, prompts, custom instructions, memory, saved memories, tools, GPTs, workflows, integrations, and relationships, then mapping as much as safely possible into Cue primitives. Handles single-source and multi-source migrations with a unified, deduplicated inventory.",
       "metadata": {
         "emoji": "🧳",
         "vellum": {
@@ -48,18 +48,18 @@
             "chatgpt-import"
           ],
           "activation-hints": [
-            "User wants to migrate from ChatGPT, Claude, OpenClaw, Hermes, Manus, or another AI assistant into Vellum",
-            "User wants to migrate from ChatGPT or Claude into Vellum",
+            "User wants to migrate from ChatGPT, Claude, OpenClaw, Hermes, Manus, or another AI assistant into Cue",
+            "User wants to migrate from ChatGPT or Claude into Cue",
             "User has a ChatGPT data export ZIP or Claude conversation/summary export",
             "User has an assistant export, workspace, prompt bundle, memory dump, tool config, or migration request from another assistant system",
             "User asks what can be preserved when switching from another assistant"
           ],
           "avoid-when": [
-            "User is moving an existing Vellum assistant between Vellum homes; use backup/restore or teleport workflows instead"
+            "User is moving an existing Cue assistant between Cue homes; use backup/restore or teleport workflows instead"
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -83,13 +83,13 @@
           ]
         }
       },
-      "compatibility": "Works on both the Vellum desktop app (local daemon) and the Vellum web app (platform-hosted). Requires an Unstructured account to authorize during the OAuth step.",
+      "compatibility": "Works on both the Cue desktop app (local daemon) and the Cue web app (platform-hosted). Requires an Unstructured account to authorize during the OAuth step.",
       "updatedAt": "2026-08-04T09:11:00.000Z"
     },
     {
       "id": "chatgpt-import",
       "name": "chatgpt-import",
-      "description": "Import conversation history from ChatGPT into Vellum",
+      "description": "Import conversation history from ChatGPT into Cue",
       "metadata": {
         "emoji": "📥",
         "vellum": {
@@ -97,7 +97,7 @@
           "display-name": "ChatGPT Import"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -111,7 +111,7 @@
           "display-name": "CLI Discovery"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -125,13 +125,13 @@
           "display-name": "Conversation Launcher"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
       "id": "deploy-fullstack-vercel",
       "name": "deploy-fullstack-vercel",
-      "description": "Build and deploy a full-stack app (React frontend + Python/FastAPI backend) or a Vellum app to Vercel as a serverless demo with seeded data",
+      "description": "Build and deploy a full-stack app (React frontend + Python/FastAPI backend) or a Cue app to Vercel as a serverless demo with seeded data",
       "metadata": {
         "emoji": "🚀",
         "vellum": {
@@ -139,7 +139,7 @@
           "display-name": "Deploy Fullstack to Vercel"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -154,7 +154,7 @@
           "display-name": "Discord App Setup"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -169,7 +169,7 @@
           "display-name": "DoorDash"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -184,7 +184,7 @@
           "display-name": "ElevenLabs Voice"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -198,7 +198,7 @@
           "display-name": "Email Setup"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -212,7 +212,7 @@
           "display-name": "Fish Audio TTS"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -235,7 +235,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-05T17:22:35.000Z"
     },
     {
@@ -277,7 +277,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -293,7 +293,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-04T21:30:07.000Z"
     },
     {
@@ -309,7 +309,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -331,7 +331,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-13T01:05:59.000Z"
     },
     {
@@ -372,7 +372,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-05T23:44:29.000Z"
     },
     {
@@ -401,7 +401,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -418,7 +418,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -434,7 +434,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -468,7 +468,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -484,7 +484,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -498,7 +498,7 @@
           "display-name": "MCP Setup"
         }
       },
-      "compatibility": "Works on both the Vellum desktop app (local daemon) and the Vellum web app (platform-hosted). Auth flow differs by environment.",
+      "compatibility": "Works on both the Cue desktop app (local daemon) and the Cue web app (platform-hosted). Auth flow differs by environment.",
       "updatedAt": "2026-06-12T18:05:36.000Z"
     },
     {
@@ -564,7 +564,8 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants"
+      "compatibility": "Designed for Cue personal assistants",
+      "updatedAt": "2026-08-05T01:29:21.000Z"
     },
     {
       "id": "notifications",
@@ -577,7 +578,7 @@
           "display-name": "Notifications"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-12T18:05:36.000Z"
     },
     {
@@ -592,7 +593,7 @@
           "display-name": "Notion"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -609,7 +610,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -623,7 +624,7 @@
           "display-name": "Oura Ring Setup"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -639,7 +640,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-04T15:23:46.000Z"
     },
     {
@@ -655,7 +656,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -676,7 +677,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -691,7 +692,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -708,7 +709,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -722,7 +723,7 @@
           "display-name": "Screen Recording"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -736,7 +737,7 @@
           "display-name": "Self Upgrade"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -752,7 +753,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -767,13 +768,13 @@
           "display-name": "Slack"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-12T18:05:36.000Z"
     },
     {
       "id": "slack-app-setup",
       "name": "slack-app-setup",
-      "description": "Connect a Slack app to the Vellum Assistant via Socket Mode. Use whenever the user wants to set up Slack for their assistant, connect a workspace, or get the assistant talking in Slack — the skill generates a one-click manifest URL so they only have to name, save, and copy two tokens.",
+      "description": "Connect a Slack app to the Cue Assistant via Socket Mode. Use whenever the user wants to set up Slack for their assistant, connect a workspace, or get the assistant talking in Slack — the skill generates a one-click manifest URL so they only have to name, save, and copy two tokens.",
       "metadata": {
         "emoji": "💬",
         "vellum": {
@@ -793,7 +794,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-13T01:04:11.000Z"
     },
     {
@@ -808,7 +809,7 @@
           "display-name": "Start the Day"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -824,7 +825,7 @@
           "user-invocable": "true"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -839,13 +840,13 @@
           "display-name": "Stripe Link Wallet"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
       "id": "telegram-setup",
       "name": "telegram-setup",
-      "description": "Connect a Telegram bot to the Vellum Assistant gateway with automated webhook registration and credential storage",
+      "description": "Connect a Telegram bot to the Cue Assistant gateway with automated webhook registration and credential storage",
       "metadata": {
         "icon": "assets/icon.svg",
         "emoji": "🤖",
@@ -861,7 +862,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -875,7 +876,7 @@
           "display-name": "Time-Based Actions"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -893,7 +894,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -907,7 +908,7 @@
           "display-name": "TypeScript Evaluation"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -921,7 +922,7 @@
           "display-name": "Avatar"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -938,7 +939,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-07-22T15:18:09.000Z"
     },
     {
@@ -952,7 +953,7 @@
           "display-name": "Conversations"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -969,7 +970,7 @@
           "display-name": "GitHub App Setup"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants. Requires Python 3, bun, and the assistant credentials CLI.",
+      "compatibility": "Designed for Cue personal assistants. Requires Python 3, bun, and the assistant credentials CLI.",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -989,7 +990,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -1012,7 +1013,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -1023,24 +1024,24 @@
         "emoji": "🔌",
         "vellum": {
           "category": "integrations",
-          "display-name": "Vellum OAuth Integrations"
+          "display-name": "Cue OAuth Integrations"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-04T17:02:16.000Z"
     },
     {
       "id": "vellum-self-knowledge",
       "name": "vellum-self-knowledge",
-      "description": "Answer questions about Vellum, the assistant's architecture, capabilities, and current configuration by routing to live sources of truth",
+      "description": "Answer questions about Cue, the assistant's architecture, capabilities, and current configuration by routing to live sources of truth",
       "metadata": {
         "emoji": "🪞",
         "vellum": {
           "category": "system",
-          "display-name": "Vellum Self-Knowledge",
+          "display-name": "Cue Self-Knowledge",
           "activation-hints": [
             "When the user asks what model the assistant is running on",
-            "When the user asks about Vellum, how the assistant works, or its architecture",
+            "When the user asks about Cue, how the assistant works, or its architecture",
             "When the user asks about the assistant's current configuration or settings",
             "When the user asks what the assistant can do or what skills/tools are available"
           ],
@@ -1049,7 +1050,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -1074,7 +1075,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -1088,7 +1089,7 @@
           "display-name": "Sounds"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -1133,7 +1134,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -1158,7 +1159,7 @@
           ]
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
@@ -1186,7 +1187,7 @@
           "display-name": "Watcher"
         }
       },
-      "compatibility": "Designed for Vellum personal assistants",
+      "compatibility": "Designed for Cue personal assistants",
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {

@@ -93,7 +93,7 @@ which rebuilds the module automatically against the running kernel:
 
 ```bash
 sudo apt-get install v4l2loopback-dkms
-sudo modprobe v4l2loopback video_nr=10 card_label="VellumAvatar" exclusive_caps=1
+sudo modprobe v4l2loopback video_nr=10 card_label="CueAvatar" exclusive_caps=1
 ```
 
 The three module arguments matter:
@@ -102,8 +102,8 @@ The three module arguments matter:
   path; callers that need a different number must override the `devicePath`
   argument to `openVideoDevice()` and the `--device` passthrough on both
   the daemon and bot containers.
-- `card_label="VellumAvatar"` sets the `friendlyName` Chrome surfaces in the
-  camera-picker UI. Any string works; `VellumAvatar` is just a stable label
+- `card_label="CueAvatar"` sets the `friendlyName` Chrome surfaces in the
+  camera-picker UI. Any string works; `CueAvatar` is just a stable label
   for operator debugging.
 - `exclusive_caps=1` is required for Chrome to treat the node as a normal
   capture device. Without it, Chrome enumerates the loopback node in a way
@@ -118,7 +118,7 @@ To persist the load across reboots, drop the module name into
 v4l2loopback
 
 # /etc/modprobe.d/vellum-avatar.conf
-options v4l2loopback video_nr=10 card_label="VellumAvatar" exclusive_caps=1
+options v4l2loopback video_nr=10 card_label="CueAvatar" exclusive_caps=1
 ```
 
 ### macOS / Docker Desktop note
@@ -184,7 +184,7 @@ the meet subsystem, run this manual verification loop.
 
 ### Procedure
 
-1. **Ask the assistant to join.** From any conversation in the Vellum
+1. **Ask the assistant to join.** From any conversation in the Cue
    macOS app:
    ```
    meet_join https://meet.google.com/xxx-yyyy-zzz
@@ -200,7 +200,7 @@ the meet subsystem, run this manual verification loop.
      appears in the Meet participant list.
    - The bot posts the consent message in Meet chat (the string from
      `services.meet.consentMessage` with `{assistantName}` substituted).
-   - Live transcripts of human participants start appearing in the Vellum
+   - Live transcripts of human participants start appearing in the Cue
      conversation, each prefixed with `[<SpeakerName>]: <text>`.
 3. **Verify SSE events in the macOS client.** The "In meeting" status panel
    should reflect live participant and speaker changes as people join,
@@ -225,7 +225,7 @@ the meet subsystem, run this manual verification loop.
      meeting content (no empty transcripts when people were clearly
      speaking, no missing speaker names that were visible in the Meet UI).
 6. **Verify graceful daemon shutdown.** Join a meeting, wait for the bot
-   to stabilize, then kill the assistant with `SIGTERM` (the Vellum CLI's
+   to stabilize, then kill the assistant with `SIGTERM` (the Cue CLI's
    stop flow, or `kill <daemon-pid>`). Expected: the bot leaves the
    meeting cleanly (no leftover participant in the Meet UI) and the
    container is removed (`docker ps -a | grep vellum-meet-` should be

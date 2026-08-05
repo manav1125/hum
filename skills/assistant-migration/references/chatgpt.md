@@ -1,4 +1,4 @@
-# ChatGPT → Vellum
+# ChatGPT → Cue
 
 ChatGPT is a hosted assistant. There is **no local workspace or data directory** to tar — the portable source of truth is the official account export, an emailed ZIP. This reference covers locating that export and mapping the **non-conversation** material. Conversation history itself is handled by the separate `chatgpt-import` skill (see Inspect).
 
@@ -27,10 +27,10 @@ For non-conversation material that is not in the export (or that the creator pre
 ## Inspect
 
 - **Conversation history → delegate to `chatgpt-import`.** Once the creator has the export ZIP, invoke the `chatgpt-import` skill. That skill owns the export-and-parse flow and the `assistant conversations import` step. Do **not** duplicate its parse logic or re-document its commands here — cross-reference it by name.
-- **Non-conversation material → normal inventory/review flow.** The official export ZIP also contains custom instructions and saved memories that `chatgpt-import` does not consume — unzip the export and read those files directly into the inventory rather than relying on the creator to re-paste them. Map per the Vellum Primitive Map in SKILL.md:
+- **Non-conversation material → normal inventory/review flow.** The official export ZIP also contains custom instructions and saved memories that `chatgpt-import` does not consume — unzip the export and read those files directly into the inventory rather than relying on the creator to re-paste them. Map per the Cue Primitive Map in SKILL.md:
   - Custom instructions / "what ChatGPT should know about you" / "how ChatGPT should respond" → Identity, Personality, durable Memory instructions.
   - Saved memories → Memory candidates (review before saving; ChatGPT memories can be inferred or stale).
-  - GPT configs (names, descriptions, instructions, knowledge files) → Skills, recreated as portable Vellum skills. Connected actions become MCP / integration setup tasks, not direct imports.
+  - GPT configs (names, descriptions, instructions, knowledge files) → Skills, recreated as portable Cue skills. Connected actions become MCP / integration setup tasks, not direct imports.
 
 Classify everything that is not a clean structured export per the Internals Salvage Guidance (high/medium/low confidence) rather than assuming a schema.
 
@@ -38,8 +38,8 @@ Classify everything that is not a clean structured export per the Internals Salv
 
 ChatGPT account credentials and connected-app tokens are **never** imported:
 
-- **ChatGPT / OpenAI account login**: not migrated. The creator signs into Vellum independently.
-- **Connected apps and custom-GPT actions** (Google Drive, GitHub, third-party action OAuth): reconnect through Vellum's vault / OAuth connect flows. Tokens from the export or from any pasted config are ignored.
+- **ChatGPT / OpenAI account login**: not migrated. The creator signs into Cue independently.
+- **Connected apps and custom-GPT actions** (Google Drive, GitHub, third-party action OAuth): reconnect through Cue's vault / OAuth connect flows. Tokens from the export or from any pasted config are ignored.
 - **API keys** referenced in GPT actions or instructions: rebind via `credential_store action=prompt`, never via chat text.
 
 When in doubt, pause and ask before sending any production message on a newly reconnected integration.

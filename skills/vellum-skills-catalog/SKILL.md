@@ -1,7 +1,7 @@
 ---
 name: vellum-skills-catalog
 description: Discover bundled skills and search/install community skills from the skills.sh registry
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🧩"
   vellum:
@@ -46,7 +46,7 @@ Returns matching skills with their slug, source, install counts, and security au
 
 **Trust model - check the source guardian before installing:**
 
-- **Vellum-owned** (`vellum-ai/*`): First-party skills published by the Vellum team. Install these directly without prompting - they are vetted and trusted.
+- **Cue-owned** (`vellum-ai/*`): First-party skills published by the Cue team. Install these directly without prompting - they are vetted and trusted.
 - **Third-party** (any other guardian): Ask the user for permission first. Present the skill name, source, audit results, and install count. Say something like: "I found a community skill that could help, but it's published by a third party - we haven't vetted it. Want to install it anyway?"
 
 ```bash

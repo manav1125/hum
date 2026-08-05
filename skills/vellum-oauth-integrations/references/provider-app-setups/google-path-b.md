@@ -35,7 +35,7 @@ Tell the user:
 > If you want to create a new one, open:
 > `https://console.cloud.google.com/projectcreate`
 >
-> Set the name to **Vellum Assistant** and click **Create**. Then send me the project ID.
+> Set the name to **Cue Assistant** and click **Create**. Then send me the project ID.
 
 Wait for confirmation. Record the project ID for subsequent steps.
 
@@ -63,7 +63,7 @@ Tell the user:
 >
 > **If you see a setup wizard** (numbered steps: App Information -> Audience -> Contact Information -> Finish):
 >
-> 1. **App Information:** Set app name to **Vellum Assistant**
+> 1. **App Information:** Set app name to **Cue Assistant**
 > 2. **Audience:** Select **External**
 > 3. **Contact Information:** Enter your email
 > 4. Click **Create**
@@ -73,7 +73,7 @@ Tell the user:
 > **If you see a Branding page** (with fields for App name, support email, etc.):
 >
 > - **Branding** - Fill in:
->   - App name: **Vellum Assistant**
+>   - App name: **Cue Assistant**
 >   - User support email: **your email**
 >   - Developer contact email: **your email**
 >   - Click **Save**
@@ -116,7 +116,7 @@ Tell the user:
 > `OAUTH_CALLBACK_URL`
 >
 > 1. Application type: **Web application**
-> 2. Name: **Vellum Assistant**
+> 2. Name: **Cue Assistant**
 > 3. Under **Authorized redirect URIs**, click **Add URI** and paste the redirect URI shown above
 > 4. Click **Create**
 >
@@ -139,6 +139,6 @@ The `credential_store prompt` is a secure input (not visible in chat), so there 
 
 Follow the `vellum-oauth-integrations` workflow to register the OAuth app, connect, and verify.
 
-Send the returned auth URL to the user. If they see **This app isn't verified**, tell them to click **Advanced** and continue to **Vellum Assistant**.
+Send the returned auth URL to the user. If they see **This app isn't verified**, tell them to click **Advanced** and continue to **Cue Assistant**.
 
 **On success:** "Gmail, Calendar, and Drive are connected!"

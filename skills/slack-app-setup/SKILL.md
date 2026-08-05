@@ -1,7 +1,7 @@
 ---
 name: slack-app-setup
-description: Connect a Slack app to the Vellum Assistant via Socket Mode. Use whenever the user wants to set up Slack for their assistant, connect a workspace, or get the assistant talking in Slack — the skill generates a one-click manifest URL so they only have to name, save, and copy two tokens.
-compatibility: "Designed for Vellum personal assistants"
+description: Connect a Slack app to the Cue Assistant via Socket Mode. Use whenever the user wants to set up Slack for their assistant, connect a workspace, or get the assistant talking in Slack — the skill generates a one-click manifest URL so they only have to name, save, and copy two tokens.
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "💬"
   vellum:

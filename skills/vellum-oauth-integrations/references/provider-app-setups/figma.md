@@ -38,7 +38,7 @@ After the user clicks:
 
 > Fill in the following details:
 >
-> - **App name:** Vellum Assistant
+> - **App name:** Cue Assistant
 > - **Website URL:** any URL is fine (e.g., `https://vellum.ai`)
 >
 > Then click **Save** or **Create**.
@@ -92,7 +92,7 @@ Wait for the user to confirm scopes are set.
 
 Follow the `vellum-oauth-integrations` workflow to collect credentials, register the OAuth app, connect, and verify.
 
-> I'll start the Figma authorization flow now. You should see a Figma consent page asking you to allow **Vellum Assistant** to access your account.
+> I'll start the Figma authorization flow now. You should see a Figma consent page asking you to allow **Cue Assistant** to access your account.
 >
 > Review the permissions and click **Allow access**.
 

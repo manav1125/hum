@@ -1,7 +1,7 @@
 ---
 name: restaurant-reservation
 description: Book reservations on OpenTable or Resy with explicit confirmations
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🍽️"
   vellum:

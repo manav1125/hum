@@ -1,7 +1,7 @@
 ---
 name: api-mapping
 description: Record and analyze API surfaces of web services
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   icon: assets/icon.svg
   emoji: "🗺️"

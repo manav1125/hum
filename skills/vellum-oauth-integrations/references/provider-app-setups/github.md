@@ -38,7 +38,7 @@ After the user clicks:
 
 > Fill in the following fields:
 >
-> - **Application name:** `Vellum Assistant`
+> - **Application name:** `Cue Assistant`
 > - **Homepage URL:** `https://vellum.ai` (or any URL you prefer)
 > - **Authorization callback URL:** We need to look this up first - hold on.
 
@@ -84,7 +84,7 @@ Then:
 
 Follow the `vellum-oauth-integrations` workflow to collect credentials, register the OAuth app, connect, and verify.
 
-> I'll start the GitHub authorization flow now. You should see a GitHub consent page asking you to allow **Vellum Assistant** to access your account.
+> I'll start the GitHub authorization flow now. You should see a GitHub consent page asking you to allow **Cue Assistant** to access your account.
 >
 > Review the permissions and click **Authorize**.
 

@@ -1,7 +1,7 @@
 ---
 name: vellum-heartbeat
 description: Configure periodic background checklist runs
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "💓"
   vellum:

@@ -1,7 +1,7 @@
 ---
 name: deploy-fullstack-vercel
-description: Build and deploy a full-stack app (React frontend + Python/FastAPI backend) or a Vellum app to Vercel as a serverless demo with seeded data
-compatibility: "Designed for Vellum personal assistants"
+description: Build and deploy a full-stack app (React frontend + Python/FastAPI backend) or a Cue app to Vercel as a serverless demo with seeded data
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🚀"
   vellum:
@@ -11,48 +11,48 @@ metadata:
 
 # Deploy Fullstack to Vercel
 
-Deploy a full-stack app with a React/Vite frontend and Python/FastAPI backend to Vercel as a serverless demo, OR deploy a Vellum-built app from the library. No auth required - meant for demos, portfolio pieces, and quick showcases.
+Deploy a full-stack app with a React/Vite frontend and Python/FastAPI backend to Vercel as a serverless demo, OR deploy a Cue-built app from the library. No auth required - meant for demos, portfolio pieces, and quick showcases.
 
 ## When to Use
 
 - User says "deploy this to Vercel", "host this", "publish this"
 - User has a project with a frontend + backend they want live
-- User wants to deploy a Vellum app that uses backend features (data store, custom routes)
+- User wants to deploy a Cue app that uses backend features (data store, custom routes)
 - User wants a quick demo deployment (no persistent database needed)
 
 ## Authentication
 
-### Vellum App Publishing
+### Cue App Publishing
 
-For publishing Vellum apps from the library, use the built-in `publish_page` tool. This is the preferred path — it uses the stored Vercel API token (`vercel/api_token`) via the brokered publish flow without exposing the token to shell commands.
+For publishing Cue apps from the library, use the built-in `publish_page` tool. This is the preferred path — it uses the stored Vercel API token (`vercel/api_token`) via the brokered publish flow without exposing the token to shell commands.
 
 **The stored Vercel API token is reserved for brokered `publish_page` and `unpublish_page` actions only.** Do not pass it to `bash`, `curl`, Vercel CLI commands, or proxy credential injection. Do not use `network_mode: "proxied"` with `credential_ids` for Vercel deployments.
 
 ### Custom Full-Stack Deployments
 
-For custom projects that need Vercel deployment (not Vellum app publishing):
+For custom projects that need Vercel deployment (not Cue app publishing):
 
 1. Install the Vercel CLI with `bun install -g vercel` (not npm — npm is not available in the sandbox).
 2. Use `vercel login` to authenticate interactively (opens browser for the user).
 3. If the user does not want to use CLI auth, stop and ask them for an approved deployment path. Do not extract, inject, or shell with the stored API token.
 
-## Deploying a Vellum App
+## Deploying a Cue App
 
-When the user asks to deploy a Vellum app from their library (from `/workspace/data/apps/<app-name>/`):
+When the user asks to deploy a Cue app from their library (from `/workspace/data/apps/<app-name>/`):
 
-### 1. Detect Vellum Bridge Usage
+### 1. Detect Cue Bridge Usage
 
-Check the compiled app for Vellum bridge API usage:
+Check the compiled app for Cue bridge API usage:
 
 ```bash
 grep -l "window\.vellum\.\|vellum\.fetch\|vellum\.data\|vellum\.sendAction" /workspace/data/apps/<app-name>/dist/*.js /workspace/data/apps/<app-name>/dist/*.html 2>/dev/null
 ```
 
-If found, the app depends on the Vellum bridge and needs a shim to work standalone.
+If found, the app depends on the Cue bridge and needs a shim to work standalone.
 
-### 2. Create Vellum Bridge Shim
+### 2. Create Cue Bridge Shim
 
-The app uses `window.vellum.*` APIs that are normally injected by the Vellum viewer. For standalone deployment, create a `vellum-shim.js` file in the app's `dist/` directory that provides browser-native replacements.
+The app uses `window.vellum.*` APIs that are normally injected by the Cue viewer. For standalone deployment, create a `vellum-shim.js` file in the app's `dist/` directory that provides browser-native replacements.
 
 **Before writing the shim, read the app's compiled JavaScript** (`dist/main.js` or equivalent) to understand exactly which `window.vellum.*` APIs the app calls and what data shapes it expects. The shim must match the app's actual usage — don't guess at signatures.
 
@@ -99,7 +99,7 @@ Create a `vercel.json` in the dist directory:
 }
 ```
 
-Then deploy using the `publish_page` tool (preferred). For Vellum apps, use the built-in app publish flow rather than raw Vercel API calls from shell.
+Then deploy using the `publish_page` tool (preferred). For Cue apps, use the built-in app publish flow rather than raw Vercel API calls from shell.
 
 ## Deploying a Custom Full-Stack Project
 
@@ -251,7 +251,7 @@ curl -s <deployed-url>/api/health
 | Module imports in routers   | Use `sys.path.insert(0, os.path.dirname(__file__))` in index.py          |
 | CORS                        | Set `allow_origins=["*"]` for demo deployments                           |
 | `--name` flag deprecated    | Don't use `--name` with Vercel CLI, just deploy from the directory       |
-| Vellum bridge APIs          | Use the vellum-shim.js to provide localStorage-backed data + no-op stubs |
+| Cue bridge APIs          | Use the vellum-shim.js to provide localStorage-backed data + no-op stubs |
 | npm not available           | Use `bun install -g vercel` to install Vercel CLI in sandbox             |
 
 ## Vercel CLI Quick Reference

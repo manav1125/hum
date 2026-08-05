@@ -1,7 +1,7 @@
 ---
 name: chatgpt-import
-description: Import conversation history from ChatGPT into Vellum
-compatibility: "Designed for Vellum personal assistants"
+description: Import conversation history from ChatGPT into Cue
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "📥"
   vellum:
@@ -9,7 +9,7 @@ metadata:
     display-name: "ChatGPT Import"
 ---
 
-Import ChatGPT conversation history into Vellum so users can keep their conversation context and memory when switching from ChatGPT.
+Import ChatGPT conversation history into Cue so users can keep their conversation context and memory when switching from ChatGPT.
 
 ## How to guide the user
 

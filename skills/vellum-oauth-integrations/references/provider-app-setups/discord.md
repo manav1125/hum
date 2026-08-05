@@ -36,11 +36,11 @@ Open: `https://discord.com/developers/applications`
 
 After the user clicks:
 
-> Set the application name to **Vellum Assistant**, accept the Developer Terms of Service and Developer Policy, then click **Create**.
+> Set the application name to **Cue Assistant**, accept the Developer Terms of Service and Developer Policy, then click **Create**.
 
 **Known issues:**
 
-- If the user already has an application named "Vellum Assistant", they can either reuse it or pick a different name
+- If the user already has an application named "Cue Assistant", they can either reuse it or pick a different name
 - Discord may show a CAPTCHA during creation
 
 **Milestone (2 of 8):** "Application created - now let's head to the OAuth2 settings."
@@ -98,7 +98,7 @@ Follow the `vellum-oauth-integrations` workflow to collect credentials, register
 
 Scopes to request: `identify guilds guilds.members.read messages.read`
 
-> I'll start the Discord authorization flow now. You should see a Discord consent page asking you to authorize **Vellum Assistant** to access your account.
+> I'll start the Discord authorization flow now. You should see a Discord consent page asking you to authorize **Cue Assistant** to access your account.
 >
 > Review the permissions and click **Authorize**.
 

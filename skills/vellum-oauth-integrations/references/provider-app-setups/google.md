@@ -11,7 +11,7 @@ The included `vellum-oauth-integrations` skill handles the generic parts of the 
 
 ## Check Managed Mode First
 
-**Before guiding the user through Google Cloud Console setup, check whether they should be using Vellum-managed Google OAuth instead.**
+**Before guiding the user through Google Cloud Console setup, check whether they should be using Cue-managed Google OAuth instead.**
 
 Google supports managed mode (see `assistant oauth providers get google`). Setting up a Google Cloud project, OAuth consent screen, and credentials is a multi-step, technical process that takes 3-5 minutes minimum and frequently hits edge cases (consent screen verification, scope mismatches, redirect URI errors). The managed flow takes ~30 seconds: log in with Google, grant scopes, done.
 
@@ -23,7 +23,7 @@ assistant oauth mode google --json | jq -r '.mode'
 
 - If the result is `managed`, **stop reading this file** and follow [CONNECTING_ACCOUNTS.md](../CONNECTING_ACCOUNTS.md) instead.
 - If the result is `your-own`, ask the user whether they'd prefer the simpler managed flow before continuing:
-  > "Google can connect through Vellum's managed integration — no Google Cloud Console setup needed, just a login. The custom-app path takes a few minutes and involves several developer console screens. Want to use the managed flow, or do you want to set up your own?"
+  > "Google can connect through Cue's managed integration — no Google Cloud Console setup needed, just a login. The custom-app path takes a few minutes and involves several developer console screens. Want to use the managed flow, or do you want to set up your own?"
   > If they prefer managed, run `assistant oauth mode google --set managed` and switch to the managed flow.
 - If the user already has an active Google connection (`assistant oauth status google` returns a live connection), do not switch modes — respect their existing setup.
 
@@ -146,7 +146,7 @@ Open: `https://console.cloud.google.com/auth/branding?project=PROJECT_ID`
 
 > It looks like Google is showing the setup wizard. Let's walk through it:
 >
-> **Step 1 - App Information:** App name: `Vellum Assistant`, leave the rest
+> **Step 1 - App Information:** App name: `Cue Assistant`, leave the rest
 > **Step 2 - Audience:** Select **External**
 > **Step 3 - Contact Information:** Enter your email
 >
@@ -156,7 +156,7 @@ After the wizard, skip Step 5b. Open `https://console.cloud.google.com/auth/audi
 
 **Case 2 - Branding page** (already configured projects):
 
-If needs setup: fill in App name (`Vellum Assistant`), User support email, Developer contact email -> Save. If already filled, skip to Step 5b.
+If needs setup: fill in App name (`Cue Assistant`), User support email, Developer contact email -> Save. If already filled, skip to Step 5b.
 
 #### Step 5b: Audience and test users (skip if wizard was used)
 
@@ -206,11 +206,11 @@ https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/g
 
 Open: `https://console.cloud.google.com/auth/clients/create?project=PROJECT_ID`
 
-> Select **Desktop app** as the application type. You can name it "Vellum Assistant" or leave the default. Click **Create**.
+> Select **Desktop app** as the application type. You can name it "Cue Assistant" or leave the default. Click **Create**.
 
 A modal should appear with the **Client ID** and **Client Secret**. Tell the user to keep it open.
 
-> **Heads up:** Google sometimes has a slight delay, so the modal may only show your Client ID without the Client Secret. If that happens, don't worry - close the modal and navigate to `https://console.cloud.google.com/auth/clients?project=PROJECT_ID`. Click on the client you just created (look for the name you used, e.g. "Vellum Assistant"). Under **Client secrets**, find the row with a copy button, click it, and paste the secret into the secure credential input when prompted.
+> **Heads up:** Google sometimes has a slight delay, so the modal may only show your Client ID without the Client Secret. If that happens, don't worry - close the modal and navigate to `https://console.cloud.google.com/auth/clients?project=PROJECT_ID`. Click on the client you just created (look for the name you used, e.g. "Cue Assistant"). Under **Client secrets**, find the row with a copy button, click it, and paste the secret into the secure credential input when prompted.
 
 ---
 
@@ -229,7 +229,7 @@ Google-specific override for macOS desktop app:
 
 > I'll start the Google authorization flow now.
 >
-> If you see **"This app isn't verified"**, click **Advanced** then **Go to Vellum Assistant (unsafe)**. This is normal for apps in testing mode.
+> If you see **"This app isn't verified"**, click **Advanced** then **Go to Cue Assistant (unsafe)**. This is normal for apps in testing mode.
 >
 > Review the permissions and click **Allow**.
 

@@ -31,7 +31,7 @@ Tell the user:
 > Then:
 >
 > 1. Click **"New integration"** (or the **"+"** button)
-> 2. Set the name to **Vellum Assistant**
+> 2. Set the name to **Cue Assistant**
 > 3. Select your workspace from the **Associated workspace** dropdown
 > 4. Click **Create**
 >
@@ -84,7 +84,7 @@ Tell the user:
 > 1. Open any Notion page you want to connect
 > 2. Click the **"..."** menu (top-right) or the **Share** button
 > 3. Click **"Add connections"** (or **"Connect to"**)
-> 4. Search for **Vellum Assistant** and select it
+> 4. Search for **Cue Assistant** and select it
 >
 > Repeat for any pages or databases you want accessible. You can always add more later.
 >

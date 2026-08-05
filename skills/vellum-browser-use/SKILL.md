@@ -1,7 +1,7 @@
 ---
 name: vellum-browser-use
 description: Browse the web using `assistant browser` CLI commands
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🌐"
   vellum:

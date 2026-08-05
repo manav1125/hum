@@ -1,7 +1,7 @@
 ---
 name: start-the-day
 description: Get a personalized daily briefing with weather, news, and actionable insights
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   icon: assets/icon.svg
   emoji: "🌅"

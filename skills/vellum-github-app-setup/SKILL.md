@@ -1,7 +1,7 @@
 ---
 name: vellum-github-app-setup
 description: Create and configure a GitHub App so the assistant can push commits, open PRs, and comment under its own bot identity. Use when the user wants the assistant to have its own GitHub identity, or when setting up git push access for the first time.
-compatibility: "Designed for Vellum personal assistants. Requires Python 3, bun, and the assistant credentials CLI."
+compatibility: "Designed for Cue personal assistants. Requires Python 3, bun, and the assistant credentials CLI."
 metadata:
   icon: assets/icon.svg
   emoji: "🤖"
@@ -81,7 +81,7 @@ For the PEM (private key), the `-----BEGIN` prefix gets parsed as CLI flags. Use
 assistant credentials set --service github-app --field pem -- "$(cat pem-file.txt)"
 ```
 
-**Transferring the PEM from host to container:** The Vellum security layer redacts secrets in transit between host and container. To work around this, base64-encode the PEM on the host, read the base64 string via `host_file_read` (which won't be redacted), decode it inside the container, and store it with `assistant credentials set`.
+**Transferring the PEM from host to container:** The Cue security layer redacts secrets in transit between host and container. To work around this, base64-encode the PEM on the host, read the base64 string via `host_file_read` (which won't be redacted), decode it inside the container, and store it with `assistant credentials set`.
 
 > **Note:** The `installation_id` credential is stored in Step 3 after installing the app.
 

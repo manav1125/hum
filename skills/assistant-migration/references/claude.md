@@ -1,4 +1,4 @@
-# Claude → Vellum
+# Claude → Cue
 
 Claude (Anthropic) is a hosted assistant, handled **separately from ChatGPT**. There is no `chatgpt-import`-equivalent deterministic importer for Claude, and no single guaranteed export shape. Claude migrations are more **summary/export-driven**: route by whatever the creator actually has.
 
@@ -34,14 +34,14 @@ No secret-bearing local files are in scope, so there is nothing to `--exclude` �
 
 - There is **no deterministic Claude importer**. Conversation and memory material is brought in as **reviewed memory candidates**, not bulk-dumped. Summarize useful history into memory candidates and present them for creator review rather than saving wholesale.
 - If/when a **structured Claude export** is available, classify it per the Internals Salvage Guidance (high / medium / low confidence) rather than assuming a schema. Clearly-labeled markdown/JSON is high-confidence; opaque blobs are low-confidence and should be reviewed or rebuilt.
-- Map non-conversation material per the Vellum Primitive Map in SKILL.md: identity/preferences → Identity and Personality; durable instructions → Memory; described tools/MCP → Skills and MCP setup tasks; relationships → Contacts.
+- Map non-conversation material per the Cue Primitive Map in SKILL.md: identity/preferences → Identity and Personality; durable instructions → Memory; described tools/MCP → Skills and MCP setup tasks; relationships → Contacts.
 
 ## Rebind — secrets checklist
 
 Claude / Anthropic credentials and connected secrets are **never** imported:
 
-- **Anthropic / Claude account login**: not migrated. The creator signs into Vellum independently.
-- **Connected MCP servers and integrations**: reconnect through Vellum's MCP setup and OAuth connect flows. Any tokens present in an export or pasted config are ignored.
+- **Anthropic / Claude account login**: not migrated. The creator signs into Cue independently.
+- **Connected MCP servers and integrations**: reconnect through Cue's MCP setup and OAuth connect flows. Any tokens present in an export or pasted config are ignored.
 - **API keys**: rebind via `credential_store action=prompt`, never via chat text.
 
 When in doubt, pause and ask before sending any production message on a newly reconnected integration.

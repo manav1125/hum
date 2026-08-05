@@ -1,7 +1,7 @@
 ---
 name: vellum-conversation-management
 description: Manage conversation threads (rename, list, export, wipe)
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "💬"
   vellum:

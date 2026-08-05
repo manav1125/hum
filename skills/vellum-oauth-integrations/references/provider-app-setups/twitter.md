@@ -46,7 +46,7 @@ Open: `https://developer.x.com/en/portal/dashboard`
 
 Guide through project creation:
 
-> 1. **Project name:** `Vellum Assistant` (or whatever you prefer)
+> 1. **Project name:** `Cue Assistant` (or whatever you prefer)
 > 2. **Use case:** Select **Making a bot** or **Exploring the API** - either works
 > 3. **Project description:** Something brief like "Personal assistant integration"
 > 4. Click **Next** through each step
@@ -66,7 +66,7 @@ If the project creation wizard prompts to create an app immediately, follow alon
 
 > Inside your project, look for an **+ Add App** button or a prompt to create a new app.
 >
-> Set the app name to **Vellum Assistant** and click **Next** or **Create**.
+> Set the app name to **Cue Assistant** and click **Next** or **Create**.
 
 After creation, the portal may show API keys (API Key and Secret, Bearer Token). These are for OAuth 1.0a - we don't need them for OAuth 2.0, but it doesn't hurt to save them somewhere safe.
 
@@ -134,7 +134,7 @@ Note: The token endpoint auth method (`basic`) requires both a Client ID and a s
 
 Follow the `vellum-oauth-integrations` workflow to collect credentials, register the OAuth app, connect, and verify.
 
-> You should see a Twitter consent page asking you to authorize **Vellum Assistant** to access your account.
+> You should see a Twitter consent page asking you to authorize **Cue Assistant** to access your account.
 >
 > Review the permissions - it will ask for permission to read your tweets, post tweets, and read your profile info. Click **Authorize app**.
 

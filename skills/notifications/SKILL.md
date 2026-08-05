@@ -1,7 +1,7 @@
 ---
 name: notifications
 description: Send notifications through the unified notification router
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🔔"
   vellum:
@@ -88,7 +88,7 @@ assistant notifications send \
 assistant notifications list --json
 ```
 
-Reads from the user's home feed (`$VELLUM_WORKSPACE_DIR/data/home-feed.json`) — the inbox that mirrors background and async notifications surfaced via the unified pipeline. Real-time chat pushes that did not mirror to the feed (direct Telegram/Slack/Vellum-chat sends without `--is-async-background`) will not appear here.
+Reads from the user's home feed (`$VELLUM_WORKSPACE_DIR/data/home-feed.json`) — the inbox that mirrors background and async notifications surfaced via the unified pipeline. Real-time chat pushes that did not mirror to the feed (direct Telegram/Slack/Cue-chat sends without `--is-async-background`) will not appear here.
 
 ### When to call
 
