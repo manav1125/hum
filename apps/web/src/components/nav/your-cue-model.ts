@@ -338,14 +338,6 @@ export interface YourCueSubLeaf {
    * always works. See {@link SubLeafRequirement}.
    */
   requires?: SubLeafRequirement;
-  /**
-   * Client feature flag (store key) gating the row. Unlike `requires` —
-   * which renders a disabled row with a reason — a flag-off panel is a
-   * feature that does not exist yet for this install, so the row is hidden
-   * outright (matching how flag-gated leaves behave). The page behind it
-   * self-redirects as defense in depth.
-   */
-  flag?: "bookmarks";
 }
 
 /**
@@ -451,14 +443,6 @@ export const YOUR_CUE_SUBLEAVES: readonly YourCueSubLeaf[] = [
     key: "archive",
     label: "Archive",
     to: routes.settings.archive,
-  },
-  {
-    // Bookmarked MESSAGES — the web sibling of macOS's Settings →
-    // Bookmarks tab. Flag-gated (`bookmarks` client flag).
-    key: "bookmarks",
-    label: "Bookmarks",
-    to: routes.settings.bookmarks,
-    flag: "bookmarks",
   },
   {
     key: "debug",

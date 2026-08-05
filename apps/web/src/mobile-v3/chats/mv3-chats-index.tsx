@@ -34,6 +34,11 @@ import { Plus, Search, X } from "lucide-react";
 
 import { workitemsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
+import {
+  useBookmarkStore,
+  type BookmarkSummary,
+} from "@/stores/bookmark-store";
+import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import type { Conversation } from "@/types/conversation-types";
 import { haptic } from "@/utils/haptics";
 
@@ -62,7 +67,8 @@ function timeLabel(epochMs: number | undefined): string {
     });
   }
   const ageDays = (now.getTime() - then.getTime()) / 86_400_000;
-  if (ageDays < 7) return then.toLocaleDateString(undefined, { weekday: "short" });
+  if (ageDays < 7)
+    return then.toLocaleDateString(undefined, { weekday: "short" });
   return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
@@ -103,10 +109,13 @@ interface Receipt {
 }
 
 /** Receipt glyph + hue per the mv3 state taxonomy (text stays muted). */
-const RECEIPT_GLYPH: Record<Exclude<ReceiptKind, "running">, {
-  glyph: string;
-  color: string;
-}> = {
+const RECEIPT_GLYPH: Record<
+  Exclude<ReceiptKind, "running">,
+  {
+    glyph: string;
+    color: string;
+  }
+> = {
   needs_you: { glyph: "‖", color: "var(--mv3-amber)" },
   review: { glyph: "◱", color: "var(--mv3-violet)" },
   done: { glyph: "✓", color: "var(--mv3-green)" },
@@ -184,6 +193,184 @@ function ReceiptLine({ receipt }: { receipt: Receipt }) {
   );
 }
 
+/** The small filter pill above the rows (All / Bookmarked). */
+function IndexFilterPill({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="cue-pressable"
+      aria-pressed={active}
+      onClick={() => {
+        haptic.light();
+        onClick();
+      }}
+      style={{
+        minHeight: 32,
+        padding: "5px 13px",
+        borderRadius: 99,
+        fontSize: 12.5,
+        fontWeight: active ? 600 : 500,
+        fontFamily: "inherit",
+        cursor: "pointer",
+        color: active ? "var(--mv3-text)" : "var(--mv3-muted)",
+        background: active ? "var(--mv3-card)" : "transparent",
+        border: `1px solid ${
+          active ? "var(--mv3-card-border)" : "transparent"
+        }`,
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * The Bookmarked view's rows — snippet + thread link + remove, as glass
+ * cards. Tapping the card opens the thread; ✕ removes the bookmark. The
+ * empty state is design's copy, verbatim (v37 ruling 3): the long-press it
+ * names is the tap-and-hold that reveals the message action row where the
+ * bookmark toggle lives.
+ */
+function BookmarkedRows({
+  assistantId,
+  bookmarks,
+  onSelectConversation,
+}: {
+  assistantId: string | null;
+  bookmarks: readonly BookmarkSummary[];
+  onSelectConversation: (conversationId: string) => void;
+}) {
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+
+  if (bookmarks.length === 0) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: "var(--mv3-muted)",
+          padding: "32px 12px",
+        }}
+      >
+        Nothing saved yet — long-press any message to keep it here.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {bookmarks.map((bookmark, i) => (
+        <GlassCard
+          key={bookmark.id}
+          radius={18}
+          padding="13px 15px"
+          // PERF: cap live backdrop-filter layers, matching the chat rows.
+          blur={i < 6}
+          role="button"
+          aria-label={`Open chat: ${
+            bookmark.conversationTitle?.trim() || "Untitled conversation"
+          }`}
+          tabIndex={0}
+          onClick={() => {
+            haptic.light();
+            onSelectConversation(bookmark.conversationId);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelectConversation(bookmark.conversationId);
+            }
+          }}
+          style={{ cursor: "pointer", minHeight: 44 }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {bookmark.conversationTitle?.trim() || "Untitled conversation"}
+            </span>
+            <span
+              style={{
+                fontSize: 10.5,
+                color: "var(--mv3-muted)",
+                flexShrink: 0,
+              }}
+            >
+              {timeLabel(bookmark.createdAt)}
+            </span>
+            <button
+              type="button"
+              className="cue-pressable"
+              aria-label="Remove bookmark"
+              disabled={pendingRemoveId === bookmark.messageId}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!assistantId) return;
+                haptic.light();
+                setPendingRemoveId(bookmark.messageId);
+                void useBookmarkStore
+                  .getState()
+                  .removeBookmark(assistantId, bookmark.messageId)
+                  .finally(() => setPendingRemoveId(null));
+              }}
+              style={{
+                flexShrink: 0,
+                background: "transparent",
+                border: "none",
+                padding: "4px 2px 4px 6px",
+                color: "var(--mv3-muted)",
+                cursor: "pointer",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <X size={14} aria-hidden />
+            </button>
+          </div>
+          {bookmark.messagePreview ? (
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--mv3-muted)",
+                marginTop: 5,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {bookmark.messagePreview}
+            </div>
+          ) : null}
+        </GlassCard>
+      ))}
+    </>
+  );
+}
+
 export interface Mv3ChatsIndexProps {
   assistantId: string | null;
   conversations: Conversation[];
@@ -217,6 +404,20 @@ export function Mv3ChatsIndex({
     busy: boolean;
     exhausted: boolean;
   }>({ busy: false, exhausted: false });
+
+  // Bookmarks live with conversations now (v37 ruling 3): a "Bookmarked"
+  // filter at the top of the mobile ☰ index. Flag-gated like the message
+  // action itself (the bookmark toggle in the tap-to-reveal action row).
+  const bookmarksEnabled = useClientFeatureFlagStore.use.bookmarks();
+  const bookmarks = useBookmarkStore.use.bookmarks();
+  const [showBookmarked, setShowBookmarked] = useState(false);
+  useEffect(() => {
+    if (bookmarksEnabled && assistantId) {
+      void useBookmarkStore
+        .getState()
+        .loadBookmarks(assistantId, { force: true });
+    }
+  }, [bookmarksEnabled, assistantId]);
 
   // Work receipts: the full work-item bucket, mapped conversation → latest
   // item by `lastRunConversationId`. Same generated endpoint HQ uses; TanStack
@@ -300,6 +501,9 @@ export function Mv3ChatsIndex({
       : search.rows
     : live;
   const note = searching ? scopeNote(search) : null;
+  // Typing a query always searches conversations; the Bookmarked view
+  // resumes when the field clears.
+  const bookmarkedMode = bookmarksEnabled && showBookmarked && !searching;
 
   return (
     <div
@@ -461,6 +665,37 @@ export function Mv3ChatsIndex({
         ) : null}
       </div>
 
+      {/* "Bookmarked" filter at the top of the ☰ index (v37 ruling 3). */}
+      {bookmarksEnabled && !searching ? (
+        <div
+          role="group"
+          aria-label="Filter chats"
+          style={{
+            display: "flex",
+            gap: 8,
+            padding: "0 22px 10px",
+            flexShrink: 0,
+            position: "relative",
+            zIndex: 2,
+          }}
+        >
+          <IndexFilterPill
+            label="All"
+            active={!showBookmarked}
+            onClick={() => setShowBookmarked(false)}
+          />
+          <IndexFilterPill
+            label={
+              bookmarks.length > 0
+                ? `Bookmarked · ${bookmarks.length}`
+                : "Bookmarked"
+            }
+            active={showBookmarked}
+            onClick={() => setShowBookmarked(true)}
+          />
+        </div>
+      ) : null}
+
       {/* Rows — the only scrolling region. */}
       <div
         ref={scrollRef}
@@ -475,7 +710,14 @@ export function Mv3ChatsIndex({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {visible.length === 0 ? (
+          {bookmarkedMode ? (
+            <BookmarkedRows
+              assistantId={assistantId}
+              bookmarks={bookmarks}
+              onSelectConversation={onSelectConversation}
+            />
+          ) : null}
+          {!bookmarkedMode && visible.length === 0 ? (
             <div
               style={{
                 textAlign: "center",
@@ -497,73 +739,75 @@ export function Mv3ChatsIndex({
                     : "Searching…"}
             </div>
           ) : null}
-          {visible.map((conversation, i) => {
-            const receipt = receiptFor(
-              conversation,
-              latestByConversation.get(conversation.conversationId),
-              processingConversationIds.has(conversation.conversationId),
-              attentionConversationIds.has(conversation.conversationId),
-            );
-            return (
-              <GlassCard
-                key={conversation.conversationId}
-                radius={18}
-                padding="13px 15px"
-                // PERF: cap live backdrop-filter layers in the long list.
-                blur={i < 6}
-                role="button"
-                aria-label={`Open chat: ${conversation.title?.trim() || "New chat"}`}
-                tabIndex={0}
-                onClick={() => {
-                  haptic.light();
-                  onSelectConversation(conversation.conversationId);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onSelectConversation(conversation.conversationId);
-                  }
-                }}
-                style={{ cursor: "pointer", minHeight: 44 }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    minWidth: 0,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 600,
-                      flex: 1,
-                      minWidth: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+          {bookmarkedMode
+            ? null
+            : visible.map((conversation, i) => {
+                const receipt = receiptFor(
+                  conversation,
+                  latestByConversation.get(conversation.conversationId),
+                  processingConversationIds.has(conversation.conversationId),
+                  attentionConversationIds.has(conversation.conversationId),
+                );
+                return (
+                  <GlassCard
+                    key={conversation.conversationId}
+                    radius={18}
+                    padding="13px 15px"
+                    // PERF: cap live backdrop-filter layers in the long list.
+                    blur={i < 6}
+                    role="button"
+                    aria-label={`Open chat: ${conversation.title?.trim() || "New chat"}`}
+                    tabIndex={0}
+                    onClick={() => {
+                      haptic.light();
+                      onSelectConversation(conversation.conversationId);
                     }}
-                  >
-                    {conversation.title?.trim() || "New chat"}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 10.5,
-                      color: "var(--mv3-muted)",
-                      flexShrink: 0,
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelectConversation(conversation.conversationId);
+                      }
                     }}
+                    style={{ cursor: "pointer", minHeight: 44 }}
                   >
-                    {timeLabel(
-                      conversation.lastMessageAt ?? conversation.createdAt,
-                    )}
-                  </span>
-                </div>
-                {receipt ? <ReceiptLine receipt={receipt} /> : null}
-              </GlassCard>
-            );
-          })}
-          {onLoadMore && !loadMore.exhausted && !query ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {conversation.title?.trim() || "New chat"}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10.5,
+                          color: "var(--mv3-muted)",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {timeLabel(
+                          conversation.lastMessageAt ?? conversation.createdAt,
+                        )}
+                      </span>
+                    </div>
+                    {receipt ? <ReceiptLine receipt={receipt} /> : null}
+                  </GlassCard>
+                );
+              })}
+          {!bookmarkedMode && onLoadMore && !loadMore.exhausted && !query ? (
             <button
               type="button"
               className="cue-pressable"

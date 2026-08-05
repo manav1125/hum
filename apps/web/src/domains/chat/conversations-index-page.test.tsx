@@ -57,6 +57,19 @@ let groups: {
 let searchResults: unknown[] = [];
 let listFails = false;
 
+interface RawBookmark {
+  id: string;
+  messageId: string;
+  conversationId: string;
+  conversationTitle: string | null;
+  messagePreview: string;
+  messageRole: string;
+  messageCreatedAt: number;
+  createdAt: number;
+}
+
+let bookmarks: RawBookmark[] = [];
+
 const sdkActual = await import("@/generated/daemon/sdk.gen");
 mock.module("@/generated/daemon/sdk.gen", () => ({
   ...sdkActual,
@@ -70,6 +83,17 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
       data: { query: options?.query?.q ?? "", results: searchResults },
       ...okResponse,
     }),
+  ),
+  // The Bookmarked filter's data (v37 ruling 3). Mocked for every test in
+  // this file because the page warms the bookmark mirror on mount.
+  bookmarksGet: mock(async () => ({ data: { bookmarks }, ...okResponse })),
+  bookmarksBymessageByMessageIdDelete: mock(
+    async (options: { path: { messageId: string } }) => {
+      bookmarks = bookmarks.filter(
+        (b) => b.messageId !== options.path.messageId,
+      );
+      return { data: { ok: true }, ...okResponse };
+    },
   ),
 }));
 
@@ -96,19 +120,20 @@ mock.module("@/hooks/use-is-mobile", () => ({
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 
-const { CONVERSATION_LIST_PAGE_SIZE } = await import(
-  "@/utils/conversation-list-fetchers",
-);
+const { CONVERSATION_LIST_PAGE_SIZE } =
+  await import("@/utils/conversation-list-fetchers");
 
 const { ConversationsIndexPage, buildFilters } =
   await import("./conversations-index-page");
+const { useBookmarkStore, _resetInflightLoadForTesting } =
+  await import("@/stores/bookmark-store");
 
 function LocationProbe() {
   const { pathname } = useLocation();
   return createElement("div", { "data-testid": "pathname" }, pathname);
 }
 
-function renderPage() {
+function renderPage(initialEntry = "/assistant/conversations") {
   return render(
     createElement(
       QueryClientProvider,
@@ -119,7 +144,7 @@ function renderPage() {
       },
       createElement(
         MemoryRouter,
-        { initialEntries: ["/assistant/conversations"] },
+        { initialEntries: [initialEntry] },
         createElement(ConversationsIndexPage),
         createElement(LocationProbe),
       ),
@@ -169,6 +194,16 @@ beforeEach(() => {
   searchResults = [];
   listFails = false;
   isMobileRef.value = false;
+  bookmarks = [];
+  // The bookmark mirror is module-level state; start each test empty.
+  _resetInflightLoadForTesting();
+  useBookmarkStore.setState({
+    bookmarks: [],
+    bookmarkedMessageIds: new Set<string>(),
+    isLoading: false,
+    loadFailed: false,
+    loadedAssistantId: null,
+  });
 });
 
 afterEach(cleanup);
@@ -576,5 +611,80 @@ describe("what it cannot show, it says", () => {
       ).toBeDefined();
     });
     expect(screen.getByText(/isn’t recorded anywhere yet/)).toBeDefined();
+  });
+});
+
+describe("bookmarks live with conversations, not Settings (v37 ruling 3)", () => {
+  const savedBookmark = (over: Partial<RawBookmark> = {}): RawBookmark => ({
+    id: "b1",
+    messageId: "m1",
+    conversationId: "c1",
+    conversationTitle: "Renewal terms",
+    messagePreview: "The cap is 4% year over year.",
+    messageRole: "assistant",
+    messageCreatedAt: Date.now(),
+    createdAt: Date.now(),
+    ...over,
+  });
+
+  test("the Bookmarked chip leads the filter row, counted from the mirror", async () => {
+    conversations = [conversation("c1", "Renewal terms")];
+    bookmarks = [savedBookmark()];
+    renderPage();
+    const chip = await screen.findByRole("button", {
+      name: /Bookmarked/,
+    });
+    // First chip in the row — "at the top of All conversations".
+    const row = screen.getByRole("group", { name: "Filter conversations" });
+    expect(within(row).getAllByRole("button")[0]).toBe(chip as never);
+    expect(chip.textContent).toContain("1");
+  });
+
+  test("selecting it shows the flat saved-messages list: snippet + thread link + remove", async () => {
+    conversations = [conversation("c1", "Renewal terms")];
+    bookmarks = [savedBookmark()];
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Bookmarked/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/The cap is 4% year over year\./)).toBeDefined();
+    });
+    // The row is the thread link.
+    fireEvent.click(screen.getByText(/The cap is 4% year over year\./));
+    expect(screen.getByTestId("pathname").textContent).toBe(
+      "/assistant/conversations/c1",
+    );
+  });
+
+  test("remove deletes the bookmark and the row leaves", async () => {
+    bookmarks = [savedBookmark()];
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Bookmarked/ }));
+    const remove = await screen.findByRole("button", {
+      name: "Remove bookmark",
+    });
+    fireEvent.click(remove);
+    await waitFor(() => {
+      expect(screen.queryByText(/The cap is 4% year over year\./)).toBeNull();
+    });
+  });
+
+  test("the designed empty state, verbatim", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Bookmarked/ }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Nothing saved yet — long-press any message to keep it here.",
+        ),
+      ).toBeDefined();
+    });
+  });
+
+  test("?filter=bookmarked (the retired Settings leaf's redirect) lands on the filter", async () => {
+    bookmarks = [savedBookmark()];
+    renderPage("/assistant/conversations?filter=bookmarked");
+    await waitFor(() => {
+      expect(screen.getByText(/The cap is 4% year over year\./)).toBeDefined();
+    });
   });
 });

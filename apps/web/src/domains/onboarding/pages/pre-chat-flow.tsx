@@ -165,7 +165,17 @@ export function PreChatFlow() {
         canOfferGoogleStep: isPreview ? false : canOfferGoogleStep,
       });
 
-  function completeFlow(args?: { connectedScopes?: string[] }): void {
+  function completeFlow(args?: {
+    connectedScopes?: string[];
+    /**
+     * Where the flow lands. Default is chat; "memory" is the memory-import
+     * card's "See what Cue learned" (v37 §2), which finishes onboarding the
+     * same way and opens the Memory surface instead. The parked pre-chat
+     * context stays in sessionStorage either way and is consumed by the
+     * first chat send.
+     */
+    destination?: "memory";
+  }): void {
     if (isPreview) {
       navigate(-1);
       return;
@@ -189,6 +199,10 @@ export function PreChatFlow() {
     if (isNative) {
       clearPersistedStep();
       void navigate(routes.onboarding.privacy);
+    } else if (args?.destination === "memory") {
+      void lifecycleService.checkAssistant().then(() => {
+        void navigate(routes.memory, { replace: true });
+      });
     } else if (isMobile) {
       // Mobile (v3): "Continue" lands on Today. The pending pre-chat context
       // stays parked in sessionStorage and is consumed by the first chat send,
@@ -204,7 +218,7 @@ export function PreChatFlow() {
 
   const advance = (
     from: PreChatStep,
-    finishArgs?: { connectedScopes?: string[] },
+    finishArgs?: { connectedScopes?: string[]; destination?: "memory" },
   ): void => {
     if (from.funnelStep) emitWebFunnelStep(from.funnelStep);
     const next = nextStep(steps, from.id);
@@ -301,6 +315,7 @@ export function PreChatFlow() {
         onConnect={(scopes) => advance(activeStep, { connectedScopes: scopes })}
         onSkip={() => advance(activeStep)}
         onBack={() => goBack(activeStep)}
+        onImportDone={() => advance(activeStep, { destination: "memory" })}
       />
     );
   }

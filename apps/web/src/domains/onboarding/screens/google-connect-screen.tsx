@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { MemoryImportCard } from "@/components/memory-import/memory-import-card";
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import { Mv3OnboardingShell } from "@/domains/onboarding/screens/mv3/mv3-onboarding-shell";
 import { useMobileLayout } from "@/hooks/use-is-mobile";
@@ -51,6 +52,12 @@ interface GoogleConnectScreenProps {
   onConnect: (scopes: string[]) => void;
   onSkip: () => void;
   onBack: () => void;
+  /**
+   * "See what Cue learned" on the optional memory-import card (v37 §2):
+   * finishes onboarding and lands on the Memory surface. The card is
+   * skippable and never gates the step's own Connect/Skip controls.
+   */
+  onImportDone?: () => void;
 }
 
 export function GoogleConnectScreen({
@@ -59,6 +66,7 @@ export function GoogleConnectScreen({
   onConnect,
   onSkip,
   onBack,
+  onImportDone,
 }: GoogleConnectScreenProps) {
   const electron = isElectron();
   const queryClient = useQueryClient();
@@ -512,6 +520,12 @@ export function GoogleConnectScreen({
         >
           {`${assistantSentenceName} will never send email, change calendar events, or edit files without your permission. You can disconnect at any time.`}
         </div>
+
+        {/* The optional memory-import card (v37 §2) — skippable, never a
+            gate: Connect / Skip above stay in charge of the step. */}
+        <div style={{ marginTop: 16 }}>
+          <MemoryImportCard assistantId={assistantId} onDone={onImportDone} />
+        </div>
       </Mv3OnboardingShell>
     );
   }
@@ -578,6 +592,15 @@ export function GoogleConnectScreen({
         >
           {`${assistantSentenceName} will never send email, change calendar events, or edit files without your permission. You can disconnect at any time.`}
         </p>
+
+        {/* The optional memory-import card (v37 §2) — skippable, never a
+            gate: Connect / Skip below stay in charge of the step. */}
+        <div
+          className="mt-6 w-full"
+          style={{ animation: "fadeInUp 0.3s ease-out 0.3s both" }}
+        >
+          <MemoryImportCard assistantId={assistantId} onDone={onImportDone} />
+        </div>
 
         <div
           className={`${electron ? "mt-auto" : "mt-8"} flex w-full flex-col gap-2`}

@@ -68,8 +68,14 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import { useCallback, useDeferredValue, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
 import { PageShell } from "@/components/page-shell";
@@ -107,8 +113,14 @@ import {
   loadMoreConversations,
 } from "@/utils/conversation-list-fetchers";
 import { ChatsIndexPage } from "@/mobile-v3/chats/chats-index-page";
+import {
+  useBookmarkStore,
+  type BookmarkSummary,
+} from "@/stores/bookmark-store";
+import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import type { Conversation } from "@/types/conversation-types";
+import { toast } from "@vellumai/design-library";
 
 /**
  * The route component. The phone keeps its v3 index; desktop gets the surface
@@ -261,6 +273,15 @@ export function buildFilters(
 // The page
 // ---------------------------------------------------------------------------
 
+/**
+ * The id of the special Bookmarked filter (v37 ruling 3). Not part of
+ * `buildFilters` because it does not partition conversations: selecting it
+ * swaps the list body for the flat bookmarked-messages list — "rows keep
+ * snippet + thread link + remove" — sourced from the bookmark store rather
+ * than the conversation rows.
+ */
+export const BOOKMARKED_FILTER_ID = "bookmarked";
+
 function AllConversationsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -311,8 +332,7 @@ function AllConversationsPage() {
     exhausted: boolean;
   }>({ busy: false, exhausted: false });
   const windowMaybePartial =
-    conversations.length >= CONVERSATION_LIST_PAGE_SIZE &&
-    !moreState.exhausted;
+    conversations.length >= CONVERSATION_LIST_PAGE_SIZE && !moreState.exhausted;
   const loadOlder = useCallback(() => {
     if (!assistantId) return;
     setMoreState((s) => ({ ...s, busy: true }));
@@ -321,11 +341,35 @@ function AllConversationsPage() {
       .catch(() => setMoreState((s) => ({ ...s, busy: false })));
   }, [assistantId, queryClient]);
 
-  const [filterId, setFilterId] = useState("all");
+  // Bookmarks moved here from Settings (v37 ruling 3): the Bookmarked filter
+  // sits at the top of All conversations. Flag-gated like the hover toggle.
+  const bookmarksEnabled = useClientFeatureFlagStore.use.bookmarks();
+  const bookmarks = useBookmarkStore.use.bookmarks();
+  const bookmarksLoading = useBookmarkStore.use.isLoading();
+  const bookmarksFailed = useBookmarkStore.use.loadFailed();
+  useEffect(() => {
+    if (bookmarksEnabled && assistantId) {
+      void useBookmarkStore
+        .getState()
+        .loadBookmarks(assistantId, { force: true });
+    }
+  }, [bookmarksEnabled, assistantId]);
+
+  // `?filter=bookmarked` is the landing spot for the retired Settings →
+  // Bookmarks leaf's redirect stub, so old deep links arrive on the filter
+  // rather than on the unfiltered list. Read once; the chip owns it after.
+  const [searchParams] = useSearchParams();
+  const [filterId, setFilterId] = useState(() =>
+    searchParams.get("filter") === BOOKMARKED_FILTER_ID
+      ? BOOKMARKED_FILTER_ID
+      : "all",
+  );
   const filters = useMemo(
     () => buildFilters(listed, conversationGroups, filterId),
     [listed, conversationGroups, filterId],
   );
+  const bookmarkedActive =
+    bookmarksEnabled && filterId === BOOKMARKED_FILTER_ID;
   const filter = filters.find((f) => f.id === filterId) ?? filters[0];
 
   const visible = useMemo(
@@ -425,16 +469,28 @@ function AllConversationsPage() {
       {/* ---------------------------------------------------------------- */}
       {/* Filters — hidden while searching, which reads everything          */}
       {/* ---------------------------------------------------------------- */}
-      {!typing && filters.length > 1 ? (
+      {!typing && (filters.length > 1 || bookmarksEnabled) ? (
         <div
           className="mb-3 flex shrink-0 flex-wrap gap-1.5"
           role="group"
           aria-label="Filter conversations"
         >
+          {/* "At the top of All conversations" — the Bookmarked chip leads
+              the row. Offered even at zero: unlike the conversation filters,
+              its empty state is designed copy, not a trap (v37 ruling 3). */}
+          {bookmarksEnabled ? (
+            <FilterChip
+              active={bookmarkedActive}
+              glyph="⚑"
+              label="Bookmarked"
+              count={bookmarks.length}
+              onClick={() => setFilterId(BOOKMARKED_FILTER_ID)}
+            />
+          ) : null}
           {filters.map((f) => (
             <FilterChip
               key={f.id}
-              active={f.id === filter.id}
+              active={!bookmarkedActive && f.id === filter.id}
               glyph={f.glyph}
               label={f.label}
               count={f.count}
@@ -449,7 +505,16 @@ function AllConversationsPage() {
       {/* ---------------------------------------------------------------- */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <ListCard>
-          {typing ? (
+          {!typing && bookmarkedActive ? (
+            <BookmarkedMessages
+              assistantId={assistantId}
+              bookmarks={bookmarks}
+              isLoading={bookmarksLoading}
+              loadFailed={bookmarksFailed}
+              now={now}
+              onOpen={open}
+            />
+          ) : typing ? (
             <SearchResults
               deferredQuery={deferredQuery}
               searching={searching}
@@ -538,7 +603,11 @@ function AllConversationsPage() {
             the surface named "All conversations". Hidden once the
             continuation reports there is no more, so it never becomes a
             button that does nothing. */}
-        {!typing && !isLoading && !isError && windowMaybePartial ? (
+        {!typing &&
+        !bookmarkedActive &&
+        !isLoading &&
+        !isError &&
+        windowMaybePartial ? (
           <div style={{ display: "flex", justifyContent: "center" }}>
             <QuietButton onClick={loadOlder} disabled={moreState.busy}>
               {moreState.busy ? "Loading…" : "Load older conversations"}
@@ -553,18 +622,20 @@ function AllConversationsPage() {
           it actually is. Saying so beats a chip that is always empty — that is
           the difference between a gap and a lie.
         */}
-        <p
-          style={{
-            margin: "12px 2px 4px",
-            fontSize: 11.5,
-            lineHeight: 1.55,
-            color: MUTED,
-          }}
-        >
-          ⊘ The ▤ chips are conversation groups. Which <em>thing</em> a
-          conversation belongs to isn’t recorded anywhere yet, so there is no
-          thing chip and no “unattached” count on this page.
-        </p>
+        {!bookmarkedActive ? (
+          <p
+            style={{
+              margin: "12px 2px 4px",
+              fontSize: 11.5,
+              lineHeight: 1.55,
+              color: MUTED,
+            }}
+          >
+            ⊘ The ▤ chips are conversation groups. Which <em>thing</em> a
+            conversation belongs to isn’t recorded anywhere yet, so there is no
+            thing chip and no “unattached” count on this page.
+          </p>
+        ) : null}
       </div>
     </PageShell>
   );
@@ -682,6 +753,192 @@ function ConversationRow({
         {when}
       </span>
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarked — saved messages live with conversations now (v37 ruling 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The flat bookmarked-messages list behind the Bookmarked chip. Each row
+ * keeps what the retired Settings leaf showed — snippet + thread link +
+ * remove — restyled to this page's row grammar. The row itself is the
+ * thread link; the ✕ is the remove.
+ */
+function BookmarkedMessages({
+  assistantId,
+  bookmarks,
+  isLoading,
+  loadFailed,
+  now,
+  onOpen,
+}: {
+  assistantId: string | null;
+  bookmarks: readonly BookmarkSummary[];
+  isLoading: boolean;
+  loadFailed: boolean;
+  now: number;
+  onOpen: (conversationId: string) => void;
+}) {
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+
+  const remove = useCallback(
+    async (messageId: string) => {
+      if (!assistantId) return;
+      setPendingRemoveId(messageId);
+      try {
+        const ok = await useBookmarkStore
+          .getState()
+          .removeBookmark(assistantId, messageId);
+        if (!ok) toast.error("I couldn't remove that bookmark. Try again?");
+      } finally {
+        setPendingRemoveId(null);
+      }
+    },
+    [assistantId],
+  );
+
+  if (isLoading && bookmarks.length === 0) {
+    return (
+      <p
+        style={{ padding: "22px 18px", fontSize: 12.5, color: C.t2 }}
+        aria-live="polite"
+      >
+        Reading your bookmarks…
+      </p>
+    );
+  }
+  if (loadFailed && bookmarks.length === 0) {
+    return (
+      <StateBlock
+        tone="error"
+        glyph="⚠"
+        headline="Couldn’t read your bookmarks"
+        sentence="The request to your assistant failed, so this list is empty because nothing arrived — not because nothing is saved. Your bookmarks have not been touched."
+        action={
+          <QuietButton
+            onClick={() => {
+              if (assistantId) {
+                void useBookmarkStore
+                  .getState()
+                  .loadBookmarks(assistantId, { force: true });
+              }
+            }}
+          >
+            Try again
+          </QuietButton>
+        }
+      />
+    );
+  }
+  if (bookmarks.length === 0) {
+    // The designed empty state, verbatim (v37 ruling 3). The frames draw a
+    // single wording — no desktop variant — so it is used as-is here too.
+    return (
+      <p style={{ padding: "22px 18px", fontSize: 12.5, color: C.t2 }}>
+        Nothing saved yet — long-press any message to keep it here.
+      </p>
+    );
+  }
+  return (
+    <>
+      <SectionHeading
+        trailing={
+          <span style={{ fontFamily: mono, fontSize: 9.5, color: MUTED }}>
+            {bookmarks.length}
+          </span>
+        }
+      >
+        Saved messages
+      </SectionHeading>
+      {bookmarks.map((bookmark) => {
+        const pending = pendingRemoveId === bookmark.messageId;
+        return (
+          <div
+            key={bookmark.id}
+            style={{ ...ROW_STYLE, cursor: "default", alignItems: "center" }}
+          >
+            <button
+              type="button"
+              onClick={() => onOpen(bookmark.conversationId)}
+              className={ROW_CLASSES}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              <span
+                style={{
+                  display: "block",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: C.t1,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {bookmark.conversationTitle?.trim() || "Untitled conversation"}
+              </span>
+              {bookmark.messagePreview ? (
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 4,
+                    paddingLeft: 9,
+                    borderLeft: `2px solid ${C.line2}`,
+                    fontSize: 11.5,
+                    lineHeight: 1.5,
+                    color: C.t2,
+                  }}
+                >
+                  “{bookmark.messagePreview}”
+                </span>
+              ) : null}
+            </button>
+            <span
+              style={{
+                fontFamily: mono,
+                fontSize: 10,
+                color: MUTED,
+                flexShrink: 0,
+                minWidth: 62,
+                textAlign: "right",
+              }}
+            >
+              {whenLabel(bookmark.createdAt, now)}
+            </span>
+            <button
+              type="button"
+              onClick={() => void remove(bookmark.messageId)}
+              disabled={pending}
+              aria-label="Remove bookmark"
+              title="Remove bookmark"
+              className={ROW_CLASSES}
+              style={{
+                flexShrink: 0,
+                background: "transparent",
+                border: "none",
+                borderRadius: 6,
+                padding: "4px 7px",
+                fontSize: 11,
+                color: MUTED,
+                cursor: pending ? "default" : "pointer",
+                opacity: pending ? 0.5 : 1,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        );
+      })}
+    </>
   );
 }
 

@@ -1118,11 +1118,15 @@ export const routeTree = [
                                 },
                               },
                               {
+                                // Bookmarks retired from Settings — they live
+                                // with conversations now (v37 ruling 3). The
+                                // path stays mounted as a redirect so old deep
+                                // links land on the Bookmarked filter.
                                 path: "bookmarks",
                                 lazy: {
                                   Component: () =>
-                                    import("@/domains/settings/pages/bookmarks-page").then(
-                                      (m) => m.BookmarksPage,
+                                    import("@/domains/settings/pages/bookmarks-redirect-page").then(
+                                      (m) => m.BookmarksRedirectPage,
                                     ),
                                 },
                               },

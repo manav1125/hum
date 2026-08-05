@@ -15,7 +15,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   Archive,
   Bell,
-  Bookmark,
   Bug,
   CalendarClock,
   Code,
@@ -53,7 +52,6 @@ export const PANEL_IDS = [
   "budget",
   "schedules",
   "archive",
-  "bookmarks",
   "billing",
   "assistant-status",
   "assistant-debug",
@@ -158,12 +156,6 @@ export const SETTINGS_SIDEBAR: SidebarItem[] = [
     icon: Archive,
   },
   {
-    id: "bookmarks",
-    label: "Bookmarks",
-    href: routes.settings.bookmarks,
-    icon: Bookmark,
-  },
-  {
     id: "billing",
     label: "Billing",
     href: routes.settings.billing,
@@ -240,7 +232,7 @@ export const SETTINGS_SECTIONS = [
   {
     id: "workspace",
     title: "Workspace",
-    items: ["integrations", "brand", "archive", "bookmarks", "devices"],
+    items: ["integrations", "brand", "archive", "devices"],
   },
   {
     id: "account",

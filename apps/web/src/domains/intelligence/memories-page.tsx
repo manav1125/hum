@@ -22,6 +22,8 @@ import { formatFriendlyDate } from "@/utils/format-date";
 
 import { Mv3MemoryV24Page } from "@/mobile-v3/memory/mv3-memory-page-v24";
 
+import { MemoryImportCard } from "@/components/memory-import/memory-import-card";
+
 import { useMemoryItemsQuery } from "./memories/hooks/use-memory-items-query";
 import {
   MEMORY_KIND_SCOPE,
@@ -101,6 +103,7 @@ function MemoriesPageDesktop() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [pendingForget, setPendingForget] = useState<MemoryItem | null>(null);
+  const [showImport, setShowImport] = useState(false);
 
   // Filter server-side: a kind chip must see ALL memories of that kind, not
   // just whichever landed on the first page (154 procedural skill-notices
@@ -452,7 +455,41 @@ function MemoriesPageDesktop() {
           >
             ✦ Teach Cue something
           </button>
+          <button
+            type="button"
+            onClick={() => setShowImport((v) => !v)}
+            aria-expanded={showImport}
+            title="Bring memories over from ChatGPT or another assistant"
+            style={{
+              fontSize: 12,
+              background: "var(--surface-base)",
+              color: "var(--content-secondary)",
+              border: "1px solid var(--border-base)",
+              borderRadius: 8,
+              padding: "7px 12px",
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+            }}
+          >
+            ⤓ Import
+          </button>
         </div>
+
+        {/* The memory-import flow (v37 §2). This header is where imports
+            live post-onboarding; the onboarding connect step carries the
+            same card. "See what Cue learned" here just closes the panel and
+            refreshes — the user is already standing on the surface. */}
+        {showImport ? (
+          <div style={{ padding: "8px 24px 4px", maxWidth: 620 }}>
+            <MemoryImportCard
+              assistantId={assistantId}
+              onDone={() => {
+                setShowImport(false);
+                void invalidate();
+              }}
+            />
+          </div>
+        ) : null}
 
         {/* Type filter chips */}
         <div
