@@ -271,8 +271,21 @@ attention) · marketplace-over-embeddings. Upstream has NO meeting-joining code 
   baseline (harness gap from bb2f211eb8; 131/0 now). Follow-ups noted in commits: Slack
   cross-surface card withdrawal, mobile long-press summarize entry, system_card polish,
   Velay/consumer migration onto exponential-backoff util.
-- **Wave C (decide):** voice unified front door as a scoped project (the one genuinely strategic
-  re-platform this window); plugin apps/deps; memory-DB cutover.
+- **Wave C — DONE (2026-08-05, branch `cue/upstream-wave-c`):** advisor context pack adapted
+  to our loop-native consult (C-1); plugin dependency install + the catalog-consistency fix
+  (8 plugins were browsable-but-404-on-install) + GitHub-source upgrades (C-2); memory
+  ingestion — ChatGPT-export/foreign-DB importers, provenance frontmatter, ingest route/CLI,
+  memory-corpus-ingest skill (C-3); voice periphery with VAD unchanged — TTS 2-job prefetch +
+  eager first clause, audio-only progress narration (flag OFF), tool-use spoken ack wired
+  (C-4); and the memory-DB split — migrations 324-328 relocate the graph cluster, activation
+  state, telemetry/recall logs, v3 tables, and the memory job queue into a dedicated
+  assistant-memory.db with idempotent crash-safe copies, cleanup-on-delete replacing FK
+  cascades, and dual-family snapshots (C-5). Design context pack shipped alongside (brief,
+  behavior reference, 23 upstream Storybook screenshots). DEPLOY NOTE: C-5's first boot
+  copies the moved tables — daemon-off backup + quiet window. Deliberately deferred: the
+  voice unified-front-door re-platform (design-gated), plugin ingress (signer footgun),
+  Discord, Teleport, the llm_request_logs logs-DB split, and the registry/marketplace pin
+  reconciliation (data drift flagged in C-2).
 - Keep the Monday releases watch (schedule b12e1ba0-3d7d). Re-run the deep delta in 2–3 weeks;
   next sweep should check whether the `/new` authorization fix re-lands upstream and whether
   Teleport/meetings move.
