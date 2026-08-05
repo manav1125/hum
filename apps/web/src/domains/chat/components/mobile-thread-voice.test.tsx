@@ -14,7 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 
 // The real `use-live-voice` statically imports connection.ts → the generated
 // SDK client. Only `resolveLiveVoiceWsUrl` is reachable from the controller, and
@@ -52,6 +52,13 @@ mock.module("@/domains/chat/voice/live-voice/use-live-voice", () => ({
       interrupt: () => {},
     };
   },
+}));
+
+// The approval card resolves through the interactions API module, which
+// statically imports the generated SDK client — stub it with a spy.
+const submitConfirmationSpy = mock(async () => ({ ok: true as const }));
+mock.module("@/domains/chat/api/interactions", () => ({
+  submitConfirmation: submitConfirmationSpy,
 }));
 
 const { MobileThreadVoice } =
@@ -216,9 +223,7 @@ describe("the call screen is a call", () => {
     // thread. v35: "live captions of the current sentence only — the full
     // transcript belongs to the thread, not the call."
     expect(view.queryByText(/What's on my plate today\?/)).toBeNull();
-    expect(
-      view.queryByText(/Three things — want them in order\?/),
-    ).toBeNull();
+    expect(view.queryByText(/Three things — want them in order\?/)).toBeNull();
   });
 
   test("exactly three controls: mute, end, collapse", () => {
@@ -338,9 +343,7 @@ describe("a call you can always leave", () => {
   test("a failed call keeps end and collapse, and says the words are kept", () => {
     const view = renderStrip(
       () => {
-        useLiveVoiceStore
-          .getState()
-          .fail("Voice couldn't connect.", "session");
+        useLiveVoiceStore.getState().fail("Voice couldn't connect.", "session");
       },
       { fullScreen: true, onToggleFullScreen: () => {} },
     );
@@ -349,9 +352,7 @@ describe("a call you can always leave", () => {
     expect(view.queryByLabelText("End call")).not.toBeNull();
     expect(view.queryByLabelText("Back to the conversation")).not.toBeNull();
     // …and the transcript contract is stated where it matters most.
-    expect(
-      view.queryByText(/saved in this conversation/i),
-    ).not.toBeNull();
+    expect(view.queryByText(/saved in this conversation/i)).not.toBeNull();
   });
 
   test("a connecting call is drawn as connecting, not as listening", () => {
@@ -376,5 +377,81 @@ describe("a call you can always leave", () => {
     );
 
     expect(view.queryByLabelText("Full-screen voice")).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W2 — mid-call reveal + approval on the mobile path (v37 §W2)
+// ---------------------------------------------------------------------------
+
+function featureApproval() {
+  useLiveVoiceStore.getState().setPendingApproval({
+    type: "approval_pending",
+    seq: 7,
+    requestId: "req-1",
+    turnId: "t-1",
+    toolName: "bash",
+    summary: "rm -rf build",
+    riskLevel: "medium",
+    trustLine: "this is the part I can't do alone.",
+  });
+}
+
+describe("W2 · the same frames reach the mobile path", () => {
+  test("a pending approval renders the shared three-answer card in the strip", () => {
+    const view = renderStrip(() => {
+      useLiveVoiceStore.getState().setState("thinking");
+      featureApproval();
+    });
+
+    expect(view.queryByTestId("voice-approval-card")).not.toBeNull();
+    expect(
+      view.queryByText(/this is the part I can't do alone\./),
+    ).not.toBeNull();
+    expect(view.queryByRole("button", { name: "Approve" })).not.toBeNull();
+    expect(view.queryByRole("button", { name: "Deny" })).not.toBeNull();
+    expect(view.queryByRole("button", { name: "Ask me after" })).not.toBeNull();
+  });
+
+  test("Ask me after dismisses locally and submits nothing", () => {
+    submitConfirmationSpy.mockClear();
+    const view = renderStrip(() => {
+      useLiveVoiceStore.getState().setState("thinking");
+      featureApproval();
+    });
+
+    act(() => {
+      fireEvent.click(view.getByRole("button", { name: "Ask me after" }));
+    });
+
+    expect(view.queryByTestId("voice-approval-card")).toBeNull();
+    expect(submitConfirmationSpy).not.toHaveBeenCalled();
+    expect(useLiveVoiceStore.getState().pendingApproval).toBeNull();
+  });
+
+  test("an approval arriving while full screen collapses the room immediately", () => {
+    const collapse = mock(() => {});
+    renderStrip(
+      () => {
+        useLiveVoiceStore.getState().setState("thinking");
+        featureApproval();
+      },
+      { fullScreen: true, onToggleFullScreen: collapse },
+    );
+
+    expect(collapse).toHaveBeenCalled();
+  });
+
+  test("minimize_room while full screen collapses so the surface takes the space", () => {
+    const collapse = mock(() => {});
+    renderStrip(
+      () => {
+        useLiveVoiceStore.getState().setState("speaking");
+        useLiveVoiceStore.getState().requestRoomMinimize();
+      },
+      { fullScreen: true, onToggleFullScreen: collapse },
+    );
+
+    expect(collapse).toHaveBeenCalled();
   });
 });

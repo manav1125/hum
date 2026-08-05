@@ -25,7 +25,10 @@
 
 import { create } from "zustand";
 
-import type { LiveVoiceCardServerFrame } from "@/domains/chat/voice/live-voice/protocol";
+import type {
+  LiveVoiceApprovalPendingServerFrame,
+  LiveVoiceCardServerFrame,
+} from "@/domains/chat/voice/live-voice/protocol";
 import { createSelectors } from "@/utils/create-selectors";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +70,23 @@ export interface LiveVoiceCard {
   title?: string;
   data: Record<string, unknown>;
   actions?: LiveVoiceCardServerFrame["actions"];
+  turnId?: string;
+}
+
+/**
+ * The mid-call approval the session is currently featuring (design v37 §W2):
+ * carried verbatim from an `approval_pending` frame. `null` when nothing is
+ * waiting. Cleared by `approval_resolved`, by a local "Ask me after"
+ * deferral (which sends NOTHING on the voice socket — the chat approval card
+ * stays pending), and by session reset / turn cancellation.
+ */
+export interface LiveVoicePendingApproval {
+  requestId: string;
+  toolName: string;
+  summary?: string;
+  riskLevel?: string;
+  /** The one line of trust language the card renders, from the wire. */
+  trustLine?: string;
   turnId?: string;
 }
 
@@ -173,6 +193,18 @@ export interface LiveVoiceState {
    * as the next turn's work.
    */
   activityTool: string | null;
+  /**
+   * Count of `minimize_room` frames received this session — the daemon asking
+   * for the room to demote so the screen behind it is visible (a revealed
+   * surface, v37 §W2). A counter rather than a boolean because the ladder
+   * position itself belongs to presentation stores (`voice-call-store` on
+   * desktop, the fullscreen flag on mobile): consumers watch the seq and
+   * demote ON each increment, and the user promoting back afterwards is never
+   * fought (user scroll wins — no auto-promotion).
+   */
+  roomMinimizeSeq: number;
+  /** The mid-call approval currently featured, or `null`. */
+  pendingApproval: LiveVoicePendingApproval | null;
 }
 
 export interface LiveVoiceActions {
@@ -210,6 +242,16 @@ export interface LiveVoiceActions {
    * or `null` to go back to "not known".
    */
   setActivityTool: (toolName: string | null) => void;
+  /** A `minimize_room` frame arrived: bump the seq so ladder owners demote. */
+  requestRoomMinimize: () => void;
+  /** An `approval_pending` frame arrived: feature this approval. */
+  setPendingApproval: (frame: LiveVoiceApprovalPendingServerFrame) => void;
+  /**
+   * Stop featuring the approval. With a `requestId` (an `approval_resolved`
+   * frame) it clears only a matching approval; without one (local "Ask me
+   * after" deferral, turn cancellation) it clears whatever is featured.
+   */
+  clearPendingApproval: (requestId?: string) => void;
   /** Reset every field back to the idle defaults. */
   reset: () => void;
 }
@@ -234,6 +276,8 @@ const INITIAL_STATE: LiveVoiceState = {
   cards: [],
   turns: [],
   activityTool: null,
+  roomMinimizeSeq: 0,
+  pendingApproval: null,
 };
 
 /**
@@ -344,6 +388,30 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
     set((s) => ({ cards: s.cards.filter((c) => c.surfaceId !== surfaceId) })),
   clearCards: () => set({ cards: [] }),
   setActivityTool: (activityTool) => set({ activityTool }),
+  requestRoomMinimize: () =>
+    set((s) => ({ roomMinimizeSeq: s.roomMinimizeSeq + 1 })),
+  setPendingApproval: (frame) =>
+    set({
+      pendingApproval: {
+        requestId: frame.requestId,
+        toolName: frame.toolName,
+        ...(frame.summary !== undefined ? { summary: frame.summary } : {}),
+        ...(frame.riskLevel !== undefined
+          ? { riskLevel: frame.riskLevel }
+          : {}),
+        ...(frame.trustLine !== undefined
+          ? { trustLine: frame.trustLine }
+          : {}),
+        turnId: frame.turnId,
+      },
+    }),
+  clearPendingApproval: (requestId) =>
+    set((s) =>
+      s.pendingApproval === null ||
+      (requestId !== undefined && s.pendingApproval.requestId !== requestId)
+        ? {}
+        : { pendingApproval: null },
+    ),
   reset: () => set({ ...INITIAL_STATE }),
 }));
 

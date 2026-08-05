@@ -27,6 +27,9 @@ const _LIVE_VOICE_SERVER_FRAME_TYPES = [
   "archived",
   "card",
   "tool_activity",
+  "minimize_room",
+  "approval_pending",
+  "approval_resolved",
   "error",
 ] as const;
 
@@ -399,6 +402,93 @@ export interface LiveVoiceToolActivityServerFrame extends LiveVoiceServerFrameBa
   readonly toolName: string;
 }
 
+/**
+ * Ask the client to demote the call room (the full-screen overlay) so the
+ * screen behind it — a surface this turn showed, or a pending approval card —
+ * is visible while the call continues.
+ *
+ * Two emitters, two timings (design v37 §W2):
+ * - **Reveal** ("voice announces, screen follows"): the turn showed a surface
+ *   (`ui_show`/`ui_update` rendered a card and no later `ui_dismiss` took it
+ *   away). The frame is deferred to the announcing reply's TTS drain and goes
+ *   out immediately AFTER that turn's `tts_done` — never mid-sentence, at most
+ *   once per turn. Nothing the model says moves the room; the reveal is a
+ *   consequence of showing a surface (the `[-1]` marker stays strip-only).
+ * - A pending mid-call approval opens the room through its own
+ *   `approval_pending` frame instead — immediately, because a blocked turn
+ *   has no speech left to drain.
+ *
+ * Sent ONLY to sessions that opted in via `turnDetection: "server_vad"` on
+ * the start frame (the shared capability-flag convention).
+ */
+export interface LiveVoiceMinimizeRoomServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "minimize_room";
+  /** The turn whose reveal this is. */
+  readonly turnId: string;
+}
+
+/**
+ * How a mid-call approval left the voice surface's featured moment:
+ * - `approved` / `denied` — the user decided (any surface: the voice card,
+ *   the chat card, a channel bridge).
+ * - `expired` — the voice presentation window (45 s) elapsed with no answer.
+ *   The underlying confirmation is STILL pending on the normal chat path —
+ *   its final consequence belongs to the chat-surface expiry machinery — but
+ *   the call stops featuring it.
+ * - `superseded` — the turn ended (barge-in, interrupt, call end) before a
+ *   decision; the request resolves through the bridge's existing
+ *   unresolved-turn semantics.
+ */
+export type LiveVoiceApprovalOutcome =
+  | "approved"
+  | "denied"
+  | "expired"
+  | "superseded";
+
+/**
+ * A mid-call turn left a confirmation pending for the user to answer (design
+ * v37 §W2 mid-call approval). The client must demote the room IMMEDIATELY —
+ * approval ≠ reveal, there is no sentence to wait for — and render the
+ * approval card in the conversation view. Resolution rides the ordinary
+ * `POST /v1/confirm` path; the voice socket only presents.
+ *
+ * Sent ONLY to sessions that opted in via `turnDetection: "server_vad"`.
+ */
+export interface LiveVoiceApprovalPendingServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "approval_pending";
+  /** The confirmation's requestId — the `POST /v1/confirm` correlation key. */
+  readonly requestId: string;
+  /** The turn that is blocked on this decision. */
+  readonly turnId: string;
+  /** Registered tool name, verbatim (presentation is the surface's job). */
+  readonly toolName: string;
+  /** Short human summary of what the tool is about to do, when derivable. */
+  readonly summary?: string;
+  /** Risk level from the confirmation request (e.g. "low" | "medium" | "high"). */
+  readonly riskLevel?: string;
+  /**
+   * The one line of trust language the card renders, verbatim (design v37:
+   * "This is the part I can't do alone."). Carried on the wire so the copy
+   * has a single owner.
+   */
+  readonly trustLine: string;
+}
+
+/**
+ * A previously announced `approval_pending` stopped being the call's featured
+ * moment — decided, presentation-expired, or superseded (see
+ * {@link LiveVoiceApprovalOutcome}). The client dismisses the voice approval
+ * card and promotes the room back to the rung it held before the approval.
+ *
+ * Sent ONLY to sessions that opted in via `turnDetection: "server_vad"`.
+ */
+export interface LiveVoiceApprovalResolvedServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "approval_resolved";
+  readonly requestId: string;
+  readonly turnId: string;
+  readonly outcome: LiveVoiceApprovalOutcome;
+}
+
 export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "error";
   readonly code: LiveVoiceProtocolErrorCode;
@@ -434,6 +524,9 @@ export type LiveVoiceServerFrame =
   | LiveVoiceArchivedServerFrame
   | LiveVoiceCardServerFrame
   | LiveVoiceToolActivityServerFrame
+  | LiveVoiceMinimizeRoomServerFrame
+  | LiveVoiceApprovalPendingServerFrame
+  | LiveVoiceApprovalResolvedServerFrame
   | LiveVoiceErrorServerFrame;
 
 type WithoutSeq<T extends LiveVoiceServerFrameBase> = Omit<T, "seq">;
@@ -454,6 +547,9 @@ export type LiveVoiceServerFramePayload =
   | WithoutSeq<LiveVoiceArchivedServerFrame>
   | WithoutSeq<LiveVoiceCardServerFrame>
   | WithoutSeq<LiveVoiceToolActivityServerFrame>
+  | WithoutSeq<LiveVoiceMinimizeRoomServerFrame>
+  | WithoutSeq<LiveVoiceApprovalPendingServerFrame>
+  | WithoutSeq<LiveVoiceApprovalResolvedServerFrame>
   | WithoutSeq<LiveVoiceErrorServerFrame>;
 
 class LiveVoiceServerFrameSequencer {

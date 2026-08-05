@@ -1072,6 +1072,167 @@ describe("voice-session-bridge", () => {
     }
   });
 
+  test("local live voice approvals: pending announced, prompter registration never clobbered, resolution reported", async () => {
+    const conversation = createConversation(
+      "voice bridge local live voice approval callbacks test",
+    );
+
+    let clientHandler: (msg: ServerMessage) => void = () => {};
+    const rpcResolve = mock();
+    const session = {
+      isProcessing: () => false,
+      persistUserMessage: async () => ({
+        id: "test-msg-id",
+        deduplicated: false,
+      }),
+      memoryPolicy: {
+        scopeId: "default",
+        includeDefaultFallback: false,
+      },
+      setChannelCapabilities: () => {},
+      setAssistantId: () => {},
+      setTrustContext: () => {},
+      setCommandIntent: () => {},
+      setTurnChannelContext: () => {},
+      setTurnInterfaceContext: () => {},
+      setVoiceCallControlPrompt: () => {},
+      updateClient: (handler: (msg: ServerMessage) => void) => {
+        clientHandler = handler;
+      },
+      ensureActorScopedHistory: async () => {},
+      runAgentLoop: async () => {
+        // The prompter registers the FULL RPC lifecycle (rpcResolve, timer)
+        // before broadcasting the confirmation_request through the client
+        // handler — the bridge must not overwrite that entry, or the
+        // executor's `await prompt()` is stranded forever.
+        pendingInteractions.register("req-approval-1", {
+          conversationId: conversation.id,
+          kind: "confirmation",
+          confirmationDetails: {
+            toolName: "bash",
+            input: { command: "rm -rf build" },
+            riskLevel: "medium",
+            allowlistOptions: [],
+            scopeOptions: [],
+          },
+          rpcResolve,
+        });
+        clientHandler({
+          type: "confirmation_request",
+          requestId: "req-approval-1",
+          toolName: "bash",
+          input: { command: "rm -rf build" },
+          riskLevel: "medium",
+          allowlistOptions: [],
+          scopeOptions: [],
+          conversationId: conversation.id,
+        } as ServerMessage);
+        // The user answers on the chat surface: the conversation emits the
+        // authoritative state change through the same client handler.
+        clientHandler({
+          type: "confirmation_state_changed",
+          conversationId: conversation.id,
+          requestId: "req-approval-1",
+          state: "approved",
+          source: "button",
+        } as ServerMessage);
+        // A second request whose expiry fires (the chat-surface timeout).
+        clientHandler({
+          type: "confirmation_request",
+          requestId: "req-approval-2",
+          toolName: "web_fetch",
+          input: { url: "https://example.com" },
+          riskLevel: "low",
+          allowlistOptions: [],
+          scopeOptions: [],
+          conversationId: conversation.id,
+        } as ServerMessage);
+        clientHandler({
+          type: "confirmation_state_changed",
+          conversationId: conversation.id,
+          requestId: "req-approval-2",
+          state: "timed_out",
+          source: "timeout",
+        } as ServerMessage);
+        // A state change for a request this turn never announced must not
+        // produce a resolution report.
+        clientHandler({
+          type: "confirmation_state_changed",
+          conversationId: conversation.id,
+          requestId: "req-not-ours",
+          state: "approved",
+          source: "button",
+        } as ServerMessage);
+      },
+      handleConfirmationResponse: () => {},
+      abort: () => {},
+    } as unknown as Conversation;
+
+    const pendingEvents: Array<{
+      requestId: string;
+      toolName: string;
+      summary: string;
+    }> = [];
+    const resolvedEvents: Array<{ requestId: string; outcome: string }> = [];
+
+    try {
+      injectDeps(() => session);
+
+      await startVoiceTurn({
+        conversationId: conversation.id,
+        approvalMode: "local-live-voice",
+        content: "Clean the build directory",
+        isInbound: true,
+        trustContext: {
+          sourceChannel: "phone",
+          trustClass: "guardian",
+          guardianExternalUserId: "+12125550142",
+          guardianChatId: "+12125550142",
+        },
+        onApprovalPending: (approval) => {
+          pendingEvents.push({
+            requestId: approval.requestId,
+            toolName: approval.toolName,
+            summary: approval.summary,
+          });
+        },
+        onApprovalResolved: (requestId, outcome) => {
+          resolvedEvents.push({ requestId, outcome });
+        },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(pendingEvents).toEqual([
+        {
+          requestId: "req-approval-1",
+          toolName: "bash",
+          summary: "rm -rf build",
+        },
+        {
+          requestId: "req-approval-2",
+          toolName: "web_fetch",
+          summary: "https://example.com",
+        },
+      ]);
+      // Outcomes map from the confirmation_state_changed states: approved →
+      // approved, timed_out → expired (the chat-surface expiry). The
+      // unannounced request reports nothing.
+      expect(resolvedEvents).toEqual([
+        { requestId: "req-approval-1", outcome: "approved" },
+        { requestId: "req-approval-2", outcome: "expired" },
+      ]);
+      // The prompter's registration survived the bridge: rpcResolve is still
+      // on the entry POST /v1/confirm would resolve.
+      expect(pendingInteractions.get("req-approval-1")?.rpcResolve).toBe(
+        rpcResolve,
+      );
+    } finally {
+      pendingInteractions.resolve("req-approval-1");
+      pendingInteractions.resolve("req-approval-2");
+    }
+  });
+
   test("auto-allows confirmation requests for guardian voice turns", async () => {
     const conversation = createConversation(
       "voice bridge auto-allow guardian test",

@@ -39,6 +39,7 @@ import {
   useLiveVoice,
   type UseLiveVoiceOptions,
 } from "@/domains/chat/voice/live-voice/use-live-voice";
+import { useLiveVoiceStore } from "@/domains/chat/voice/live-voice/live-voice-store";
 import {
   useVoiceCallStore,
   type VoiceCallSession,
@@ -114,6 +115,48 @@ function VoiceCallSessionHost({
     });
     return () => register(null);
   }, [stop, setMuted, muted, interrupt, start, assistantId, conversationId]);
+
+  // ── The reveal (v37 §W2, "voice announces, screen follows"): a
+  // `minimize_room` frame — which the daemon sends only AFTER the announcing
+  // reply's tts_done — demotes room → bar so the revealed surface takes the
+  // space. Demotion only, on each seq increment: promotion back is the
+  // user's (⤢ on the bar), and if they are scrolling the surface the room
+  // never fights for the space back.
+  const roomMinimizeSeq = useLiveVoiceStore.use.roomMinimizeSeq();
+  const seenMinimizeSeqRef = useRef(0);
+  useEffect(() => {
+    if (roomMinimizeSeq > seenMinimizeSeqRef.current) {
+      seenMinimizeSeqRef.current = roomMinimizeSeq;
+      useVoiceCallStore.getState().collapse();
+    }
+  }, [roomMinimizeSeq]);
+
+  // ── The mid-call approval (v37 §W2): on `approval_pending` the room
+  // minimizes IMMEDIATELY (approval ≠ reveal — no waiting for the sentence
+  // to end) and the approval card renders in the conversation view (see
+  // voice-call-conversation-slot). When the approval stops being featured —
+  // decided, presentation-expired, or "Ask me after" — the ladder returns to
+  // the rung it held before the approval, unless the user already promoted
+  // it back themselves mid-wait.
+  const pendingApproval = useLiveVoiceStore.use.pendingApproval();
+  const approvalReturnRef = useRef<{ returnToRoom: boolean } | null>(null);
+  useEffect(() => {
+    const ladder = useVoiceCallStore.getState();
+    if (pendingApproval) {
+      if (approvalReturnRef.current === null) {
+        approvalReturnRef.current = { returnToRoom: !ladder.minimized };
+        ladder.collapse();
+      }
+      return;
+    }
+    if (approvalReturnRef.current !== null) {
+      const { returnToRoom } = approvalReturnRef.current;
+      approvalReturnRef.current = null;
+      if (returnToRoom && useVoiceCallStore.getState().minimized) {
+        useVoiceCallStore.getState().expand();
+      }
+    }
+  }, [pendingApproval]);
 
   // ── If the session lands back on `idle` after it actually left it (a
   // clean server close, a teardown path that didn't go through our `end`),

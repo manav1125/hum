@@ -34,6 +34,7 @@ import * as pendingInteractions from "../runtime/pending-interactions.js";
 import { publishConversationMessagesChanged } from "../runtime/sync/resource-sync-events.js";
 import { computeToolApprovalDigest } from "../security/tool-approval-digest.js";
 import { getAllTools } from "../tools/registry.js";
+import { summarizeToolInput } from "../tools/tool-input-summary.js";
 import { createAbortReason } from "../util/abort-reasons.js";
 import { getLogger } from "../util/logger.js";
 import {
@@ -194,6 +195,56 @@ export interface VoiceTurnCallbacks {
   ) => void;
 }
 
+/**
+ * A confirmation this voice turn left pending for the user to answer instead
+ * of deciding it (`approvalMode: "local-live-voice"` only). The payload is
+ * what a voice surface needs to present the moment; resolution stays on the
+ * ordinary `POST /v1/confirm` path.
+ */
+export interface VoicePendingApprovalEvent {
+  requestId: string;
+  toolName: string;
+  /** Risk level from the confirmation request. */
+  riskLevel: string;
+  /** Redacted tool input, as broadcast on the confirmation request. */
+  input: Record<string, unknown>;
+  /** Short human summary of the input, when derivable (may be empty). */
+  summary: string;
+}
+
+/**
+ * How a pending voice approval was decided, mapped from the conversation's
+ * `confirmation_state_changed` states:
+ * `approved` / `denied` — a decision landed (voice card, chat card, or a
+ * channel bridge); `expired` — the prompter's own timeout fired (the
+ * chat-surface expiry, `timeouts.permissionTimeoutSec`); `superseded` — the
+ * request was resolved out from under the wait (stale tap, a newer message's
+ * deny-all, system cancellation).
+ */
+export type VoiceApprovalOutcome =
+  | "approved"
+  | "denied"
+  | "expired"
+  | "superseded";
+
+/** Map a confirmation_state_changed state to a voice approval outcome. */
+function voiceApprovalOutcomeForState(
+  state: "pending" | "approved" | "denied" | "timed_out" | "resolved_stale",
+): VoiceApprovalOutcome | null {
+  switch (state) {
+    case "approved":
+      return "approved";
+    case "denied":
+      return "denied";
+    case "timed_out":
+      return "expired";
+    case "resolved_stale":
+      return "superseded";
+    case "pending":
+      return null;
+  }
+}
+
 export interface VoiceTurnOptions {
   /** The conversation ID for this voice call's session. */
   conversationId: string;
@@ -240,6 +291,26 @@ export interface VoiceTurnOptions {
   onError?: (message: string) => void;
   /** Event-name callbacks used by non-phone voice clients. */
   callbacks?: VoiceTurnCallbacks;
+  /**
+   * Called when this turn leaves a confirmation for the user to answer
+   * instead of deciding it (`approvalMode: "local-live-voice"` only), so the
+   * voice client can put the prompt where the caller can see it — the
+   * live-voice room is a full-screen overlay, and the approval card renders
+   * in the app behind it. The bridge cannot reach a client's own surfaces,
+   * so it reports THAT a decision is waiting (with the presentation payload)
+   * and the session decides what to do about it.
+   */
+  onApprovalPending?: (approval: VoicePendingApprovalEvent) => void;
+  /**
+   * Called when a confirmation previously reported via
+   * {@link VoiceTurnOptions.onApprovalPending} is decided, however it was
+   * decided — the user answered (any surface), the chat-surface expiry timed
+   * it out, or it was superseded. Fires once per request, with the outcome.
+   */
+  onApprovalResolved?: (
+    requestId: string,
+    outcome: VoiceApprovalOutcome,
+  ) => void;
   /** Optional AbortSignal for external cancellation (e.g. barge-in). */
   signal?: AbortSignal;
   /**
@@ -735,7 +806,20 @@ export async function startVoiceTurn(
   // installed it (tracked via `clientCallbackInstalled`); otherwise cleanup
   // would detach an active sender installed by a prior turn.
   let clientCallbackInstalled = false;
+  /**
+   * Confirmations this local-live-voice turn left pending for the user. Used
+   * to scope the `confirmation_state_changed` observation in the client
+   * handler below: only requests this turn announced via `onApprovalPending`
+   * report a resolution, so unrelated interactions (secrets, host proxies,
+   * another surface's confirmations) never produce a spurious voice
+   * `approval_resolved`.
+   */
+  const pendingVoiceApprovals = new Set<string>();
   const cleanup = () => {
+    // Stop reporting approval resolutions once the turn is over; the
+    // session-side teardown owes its client any `approval_resolved` for
+    // requests still pending at that point (superseded semantics).
+    pendingVoiceApprovals.clear();
     conversation.setChannelCapabilities(null);
     conversation.setTrustContext(null);
     conversation.setCommandIntent(null);
@@ -806,24 +890,77 @@ export async function startVoiceTurn(
   const autoAllow = isGuardian;
   let lastError: string | null = null;
   conversation.updateClient(async (msg: ServerMessage) => {
+    if (msg.type === "confirmation_state_changed") {
+      // A decision landed on a request this turn put to the user — however it
+      // landed: the user answered (`approved`/`denied`, from the voice card,
+      // the chat card, or a channel bridge), the prompter's own timeout fired
+      // (`timed_out` — the chat-surface expiry, which stays the single owner
+      // of the confirmation's final consequence), or something resolved it
+      // out from under the wait (`resolved_stale`). Report it once so the
+      // voice session can stand narration back up and tell its client.
+      const outcome = voiceApprovalOutcomeForState(msg.state);
+      if (outcome !== null && pendingVoiceApprovals.delete(msg.requestId)) {
+        try {
+          opts.onApprovalResolved?.(msg.requestId, outcome);
+        } catch (err) {
+          log.warn(
+            { err, turnId, requestId: msg.requestId },
+            "Voice turn onApprovalResolved callback threw",
+          );
+        }
+      }
+      // Fall through to the broadcast below — chat surfaces keep seeing the
+      // state change exactly as before.
+    }
     if (msg.type === "confirmation_request") {
       if (usesLocalInteractiveApprovals) {
-        pendingInteractions.register(msg.requestId, {
-          conversationId: opts.conversationId,
-          kind: "confirmation",
-          confirmationDetails: {
-            toolName: msg.toolName,
-            input: msg.input,
-            riskLevel: msg.riskLevel,
-            executionTarget: msg.executionTarget,
-            allowlistOptions: msg.allowlistOptions,
-            scopeOptions: msg.scopeOptions,
-            persistentDecisionsAllowed: msg.persistentDecisionsAllowed,
-            acpToolKind: msg.acpToolKind,
-            acpOptions: msg.acpOptions,
-          },
-        });
+        // Register only when the emitter did not. PermissionPrompter (the
+        // tool pipeline AND the proxy/network prompters) registers its own
+        // entry — with the RPC lifecycle: rpcResolve, the expiry timer,
+        // toolUseId — BEFORE sending this event; overwriting that entry here
+        // would strand the executor's `await prompt()` forever, because
+        // `POST /v1/confirm` would resolve a callback-less shell instead.
+        if (!pendingInteractions.get(msg.requestId)) {
+          pendingInteractions.register(msg.requestId, {
+            conversationId: opts.conversationId,
+            kind: "confirmation",
+            confirmationDetails: {
+              toolName: msg.toolName,
+              input: msg.input,
+              riskLevel: msg.riskLevel,
+              executionTarget: msg.executionTarget,
+              allowlistOptions: msg.allowlistOptions,
+              scopeOptions: msg.scopeOptions,
+              persistentDecisionsAllowed: msg.persistentDecisionsAllowed,
+              acpToolKind: msg.acpToolKind,
+              acpOptions: msg.acpOptions,
+            },
+          });
+        }
         broadcastMessage(msg);
+        // The request is left pending (the whole point of this mode: the
+        // approval card attached clients render is answerable), and the
+        // voice session is told a decision is waiting so the call can
+        // present it — a card behind a full-screen call overlay is a
+        // decision nobody can see.
+        pendingVoiceApprovals.add(msg.requestId);
+        try {
+          opts.onApprovalPending?.({
+            requestId: msg.requestId,
+            toolName: msg.toolName,
+            riskLevel: msg.riskLevel,
+            input: msg.input,
+            // msg.input is already redacted at emission
+            // (PermissionPrompter applies redactSensitiveFields), so the
+            // summary is safe to put on the wire.
+            summary: summarizeToolInput(msg.toolName, msg.input),
+          });
+        } catch (err) {
+          log.warn(
+            { err, turnId, requestId: msg.requestId },
+            "Voice turn onApprovalPending callback threw",
+          );
+        }
         return;
       }
       if (autoDeny) {

@@ -552,6 +552,10 @@ export function useLiveVoice(
         client.on("turnCancelled", () => {
           if (!live() || !session.handsFree) return;
           // Barge-in aborted the turn; no tts_done follows a cancelled turn.
+          // A mid-call approval belonging to that turn is over with it (the
+          // daemon also sends approval_resolved outcome "superseded" — this
+          // is the belt to that suspender).
+          useLiveVoiceStore.getState().clearPendingApproval();
           flushPlaybackToListening(session);
         }),
         client.on("utteranceEnd", () => {
@@ -652,6 +656,26 @@ export function useLiveVoice(
               s.dismissCard(frame.surfaceId);
               return;
           }
+        }),
+        client.on("minimizeRoom", () => {
+          if (!live()) return;
+          // The daemon revealed a surface behind the call ("voice announces,
+          // screen follows" — the frame only arrives after the announcing
+          // reply's tts_done). The store bumps a seq; the ladder owner
+          // (voice-call-host on desktop, the fullscreen flag on mobile)
+          // demotes on it. Promotion back is the user's — never automatic.
+          useLiveVoiceStore.getState().requestRoomMinimize();
+        }),
+        client.on("approvalPending", (frame) => {
+          if (!live()) return;
+          // Mid-call approval: featured immediately (approval ≠ reveal — no
+          // waiting for the sentence to end). Ladder owners demote on the
+          // store field appearing.
+          useLiveVoiceStore.getState().setPendingApproval(frame);
+        }),
+        client.on("approvalResolved", (frame) => {
+          if (!live()) return;
+          useLiveVoiceStore.getState().clearPendingApproval(frame.requestId);
         }),
         client.on("toolActivity", (frame) => {
           if (!live()) return;

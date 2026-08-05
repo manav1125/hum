@@ -46,7 +46,7 @@
  * it draws the whole call — see that file.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Expand, Keyboard, Mic, MicOff, X } from "lucide-react";
 
@@ -58,6 +58,7 @@ import {
   type LiveVoiceCard,
 } from "@/domains/chat/voice/live-voice/live-voice-store";
 import { VOICE_BUBBLE_LOOK } from "@/domains/chat/voice/live-voice/voice-bubble-look";
+import { VoiceApprovalCard } from "@/domains/chat/voice/voice-approval-card";
 import { VoiceFullScreen } from "@/domains/chat/voice/voice-fullscreen";
 import { haptic } from "@/utils/haptics";
 
@@ -183,6 +184,11 @@ export function MobileThreadVoice({
   // The tool this turn is actually executing (or null — see the store field).
   // Full screen names it in words; it is never guessed.
   const activityTool = useLiveVoiceStore.use.activityTool();
+  // W2 moments (design v37): the daemon's minimize/approval frames, projected
+  // by the store. Mobile's "room" is the full-screen presentation, so
+  // demotion here means collapsing back to the strip + bar.
+  const roomMinimizeSeq = useLiveVoiceStore.use.roomMinimizeSeq();
+  const pendingApproval = useLiveVoiceStore.use.pendingApproval();
 
   // The call clock. It belongs HERE, not on the full-screen surface, for the
   // same reason the session does: this component stays mounted for the whole
@@ -203,6 +209,25 @@ export function MobileThreadVoice({
     setStarted(true);
     void start(assistantId, conversationId);
   }, [started, start, assistantId, conversationId]);
+
+  // ── The reveal (v37 §W2): `minimize_room` demotes the full-screen room so
+  // the revealed surface (already in the strip/thread) takes the space —
+  // only after the announcing sentence's TTS finished (the daemon defers the
+  // frame). Demotion only, per seq increment: expanding back is the user's.
+  const seenMinimizeSeqRef = useRef(roomMinimizeSeq);
+  useEffect(() => {
+    if (roomMinimizeSeq > seenMinimizeSeqRef.current) {
+      seenMinimizeSeqRef.current = roomMinimizeSeq;
+      if (fullScreen) onToggleFullScreen?.();
+    }
+  }, [roomMinimizeSeq, fullScreen, onToggleFullScreen]);
+
+  // ── The approval (v37 §W2): the room minimizes IMMEDIATELY — approval ≠
+  // reveal, there is no sentence to wait for — so the amber card in the
+  // strip is visible the moment the fixed phrase is spoken.
+  useEffect(() => {
+    if (pendingApproval && fullScreen) onToggleFullScreen?.();
+  }, [pendingApproval, fullScreen, onToggleFullScreen]);
 
   const listening = state === "listening" || state === "transcribing";
 
@@ -295,6 +320,7 @@ export function MobileThreadVoice({
     currentUser.length > 0 ||
     currentAssistant.length > 0 ||
     cards.length > 0 ||
+    pendingApproval !== null ||
     state === "thinking";
 
   return (
@@ -341,6 +367,21 @@ export function MobileThreadVoice({
               onAction={handleCardAction}
             />
           ))}
+          {/* Mid-call approval (v37 §W2) — same shared card as desktop.
+              "Ask me after" dismisses locally and resolves nothing; the chat
+              approval card in the thread stays pending. */}
+          {pendingApproval ? (
+            <VoiceApprovalCard
+              approval={pendingApproval}
+              assistantId={assistantId}
+              onDeferred={() =>
+                useLiveVoiceStore.getState().clearPendingApproval()
+              }
+              onDecided={() =>
+                useLiveVoiceStore.getState().clearPendingApproval()
+              }
+            />
+          ) : null}
         </div>
       ) : null}
 

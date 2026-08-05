@@ -36,6 +36,16 @@ mock.module("@/hooks/use-is-mobile", () => ({
   usePhoneLayout: () => false,
 }));
 
+// The approval card resolves through the real `/v1/confirm` API module,
+// which statically imports the generated SDK client — stub it with a spy so
+// the three-answer flow can assert what was (and was NOT) submitted.
+const submitConfirmationSpy = mock(
+  async (..._args: [string, string, string]) => ({ ok: true as const }),
+);
+mock.module("@/domains/chat/api/interactions", () => ({
+  submitConfirmation: submitConfirmationSpy,
+}));
+
 import type {
   LiveVoiceChannelClient,
   LiveVoiceClientEventMap,
@@ -413,6 +423,156 @@ describe("one session, ever", () => {
 
     expect(useVoiceCallStore.getState().session?.conversationId).toBe("conv-1");
     expect(h.clients.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W2 — mid-call reveal + approval (v37 §W2)
+// ---------------------------------------------------------------------------
+
+function emitApprovalPending(h: ReturnType<typeof makeHarness>, seq = 10) {
+  h.clients[0]!.emit("approvalPending", {
+    type: "approval_pending",
+    seq,
+    requestId: "req-1",
+    turnId: "turn-1",
+    toolName: "bash",
+    summary: "rm -rf build",
+    riskLevel: "medium",
+    trustLine: "this is the part I can't do alone.",
+  });
+}
+
+describe("W2 · mid-call reveal", () => {
+  test("minimize_room demotes room → bar; the surface keeps the space (no auto-promotion)", async () => {
+    const h = makeHarness();
+    await startCall(h);
+    expect(h.view.queryByRole("dialog", { name: "Voice call" })).not.toBeNull();
+
+    await act(async () => {
+      h.clients[0]!.emit("minimizeRoom", {
+        type: "minimize_room",
+        seq: 9,
+        turnId: "turn-1",
+      });
+    });
+
+    // Room stepped aside; the bar carries the call above a usable composer.
+    expect(h.view.queryByRole("dialog", { name: "Voice call" })).toBeNull();
+    expect(h.view.queryByRole("region", { name: "Voice call" })).not.toBeNull();
+    expectSessionUntouched(h);
+
+    // Nothing promotes the room back on its own — getting back is ⤢'s job.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.view.queryByRole("dialog", { name: "Voice call" })).toBeNull();
+    fireEvent.click(h.view.getByLabelText("Expand the call"));
+    expect(h.view.queryByRole("dialog", { name: "Voice call" })).not.toBeNull();
+  });
+});
+
+describe("W2 · mid-call approval", () => {
+  test("approval_pending minimizes immediately and renders the three-answer card; resolution promotes back", async () => {
+    const h = makeHarness();
+    await startCall(h);
+
+    await act(async () => {
+      emitApprovalPending(h);
+    });
+
+    // Room minimized IMMEDIATELY (approval ≠ reveal), amber card up with the
+    // trust language and all three answers.
+    expect(h.view.queryByRole("dialog", { name: "Voice call" })).toBeNull();
+    expect(h.view.queryByTestId("voice-approval-card")).not.toBeNull();
+    expect(
+      h.view.queryByText(/this is the part I can't do alone\./),
+    ).not.toBeNull();
+    expect(h.view.queryByRole("button", { name: "Approve" })).not.toBeNull();
+    expect(h.view.queryByRole("button", { name: "Deny" })).not.toBeNull();
+    expect(
+      h.view.queryByRole("button", { name: "Ask me after" }),
+    ).not.toBeNull();
+    expectSessionUntouched(h);
+
+    // The daemon reports the decision → card gone, room returns to the rung
+    // it held before the approval (it was the room).
+    await act(async () => {
+      h.clients[0]!.emit("approvalResolved", {
+        type: "approval_resolved",
+        seq: 11,
+        requestId: "req-1",
+        turnId: "turn-1",
+        outcome: "approved",
+      });
+    });
+    expect(h.view.queryByTestId("voice-approval-card")).toBeNull();
+    expect(h.view.queryByRole("dialog", { name: "Voice call" })).not.toBeNull();
+  });
+
+  test("Approve resolves via POST /v1/confirm with the request's id", async () => {
+    submitConfirmationSpy.mockClear();
+    const h = makeHarness();
+    await startCall(h);
+    await act(async () => {
+      emitApprovalPending(h);
+    });
+
+    await act(async () => {
+      fireEvent.click(h.view.getByRole("button", { name: "Approve" }));
+    });
+
+    expect(submitConfirmationSpy.mock.calls).toEqual([
+      ["assistant-1", "req-1", "allow"],
+    ]);
+  });
+
+  test("Ask me after defers: dismisses locally, submits NOTHING, and the room returns", async () => {
+    submitConfirmationSpy.mockClear();
+    const h = makeHarness();
+    await startCall(h);
+    await act(async () => {
+      emitApprovalPending(h);
+    });
+
+    await act(async () => {
+      fireEvent.click(h.view.getByRole("button", { name: "Ask me after" }));
+    });
+
+    // The voice card is gone and the room came back — but the confirmation
+    // was neither approved nor denied: nothing went to /v1/confirm, so the
+    // chat approval card (driven by the SSE confirmation_request) stays
+    // pending in the thread for later.
+    expect(h.view.queryByTestId("voice-approval-card")).toBeNull();
+    expect(submitConfirmationSpy).not.toHaveBeenCalled();
+    expect(h.view.queryByRole("dialog", { name: "Voice call" })).not.toBeNull();
+    expect(useLiveVoiceStore.getState().pendingApproval).toBeNull();
+  });
+
+  test("an approval that lands while already minimized returns to the bar, not the room", async () => {
+    const h = makeHarness();
+    await startCall(h);
+    fireEvent.click(h.view.getByLabelText("Back to the conversation"));
+
+    await act(async () => {
+      emitApprovalPending(h);
+    });
+    expect(h.view.queryByTestId("voice-approval-card")).not.toBeNull();
+
+    await act(async () => {
+      h.clients[0]!.emit("approvalResolved", {
+        type: "approval_resolved",
+        seq: 11,
+        requestId: "req-1",
+        turnId: "turn-1",
+        outcome: "denied",
+      });
+    });
+
+    // Pre-approval rung was the bar — stay there.
+    expect(h.view.queryByTestId("voice-approval-card")).toBeNull();
+    expect(h.view.queryByRole("dialog", { name: "Voice call" })).toBeNull();
+    expect(h.view.queryByRole("region", { name: "Voice call" })).not.toBeNull();
   });
 });
 

@@ -132,4 +132,48 @@ describe("parseServerFrame", () => {
       message: expect.any(String),
     });
   });
+
+  test("parses the W2 frames: minimize_room, approval_pending, approval_resolved", () => {
+    expect(
+      parseServerFrame(
+        JSON.stringify({ type: "minimize_room", seq: 4, turnId: "t-1" }),
+      ),
+    ).toEqual({ type: "minimize_room", seq: 4, turnId: "t-1" });
+
+    expect(
+      parseServerFrame(
+        JSON.stringify({
+          type: "approval_pending",
+          seq: 5,
+          requestId: "req-1",
+          turnId: "t-1",
+          toolName: "bash",
+          summary: "rm -rf build",
+          riskLevel: "medium",
+          trustLine: "this is the part I can't do alone.",
+        }),
+      ),
+    ).toMatchObject({
+      type: "approval_pending",
+      requestId: "req-1",
+      toolName: "bash",
+      trustLine: "this is the part I can't do alone.",
+    });
+
+    expect(
+      parseServerFrame(
+        JSON.stringify({
+          type: "approval_resolved",
+          seq: 6,
+          requestId: "req-1",
+          turnId: "t-1",
+          outcome: "expired",
+        }),
+      ),
+    ).toMatchObject({
+      type: "approval_resolved",
+      requestId: "req-1",
+      outcome: "expired",
+    });
+  });
 });

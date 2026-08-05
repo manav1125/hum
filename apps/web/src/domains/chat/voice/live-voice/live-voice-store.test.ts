@@ -62,3 +62,55 @@ describe("closing a turn records the exchange", () => {
     expect(s().turns).toEqual([]);
   });
 });
+
+describe("W2 · minimize seq and pending approval (v37)", () => {
+  const s = () => useLiveVoiceStore.getState();
+
+  test("requestRoomMinimize bumps the seq; reset zeroes it", () => {
+    s().requestRoomMinimize();
+    s().requestRoomMinimize();
+    expect(s().roomMinimizeSeq).toBe(2);
+
+    s().reset();
+    expect(s().roomMinimizeSeq).toBe(0);
+  });
+
+  test("approval_pending is featured verbatim; a matching resolve clears it", () => {
+    s().setPendingApproval({
+      type: "approval_pending",
+      seq: 3,
+      requestId: "req-1",
+      turnId: "t-1",
+      toolName: "bash",
+      summary: "rm -rf build",
+      riskLevel: "medium",
+      trustLine: "this is the part I can't do alone.",
+    });
+    expect(s().pendingApproval).toMatchObject({
+      requestId: "req-1",
+      toolName: "bash",
+      summary: "rm -rf build",
+      trustLine: "this is the part I can't do alone.",
+    });
+
+    // A resolution for some OTHER request never dismisses this card.
+    s().clearPendingApproval("req-other");
+    expect(s().pendingApproval).not.toBeNull();
+
+    s().clearPendingApproval("req-1");
+    expect(s().pendingApproval).toBeNull();
+  });
+
+  test("a local deferral (Ask me after) clears without a request id", () => {
+    s().setPendingApproval({
+      type: "approval_pending",
+      seq: 3,
+      requestId: "req-1",
+      turnId: "t-1",
+      toolName: "bash",
+      trustLine: "this is the part I can't do alone.",
+    });
+    s().clearPendingApproval();
+    expect(s().pendingApproval).toBeNull();
+  });
+});

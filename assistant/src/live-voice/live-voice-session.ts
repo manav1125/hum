@@ -11,6 +11,8 @@ import {
   stripInternalSpeechMarkers,
 } from "../calls/voice-control-protocol.js";
 import type {
+  VoiceApprovalOutcome,
+  VoicePendingApprovalEvent,
   VoiceTurnHandle,
   VoiceTurnOptions,
 } from "../calls/voice-session-bridge.js";
@@ -70,6 +72,61 @@ const LIVE_VOICE_CONTROL_PROMPT = [
 ].join(" ");
 
 /**
+ * Screen-reveal teaching (design v37 §W2, "voice announces, screen follows"),
+ * appended to every leg that can actually put something on screen — the main
+ * leg and the escalated leg. The front-door (fast) leg never receives it:
+ * that leg is toolless, so it has nothing to show, and its decision rule
+ * promises that apart from a leading verdict token every character is spoken
+ * verbatim.
+ *
+ * The model never asks for the minimize; it is told one is coming. The
+ * session latches the reveal when a surface actually renders (the
+ * `ui_surface_show`/`ui_update` card path, cleared by `ui_dismiss`) and the
+ * room demotes after the reply's speech drains — so "did the user see it"
+ * never depends on the model remembering a token, and a reply whose content
+ * happens to contain "[-1]" cannot move the room (the marker stays
+ * strip-only). What is left for the prompt is the part only the model can get
+ * right: announcing the thing aloud first, and speaking as though it is
+ * already in front of the user — because by the time it stops talking, it is.
+ */
+const LIVE_VOICE_SCREEN_REVEAL_TEACHING =
+  "The call renders as a full-screen overlay covering the app. Whenever you show a card or put something on screen, announce it aloud first in a short sentence (for example: Here's the pricing table), and speak as if you are showing it to them right now — the overlay minimizes by itself as soon as you finish speaking, so the user is looking at what you made without doing anything. Never say you cannot show it, that this is a voice call, or that they should check it later. Never emit bracketed markers of any kind.";
+
+/**
+ * The FIXED spoken phrase for a turn that parks on a mid-call approval
+ * (design v37 §W2, binding copy — Cue register, chosen over upstream's
+ * wording). Fixed rather than generative on purpose: a sensitive moment is
+ * the wrong place for generative variety, and this is a statement about the
+ * system's state that has to be true every time. Enqueued through
+ * {@link LiveVoiceSession.enqueueFillerPhrase}, so it is audio-only by
+ * construction — never an `assistant_text_delta`, never persisted.
+ */
+const VOICE_APPROVAL_PENDING_PHRASE = "That one needs your okay — take a look.";
+
+/**
+ * The one line of trust language the approval card renders (design v37 §W2).
+ * Carried verbatim on the `approval_pending` frame so the copy has a single
+ * owner and every surface renders the same words. Lowercase on purpose — the
+ * rendered frame composes it as the tail of the card's detail line
+ * ("… · this is the part I can't do alone.").
+ */
+const VOICE_APPROVAL_TRUST_LINE = "this is the part I can't do alone.";
+
+/**
+ * How long the CALL features a pending approval before the voice surface
+ * stands down (upstream's 45 s pending window). This bounds the presentation,
+ * not the decision: on expiry the client gets `approval_resolved` with
+ * outcome `expired` and the room promotes back, but the confirmation itself
+ * stays pending on the normal chat path — deliberately, because "Ask me
+ * after" (a first-class answer) is indistinguishable from silence on the
+ * daemon, and the chat-surface expiry (`timeouts.permissionTimeoutSec`, whose
+ * timeout resolves as a deny with nothing sent) remains the single owner of
+ * the confirmation's final consequence. Auto-allowing on silence here would
+ * execute a sensitive action nobody approved.
+ */
+const VOICE_APPROVAL_PRESENTATION_TIMEOUT_MS = 45_000;
+
+/**
  * Skills preactivated on every live-voice turn so their tools are available
  * immediately (no `skill_load` round-trip — better capability AND lower
  * latency). Covers the common spoken requests; the model can still `skill_load`
@@ -127,8 +184,11 @@ import type {
 } from "./live-voice-tts.js";
 import { pickProgressPhrase } from "./progress-phrases.js";
 import {
+  type LiveVoiceApprovalPendingServerFrame,
+  type LiveVoiceApprovalResolvedServerFrame,
   type LiveVoiceClientFrame,
   type LiveVoiceClientUpdateConfigFrame,
+  type LiveVoiceMinimizeRoomServerFrame,
   LiveVoiceProtocolErrorCode,
   type LiveVoiceServerFramePayload,
   type LiveVoiceSpeechStartedServerFrame,
@@ -405,6 +465,12 @@ export interface LiveVoiceSessionOptions {
    * `liveVoice.vad.bargeInMinSpeechMs` config.
    */
   bargeInMinSpeechMs?: number;
+  /**
+   * Overrides how long the call features a pending mid-call approval before
+   * the voice surface stands down (test hook). Defaults to
+   * {@link VOICE_APPROVAL_PRESENTATION_TIMEOUT_MS}.
+   */
+  approvalPresentationTimeoutMs?: number;
 }
 
 interface ActiveAssistantTurn {
@@ -529,6 +595,34 @@ interface ActiveAssistantTurn {
    * makes the hand-off idempotent.
    */
   escalationHandedOff: boolean;
+  /**
+   * Latched when the turn puts something on screen (a `ui_surface_show` /
+   * `ui_update` rendered a card), cleared by `ui_surface_dismiss` — last
+   * write wins, which is the right reading of "what did this turn leave on
+   * screen" without tracking surfaces individually. Consumed once at TTS
+   * drain, where the `minimize_room` frame goes out after `tts_done` (never
+   * mid-sentence — "voice announces, screen follows"). Never set from
+   * anything the model says: the reveal is a consequence of showing a
+   * surface, not a token the model has to remember (`[-1]` stays
+   * strip-only).
+   */
+  minimizeRequested: boolean;
+  /**
+   * Confirmations this turn has left pending for the user (mid-call
+   * approvals). Non-empty ⇒ the turn is blocked on a decision: progress
+   * narration stands down (its whole vocabulary — "still on it", "almost
+   * there" — describes work in flight and would be false), and the fixed
+   * approval phrase has already been spoken once for this wait.
+   */
+  pendingApprovalIds: Set<string>;
+  /**
+   * Per-request presentation timers: after
+   * {@link VOICE_APPROVAL_PRESENTATION_TIMEOUT_MS} an unanswered approval
+   * stops being the call's featured moment (`approval_resolved` outcome
+   * `expired`) while the confirmation itself stays pending on the chat path.
+   * Cleared on real resolution and on turn finalize.
+   */
+  pendingApprovalTimers: Map<string, ReturnType<typeof setTimeout>>;
 }
 
 export class LiveVoiceSession implements LiveVoiceSessionContract {
@@ -1451,10 +1545,14 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     frame:
       | Omit<LiveVoiceSpeechStartedServerFrame, "seq">
       | Omit<LiveVoiceUtteranceEndServerFrame, "seq">
-      | Omit<LiveVoiceTurnCancelledServerFrame, "seq">,
+      | Omit<LiveVoiceTurnCancelledServerFrame, "seq">
+      | Omit<LiveVoiceMinimizeRoomServerFrame, "seq">
+      | Omit<LiveVoiceApprovalPendingServerFrame, "seq">
+      | Omit<LiveVoiceApprovalResolvedServerFrame, "seq">,
+    shouldSend?: () => boolean,
   ): Promise<void> {
     if (!this.turnDetector) return;
-    await this.sendFrame(frame);
+    await this.sendFrame(frame, shouldSend);
   }
 
   private async releaseUtterance(): Promise<void> {
@@ -2041,8 +2139,19 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
    * the barge-in merge note when this turn follows an interruption. Reaches
    * the model only; never renders as a transcript bubble.
    */
-  private buildTurnControlPrompt(turn: ActiveAssistantTurn): string {
+  private buildTurnControlPrompt(
+    turn: ActiveAssistantTurn,
+    opts?: { frontDoor?: boolean },
+  ): string {
     let prompt = this.voiceControlPrompt;
+    // Screen-reveal teaching for the legs that can actually put something on
+    // screen (main + escalated). The toolless front-door leg has nothing to
+    // show and is never told the screen will be revealed — and it must not
+    // read "never emit bracketed markers" while its decision rule requires a
+    // leading verdict token.
+    if (opts?.frontDoor !== true) {
+      prompt = `${prompt} ${LIVE_VOICE_SCREEN_REVEAL_TEACHING}`;
+    }
     if (turn.interruptedRequest) {
       prompt = `${prompt}\n\n${buildInterruptionMergeNote(turn.interruptedRequest)}`;
     }
@@ -2124,6 +2233,9 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       discardRequested: false,
       speculativeBuffer: "",
       escalationHandedOff: false,
+      minimizeRequested: false,
+      pendingApprovalIds: new Set(),
+      pendingApprovalTimers: new Map(),
     };
     this.activeAssistantTurn = newTurn;
 
@@ -2262,7 +2374,9 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         assistantMessageChannel: "vellum",
         userMessageInterface: "macos",
         assistantMessageInterface: "macos",
-        voiceControlPrompt: this.buildTurnControlPrompt(activeTurn),
+        voiceControlPrompt: this.buildTurnControlPrompt(activeTurn, {
+          frontDoor: leg.frontDoor === true,
+        }),
         // The live-voice socket is authenticated as the instance owner, who is
         // the guardian. Without this the turn runs as a non-guardian caller and
         // the bridge strips every side-effect tool ("this action requires
@@ -2451,8 +2565,20 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
           // across the socket as `card` frames so lists/tables/etc. render inline
           // above the orb. Gated by the same forwarding guard as text deltas so a
           // barged-in / finalized turn doesn't leak stale cards.
+          // Showing a surface implies revealing it: the room is a full-screen
+          // overlay, so a surface rendered behind it is a surface nobody
+          // sees. The latch moves on the surface EVENTS (a card that actually
+          // rendered), not on the tool attempt — a rejected `ui_show` (no
+          // surface_type, an empty card) emits no `ui_surface_show`, so a
+          // failed call never minimizes the room to show nothing at all. A
+          // dismissal clears it again; last write wins. The frame itself is
+          // deferred to the reply's TTS drain (see completeTtsForTurn) so the
+          // reveal lands after the announcing sentence, never mid-word.
           ui_surface_show: (msg) => {
             if (!this.isForwardingAssistantText(token)) return;
+            if (this.activeAssistantTurn?.token === token) {
+              this.activeAssistantTurn.minimizeRequested = true;
+            }
             void this.sendFrame({
               type: "card",
               op: "show",
@@ -2466,6 +2592,9 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
           },
           ui_surface_update: (msg) => {
             if (!this.isForwardingAssistantText(token)) return;
+            if (this.activeAssistantTurn?.token === token) {
+              this.activeAssistantTurn.minimizeRequested = true;
+            }
             void this.sendFrame({
               type: "card",
               op: "update",
@@ -2476,6 +2605,11 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
           },
           ui_surface_dismiss: (msg) => {
             if (!this.isForwardingAssistantText(token)) return;
+            // Revealing the screen to show the user something that is no
+            // longer there is the opposite of the point.
+            if (this.activeAssistantTurn?.token === token) {
+              this.activeAssistantTurn.minimizeRequested = false;
+            }
             void this.sendFrame({
               type: "card",
               op: "dismiss",
@@ -2511,6 +2645,22 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
               toolName: msg.toolName,
             });
           },
+        },
+        // Mid-call approvals (design v37 §W2): the bridge left a
+        // confirmation pending for the user; the session presents the
+        // moment and reports how it ended. Guarded on the turn token so a
+        // late callback from a superseded leg cannot touch a newer turn.
+        onApprovalPending: (approval) => {
+          const current = this.activeAssistantTurn;
+          if (current?.token !== token || current.finalized || this.isClosed) {
+            return;
+          }
+          this.handleVoiceApprovalPending(current, approval);
+        },
+        onApprovalResolved: (requestId, outcome) => {
+          const current = this.activeAssistantTurn;
+          if (current?.token !== token) return;
+          this.handleVoiceApprovalResolved(current, requestId, outcome);
         },
         onError: (message) => {
           const current = this.activeAssistantTurn;
@@ -2764,6 +2914,22 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
             currentTurn.finalized &&
             !this.isClosed,
         );
+
+        // The reveal ("voice announces, screen follows", v37 §W2): a turn
+        // that left a surface on screen demotes the room now — strictly
+        // AFTER its tts_done, so the announcing sentence finishes first, and
+        // at most once per turn however many surfaces it touched. A pending
+        // approval already opened the room and cleared the latch (see
+        // handleVoiceApprovalPending), so this never double-minimizes.
+        // Capability-gated like every server-VAD frame: a client that never
+        // opted in has never heard of `minimize_room`.
+        if (currentTurn.minimizeRequested) {
+          currentTurn.minimizeRequested = false;
+          await this.sendServerVadFrame(
+            { type: "minimize_room", turnId: currentTurn.turnId },
+            () => !this.isClosed,
+          );
+        }
 
         if (this.activeAssistantTurn?.token === token) {
           if (currentTurn.handle && currentTurn.finalized) {
@@ -3314,14 +3480,17 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
    * the dead air it exists to fill is almost always mid-turn, after the
    * model's opening words. It may speak whenever the live turn is audibly
    * silent right now — nothing streaming, queued, or still playing — and has
-   * not completed. (Upstream also stands down while the turn awaits an
-   * approval decision; our `local-live-voice` approval mode never parks a
-   * turn awaiting approval, so that gate has no counterpart here.)
+   * not completed. While the turn is parked on a mid-call approval it stands
+   * down entirely: nothing is in flight, so every phrase narration has
+   * ("still on it", "almost there") would be a lie about who the call is
+   * waiting on. The turn says so once, when the wait starts (the fixed
+   * approval phrase), and is quiet after that until a decision lands.
    */
   private turnCanNarrateProgress(turn: ActiveAssistantTurn): boolean {
     return (
       this.isActiveAssistantTurn(turn.token) &&
       !turn.assistantCompleted &&
+      turn.pendingApprovalIds.size === 0 &&
       this.turnAudioIdle(turn)
     );
   }
@@ -3493,6 +3662,134 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     return true;
   }
 
+  /**
+   * A mid-call approval is waiting on the user (design v37 §W2).
+   *
+   * The approval card renders in the app, and the room covers the app, so
+   * without this the turn simply goes quiet: nothing is spoken, nothing is
+   * visible, and the only cue is a call that stopped talking. The
+   * `approval_pending` frame goes out IMMEDIATELY — approval ≠ reveal; a
+   * blocked turn has no speech left to drain, so there is no sentence to
+   * wait for — and the client demotes the room on it.
+   *
+   * The fixed phrase is spoken once per wait (a turn waiting on two
+   * decisions is still one wait), audio-only via the filler path: opening
+   * the room only helps someone looking at the screen, and the case this
+   * exists for is a phone that has been put down. The drain-latched reveal
+   * is cleared so a turn that also showed a surface does not minimize twice
+   * — the room is already open.
+   *
+   * Each request gets a bounded presentation window (see
+   * {@link VOICE_APPROVAL_PRESENTATION_TIMEOUT_MS}): on expiry the client
+   * gets `approval_resolved` outcome `expired` and stops featuring the card,
+   * while the confirmation itself stays pending on the normal chat path —
+   * indistinguishable, by design, from the user answering "Ask me after".
+   */
+  private handleVoiceApprovalPending(
+    turn: ActiveAssistantTurn,
+    approval: VoicePendingApprovalEvent,
+  ): void {
+    const firstOfWait = turn.pendingApprovalIds.size === 0;
+    turn.pendingApprovalIds.add(approval.requestId);
+    turn.minimizeRequested = false;
+    void this.sendServerVadFrame(
+      {
+        type: "approval_pending",
+        requestId: approval.requestId,
+        turnId: turn.turnId,
+        toolName: approval.toolName,
+        ...(approval.summary.trim().length > 0
+          ? { summary: approval.summary }
+          : {}),
+        riskLevel: approval.riskLevel,
+        trustLine: VOICE_APPROVAL_TRUST_LINE,
+      },
+      () => !this.isClosed,
+    );
+    if (firstOfWait && this.streamTtsAudio) {
+      this.enqueueFillerPhrase(turn, VOICE_APPROVAL_PENDING_PHRASE);
+    }
+    const timeoutMs =
+      this.options.approvalPresentationTimeoutMs ??
+      VOICE_APPROVAL_PRESENTATION_TIMEOUT_MS;
+    const timer = setTimeout(() => {
+      turn.pendingApprovalTimers.delete(approval.requestId);
+      // Presentation only: the request is still pending on the chat path
+      // (its final consequence belongs to the chat-surface expiry), and the
+      // id stays in pendingApprovalIds so narration keeps standing down —
+      // the turn genuinely is still waiting on the user.
+      void this.sendServerVadFrame(
+        {
+          type: "approval_resolved",
+          requestId: approval.requestId,
+          turnId: turn.turnId,
+          outcome: "expired",
+        },
+        () => !this.isClosed && !turn.finalized,
+      );
+    }, timeoutMs);
+    (timer as { unref?: () => void }).unref?.();
+    turn.pendingApprovalTimers.set(approval.requestId, timer);
+  }
+
+  /**
+   * A decision landed on a pending mid-call approval — the user answered
+   * (any surface), the chat-surface expiry timed it out, or the request was
+   * superseded. Tell the client (it promotes the room back to the rung it
+   * held before the approval) and, once nothing is pending, stand progress
+   * narration back up.
+   */
+  private handleVoiceApprovalResolved(
+    turn: ActiveAssistantTurn,
+    requestId: string,
+    outcome: VoiceApprovalOutcome,
+  ): void {
+    if (!turn.pendingApprovalIds.delete(requestId)) return;
+    const timer = turn.pendingApprovalTimers.get(requestId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      turn.pendingApprovalTimers.delete(requestId);
+    }
+    void this.sendServerVadFrame(
+      {
+        type: "approval_resolved",
+        requestId,
+        turnId: turn.turnId,
+        outcome,
+      },
+      () => !this.isClosed,
+    );
+  }
+
+  /**
+   * Turn teardown for approvals still pending when the turn dies (barge-in,
+   * interrupt, call end): clear the presentation timers and tell the client
+   * each one is `superseded`, so the voice surface never keeps featuring a
+   * decision whose turn no longer exists. The requests themselves resolve
+   * through the bridge's existing unresolved-turn semantics — the turn's
+   * abort reaches the prompter's signal listener, which resolves the
+   * confirmation as a deny (nothing is sent), the same convention chat uses
+   * when a new message supersedes a pending prompt.
+   */
+  private flushPendingVoiceApprovals(turn: ActiveAssistantTurn): void {
+    for (const timer of turn.pendingApprovalTimers.values()) {
+      clearTimeout(timer);
+    }
+    turn.pendingApprovalTimers.clear();
+    for (const requestId of turn.pendingApprovalIds) {
+      void this.sendServerVadFrame(
+        {
+          type: "approval_resolved",
+          requestId,
+          turnId: turn.turnId,
+          outcome: "superseded",
+        },
+        () => !this.isClosed,
+      );
+    }
+    turn.pendingApprovalIds.clear();
+  }
+
   private collectUserAudio(chunk: Buffer): void {
     const turnId = this.ensureTurnId();
     this.currentUserAudioChunks.push(Buffer.from(chunk));
@@ -3617,6 +3914,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
 
     turn.finalized = true;
     this.clearFillerTimers(turn);
+    this.flushPendingVoiceApprovals(turn);
     await this.archiveBufferedAudio({
       turnId: turn.turnId,
       userMessageId: turn.userMessageId,

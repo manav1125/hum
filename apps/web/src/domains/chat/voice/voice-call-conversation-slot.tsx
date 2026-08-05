@@ -21,10 +21,13 @@
 
 import { useCallback, useEffect } from "react";
 
+import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router";
+import type { Surface } from "@/domains/chat/types/types";
 import {
   useLiveVoiceStore,
   type LiveVoiceCard,
 } from "@/domains/chat/voice/live-voice/live-voice-store";
+import { VoiceApprovalCard } from "@/domains/chat/voice/voice-approval-card";
 import { useVoiceCallStore } from "@/domains/chat/voice/voice-call-store";
 import { VoiceFullScreen } from "@/domains/chat/voice/voice-fullscreen";
 import { VoiceMinimizedBar } from "@/domains/chat/voice/voice-minimized-bar";
@@ -136,8 +139,29 @@ function thingLabelFor(
   return title || null;
 }
 
+/** Build a `Surface` from a live-voice card — same mapping the room uses. */
+function toSurface(card: LiveVoiceCard): Surface {
+  return {
+    surfaceId: card.surfaceId,
+    surfaceType: card.surfaceType,
+    data: card.data,
+    ...(card.title !== undefined ? { title: card.title } : {}),
+    ...(card.actions ? { actions: card.actions.map((a) => ({ ...a })) } : {}),
+  };
+}
+
 /**
  * The minimized bar, rendered in normal flow directly above the composer.
+ *
+ * The minimized state is also where the W2 moments land in the conversation
+ * view (v37 §W2):
+ *  - **Reveal** — the current turn's cards render here so "the surface takes
+ *    the space" the room gave up. The room's card stack and this one are the
+ *    same store field, so collapse/expand can never show different things.
+ *  - **Approval** — a pending mid-call approval renders the amber `‖` card
+ *    with its three answers (Approve · Deny · Ask me after) directly above
+ *    the bar; "Ask me after" dismisses it locally and sends nothing — the
+ *    chat approval card stays pending.
  */
 export function ConversationVoiceBar({
   conversationId,
@@ -153,6 +177,11 @@ export function ConversationVoiceBar({
   const error = useLiveVoiceStore.use.error();
   const failureKind = useLiveVoiceStore.use.failureKind();
   const cards = useLiveVoiceStore.use.cards();
+  const pendingApproval = useLiveVoiceStore.use.pendingApproval();
+
+  // Display-only here, like the room (actions don't round-trip on the
+  // live-voice channel).
+  const handleCardAction = useCallback(() => {}, []);
 
   if (!boundHere || !minimized || !session) return null;
 
@@ -160,6 +189,41 @@ export function ConversationVoiceBar({
 
   return (
     <div style={{ marginBottom: 8 }}>
+      {pendingApproval ? (
+        <div style={{ marginBottom: 8 }}>
+          <VoiceApprovalCard
+            approval={pendingApproval}
+            assistantId={session.assistantId}
+            // "Ask me after" = defer, first-class: dismiss locally, resolve
+            // nothing. Clearing the store field also lets the host restore
+            // the ladder to its pre-approval rung.
+            onDeferred={() =>
+              useLiveVoiceStore.getState().clearPendingApproval()
+            }
+            onDecided={() =>
+              useLiveVoiceStore.getState().clearPendingApproval()
+            }
+          />
+        </div>
+      ) : null}
+      {cards.length > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            marginBottom: 8,
+          }}
+        >
+          {cards.map((card) => (
+            <SurfaceRouter
+              key={card.surfaceId}
+              surface={toSurface(card)}
+              onAction={handleCardAction}
+            />
+          ))}
+        </div>
+      ) : null}
       <VoiceMinimizedBar
         state={state}
         amplitude={inputAmplitude}

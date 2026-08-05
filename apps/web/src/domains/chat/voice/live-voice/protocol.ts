@@ -163,6 +163,9 @@ const LIVE_VOICE_SERVER_FRAME_TYPES = [
   "archived",
   "card",
   "tool_activity",
+  "minimize_room",
+  "approval_pending",
+  "approval_resolved",
   "error",
 ] as const;
 
@@ -341,6 +344,64 @@ export interface LiveVoiceToolActivityServerFrame extends LiveVoiceServerFrameBa
   readonly toolName: string;
 }
 
+/**
+ * Ask the client to demote the call room so the screen behind it is visible
+ * while the call continues. Port of the runtime contract in
+ * `assistant/src/live-voice/protocol.ts` (design v37 §W2, "voice announces,
+ * screen follows"): for a revealed surface the daemon sends this strictly
+ * AFTER the announcing reply's `tts_done`, never mid-sentence; a pending
+ * approval opens the room through `approval_pending` instead. Arrives only
+ * on sessions that opted in via `turnDetection: "server_vad"`.
+ */
+export interface LiveVoiceMinimizeRoomServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "minimize_room";
+  readonly turnId: string;
+}
+
+/**
+ * How a mid-call approval left the voice surface's featured moment. Port of
+ * the runtime contract: `expired` means the 45 s presentation window elapsed
+ * — the confirmation is STILL pending on the chat path (the chat card stays
+ * answerable); `superseded` means the turn ended before a decision.
+ */
+export type LiveVoiceApprovalOutcome =
+  "approved" | "denied" | "expired" | "superseded";
+
+/**
+ * A mid-call turn left a confirmation pending for the user (design v37 §W2
+ * mid-call approval). The client demotes the room IMMEDIATELY — approval ≠
+ * reveal, there is no sentence to wait for — and renders the approval card
+ * in the conversation view. Resolution rides the ordinary `POST /v1/confirm`
+ * path; the voice socket only presents. Arrives only on sessions that opted
+ * in via `turnDetection: "server_vad"`.
+ */
+export interface LiveVoiceApprovalPendingServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "approval_pending";
+  /** The confirmation's requestId — the `POST /v1/confirm` correlation key. */
+  readonly requestId: string;
+  readonly turnId: string;
+  /** Registered tool name, verbatim (presentation is the surface's job). */
+  readonly toolName: string;
+  /** Short human summary of what the tool is about to do, when derivable. */
+  readonly summary?: string;
+  readonly riskLevel?: string;
+  /** The one line of trust language the card renders, verbatim. */
+  readonly trustLine?: string;
+}
+
+/**
+ * A previously announced `approval_pending` stopped being the call's
+ * featured moment (see {@link LiveVoiceApprovalOutcome}). The client
+ * dismisses the voice approval card and promotes the room back to the rung
+ * it held before the approval. Arrives only on `server_vad` sessions.
+ */
+export interface LiveVoiceApprovalResolvedServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "approval_resolved";
+  readonly requestId: string;
+  readonly turnId: string;
+  readonly outcome: LiveVoiceApprovalOutcome;
+}
+
 export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "error";
   readonly code: string;
@@ -374,6 +435,9 @@ export type LiveVoiceServerFrame =
   | LiveVoiceArchivedServerFrame
   | LiveVoiceCardServerFrame
   | LiveVoiceToolActivityServerFrame
+  | LiveVoiceMinimizeRoomServerFrame
+  | LiveVoiceApprovalPendingServerFrame
+  | LiveVoiceApprovalResolvedServerFrame
   | LiveVoiceErrorServerFrame;
 
 /**

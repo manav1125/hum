@@ -23,6 +23,8 @@
 
 import { resolveLiveVoiceWsUrl } from "@/domains/chat/voice/live-voice/connection";
 import {
+  type LiveVoiceApprovalPendingServerFrame,
+  type LiveVoiceApprovalResolvedServerFrame,
   type LiveVoiceArchivedServerFrame,
   type LiveVoiceAssistantTextDeltaServerFrame,
   type LiveVoiceBusyServerFrame,
@@ -31,6 +33,7 @@ import {
   type LiveVoiceClientUpdateConfigFrame,
   LIVE_VOICE_AUDIO_FORMAT,
   type LiveVoiceMetricsServerFrame,
+  type LiveVoiceMinimizeRoomServerFrame,
   type LiveVoiceReadyServerFrame,
   type LiveVoiceSpeechStartedServerFrame,
   type LiveVoiceSttFinalServerFrame,
@@ -98,6 +101,24 @@ export interface LiveVoiceClientEventMap {
   archived: LiveVoiceArchivedServerFrame;
   /** Visual result card lifecycle (op: show/update/dismiss). */
   card: LiveVoiceCardServerFrame;
+  /**
+   * The daemon asked the client to demote the call room so the screen behind
+   * it (a revealed surface) is visible. Only ever fires on `server_vad`
+   * sessions; for a reveal it arrives strictly after the turn's `tts_done`.
+   */
+  minimizeRoom: LiveVoiceMinimizeRoomServerFrame;
+  /**
+   * A mid-call turn left an approval pending for the user — demote the room
+   * immediately and render the approval card in the conversation view. Only
+   * ever fires on `server_vad` sessions.
+   */
+  approvalPending: LiveVoiceApprovalPendingServerFrame;
+  /**
+   * A pending mid-call approval stopped being the call's featured moment
+   * (decided / presentation-expired / superseded). Only ever fires on
+   * `server_vad` sessions.
+   */
+  approvalResolved: LiveVoiceApprovalResolvedServerFrame;
   /**
    * A tool the current turn has started executing, named verbatim. Only ever
    * fires because {@link LiveVoiceChannelClient} asked for it on the `start`
@@ -191,6 +212,9 @@ export class LiveVoiceChannelClient {
     metrics: new Set(),
     archived: new Set(),
     card: new Set(),
+    minimizeRoom: new Set(),
+    approvalPending: new Set(),
+    approvalResolved: new Set(),
     toolActivity: new Set(),
     busy: new Set(),
     error: new Set(),
@@ -439,6 +463,15 @@ export class LiveVoiceChannelClient {
         return;
       case "card":
         this.emit("card", frame);
+        return;
+      case "minimize_room":
+        this.emit("minimizeRoom", frame);
+        return;
+      case "approval_pending":
+        this.emit("approvalPending", frame);
+        return;
+      case "approval_resolved":
+        this.emit("approvalResolved", frame);
         return;
       case "tool_activity":
         this.emit("toolActivity", frame);
