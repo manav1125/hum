@@ -1,8 +1,8 @@
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 
 import { getConfig } from "../config/loader.js";
 import { getLogger } from "../util/logger.js";
-import { getDbPath } from "../util/platform.js";
+import { getDbPath, getMemoryDbPath } from "../util/platform.js";
 import { getMemoryCheckpoint, setMemoryCheckpoint } from "./checkpoints.js";
 import { getLastInteractiveUserMessageTimestamp } from "./conversation-crud.js";
 import { runAsyncSqlite } from "./db-async-query.js";
@@ -76,6 +76,29 @@ async function runDbMaintenance(): Promise<void> {
       { error: optimizeResult.error, backend: optimizeResult.backend },
       "PRAGMA optimize failed (non-fatal)",
     );
+  }
+
+  // Same pass for the dedicated memory DB (assistant-memory.db) — the
+  // high-churn tables live there now, so it is where the freelist grows.
+  if (existsSync(getMemoryDbPath())) {
+    const memVacuum = await runAsyncSqlite("VACUUM", {
+      dbPath: getMemoryDbPath(),
+    });
+    if (!memVacuum.ok) {
+      log.warn(
+        { error: memVacuum.error, backend: memVacuum.backend },
+        "Memory-DB VACUUM failed (non-fatal)",
+      );
+    }
+    const memOptimize = await runAsyncSqlite(PLANNER_OPTIMIZE_PRAGMA, {
+      dbPath: getMemoryDbPath(),
+    });
+    if (!memOptimize.ok) {
+      log.warn(
+        { error: memOptimize.error, backend: memOptimize.backend },
+        "Memory-DB PRAGMA optimize failed (non-fatal)",
+      );
+    }
   }
 
   const after = getDbStats();

@@ -33,11 +33,11 @@ import {
   buildConversationStarterValidationContext,
   isValidConversationStarterText,
 } from "../conversation-starter-validation.js";
-import { getDb } from "../db-connection.js";
+import { getDb, getMemoryDb } from "../db-connection.js";
 import { jobEmpty, type JobOutcome, jobProduced } from "../job-outcome.js";
 import { asString } from "../job-utils.js";
 import type { MemoryJob } from "../jobs-store.js";
-import { rawAll } from "../raw-query.js";
+import { memRawAll } from "../raw-query.js";
 import { conversationStarters, memoryGraphNodes } from "../schema.js";
 
 const log = getLogger("conversation-starters-gen");
@@ -51,8 +51,8 @@ function buildMemoryRollup(scopeId: string): string {
     significance: number | null;
   }>;
   try {
-    const db = getDb();
-    rows = db
+    // Graph nodes live in the dedicated memory DB (migration 325).
+    rows = getMemoryDb()
       .select({
         type: memoryGraphNodes.type,
         content: memoryGraphNodes.content,
@@ -103,7 +103,7 @@ function buildNewItemsDiff(scopeId: string): string {
 
   if (lastGenAt === 0) return ""; // No previous generation — skip diff
 
-  const newItems = rawAll<{
+  const newItems = memRawAll<{
     kind: string;
     content: string;
   }>(
@@ -436,7 +436,7 @@ export async function generateConversationStartersJob(
   // Collect the memory types that informed this batch
   let sourceKinds = "";
   try {
-    const kindRows = db
+    const kindRows = getMemoryDb()
       .select({ kind: memoryGraphNodes.type })
       .from(memoryGraphNodes)
       .where(

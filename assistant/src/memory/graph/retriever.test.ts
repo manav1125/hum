@@ -75,7 +75,7 @@ import { resetDbForTesting } from "../../__tests__/db-test-helpers.js";
 import { DEFAULT_CONFIG } from "../../config/defaults.js";
 import type { AssistantConfig } from "../../config/types.js";
 import { initializeDb } from "../db-init.js";
-import { resetTestTables } from "../raw-query.js";
+import { resetTestMemoryTables } from "../raw-query.js";
 import { InContextTracker } from "./injection.js";
 import { loadContextMemory, retrieveForTurn } from "./retriever.js";
 import { createNode } from "./store.js";
@@ -319,7 +319,7 @@ describe("retrieveForTurn — topic-pivot recovery", () => {
     embedCallCount = 0;
     embedRouter = keywordEmbedRouter;
     searchRouter = vectorSearchRouter;
-    resetTestTables(
+    resetTestMemoryTables(
       "memory_graph_triggers",
       "memory_graph_edges",
       "memory_graph_nodes",
@@ -468,7 +468,7 @@ describe("loadContextMemory — dual-query capability ranking", () => {
     embedCallCount = 0;
     embedRouter = null;
     searchRouter = null;
-    resetTestTables(
+    resetTestMemoryTables(
       "memory_graph_triggers",
       "memory_graph_edges",
       "memory_graph_nodes",

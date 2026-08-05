@@ -11,9 +11,14 @@ import { dirname, join } from "node:path";
 
 import { withSuppressedConfigDiskWritesSync } from "../config/loader.js";
 import { getLogger } from "../util/logger.js";
-import { ensureDataDir, getDbPath } from "../util/platform.js";
+import { ensureDataDir, getDbPath, getMemoryDbPath } from "../util/platform.js";
 import { backfillAppConversationIds } from "./app-store.js";
-import { getDb, getSqlite } from "./db-connection.js";
+import {
+  getDb,
+  getMemoryDb,
+  getMemorySqlite,
+  getSqlite,
+} from "./db-connection.js";
 import { migrateToolCreatedItems } from "./graph/bootstrap.js";
 import {
   addCoreColumns,
@@ -173,6 +178,11 @@ import {
   migrateMessagesFtsBackfill,
   migrateMessagesRoleCreatedAtIndex,
   migrateMissionSweepAt,
+  migrateMoveConversationMemoryStateToMemoryDb,
+  migrateMoveMemoryGraphClusterToMemoryDb,
+  migrateMoveMemoryJobsToMemoryDb,
+  migrateMoveMemoryTelemetryLogsToMemoryDb,
+  migrateMoveMemoryV3TablesToMemoryDb,
   migrateNormalizePhoneIdentities,
   migrateNormalizeSlackExternalContent,
   migrateNormalizeUserFileByPrincipal,
@@ -291,24 +301,47 @@ function getTemplateDbPath(): string {
   );
 }
 
+/** Memory-DB counterpart of the test template (same invalidation hash). */
+function getMemoryTemplateDbPath(): string {
+  return getTemplateDbPath().replace(/\.db$/, "-memory.db");
+}
+
 function tryRestoreTemplate(): boolean {
   const templatePath = getTemplateDbPath();
-  if (!existsSync(templatePath)) return false;
+  const memoryTemplatePath = getMemoryTemplateDbPath();
+  // Both files or neither: a main template without its memory sibling
+  // (e.g. saved by a pre-split build with the same hash — impossible in
+  // practice since this file is part of the hash, but cheap to guard)
+  // must fall through to a full migration run.
+  if (!existsSync(templatePath) || !existsSync(memoryTemplatePath)) {
+    return false;
+  }
   // getDb() hasn't run yet, so the data directory may not exist.
   ensureDataDir();
   copyFileSync(templatePath, getDbPath());
-  // Open the pre-migrated copy — getDb() will set PRAGMAs but skip migrations.
+  copyFileSync(memoryTemplatePath, getMemoryDbPath());
+  // Open the pre-migrated copies — the getters set PRAGMAs but skip
+  // migrations.
   getDb();
+  getMemoryDb();
   return true;
 }
 
 function saveTemplate(): void {
   try {
-    // Flush WAL to main DB file before copying.
+    // Flush WALs to the DB files before copying. TRUNCATE is safe here:
+    // these are the daemon-process's own long-lived connections during a
+    // single-process test bootstrap (see assistant/CLAUDE.md).
     getSqlite().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    getMemorySqlite().exec("PRAGMA wal_checkpoint(TRUNCATE)");
     const tmpFile = `${getTemplateDbPath()}.${process.pid}`;
+    const tmpMemoryFile = `${getMemoryTemplateDbPath()}.${process.pid}`;
     copyFileSync(getDbPath(), tmpFile);
-    // Atomic rename — safe even with parallel test workers.
+    copyFileSync(getMemoryDbPath(), tmpMemoryFile);
+    // Atomic renames — safe even with parallel test workers. Memory file
+    // first so a main template is never visible without its sibling
+    // (tryRestoreTemplate requires both).
+    renameSync(tmpMemoryFile, getMemoryTemplateDbPath());
     renameSync(tmpFile, getTemplateDbPath());
   } catch {
     // Best effort — next file will just run migrations normally.
@@ -582,6 +615,16 @@ export function initializeDb(): void {
     migratePushBudgetLedger,
     migrateMemoryJobOutcome,
     migrateVolumeValve,
+    // 324–328: the memory-DB split. These run every boot AFTER every
+    // creator/ALTER migration above (the legacy `CREATE TABLE IF NOT
+    // EXISTS` creators recreate empty main-side shadows each boot; the
+    // relocation steps drop them again). Order within the block matters
+    // only for readability — each step owns a disjoint table set.
+    migrateMoveConversationMemoryStateToMemoryDb,
+    migrateMoveMemoryGraphClusterToMemoryDb,
+    migrateMoveMemoryTelemetryLogsToMemoryDb,
+    migrateMoveMemoryV3TablesToMemoryDb,
+    migrateMoveMemoryJobsToMemoryDb,
   ];
 
   // Run each migration step, catching and logging individual failures so one

@@ -17,7 +17,7 @@
 
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
-import type { DrizzleDb } from "../../db-connection.js";
+import { type DrizzleDb, getMemoryDb } from "../../db-connection.js";
 import type {
   MemoryV2ConceptRowRecord,
   MemoryV2ConfigSnapshot,
@@ -77,7 +77,9 @@ export function extractOracleTurns(
     );
   }
 
-  const rows = db
+  // Activation logs live in the dedicated memory DB; `db` stays the main
+  // connection for the message-anchor lookups below.
+  const rows = getMemoryDb()
     .select({
       conversationId: memoryV2ActivationLogs.conversationId,
       messageId: memoryV2ActivationLogs.messageId,

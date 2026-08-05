@@ -10,7 +10,7 @@ mock.module("../../../config/loader.js", () => ({
 }));
 
 import type { AssistantConfig } from "../../../config/types.js";
-import { getDb } from "../../db-connection.js";
+import { getDb, getMemoryDb } from "../../db-connection.js";
 import { initializeDb } from "../../db-init.js";
 import type { MemoryV2ConceptRowRecord } from "../../memory-v2-activation-log-store.js";
 import {
@@ -102,7 +102,7 @@ function insertRouterLog(
   createdAt: number,
 ): void {
   ensureConversation(conversationId);
-  getDb()
+  getMemoryDb()
     .insert(memoryV2ActivationLogs)
     .values({
       id: `log-${seq++}`,
@@ -136,9 +136,8 @@ function turnFor(
 }
 
 function reset(): void {
-  const db = getDb();
-  db.delete(memoryV2ActivationLogs).run();
-  db.delete(messages).run();
+  getMemoryDb().delete(memoryV2ActivationLogs).run();
+  getDb().delete(messages).run();
 }
 
 describe("harness/replay-input reconstructInput", () => {

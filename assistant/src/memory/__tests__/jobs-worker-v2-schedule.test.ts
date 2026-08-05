@@ -59,9 +59,10 @@ afterAll(() => {
   rmSync(tmpWorkspace, { recursive: true, force: true });
 });
 
-const { getDb } = await import("../db-connection.js");
+const { getMemoryDb } = await import("../db-connection.js");
 const { initializeDb } = await import("../db-init.js");
-const { resetTestTables } = await import("../raw-query.js");
+const { resetTestMemoryTables, resetTestTables } =
+  await import("../raw-query.js");
 const { memoryJobs } = await import("../schema.js");
 const { applyNestedDefaults } = await import("../../config/loader.js");
 const { getMemoryCheckpoint, setMemoryCheckpoint, deleteMemoryCheckpoint } =
@@ -107,7 +108,7 @@ function removeBuffer(): void {
 }
 
 function countPendingJobs(type: string): number {
-  return getDb()
+  return getMemoryDb()
     .select()
     .from(memoryJobs)
     .where(eq(memoryJobs.type, type))
@@ -115,7 +116,7 @@ function countPendingJobs(type: string): number {
 }
 
 function consolidationJobPayloads(): Record<string, unknown>[] {
-  return getDb()
+  return getMemoryDb()
     .select({ payload: memoryJobs.payload })
     .from(memoryJobs)
     .where(eq(memoryJobs.type, "memory_v2_consolidate"))
@@ -131,7 +132,8 @@ initializeDb();
 beforeEach(() => {
   // Clear job + checkpoint state so each test starts from zero rows. Other
   // tables stay intact — the worker only inspects these two.
-  resetTestTables("memory_jobs", "memory_checkpoints");
+  resetTestMemoryTables("memory_jobs");
+  resetTestTables("memory_checkpoints");
 });
 
 // ---------------------------------------------------------------------------

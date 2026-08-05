@@ -26,10 +26,12 @@
  * ms) should keep using the in-process drizzle / `bun:sqlite` handle
  * directly — the subprocess overhead would dominate.
  */
+import { Database } from "bun:sqlite";
+
 import { getLogger } from "../util/logger.js";
-import { getDbPath } from "../util/platform.js";
+import { getDbPath, getMemoryDbPath } from "../util/platform.js";
 import { findSqlite3 } from "../util/sqlite3-runtime.js";
-import { getSqlite } from "./db-connection.js";
+import { getMemorySqlite, getSqlite } from "./db-connection.js";
 
 const log = getLogger("db-async-query");
 
@@ -61,6 +63,16 @@ export interface RunAsyncSqliteOptions {
    * the runtime pick.
    */
   forceBackend?: AsyncSqliteBackend;
+  /**
+   * Target database file. Defaults to the main assistant DB
+   * (`getDbPath()`); pass `getMemoryDbPath()` to run against the dedicated
+   * memory DB (retention prunes, snapshots). The in-process fallback routes
+   * to the daemon's own long-lived connection for the two known files; any
+   * other path opens a short-lived connection for the statement. NEVER pass
+   * `PRAGMA wal_checkpoint(TRUNCATE)` through here — subprocess/fresh
+   * connections must not TRUNCATE-checkpoint (see assistant/CLAUDE.md).
+   */
+  dbPath?: string;
 }
 
 let warnedAboutFallback = false;
@@ -74,7 +86,12 @@ export async function runAsyncSqlite(
     forced === "in-process-blocking" ? undefined : findSqlite3();
 
   if (sqlite3Path && forced !== "in-process-blocking") {
-    return runViaCli(sqlite3Path, sql, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    return runViaCli(
+      sqlite3Path,
+      sql,
+      options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      options.dbPath,
+    );
   }
 
   if (!warnedAboutFallback) {
@@ -85,7 +102,7 @@ export async function runAsyncSqlite(
         "event loop responsive during VACUUM and other long operations.",
     );
   }
-  return runInProcessBlocking(sql);
+  return runInProcessBlocking(sql, options.dbPath);
 }
 
 /** For tests: reset the once-only fallback warning. */
@@ -97,9 +114,10 @@ async function runViaCli(
   sqlite3Path: string,
   sql: string,
   timeoutMs: number,
+  dbPathOverride?: string,
 ): Promise<AsyncSqliteResult> {
   const startMs = Date.now();
-  const dbPath = getDbPath();
+  const dbPath = dbPathOverride ?? getDbPath();
 
   log.info(
     { sqlite3Path, dbPath, timeoutMs, sqlPreview: sql.slice(0, 80) },
@@ -177,10 +195,23 @@ async function runViaCli(
   };
 }
 
-async function runInProcessBlocking(sql: string): Promise<AsyncSqliteResult> {
+async function runInProcessBlocking(
+  sql: string,
+  dbPathOverride?: string,
+): Promise<AsyncSqliteResult> {
   const startMs = Date.now();
+  // For the daemon's two known DB files, reuse the long-lived in-process
+  // connections. Any other target opens a short-lived connection scoped to
+  // this statement — safe because callers are contractually barred from
+  // running TRUNCATE checkpoints through this API.
+  let transient: Database | null = null;
   try {
-    const sqlite = getSqlite();
+    const sqlite =
+      dbPathOverride == null || dbPathOverride === getDbPath()
+        ? getSqlite()
+        : dbPathOverride === getMemoryDbPath()
+          ? getMemorySqlite()
+          : (transient = new Database(dbPathOverride));
     sqlite.exec(sql);
     // Synthesize `stdout` to match what the CLI backend would emit
     // when the caller chained `SELECT changes();` at the end of their
@@ -210,5 +241,13 @@ async function runInProcessBlocking(sql: string): Promise<AsyncSqliteResult> {
       error: message,
       elapsedMs: Date.now() - startMs,
     };
+  } finally {
+    if (transient) {
+      try {
+        transient.close();
+      } catch {
+        /* best-effort close */
+      }
+    }
   }
 }

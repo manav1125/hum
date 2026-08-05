@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
-import { getDb } from "./db-connection.js";
+import { getMemoryDb } from "./db-connection.js";
 import { memoryV2ActivationLogs } from "./schema.js";
 
 export interface MemoryV2ConceptRowRecord {
@@ -189,7 +189,7 @@ export interface RecordMemoryV2ActivationLogParams {
 export function recordMemoryV2ActivationLog(
   params: RecordMemoryV2ActivationLogParams,
 ): void {
-  const db = getDb();
+  const db = getMemoryDb();
   const maxConcepts =
     params.maxConcepts === undefined
       ? DEFAULT_ACTIVATION_LOG_MAX_CONCEPTS
@@ -219,7 +219,7 @@ export function backfillMemoryV2ActivationMessageId(
   conversationId: string,
   messageId: string,
 ): void {
-  const db = getDb();
+  const db = getMemoryDb();
   // `v3_shadow` rows are detached telemetry written outside the live turn with
   // a null messageId; they are not tied to any specific message. Excluding them
   // keeps their messageId null instead of stamping them with a later turn's id.
@@ -247,7 +247,7 @@ export function getMemoryV2ActivationLogByMessageIds(
   messageIds: string[],
 ): MemoryV2ActivationLog | null {
   if (messageIds.length === 0) return null;
-  const db = getDb();
+  const db = getMemoryDb();
   const rows = db
     .select()
     .from(memoryV2ActivationLogs)

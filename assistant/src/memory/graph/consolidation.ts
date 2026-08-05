@@ -18,7 +18,7 @@ import {
 } from "../../providers/provider-send-message.js";
 import { BackendUnavailableError } from "../../util/errors.js";
 import { getLogger } from "../../util/logger.js";
-import { getDb } from "../db-connection.js";
+import { getMemoryDb } from "../db-connection.js";
 import {
   EVENT_DATE_PROMPT_RULES,
   formatAuthoritativeConversationTimestamp,
@@ -509,7 +509,7 @@ async function consolidateChunk(
 
       // Wrap edit recording + node update in a transaction so they are atomic:
       // if updateNode fails, the edit record is rolled back.
-      getDb().transaction(() => {
+      getMemoryDb().transaction(() => {
         if (changes.content) {
           const cleanContent = deduplicateParagraphs(changes.content);
           const node = nodeMap.get(update.id);

@@ -89,7 +89,7 @@ const tmpWorkspace = mkdtempSync(join(tmpdir(), "jobs-worker-outcome-"));
 const previousWorkspaceEnv = process.env.VELLUM_WORKSPACE_DIR;
 process.env.VELLUM_WORKSPACE_DIR = tmpWorkspace;
 
-const { getDb } = await import("../db-connection.js");
+const { getMemoryDb } = await import("../db-connection.js");
 const { initializeDb } = await import("../db-init.js");
 const { enqueueMemoryJob, summarizeJobOutcomes } =
   await import("../jobs-store.js");
@@ -100,7 +100,11 @@ const { _resetQdrantBreaker } = await import("../qdrant-circuit-breaker.js");
 const { memoryJobs } = await import("../schema.js");
 
 function jobRow(id: string) {
-  return getDb().select().from(memoryJobs).where(eq(memoryJobs.id, id)).get();
+  return getMemoryDb()
+    .select()
+    .from(memoryJobs)
+    .where(eq(memoryJobs.id, id))
+    .get();
 }
 
 const QUIET_EXTRACTION = {
@@ -128,7 +132,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  getDb().run("DELETE FROM memory_jobs");
+  getMemoryDb().run("DELETE FROM memory_jobs");
   resetMemoryJobOutcomeHealth();
   _resetQdrantBreaker();
   extractionResult = { ...QUIET_EXTRACTION };

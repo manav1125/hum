@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 
-import { getDb } from "../db-connection.js";
+import { getMemoryDb } from "../db-connection.js";
 import { conversationGraphMemoryState } from "../schema.js";
 
 /**
@@ -10,7 +10,7 @@ export function saveGraphMemoryState(
   conversationId: string,
   stateJson: string,
 ): void {
-  const db = getDb();
+  const db = getMemoryDb();
   const now = Date.now();
   db.insert(conversationGraphMemoryState)
     .values({ conversationId, stateJson, createdAt: now, updatedAt: now })
@@ -25,7 +25,7 @@ export function saveGraphMemoryState(
  * Load graph memory state for a conversation, or null if none exists.
  */
 export function loadGraphMemoryState(conversationId: string): string | null {
-  const db = getDb();
+  const db = getMemoryDb();
   const row = db
     .select({ stateJson: conversationGraphMemoryState.stateJson })
     .from(conversationGraphMemoryState)

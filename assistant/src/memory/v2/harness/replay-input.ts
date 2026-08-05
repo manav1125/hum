@@ -24,7 +24,7 @@ import { and, asc, desc, eq, lt, lte } from "drizzle-orm";
 
 import type { AssistantConfig } from "../../../config/types.js";
 import type { ContentBlock } from "../../../providers/types.js";
-import type { DrizzleDb } from "../../db-connection.js";
+import { type DrizzleDb, getMemoryDb } from "../../db-connection.js";
 import type { MemoryV2ConceptRowRecord } from "../../memory-v2-activation-log-store.js";
 import { memoryV2ActivationLogs, messages } from "../../schema.js";
 import { loadNowText } from "../now-text.js";
@@ -200,7 +200,8 @@ function reconstructPriorEverInjected(
   conversationId: string,
   currentTurn: number,
 ): EverInjectedEntry[] {
-  const rows = db
+  // Activation logs live in the dedicated memory DB.
+  const rows = getMemoryDb()
     .select({
       turn: memoryV2ActivationLogs.turn,
       conceptsJson: memoryV2ActivationLogs.conceptsJson,

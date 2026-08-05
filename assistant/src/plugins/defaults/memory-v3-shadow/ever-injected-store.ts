@@ -25,7 +25,7 @@
 
 import {
   type DrizzleDb,
-  getDb,
+  getMemoryDb,
   getSqliteFrom,
 } from "../../../memory/db-connection.js";
 
@@ -52,7 +52,7 @@ export interface EverInjectedEntry {
 export function getInjected(
   conversationId: string,
 ): Map<string, EverInjectedEntry> {
-  const rows = getSqliteFrom(getDb())
+  const rows = getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT slug, bytes, pruned_at AS prunedAt FROM memory_v3_ever_injected
@@ -72,7 +72,7 @@ export function getInjected(
 
 /** The injection dedup set: slugs whose cards are currently resident. */
 export function getActiveSlugs(conversationId: string): Set<string> {
-  const rows = getSqliteFrom(getDb())
+  const rows = getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT slug FROM memory_v3_ever_injected
@@ -99,7 +99,7 @@ export interface ActiveInjectedEntry {
 export function getActiveEntries(
   conversationId: string,
 ): ActiveInjectedEntry[] {
-  return getSqliteFrom(getDb())
+  return getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT slug, bytes, injected_at AS injectedAt FROM memory_v3_ever_injected
@@ -115,7 +115,7 @@ export function getActiveEntries(
  * `prune.ts` / `daemon/conversation.ts`).
  */
 export function getPrunedSlugs(conversationId: string): Set<string> {
-  const rows = getSqliteFrom(getDb())
+  const rows = getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT slug FROM memory_v3_ever_injected
@@ -137,7 +137,7 @@ export function recordInjected(
   at: number = Date.now(),
 ): void {
   if (entries.length === 0) return;
-  const stmt = getSqliteFrom(getDb()).query(/*sql*/ `
+  const stmt = getSqliteFrom(getMemoryDb()).query(/*sql*/ `
     INSERT INTO memory_v3_ever_injected (conversation_id, slug, injected_at, bytes, pruned_at)
     VALUES (?, ?, ?, ?, NULL)
     ON CONFLICT (conversation_id, slug) DO UPDATE SET
@@ -161,7 +161,7 @@ export function markPruned(
 ): void {
   if (slugs.length === 0) return;
   const placeholders = slugs.map(() => "?").join(", ");
-  getSqliteFrom(getDb())
+  getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       UPDATE memory_v3_ever_injected SET pruned_at = ?
@@ -176,7 +176,7 @@ export function markPruned(
  * blocks are gone from history, so every slug must become re-injectable.
  */
 export function clearConversation(conversationId: string): void {
-  getSqliteFrom(getDb())
+  getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       DELETE FROM memory_v3_ever_injected WHERE conversation_id = ?
@@ -187,7 +187,7 @@ export function clearConversation(conversationId: string): void {
 
 /** Total bytes of resident (non-pruned) cards — the prune-valve input. */
 export function residentBytes(conversationId: string): number {
-  const row = getSqliteFrom(getDb())
+  const row = getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT COALESCE(SUM(bytes), 0) AS total FROM memory_v3_ever_injected

@@ -1,5 +1,7 @@
 import type { AssistantConfig } from "../../config/types.js";
 import { getLogger } from "../../util/logger.js";
+import { getMemoryDbPath } from "../../util/platform.js";
+import { purgeConversationMemoryTables } from "../conversation-memory-cleanup.js";
 import { runAsyncSqlite } from "../db-async-query.js";
 import { getDb } from "../db-connection.js";
 import {
@@ -294,6 +296,7 @@ function pruneConversationsCore(args: {
   const db = getDb();
   let pruned = 0;
   for (const { id } of stale) {
+    let deletedThisId = false;
     db.transaction(() => {
       // Re-check staleness inside the transaction to avoid racing with a conversation
       // that became active again between the initial SELECT and this DELETE.
@@ -309,15 +312,21 @@ function pruneConversationsCore(args: {
       rawRun(`DELETE FROM tool_invocations WHERE conversation_id = ?`, id);
       rawRun(`DELETE FROM messages WHERE conversation_id = ?`, id);
       rawRun(`DELETE FROM skill_loaded_events WHERE conversation_id = ?`, id);
-      rawRun(
-        `DELETE FROM memory_v2_activation_logs WHERE conversation_id = ?`,
-        id,
-      );
-      rawRun(`DELETE FROM memory_recall_logs WHERE conversation_id = ?`, id);
       // Conversation row deletion cascades to remaining dependent tables
       rawRun(`DELETE FROM conversations WHERE id = ?`, id);
       pruned++;
+      deletedThisId = true;
     });
+    // The conversation-keyed memory tables (activation/graph/retrospective
+    // state, recall + v2 activation logs, v3 selection state) moved to
+    // assistant-memory.db — no cross-DB cascade, so purge them explicitly
+    // after the main-DB transaction commits, and ONLY when the row was
+    // actually deleted (a conversation that became active again keeps its
+    // memory state). Best-effort inside; the periodic orphan sweep
+    // backstops a crash between the two deletes.
+    if (deletedThisId) {
+      purgeConversationMemoryTables(id);
+    }
   }
 
   if (stale.length === PRUNE_BATCH_LIMIT) {
@@ -386,9 +395,12 @@ export async function pruneOldActivationLogsJob(
   // otherwise a broken parse and a clean sweep produce the same zero.
   let unreadableTables = 0;
   for (const table of ["memory_v2_activation_logs", "memory_recall_logs"]) {
+    // Both tables relocated to assistant-memory.db (migration 326) — the
+    // prune targets that file directly.
     const result = await runAsyncSqlite(
       `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE created_at < ${cutoffMs} LIMIT ${PRUNE_LOG_BATCH_LIMIT});
 SELECT changes();`,
+      { dbPath: getMemoryDbPath() },
     );
     if (!result.ok) {
       log.warn(

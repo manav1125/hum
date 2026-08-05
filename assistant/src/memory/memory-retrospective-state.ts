@@ -22,7 +22,7 @@
 
 import { eq } from "drizzle-orm";
 
-import { type DrizzleDb, getDb } from "./db-connection.js";
+import { type DrizzleDb, getMemoryDb } from "./db-connection.js";
 import { memoryRetrospectiveState } from "./schema.js";
 
 export interface MemoryRetrospectiveState {
@@ -90,7 +90,7 @@ function serializeRememberedLog(log: string[]): string | null {
 export function getRetrospectiveState(
   conversationId: string,
 ): MemoryRetrospectiveState | null {
-  const row = getDb()
+  const row = getMemoryDb()
     .select()
     .from(memoryRetrospectiveState)
     .where(eq(memoryRetrospectiveState.conversationId, conversationId))
@@ -117,7 +117,7 @@ export function upsertRetrospectiveState(
     rememberedLog?: string[];
   },
 ): void {
-  const db = getDb();
+  const db = getMemoryDb();
   const serializedLog =
     args.rememberedLog === undefined
       ? undefined
@@ -230,7 +230,7 @@ export function bumpRetrospectiveLastRunAt(
   conversationId: string,
   lastRunAt: number,
 ): void {
-  const db = getDb();
+  const db = getMemoryDb();
   db.insert(memoryRetrospectiveState)
     .values({
       conversationId,

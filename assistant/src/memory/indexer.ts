@@ -95,10 +95,17 @@ export async function indexMessageNow(
       ? candidateMediaMeta
       : [];
 
-  // Wrap all segment inserts and job enqueues in a single transaction so they
-  // either all succeed or all roll back, preventing partial/orphaned state.
+  // Segment inserts run in one main-DB transaction; the embed-job enqueues
+  // are collected and written to the memory DB AFTER it commits. The two
+  // used to share one transaction, but the job queue moved to
+  // assistant-memory.db (migration 328) and a transaction cannot span
+  // database files. Ordering matters: segments first, then jobs — a crash
+  // in the gap leaves a committed segment with no embed job, which the
+  // `backfill` / `rebuild_index` jobs already repair. (Jobs-first would
+  // leave a job pointing at a segment that never existed.)
   let skippedEmbedJobs = 0;
   let skippedShortSegments = 0;
+  const pendingEmbedSegmentIds: string[] = [];
   db.transaction((tx) => {
     for (const segment of segments) {
       if (segment.text.length < MIN_SEGMENT_CHARS) {
@@ -144,23 +151,25 @@ export async function indexMessageNow(
       if (existing?.contentHash === hash) {
         skippedEmbedJobs++;
       } else if (isMemoryEnabled()) {
-        enqueueMemoryJob("embed_segment", { segmentId }, Date.now(), tx);
-      }
-    }
-
-    // Enqueue embed_attachment jobs for image content blocks when the
-    // embedding provider supports multimodal (Gemini only).
-    if (isMemoryEnabled()) {
-      for (const block of mediaBlocks) {
-        enqueueMemoryJob(
-          "embed_attachment",
-          { messageId: input.messageId, blockIndex: block.index },
-          Date.now(),
-          tx,
-        );
+        pendingEmbedSegmentIds.push(segmentId);
       }
     }
   });
+
+  if (isMemoryEnabled()) {
+    for (const segmentId of pendingEmbedSegmentIds) {
+      enqueueMemoryJob("embed_segment", { segmentId }, Date.now());
+    }
+    // Enqueue embed_attachment jobs for image content blocks when the
+    // embedding provider supports multimodal (Gemini only).
+    for (const block of mediaBlocks) {
+      enqueueMemoryJob(
+        "embed_attachment",
+        { messageId: input.messageId, blockIndex: block.index },
+        Date.now(),
+      );
+    }
+  }
 
   // ── Batch extraction tracking ──────────────────────────────────────
   // Instead of per-message extraction, track pending unextracted messages

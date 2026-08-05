@@ -316,6 +316,11 @@ export { migrateArrivalOccurredAt } from "./320-arrival-occurred-at.js";
 export { migratePushBudgetLedger } from "./321-push-budget-ledger.js";
 export { migrateMemoryJobOutcome } from "./322-memory-job-outcome.js";
 export { migrateVolumeValve } from "./323-volume-valve.js";
+export { migrateMoveConversationMemoryStateToMemoryDb } from "./324-move-conversation-memory-state-to-memory-db.js";
+export { migrateMoveMemoryGraphClusterToMemoryDb } from "./325-move-memory-graph-cluster-to-memory-db.js";
+export { migrateMoveMemoryTelemetryLogsToMemoryDb } from "./326-move-memory-telemetry-logs-to-memory-db.js";
+export { migrateMoveMemoryV3TablesToMemoryDb } from "./327-move-memory-v3-tables-to-memory-db.js";
+export { migrateMoveMemoryJobsToMemoryDb } from "./328-move-memory-jobs-to-memory-db.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

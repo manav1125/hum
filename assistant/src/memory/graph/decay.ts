@@ -9,7 +9,7 @@
 
 import { and, eq, sql } from "drizzle-orm";
 
-import { getDb } from "../db-connection.js";
+import { getMemoryDb } from "../db-connection.js";
 import { memoryGraphNodes } from "../schema.js";
 import type { EmotionalCharge, Fidelity } from "./types.js";
 
@@ -132,7 +132,7 @@ export interface DecayTickResult {
  * computeEffectiveSignificance in scoring.ts, so it's not applied here.
  */
 export function runDecayTick(scopeId: string): DecayTickResult {
-  const db = getDb();
+  const db = getMemoryDb();
   const result: DecayTickResult = {
     nodesProcessed: 0,
     emotionalDecays: 0,

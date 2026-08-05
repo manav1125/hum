@@ -1,5 +1,5 @@
 import type { MemoryV2ConceptRowRecord } from "./memory-v2-activation-log-store.js";
-import { rawAll, rawGet } from "./raw-query.js";
+import { memRawAll, memRawGet } from "./raw-query.js";
 import { listPages } from "./v2/page-store.js";
 
 type ConceptStatus = MemoryV2ConceptRowRecord["status"];
@@ -70,7 +70,7 @@ export async function getConceptFrequencySummary(
   // queries below — listPages does fs.readdir, rawAll/rawGet are sync.
   const onDiskSlugsPromise = listPages(workspaceDir);
 
-  const aggRows = rawAll<AggRow>(
+  const aggRows = memRawAll<AggRow>(
     `SELECT
        json_extract(c.value, '$.slug')   AS slug,
        json_extract(c.value, '$.status') AS status,
@@ -86,7 +86,7 @@ export async function getConceptFrequencySummary(
     sinceMs,
   );
 
-  const logCountRow = rawGet<CountRow>(
+  const logCountRow = memRawGet<CountRow>(
     `SELECT COUNT(*) AS count
        FROM memory_v2_activation_logs
        WHERE (? IS NULL OR conversation_id = ?)

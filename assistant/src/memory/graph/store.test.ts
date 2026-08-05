@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 
 import { initializeDb } from "../db-init.js";
-import { resetTestTables } from "../raw-query.js";
+import { resetTestMemoryTables } from "../raw-query.js";
 import {
   applyDiff,
   countNodes,
@@ -66,7 +66,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  resetTestTables(
+  resetTestMemoryTables(
     "memory_graph_triggers",
     "memory_graph_edges",
     "memory_graph_nodes",

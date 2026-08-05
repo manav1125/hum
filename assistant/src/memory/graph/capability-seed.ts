@@ -22,7 +22,7 @@ import {
   type SkillCapabilityInput,
 } from "../../skills/skill-memory.js";
 import { getLogger } from "../../util/logger.js";
-import { getDb } from "../db-connection.js";
+import { getMemoryDb } from "../db-connection.js";
 import { enqueueMemoryJob, isMemoryEnabled } from "../jobs-store.js";
 import { memoryGraphNodes } from "../schema.js";
 import { createNode } from "./store.js";
@@ -226,7 +226,7 @@ function buildSkillContent(input: SkillCapabilityInput): string {
  * (capability nodes aren't tied to a real conversation).
  */
 function upsertCapabilityNode(sourceKey: string, content: string): void {
-  const db = getDb();
+  const db = getMemoryDb();
 
   // Find existing node by sourceKey stored in source_conversations JSON
   const existing = db
@@ -313,7 +313,7 @@ function upsertCapabilityNode(sourceKey: string, content: string): void {
  * Soft-delete (mark as gone) a capability node by its sourceKey.
  */
 function deleteCapabilityNode(sourceKey: string): void {
-  const db = getDb();
+  const db = getMemoryDb();
   const existing = db
     .select()
     .from(memoryGraphNodes)
@@ -346,7 +346,7 @@ function deleteCapabilityNode(sourceKey: string): void {
  * surface in retrieval.
  */
 function cleanupOldFormatCapabilityNodes(): void {
-  const db = getDb();
+  const db = getMemoryDb();
   const now = Date.now();
 
   // --- skill:* old-format nodes ---
@@ -410,7 +410,7 @@ function cleanupOldFormatCapabilityNodes(): void {
  * Remove capability nodes whose sourceKeys are no longer in the active set.
  */
 function pruneStaleCapabilities(prefix: string, activeKeys: Set<string>): void {
-  const db = getDb();
+  const db = getMemoryDb();
   const allCapabilities = db
     .select()
     .from(memoryGraphNodes)

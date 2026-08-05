@@ -24,7 +24,7 @@ mock.module("../v2/page-store.js", () => ({
   listPages: (workspaceDir: string) => listPagesImpl(workspaceDir),
 }));
 
-import { getDb } from "../db-connection.js";
+import { getMemoryDb } from "../db-connection.js";
 import { initializeDb } from "../db-init.js";
 import {
   type MemoryV2ConceptRowRecord,
@@ -60,7 +60,7 @@ function makeConcept(
 }
 
 function resetTables(): void {
-  getDb().delete(memoryV2ActivationLogs).run();
+  getMemoryDb().delete(memoryV2ActivationLogs).run();
 }
 
 describe("memory-v2-concept-frequency", () => {
@@ -203,7 +203,10 @@ describe("memory-v2-concept-frequency", () => {
       config: sampleConfig,
     });
     // Backdate the just-written row — recordMemoryV2ActivationLog uses Date.now().
-    getDb().update(memoryV2ActivationLogs).set({ createdAt: 1_000 }).run();
+    getMemoryDb()
+      .update(memoryV2ActivationLogs)
+      .set({ createdAt: 1_000 })
+      .run();
 
     recordMemoryV2ActivationLog({
       conversationId: "conv-1",

@@ -29,6 +29,9 @@ type DbSlot = {
 
 type VellumAssistantNamespace = {
   dbSingleton?: DbSlot;
+  // Mirrors the dedicated assistant-memory.db slot added alongside the main
+  // slot in `src/memory/db-singleton.ts`. Same duplication-by-design rule.
+  memoryDbSingleton?: DbSlot;
 };
 
 function dbSlot(): DbSlot {
@@ -37,15 +40,13 @@ function dbSlot(): DbSlot {
   return (ns.dbSingleton ??= { db: null, closer: null });
 }
 
-/**
- * Close the active DB connection (if any) and drop the singleton.
- *
- * Used by tests that nuke or replace the DB file mid-run — without this
- * reset, subsequent `getDb()` calls return a handle to the now-gone file.
- * Idempotent: safe to call when no connection has been opened.
- */
-export function resetDbForTesting(): void {
-  const s = dbSlot();
+function memoryDbSlot(): DbSlot {
+  const g = globalThis as { vellumAssistant?: VellumAssistantNamespace };
+  const ns = (g.vellumAssistant ??= {});
+  return (ns.memoryDbSingleton ??= { db: null, closer: null });
+}
+
+function clearSlot(s: DbSlot): void {
   if (s.closer) {
     try {
       s.closer();
@@ -55,4 +56,18 @@ export function resetDbForTesting(): void {
   }
   s.db = null;
   s.closer = null;
+}
+
+/**
+ * Close the active DB connections (main + dedicated memory DB, if any) and
+ * drop the singletons.
+ *
+ * Used by tests that nuke or replace the DB files mid-run — without this
+ * reset, subsequent `getDb()` / `getMemoryDb()` calls return handles to the
+ * now-gone files. Idempotent: safe to call when no connection has been
+ * opened.
+ */
+export function resetDbForTesting(): void {
+  clearSlot(dbSlot());
+  clearSlot(memoryDbSlot());
 }

@@ -25,7 +25,7 @@ import {
 import { z } from "zod";
 
 import { getConfig } from "../../config/loader.js";
-import { getDb } from "../../memory/db-connection.js";
+import { getMemoryDb } from "../../memory/db-connection.js";
 import {
   embedWithBackend,
   generateSparseEmbedding,
@@ -288,7 +288,7 @@ async function handleListMemoryItems(queryParams: Record<string, string>) {
     );
   }
 
-  const db = getDb();
+  const db = getMemoryDb();
 
   // Build fidelity filter based on status param
   const fidelityFilter =
@@ -490,7 +490,7 @@ async function handleCreateMemoryItem(body: Record<string, unknown>) {
     : trimmedStatement;
 
   // Check for duplicate content
-  const db = getDb();
+  const db = getMemoryDb();
   const existing = db
     .select({ id: memoryGraphNodes.id })
     .from(memoryGraphNodes)
@@ -610,7 +610,7 @@ async function handleUpdateMemoryItem(
     changes.fidelity === "vivid" && existing.fidelity === "gone";
   if (contentChanged || reactivating) {
     const contentToCheck = changes.content ?? existing.content;
-    const db = getDb();
+    const db = getMemoryDb();
     const collision = db
       .select({ id: memoryGraphNodes.id })
       .from(memoryGraphNodes)

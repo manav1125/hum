@@ -14,7 +14,13 @@
  * subprocess to VACUUM/checkpoint a live DB.
  */
 
-import { rawExec, rawGet } from "../../memory/raw-query.js";
+import { sweepOrphanConversationMemoryTables } from "../../memory/conversation-memory-cleanup.js";
+import {
+  memRawExec,
+  memRawGet,
+  rawExec,
+  rawGet,
+} from "../../memory/raw-query.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import type { RouteDefinition } from "./types.js";
@@ -53,35 +59,50 @@ const CONVERSATION_CHILD_TABLES = [
   "scoped_approval_grants",
   "canonical_guardian_requests",
   "trace_events",
-  "memory_recall_logs",
-  "memory_graph_node_edits",
-  "conversation_graph_memory_state",
-  "activation_state",
-  "memory_v2_activation_logs",
   "document_conversations",
   "heartbeat_runs",
   "message_bookmarks",
-  "memory_retrospective_state",
   "a2a_tasks",
   "document_comments",
-  "memory_v3_coactivation",
-  "memory_v3_selections",
   "activation_sessions",
-  "memory_v3_ever_injected",
   "skill_loaded_events",
   "assistant_inbox_thread_state",
 ] as const;
+// The conversation-keyed memory tables that used to sit in this list
+// (memory_recall_logs, conversation_graph_memory_state, activation_state,
+// memory_v2_activation_logs, memory_retrospective_state,
+// memory_v3_coactivation/selections/ever_injected) relocated to
+// assistant-memory.db (migrations 324–327). The anti-join above can't span
+// database files, so their orphans are cleaned by
+// `sweepOrphanConversationMemoryTables` in the handler below.
+// `memory_graph_node_edits` also moved and left this list for good: an edit
+// row is node-scoped audit history that lives and dies with its node's
+// intra-cluster cascade, not with the conversation named in its provenance
+// column.
 
 /** Pure telemetry/log tables — safe to clear wholesale (no knowledge value). */
 const TELEMETRY_TABLES = [
-  "memory_v2_injection_events",
   "lifecycle_events",
   "llm_request_logs",
   "trace_events",
 ] as const;
 
+/** Telemetry tables that relocated to assistant-memory.db. */
+const MEMORY_DB_TELEMETRY_TABLES = ["memory_v2_injection_events"] as const;
+
 function countOrZero(sql: string): number {
   return rawGet<{ c: number }>(sql)?.c ?? 0;
+}
+
+/** {@link countOrZero} against the dedicated memory DB connection. */
+function memCountOrZero(sql: string): number {
+  try {
+    return memRawGet<{ c: number }>(sql)?.c ?? 0;
+  } catch {
+    // A stats probe must not fail the whole route when the memory DB is
+    // unavailable — report zero and let the log surface the real problem.
+    return 0;
+  }
 }
 
 /** Snapshot of counts that prove the prune touched only runaway/churn data. */
@@ -94,12 +115,13 @@ function gatherStats(): Record<string, number> {
     conversationsReal: countOrZero(
       "SELECT COUNT(*) AS c FROM conversations WHERE conversation_type<>'background'",
     ),
-    memoryJobs: countOrZero("SELECT COUNT(*) AS c FROM memory_jobs"),
-    // Valuable tables — MUST be identical before and after.
-    memoryGraphNodes: countOrZero(
+    memoryJobs: memCountOrZero("SELECT COUNT(*) AS c FROM memory_jobs"),
+    // Valuable tables — MUST be identical before and after. The memory
+    // graph relocated to assistant-memory.db (migration 325).
+    memoryGraphNodes: memCountOrZero(
       "SELECT COUNT(*) AS c FROM memory_graph_nodes",
     ),
-    memoryGraphEdges: countOrZero(
+    memoryGraphEdges: memCountOrZero(
       "SELECT COUNT(*) AS c FROM memory_graph_edges",
     ),
     contacts: countOrZero("SELECT COUNT(*) AS c FROM contacts"),
@@ -129,12 +151,20 @@ async function handleMaintenancePrune(): Promise<{
     `DELETE FROM conversations WHERE conversation_type='background';\n${cascade}`,
   );
 
-  // 2. Drain the completed memory-job queue (it never self-reaps) + telemetry.
-  rawExec(
-    `DELETE FROM memory_jobs WHERE status IN ('completed','failed');\n${TELEMETRY_TABLES.map(
+  // 1b. The relocated conversation-keyed memory tables live in
+  //     assistant-memory.db, out of reach of the anti-join above — the
+  //     cross-DB orphan sweep deletes their rows for the conversations just
+  //     removed. Best-effort by construction.
+  await sweepOrphanConversationMemoryTables();
+
+  // 2. Drain the completed memory-job queue (it never self-reaps, and it
+  //    relocated to assistant-memory.db) + telemetry on both connections.
+  memRawExec(
+    `DELETE FROM memory_jobs WHERE status IN ('completed','failed');\n${MEMORY_DB_TELEMETRY_TABLES.map(
       (t) => `DELETE FROM ${t};`,
     ).join("\n")}`,
   );
+  rawExec(TELEMETRY_TABLES.map((t) => `DELETE FROM ${t};`).join("\n"));
 
   // 3. Rebuild the messages FTS index to drop entries for deleted messages.
   try {
@@ -143,10 +173,15 @@ async function handleMaintenancePrune(): Promise<{
     log.warn({ err }, "maintenance prune: FTS rebuild skipped");
   }
 
-  // 4. Reclaim the freed pages. Safe here: the daemon's own in-process
-  //    connection runs it, so the WAL-unlink hazard of a subprocess VACUUM
-  //    does not apply.
+  // 4. Reclaim the freed pages on both files. Safe here: the daemon's own
+  //    in-process connections run it, so the WAL-unlink hazard of a
+  //    subprocess VACUUM does not apply.
   rawExec("VACUUM;");
+  try {
+    memRawExec("VACUUM;");
+  } catch (err) {
+    log.warn({ err }, "maintenance prune: memory-DB VACUUM skipped");
+  }
 
   const after = gatherStats();
   log.info({ after }, "maintenance prune: complete");

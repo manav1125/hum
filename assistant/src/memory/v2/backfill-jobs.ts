@@ -23,7 +23,7 @@ import { getLogger } from "../../util/logger.js";
 import { getWorkspaceDir } from "../../util/platform.js";
 import { getMessages } from "../conversation-crud.js";
 import { listConversations } from "../conversation-queries.js";
-import { getDb } from "../db-connection.js";
+import { getMemoryDb } from "../db-connection.js";
 import { enqueueEmbedConceptPageJob } from "../jobs/embed-concept-page.js";
 import type { MemoryJob } from "../jobs-store.js";
 import { stringifyMessageContent } from "../message-content.js";
@@ -65,7 +65,7 @@ export async function memoryV2MigrateJob(
   try {
     const result = await runMemoryV2Migration({
       workspaceDir: getWorkspaceDir(),
-      database: getDb(),
+      database: getMemoryDb(),
       force,
       config,
     });
@@ -155,7 +155,7 @@ export async function memoryV2ActivationRecomputeJob(
   config: AssistantConfig,
 ): Promise<number> {
   const workspaceDir = getWorkspaceDir();
-  const database = getDb();
+  const database = getMemoryDb();
 
   // Activation maps still need to refresh for archived conversations — a
   // consolidated page can leave stale slugs above epsilon in their persisted

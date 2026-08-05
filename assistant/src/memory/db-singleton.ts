@@ -34,12 +34,24 @@ type DbSlot = {
 
 type VellumAssistantNamespace = {
   dbSingleton?: DbSlot;
+  /**
+   * Dedicated `assistant-memory.db` connection slot. A separate named slot
+   * (rather than a keyed map) so the long-standing `dbSingleton` shape — and
+   * its test-side mirror in `__tests__/db-test-helpers.ts` — stays untouched.
+   */
+  memoryDbSingleton?: DbSlot;
 };
 
 function slot(): DbSlot {
   const g = globalThis as { vellumAssistant?: VellumAssistantNamespace };
   const ns = (g.vellumAssistant ??= {});
   return (ns.dbSingleton ??= { db: null, closer: null });
+}
+
+function memorySlot(): DbSlot {
+  const g = globalThis as { vellumAssistant?: VellumAssistantNamespace };
+  const ns = (g.vellumAssistant ??= {});
+  return (ns.memoryDbSingleton ??= { db: null, closer: null });
 }
 
 /** Read the current singleton, narrowed to `T`. `null` means not yet opened. */
@@ -64,7 +76,27 @@ export function setStoredDb<T>(newDb: T, close: () => void): void {
  * both. Idempotent: safe to call when no connection is stored.
  */
 export function clearStoredDb(): void {
-  const s = slot();
+  clearSlot(slot());
+}
+
+/** Memory-DB counterpart of {@link getStoredDb}. */
+export function getStoredMemoryDb<T>(): T | null {
+  return memorySlot().db as T | null;
+}
+
+/** Memory-DB counterpart of {@link setStoredDb}. */
+export function setStoredMemoryDb<T>(newDb: T, close: () => void): void {
+  const s = memorySlot();
+  s.db = newDb;
+  s.closer = close;
+}
+
+/** Memory-DB counterpart of {@link clearStoredDb}. Idempotent. */
+export function clearStoredMemoryDb(): void {
+  clearSlot(memorySlot());
+}
+
+function clearSlot(s: DbSlot): void {
   if (s.closer) {
     try {
       s.closer();

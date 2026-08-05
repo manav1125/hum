@@ -1,8 +1,21 @@
-import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 
 import { setMemoryCheckpoint } from "../checkpoints.js";
 import { initializeDb } from "../db-init.js";
-import { rawAll, rawGet, rawRun, resetTestTables } from "../raw-query.js";
+import {
+  rawAll,
+  rawGet,
+  rawRun,
+  resetTestMemoryTables,
+  resetTestTables,
+} from "../raw-query.js";
 import { migrateToolCreatedItems } from "./bootstrap.js";
 
 // ---------------------------------------------------------------------------
@@ -21,7 +34,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   // Clear graph nodes and checkpoints between tests so each test starts clean.
-  resetTestTables("memory_graph_nodes", "memory_checkpoints", "memory_jobs");
+  resetTestMemoryTables("memory_graph_nodes", "memory_jobs");
+  resetTestTables("memory_checkpoints");
 });
 
 // ---------------------------------------------------------------------------
@@ -29,6 +43,42 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("migrateToolCreatedItems", () => {
+  // The migration runs as a db-init step BEFORE relocation migration 325, so
+  // on the one legacy layout where it has work to do, memory_graph_nodes
+  // still lives in the MAIN db. Fresh installs create graph tables only in
+  // the memory DB, so recreate the legacy main-DB copy for these tests —
+  // same reasoning as the memory_items fixture below.
+  beforeEach(() => {
+    rawRun(
+      `CREATE TABLE IF NOT EXISTS memory_graph_nodes (
+        id                    TEXT PRIMARY KEY,
+        content               TEXT NOT NULL,
+        type                  TEXT NOT NULL,
+        created               INTEGER NOT NULL,
+        last_accessed         INTEGER NOT NULL,
+        last_consolidated     INTEGER NOT NULL,
+        event_date            INTEGER,
+        emotional_charge      TEXT NOT NULL,
+        fidelity              TEXT NOT NULL DEFAULT 'vivid',
+        confidence            REAL NOT NULL,
+        significance          REAL NOT NULL,
+        stability             REAL NOT NULL DEFAULT 14,
+        reinforcement_count   INTEGER NOT NULL DEFAULT 0,
+        last_reinforced       INTEGER NOT NULL,
+        source_conversations  TEXT NOT NULL DEFAULT '[]',
+        source_type           TEXT NOT NULL DEFAULT 'inferred',
+        narrative_role        TEXT,
+        part_of_story         TEXT,
+        scope_id              TEXT NOT NULL DEFAULT 'default',
+        image_refs            TEXT
+      )`,
+    );
+  });
+
+  afterEach(() => {
+    rawRun("DROP TABLE IF EXISTS memory_graph_nodes");
+  });
+
   test("migrates legacy memory_items to graph nodes", () => {
     // The memory_items table has been dropped by migration 203, so we need to
     // recreate it for this test. We create a minimal version with just the

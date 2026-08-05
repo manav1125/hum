@@ -38,7 +38,20 @@ export const memoryV2Bm25BReembedDisabledV2PagesMigration: WorkspaceMigration =
       "Re-enqueue memory_v2_reembed for workspaces with v2 pages, gated on v2 not being explicitly disabled",
 
     run(workspaceDir: string): void {
-      const dbPath = join(workspaceDir, "data", "db", "assistant.db");
+      // `memory_jobs` moved to assistant-memory.db (DB migration 328), and
+      // DB migrations run before workspace migrations — so on any current
+      // boot the queue lives there. The assistant.db fallback covers only
+      // the hypothetical of this migration running before the relocation
+      // ever has (it can't today, but the guard is cheap).
+      const memoryDbPath = join(
+        workspaceDir,
+        "data",
+        "db",
+        "assistant-memory.db",
+      );
+      const dbPath = existsSync(memoryDbPath)
+        ? memoryDbPath
+        : join(workspaceDir, "data", "db", "assistant.db");
       if (!existsSync(dbPath)) return;
 
       let db: Database;

@@ -19,7 +19,18 @@ export const memoryV2Bm25BDefaultReembedMigration: WorkspaceMigration = {
     "Enqueue memory_v2_reembed so existing concept pages pick up the new bm25_b=0.4 default",
 
   run(workspaceDir: string): void {
-    const dbPath = join(workspaceDir, "data", "db", "assistant.db");
+    // `memory_jobs` moved to assistant-memory.db (DB migration 328, which
+    // runs before workspace migrations); assistant.db is the pre-split
+    // fallback only.
+    const memoryDbPath = join(
+      workspaceDir,
+      "data",
+      "db",
+      "assistant-memory.db",
+    );
+    const dbPath = existsSync(memoryDbPath)
+      ? memoryDbPath
+      : join(workspaceDir, "data", "db", "assistant.db");
     if (!existsSync(dbPath)) return; // Fresh install — pages will embed at the new default.
 
     let db: Database;

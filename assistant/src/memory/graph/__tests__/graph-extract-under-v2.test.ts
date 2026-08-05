@@ -100,9 +100,10 @@ mock.module("../graph-search.js", () => ({
   embedGraphNodeDirect: async () => {},
 }));
 
-const { getDb } = await import("../../db-connection.js");
+const { getDb, getMemoryDb } = await import("../../db-connection.js");
 const { initializeDb } = await import("../../db-init.js");
-const { resetTestTables } = await import("../../raw-query.js");
+const { resetTestMemoryTables, resetTestTables } =
+  await import("../../raw-query.js");
 const { conversations, messages, memoryGraphNodes } =
   await import("../../schema.js");
 const { applyNestedDefaults } = await import("../../../config/loader.js");
@@ -110,12 +111,8 @@ const { graphExtractJob } = await import("../extraction-job.js");
 
 beforeEach(() => {
   initializeDb();
-  resetTestTables(
-    "memory_graph_nodes",
-    "messages",
-    "conversations",
-    "memory_checkpoints",
-  );
+  resetTestMemoryTables("memory_graph_nodes");
+  resetTestTables("messages", "conversations", "memory_checkpoints");
 });
 
 function buildConfig() {
@@ -160,7 +157,7 @@ describe("graph_extract under memory.v2.enabled", () => {
 
     // Sanity: v2 is enabled and the store starts empty.
     expect(config.memory.v2.enabled).toBe(true);
-    expect(getDb().select().from(memoryGraphNodes).all()).toHaveLength(0);
+    expect(getMemoryDb().select().from(memoryGraphNodes).all()).toHaveLength(0);
 
     await graphExtractJob(
       {
@@ -173,7 +170,7 @@ describe("graph_extract under memory.v2.enabled", () => {
 
     // The extraction run must have written typed nodes into the graph store —
     // the store the memory-item route reads.
-    const rows = getDb().select().from(memoryGraphNodes).all();
+    const rows = getMemoryDb().select().from(memoryGraphNodes).all();
     const byType = new Map(rows.map((r) => [r.type, r]));
     expect(byType.has("episodic")).toBe(true);
     expect(byType.has("semantic")).toBe(true);

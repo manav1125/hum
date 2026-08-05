@@ -2,7 +2,7 @@ import { eq, isNotNull, like, ne } from "drizzle-orm";
 
 import { getConfig } from "../../config/loader.js";
 import { getLogger } from "../../util/logger.js";
-import { getDb } from "../db-connection.js";
+import { getDb, getMemoryDb } from "../db-connection.js";
 import { selectedBackendSupportsMultimodal } from "../embedding-backend.js";
 import { asString, BackendUnavailableError } from "../job-utils.js";
 import { enqueueMemoryJob, type MemoryJob } from "../jobs-store.js";
@@ -70,8 +70,9 @@ export async function rebuildIndexJob(): Promise<void> {
     }
   }
 
-  // Re-embed graph nodes stored in the memory graph.
-  const graphNodes = db
+  // Re-embed graph nodes stored in the memory graph (dedicated memory DB).
+  const memoryDb = getMemoryDb();
+  const graphNodes = memoryDb
     .select({ id: memoryGraphNodes.id })
     .from(memoryGraphNodes)
     .where(ne(memoryGraphNodes.fidelity, "gone"))
@@ -81,7 +82,7 @@ export async function rebuildIndexJob(): Promise<void> {
   }
 
   // Re-embed semantic triggers that have condition text.
-  const triggers = db
+  const triggers = memoryDb
     .select({ id: memoryGraphTriggers.id })
     .from(memoryGraphTriggers)
     .where(isNotNull(memoryGraphTriggers.condition))

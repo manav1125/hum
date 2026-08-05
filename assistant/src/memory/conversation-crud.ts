@@ -57,9 +57,13 @@ import {
 } from "./conversation-disk-view.js";
 import { ensureDisplayOrderMigration } from "./conversation-display-order-migration.js";
 import { ensureGroupMigration } from "./conversation-group-migration.js";
+import {
+  clearAllConversationMemoryTables,
+  purgeConversationMemoryTables,
+} from "./conversation-memory-cleanup.js";
 import { BACKGROUND_CONVERSATION_TYPES } from "./conversation-types.js";
 import { runAsyncSqlite } from "./db-async-query.js";
-import { getDb, getSqliteFrom } from "./db-connection.js";
+import { getDb, getMemoryDb, getSqliteFrom } from "./db-connection.js";
 import { forkGraphMemoryState } from "./graph/graph-memory-state-store.js";
 import { indexMessageNow } from "./indexer.js";
 import { MEMORY_RETROSPECTIVE_SOURCES } from "./memory-retrospective-constants.js";
@@ -1106,16 +1110,26 @@ export function forkConversation(params: {
       latestAssistantMessageAt: latestForkedAssistant?.messageAt ?? null,
     });
 
-    // Carry the parent's per-conversation memory state into the child so the
-    // forked thread resumes with the same activation/injection log and
-    // in-context tracker the parent had at fork time. Only valid for
-    // full-history forks: a truncated fork would inherit activation/tracker
-    // entries for turns the child does not actually contain.
+    return { fc, forkedMessageIds };
+  });
+
+  // Carry the parent's per-conversation memory state into the child so the
+  // forked thread resumes with the same activation/injection log and
+  // in-context tracker the parent had at fork time. These tables live in
+  // the dedicated assistant-memory.db, so the copy CANNOT participate in
+  // the main-DB fork transaction above — it runs after commit, best-effort:
+  // a failed memory-state copy degrades to re-selection/re-injection on the
+  // fork's next turns (re-derivable), never to a broken fork.
+  try {
+    const db2 = getMemoryDb();
+    const fcId = forkedConversation.fc.id;
+    // Only valid for full-history forks: a truncated fork would inherit
+    // activation/tracker entries for turns the child does not contain.
     const isFullHistoryFork = copyBoundaryIndex === sourceMessages.length - 1;
     if (isFullHistoryFork) {
-      forkActivationState(db, sourceConversation.id, fc.id);
-      forkEverInjected(db, sourceConversation.id, fc.id);
-      forkGraphMemoryState(sourceConversation.id, fc.id);
+      forkActivationState(db2, sourceConversation.id, fcId);
+      forkEverInjected(db2, sourceConversation.id, fcId);
+      forkGraphMemoryState(sourceConversation.id, fcId);
     } else {
       // Truncated fork: the wholesale copy above would over-claim, but
       // seeding nothing makes the child re-select and re-attach every page
@@ -1152,25 +1166,32 @@ export function forkConversation(params: {
           }
         }
       }
-      seedForkActivationState(db, fc.id, [...inheritedSlugs]);
+      seedForkActivationState(db2, fcId, [...inheritedSlugs]);
       seedEverInjectedFromSlugs(
-        db,
+        db2,
         sourceConversation.id,
-        fc.id,
+        fcId,
         [...inheritedV3Slugs],
         Date.now(),
       );
     }
     forkRetrospectiveState({
-      database: db,
+      database: db2,
       sourceConversationId: sourceConversation.id,
-      forkedConversationId: fc.id,
-      forkedMessageIds,
+      forkedConversationId: fcId,
+      forkedMessageIds: forkedConversation.forkedMessageIds,
       lastCopiedSourceMessageId: messagesToCopy.at(-1)?.id ?? null,
     });
-
-    return fc;
-  });
+  } catch (err) {
+    log.warn(
+      {
+        err,
+        sourceConversationId: sourceConversation.id,
+        forkedConversationId: forkedConversation.fc.id,
+      },
+      "Failed to copy per-conversation memory state for fork; fork proceeds without it",
+    );
+  }
 
   // Disk-view sync runs after commit — file I/O is idempotent and
   // conversation deletion cleans up orphaned directories.
@@ -1178,10 +1199,10 @@ export function forkConversation(params: {
     syncMessageToDisk(entry.conversationId, entry.messageId, entry.createdAt);
   }
 
-  const persistedFork = getConversation(forkedConversation.id);
+  const persistedFork = getConversation(forkedConversation.fc.id);
   if (!persistedFork) {
     throw new Error(
-      `Failed to load forked conversation ${forkedConversation.id} after creation`,
+      `Failed to load forked conversation ${forkedConversation.fc.id} after creation`,
     );
   }
 
@@ -1262,6 +1283,13 @@ export function deleteConversation(id: string): DeletedMemoryIds {
 
     tx.delete(conversations).where(eq(conversations.id, id)).run();
   });
+
+  // The relocated conversation-keyed memory tables live in
+  // assistant-memory.db — no cross-DB cascade exists, so purge them
+  // explicitly after the main-DB transaction commits. Best-effort inside:
+  // a locked memory DB never aborts the (already committed) delete, and
+  // the periodic orphan sweep catches anything a crash strands here.
+  purgeConversationMemoryTables(id);
 
   // Remove the conversation's disk-view directory after the DB transaction
   if (createdAtForDiskCleanup != null) {
@@ -2294,8 +2322,12 @@ export async function clearAll(): Promise<{
   await runOrThrow("DELETE FROM memory_segments");
   await runOrThrow("DELETE FROM memory_summaries");
   await runOrThrow("DELETE FROM memory_embeddings");
-  await runOrThrow("DELETE FROM memory_jobs");
   await runOrThrow("DELETE FROM memory_checkpoints");
+  // The relocated memory tables (conversation-keyed state/logs + the
+  // memory_jobs queue) live in assistant-memory.db; wipe them on the
+  // dedicated connection. Best-effort by design — clearing conversations
+  // must not fail because derived memory state couldn't be reached.
+  clearAllConversationMemoryTables();
   await runOrThrow("DELETE FROM llm_request_logs");
   await runOrThrow("DELETE FROM llm_usage_events");
   await runOrThrow("DELETE FROM message_attachments");

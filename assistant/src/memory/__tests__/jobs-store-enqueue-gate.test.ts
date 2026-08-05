@@ -69,11 +69,16 @@ mock.module("../qdrant-circuit-breaker.js", () => ({
   shouldAllowQdrantProbe: () => true,
 }));
 
-// Stub raw query helpers (used by jobs-store internally).
+// Stub raw query helpers (used by jobs-store internally). Both the main-
+// and memory-connection variants are stubbed — jobs-store moved to the
+// memory-DB helpers when memory_jobs relocated (migration 328).
 mock.module("../raw-query.js", () => ({
   rawAll: () => [],
   rawChanges: () => 0,
   rawRun: () => 0,
+  memRawAll: () => [],
+  memRawChanges: () => 0,
+  memRawRun: () => 0,
 }));
 
 // Drizzle-shaped no-op db. Tracks inserts/updates so tests can observe
@@ -114,6 +119,9 @@ function makeStubDb() {
 const stubDb = makeStubDb();
 mock.module("../db-connection.js", () => ({
   getDb: () => stubDb,
+  // memory_jobs lives on the dedicated memory connection since migration
+  // 328 — the same stub observes those writes.
+  getMemoryDb: () => stubDb,
 }));
 
 // Now load the real modules under test.

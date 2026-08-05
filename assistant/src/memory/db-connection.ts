@@ -5,8 +5,15 @@ import { Database } from "bun:sqlite";
 
 import { drizzle } from "drizzle-orm/bun-sqlite";
 
-import { ensureDataDir, getDbPath } from "../util/platform.js";
-import { clearStoredDb, getStoredDb, setStoredDb } from "./db-singleton.js";
+import { ensureDataDir, getDbPath, getMemoryDbPath } from "../util/platform.js";
+import {
+  clearStoredDb,
+  clearStoredMemoryDb,
+  getStoredDb,
+  getStoredMemoryDb,
+  setStoredDb,
+  setStoredMemoryDb,
+} from "./db-singleton.js";
 import * as schema from "./schema.js";
 
 export type DrizzleDb = ReturnType<typeof drizzle<typeof schema>>;
@@ -69,13 +76,14 @@ function assertTestDbIsIsolated(): void {
   }
 }
 
-export function getDb(): DrizzleDb {
-  const existing = getStoredDb<DrizzleDb>();
-  if (existing) return existing;
-
-  assertTestDbIsIsolated();
-  ensureDataDir();
-  const sqlite = new Database(getDbPath());
+/**
+ * Apply the connection-wide PRAGMAs every assistant SQLite connection runs
+ * with. These are per-connection settings, so the dedicated memory
+ * connection sets them independently of the main connection. Never add a
+ * `wal_checkpoint(TRUNCATE)` here — see "SQLite WAL checkpointing" in
+ * assistant/CLAUDE.md.
+ */
+function applyConnectionPragmas(sqlite: Database): void {
   sqlite.exec("PRAGMA journal_mode=WAL");
   // synchronous=NORMAL under WAL (adopted from upstream 590433ef9c): FULL
   // fsyncs on every commit, which dominates write-heavy conversation/memory
@@ -97,9 +105,63 @@ export function getDb(): DrizzleDb {
   // burst can't leave a permanently huge WAL (disk + slow crash-recovery scan).
   // Any WAL reset also truncates the file back to this ceiling. 64 MiB.
   sqlite.exec("PRAGMA journal_size_limit=67108864");
+}
+
+export function getDb(): DrizzleDb {
+  const existing = getStoredDb<DrizzleDb>();
+  if (existing) return existing;
+
+  assertTestDbIsIsolated();
+  ensureDataDir();
+  const sqlite = new Database(getDbPath());
+  applyConnectionPragmas(sqlite);
   const db = drizzle(sqlite, { schema });
   setStoredDb(db, () => sqlite.close());
   return db;
+}
+
+/**
+ * The dedicated high-churn memory database (`assistant-memory.db`), opened
+ * lazily as its OWN long-lived connection — deliberately not `ATTACH`ed to
+ * the main connection (adopted from upstream 2b70d1d246): an attached DB
+ * shares the main connection's transaction and lock lifecycle, so a memory
+ * write burst would keep churning the main DB's WAL and write lock, which is
+ * exactly what the split removes.
+ *
+ * Houses the tables relocated by migrations 324–328: the memory graph
+ * cluster, per-conversation activation/graph/retrospective state, memory
+ * telemetry logs (recall / v2 activation / v2 injection), the memory-v3
+ * shadow tables, and the memory job queue. Cross-database foreign keys do
+ * not exist, so cascades from `conversations`/`messages` into these tables
+ * are replaced by the explicit cleanup calls in
+ * `conversation-memory-cleanup.ts`.
+ *
+ * Opening only sets PRAGMAs — it never runs DDL. Table/index creation
+ * belongs to the relocation migrations, which run at startup before any
+ * store touches this connection. Throws when the file cannot be opened
+ * (same contract as {@link getDb}); cleanup/purge callers that must never
+ * fail a main-DB delete wrap their access in try/catch.
+ */
+export function getMemoryDb(): DrizzleDb {
+  const existing = getStoredMemoryDb<DrizzleDb>();
+  if (existing) return existing;
+
+  assertTestDbIsIsolated();
+  ensureDataDir();
+  const sqlite = new Database(getMemoryDbPath());
+  applyConnectionPragmas(sqlite);
+  const db = drizzle(sqlite, { schema });
+  setStoredMemoryDb(db, () => sqlite.close());
+  return db;
+}
+
+/**
+ * Whether the dedicated memory DB connection is currently open. Lets
+ * shutdown paths decide whether to run checkpoint work without lazily
+ * opening the very connection being checked for.
+ */
+export function isMemoryDbOpen(): boolean {
+  return getStoredMemoryDb<DrizzleDb>() !== null;
 }
 
 /**
@@ -110,6 +172,11 @@ export function getDb(): DrizzleDb {
  */
 export function getSqlite(): Database {
   return getSqliteFrom(getDb());
+}
+
+/** Underlying bun:sqlite Database for the dedicated memory connection. */
+export function getMemorySqlite(): Database {
+  return getSqliteFrom(getMemoryDb());
 }
 
 /**
@@ -124,9 +191,11 @@ export function getSqliteFrom(drizzleDb: DrizzleDb): Database {
 }
 
 /**
- * Reset the db singleton. Used by production callers that need to close
- * the live connection so the file can be replaced (post-migration,
- * post-restore, post-vbundle-import) and on graceful shutdown.
+ * Reset the db singletons (main + dedicated memory connection). Used by
+ * production callers that need to close the live connections so the files
+ * can be replaced (post-migration, post-restore, post-vbundle-import) and
+ * on graceful shutdown. Clearing both together means no connection lingers
+ * open against a swapped-out file.
  *
  * Tests should use `resetDbForTesting()` from
  * `__tests__/db-test-helpers.ts` instead so they don't depend on this
@@ -134,4 +203,5 @@ export function getSqliteFrom(drizzleDb: DrizzleDb): Database {
  */
 export function resetDb(): void {
   clearStoredDb();
+  clearStoredMemoryDb();
 }

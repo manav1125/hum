@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import { loadConfig } from "../../config/loader.js";
 import type { AssistantConfig } from "../../config/types.js";
-import { getDb } from "../../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../../memory/db-connection.js";
 import {
   enqueueMemoryJob,
   type MemoryJobType,
@@ -335,7 +335,7 @@ async function handleEmaScores({
 
   const pageIndex = await getPageIndex(getWorkspaceDir());
   const slugs = pageIndex.entries.map((e) => e.slug);
-  const scores = computeInjectionScores(getDb(), slugs, Date.now());
+  const scores = computeInjectionScores(getMemoryDb(), slugs, Date.now());
 
   const entries: MemoryV2EmaScoresEntry[] = pageIndex.entries.map((entry) => ({
     slug: entry.slug,
@@ -535,7 +535,8 @@ export async function handleSimulateRouter({
     nowText,
     priorEverInjected: [],
     config: mergedConfig,
-    database: getDb(),
+    // Router EMA scoring reads memory_v2_injection_events (memory DB).
+    database: getMemoryDb(),
     ...(profileOverride !== undefined
       ? { overrideProfile: profileOverride }
       : {}),
@@ -550,7 +551,7 @@ export async function handleSimulateRouter({
 
   const pageIndex = await getPageIndex(workspaceDir);
   const scores = computeInjectionScores(
-    getDb(),
+    getMemoryDb(),
     routerResult.selectedSlugs,
     Date.now(),
   );
@@ -659,7 +660,11 @@ export async function handleCompareRetrievers({
 
   // The router is always comparand #1 (the harness self-test against its own
   // logged ground truth).
-  const retrievers: Retriever[] = [createRouterRetriever(db)];
+  const retrievers: Retriever[] = [
+    // The router retriever's database is only used for EMA tier-2 scoring
+    // against memory_v2_injection_events, which lives in the memory DB.
+    createRouterRetriever(getMemoryDb()),
+  ];
 
   return runComparisonOverHistory({
     db,

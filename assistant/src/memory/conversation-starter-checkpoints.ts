@@ -7,7 +7,7 @@
 import { eq } from "drizzle-orm";
 
 import { getDb } from "./db-connection.js";
-import { rawGet } from "./raw-query.js";
+import { memRawGet } from "./raw-query.js";
 import { memoryCheckpoints } from "./schema.js";
 
 // ── Checkpoint keys ──────────────────────────────────────────────
@@ -55,8 +55,9 @@ export function upsertCheckpoint(
 // ── Queries ──────────────────────────────────────────────────────
 
 export function countActiveMemoryNodes(scopeId: string): number {
+  // Graph nodes live in the dedicated memory DB (migration 325).
   return (
-    rawGet<{ c: number }>(
+    memRawGet<{ c: number }>(
       `SELECT COUNT(*) AS c FROM memory_graph_nodes WHERE fidelity != 'gone' AND scope_id = ?`,
       scopeId,
     )?.c ?? 0

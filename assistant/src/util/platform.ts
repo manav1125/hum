@@ -178,6 +178,19 @@ export function getDbPath(): string {
 }
 
 /**
+ * Path of the dedicated high-churn memory database
+ * (`assistant-memory.db`), which houses the memory-subsystem tables
+ * relocated out of `assistant.db` by migrations 324–328 (memory graph
+ * cluster, activation/retrospective state, memory telemetry logs, v3
+ * shadow tables, and the memory job queue). Lives beside the main DB so
+ * backup/restore flows that operate on the `db/` directory cover both
+ * files.
+ */
+export function getMemoryDbPath(): string {
+  return join(getDataDir(), "db", "assistant-memory.db");
+}
+
+/**
  * Returns the directory where logs live: `<dataDir>/logs/`. Files rotate
  * daily (`assistant-YYYY-MM-DD.log`), so callers ask for the directory and
  * let the logger own the filename.

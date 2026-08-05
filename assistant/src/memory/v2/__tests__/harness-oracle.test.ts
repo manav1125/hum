@@ -9,7 +9,7 @@ mock.module("../../../config/loader.js", () => ({
   getConfig: () => ({ memory: { enabled: false } }),
 }));
 
-import { getDb } from "../../db-connection.js";
+import { getDb, getMemoryDb } from "../../db-connection.js";
 import { initializeDb } from "../../db-init.js";
 import type { MemoryV2ConceptRowRecord } from "../../memory-v2-activation-log-store.js";
 import {
@@ -72,7 +72,7 @@ function insertLog(opts: {
   createdAt: number;
 }): void {
   ensureConversation(opts.conversationId);
-  getDb()
+  getMemoryDb()
     .insert(memoryV2ActivationLogs)
     .values({
       id: `log-${seq++}`,
@@ -107,9 +107,8 @@ function insertMessage(
 }
 
 function reset(): void {
-  const db = getDb();
-  db.delete(memoryV2ActivationLogs).run();
-  db.delete(messages).run();
+  getMemoryDb().delete(memoryV2ActivationLogs).run();
+  getDb().delete(messages).run();
 }
 
 describe("harness/oracle extractOracleTurns", () => {

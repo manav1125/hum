@@ -10,13 +10,13 @@ import { resolveCallSiteConfig } from "../../config/llm-resolver.js";
 import { getConfig } from "../../config/loader.js";
 import { countConversations } from "../../memory/conversation-queries.js";
 import { getMemoryJobCounts } from "../../memory/jobs-store.js";
-import { rawAll } from "../../memory/raw-query.js";
+import { memRawAll } from "../../memory/raw-query.js";
 import {
   getProviderRoutingSource,
   listProviders,
 } from "../../providers/registry.js";
 import { countSchedules } from "../../schedule/schedule-store.js";
-import { getDbPath } from "../../util/platform.js";
+import { getDbPath, getMemoryDbPath } from "../../util/platform.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import type { RouteDefinition } from "./types.js";
 
@@ -24,16 +24,22 @@ import type { RouteDefinition } from "./types.js";
 const startedAt = Date.now();
 
 function getDatabaseSizeBytes(): number | null {
-  try {
-    return statSync(getDbPath()).size;
-  } catch {
-    return null;
+  // Sum of both database files (assistant.db + assistant-memory.db) so the
+  // reported footprint doesn't silently shrink after the memory-DB split.
+  let total: number | null = null;
+  for (const path of [getDbPath(), getMemoryDbPath()]) {
+    try {
+      total = (total ?? 0) + statSync(path).size;
+    } catch {
+      /* file may not exist yet */
+    }
   }
+  return total;
 }
 
 function getMemoryItemCount(): number {
   try {
-    const rows = rawAll<{ c: number }>(
+    const rows = memRawAll<{ c: number }>(
       "SELECT COUNT(*) AS c FROM memory_graph_nodes",
     );
     return rows[0]?.c ?? 0;

@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
-import { getDb } from "./db-connection.js";
+import { getMemoryDb } from "./db-connection.js";
 import { memoryRecallLogs } from "./schema.js";
 
 export interface RecordMemoryRecallLogParams {
@@ -29,7 +29,7 @@ export interface RecordMemoryRecallLogParams {
 export function recordMemoryRecallLog(
   params: RecordMemoryRecallLogParams,
 ): void {
-  const db = getDb();
+  const db = getMemoryDb();
   db.insert(memoryRecallLogs)
     .values({
       id: uuid(),
@@ -64,7 +64,7 @@ export function backfillMemoryRecallLogMessageId(
   conversationId: string,
   messageId: string,
 ): void {
-  const db = getDb();
+  const db = getMemoryDb();
   db.update(memoryRecallLogs)
     .set({ messageId })
     .where(
@@ -141,7 +141,7 @@ export function getMemoryRecallLogByMessageIds(
   messageIds: string[],
 ): MemoryRecallLog | null {
   if (messageIds.length === 0) return null;
-  const db = getDb();
+  const db = getMemoryDb();
   const rows = db
     .select()
     .from(memoryRecallLogs)

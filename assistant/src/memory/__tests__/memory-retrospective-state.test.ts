@@ -20,7 +20,7 @@ mock.module("../../config/loader.js", () => ({
 }));
 
 import { createConversation } from "../conversation-crud.js";
-import { getDb } from "../db-connection.js";
+import { getDb, getMemoryDb } from "../db-connection.js";
 import { initializeDb } from "../db-init.js";
 import {
   appendToRememberedLog,
@@ -36,8 +36,9 @@ import { memoryRetrospectiveState } from "../schema.js";
 initializeDb();
 
 function resetTables(): void {
+  // memory_retrospective_state lives in the dedicated memory DB (324).
+  getMemoryDb().delete(memoryRetrospectiveState).run();
   const db = getDb();
-  db.delete(memoryRetrospectiveState).run();
   db.run("DELETE FROM messages");
   db.run("DELETE FROM conversations");
 }
@@ -139,7 +140,7 @@ describe("memory-retrospective-state remembered log persistence", () => {
       lastRunAt: 1000,
       rememberedLog: ["x"],
     });
-    getDb()
+    getMemoryDb()
       .update(memoryRetrospectiveState)
       .set({ rememberedLog: "not-json{{" })
       .where(eq(memoryRetrospectiveState.conversationId, conv.id))
@@ -181,7 +182,7 @@ describe("memory-retrospective-state remembered log persistence", () => {
     });
 
     forkRetrospectiveState({
-      database: getDb(),
+      database: getMemoryDb(),
       sourceConversationId: source.id,
       forkedConversationId: child.id,
       forkedMessageIds: new Map(),

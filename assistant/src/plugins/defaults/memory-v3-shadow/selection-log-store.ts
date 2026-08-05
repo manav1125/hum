@@ -17,7 +17,7 @@
 import type { MemoryV3SelectionLog } from "../../../api/responses/memory-v3-selection-log.js";
 import { isAssistantFeatureFlagEnabled } from "../../../config/assistant-feature-flags.js";
 import { getConfig } from "../../../config/loader.js";
-import { getDb, getSqliteFrom } from "../../../memory/db-connection.js";
+import { getMemoryDb, getSqliteFrom } from "../../../memory/db-connection.js";
 import { renderV3SectionContent } from "./page-content.js";
 import { renderMemoryBlock } from "./render-injection.js";
 import {
@@ -37,7 +37,7 @@ interface SelectionRow {
 }
 
 function rowsForTurn(conversationId: string, turn: number): SelectionRow[] {
-  return getSqliteFrom(getDb())
+  return getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT slug, source, pinned FROM memory_v3_selections
@@ -135,7 +135,7 @@ function isSelectionSource(source: string): source is SelectionSource {
 }
 
 export function summarizeSelections(conversationId: string): SelectionSummary {
-  const rows = getSqliteFrom(getDb())
+  const rows = getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT turn, slug, source FROM memory_v3_selections

@@ -18,7 +18,7 @@ mock.module("../../config/loader.js", () => ({
   }),
 }));
 
-import { getDb } from "../db-connection.js";
+import { getMemoryDb } from "../db-connection.js";
 import { initializeDb } from "../db-init.js";
 import {
   backfillMemoryV2ActivationMessageId,
@@ -35,7 +35,8 @@ import {
 initializeDb();
 
 function resetTables(): void {
-  const db = getDb();
+  // Activation logs live in the dedicated memory DB (migration 326).
+  const db = getMemoryDb();
   db.delete(memoryV2ActivationLogs).run();
 }
 
@@ -228,7 +229,7 @@ describe("memory-v2-activation-log-store", () => {
       maxConcepts: null,
     });
 
-    const db = getDb();
+    const db = getMemoryDb();
     const rows = db.select().from(memoryV2ActivationLogs).all();
     expect(rows).toHaveLength(1);
     expect(JSON.parse(rows[0]!.conceptsJson)).toHaveLength(400);
@@ -264,7 +265,7 @@ describe("memory-v2-activation-log-store", () => {
       config: sampleConfig,
     });
 
-    const db = getDb();
+    const db = getMemoryDb();
     const rows = db.select().from(memoryV2ActivationLogs).all();
     expect(rows).toHaveLength(1);
     expect(JSON.parse(rows[0]!.conceptsJson)).toHaveLength(300);
@@ -291,7 +292,7 @@ describe("memory-v2-activation-log-store", () => {
     // First backfill: both rows should now have msg-a.
     backfillMemoryV2ActivationMessageId(conversationId, "msg-a");
 
-    const db = getDb();
+    const db = getMemoryDb();
     const afterFirstBackfill = db.select().from(memoryV2ActivationLogs).all();
     expect(afterFirstBackfill).toHaveLength(2);
     for (const row of afterFirstBackfill) {
@@ -340,7 +341,7 @@ describe("memory-v2-activation-log-store", () => {
 
     backfillMemoryV2ActivationMessageId(conversationId, "msg-live");
 
-    const db = getDb();
+    const db = getMemoryDb();
     const rows = db.select().from(memoryV2ActivationLogs).all();
     const byMode = new Map(rows.map((r) => [r.mode, r]));
     // The live router row got stamped; the shadow row stayed null (not

@@ -22,7 +22,8 @@ import {
   markScheduledCleanupEnqueued,
 } from "./cleanup-schedule-state.js";
 import { conversationAnalyzeJob } from "./conversation-analyze-job.js";
-import { getSqlite } from "./db-connection.js";
+import { sweepOrphanConversationMemoryTables } from "./conversation-memory-cleanup.js";
+import { getMemorySqlite, getSqlite } from "./db-connection.js";
 import { maybeRunDbMaintenance } from "./db-maintenance.js";
 import { bootstrapFromHistory } from "./graph/bootstrap.js";
 import { runConsolidation } from "./graph/consolidation.js";
@@ -305,6 +306,7 @@ export async function runMemoryJobsOnce(
     maybeEnqueueGraphMaintenanceJobs(config);
     maybeEnqueueContactMemorySweepJob(config);
     maybePruneOldMemoryJobs();
+    await maybeSweepOrphanConversationMemoryRows();
     maybeCheckpointWal();
     await maybeRunDbMaintenance();
     await maybeRunDbSnapshot();
@@ -408,6 +410,11 @@ export function maybeCheckpointWal(nowMs = Date.now()): void {
   } catch (err) {
     log.warn({ err }, "Periodic PASSIVE WAL checkpoint failed");
   }
+  try {
+    getMemorySqlite().exec("PRAGMA wal_checkpoint(PASSIVE)");
+  } catch (err) {
+    log.warn({ err }, "Periodic PASSIVE memory-DB WAL checkpoint failed");
+  }
 }
 
 // ── memory_jobs reaper ─────────────────────────────────────────────
@@ -438,6 +445,39 @@ export function maybePruneOldMemoryJobs(nowMs = Date.now()): void {
     log.error({ err }, "Failed to prune old terminal memory jobs");
   }
   setMemoryCheckpoint(MEMORY_JOBS_PRUNE_CHECKPOINT_KEY, String(nowMs));
+}
+
+// ── relocated memory tables — orphan sweep ─────────────────────────
+
+/** How often the cross-DB orphan sweep runs (per durable checkpoint). */
+const MEMORY_ORPHAN_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+export const MEMORY_ORPHAN_SWEEP_CHECKPOINT_KEY =
+  "memory_orphan_sweep:last_run";
+
+/**
+ * Checkpoint-gated wrapper around `sweepOrphanConversationMemoryTables`
+ * (conversation-memory-cleanup.ts). The relocated conversation-keyed
+ * memory tables lost their main-DB `ON DELETE CASCADE` when they moved to
+ * assistant-memory.db; deletes purge them explicitly, and this sweep is
+ * the backstop for purges lost to a crash between the two databases'
+ * (non-atomic) delete pair. Best-effort: a sweep failure is logged and the
+ * checkpoint still advances so a persistent error can't hammer every tick.
+ */
+export async function maybeSweepOrphanConversationMemoryRows(
+  nowMs = Date.now(),
+): Promise<void> {
+  const lastRun = parseInt(
+    getMemoryCheckpoint(MEMORY_ORPHAN_SWEEP_CHECKPOINT_KEY) ?? "0",
+    10,
+  );
+  if (nowMs - lastRun < MEMORY_ORPHAN_SWEEP_INTERVAL_MS) return;
+  try {
+    await sweepOrphanConversationMemoryTables();
+  } catch (err) {
+    log.error({ err }, "Failed to sweep orphan relocated memory rows");
+  }
+  setMemoryCheckpoint(MEMORY_ORPHAN_SWEEP_CHECKPOINT_KEY, String(nowMs));
 }
 
 /**

@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
-import { getDb } from "../../../../memory/db-connection.js";
+import { getMemoryDb } from "../../../../memory/db-connection.js";
 import {
   enqueueMemoryJob,
   isMemoryEnabled,
@@ -29,7 +29,7 @@ function upsertMemoryItem(opts: {
   importance: number;
   scopeId: string;
 }): void {
-  const db = getDb();
+  const db = getMemoryDb();
   const now = Date.now();
   const content = `${opts.subject}\n${opts.statement}`;
 

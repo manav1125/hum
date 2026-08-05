@@ -14,7 +14,7 @@
  * error descriptions.
  */
 
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { hostname } from "node:os";
 import { PassThrough, Readable } from "node:stream";
 
@@ -38,7 +38,11 @@ import {
   upsertCredentialMetadata,
 } from "../../tools/credentials/metadata-store.js";
 import { getLogger } from "../../util/logger.js";
-import { getWorkspaceDir, getWorkspaceHooksDir } from "../../util/platform.js";
+import {
+  getMemoryDbPath,
+  getWorkspaceDir,
+  getWorkspaceHooksDir,
+} from "../../util/platform.js";
 import { APP_VERSION } from "../../version.js";
 import { DAEMON_INTERNAL_ASSISTANT_ID } from "../assistant-scope.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
@@ -378,6 +382,20 @@ export async function handleMigrationExport(
             "WAL checkpoint failed — exporting without checkpoint",
           );
         }
+        // Same flush for the dedicated memory DB (assistant-memory.db) so
+        // the walked file carries every committed memory row.
+        if (existsSync(getMemoryDbPath())) {
+          const memResult = await runAsyncSqlite(
+            "PRAGMA wal_checkpoint(FULL)",
+            { dbPath: getMemoryDbPath() },
+          );
+          if (!memResult.ok) {
+            log.warn(
+              { error: memResult.error, backend: memResult.backend },
+              "Memory-DB WAL checkpoint failed — exporting without checkpoint",
+            );
+          }
+        }
       },
     });
 
@@ -601,6 +619,19 @@ export async function handleMigrationExportToGcs({ body }: RouteHandlerArgs) {
                 { error: result.error, backend: result.backend },
                 "WAL checkpoint failed — exporting without checkpoint",
               );
+            }
+            // Flush the dedicated memory DB too — same rationale.
+            if (existsSync(getMemoryDbPath())) {
+              const memResult = await runAsyncSqlite(
+                "PRAGMA wal_checkpoint(FULL)",
+                { dbPath: getMemoryDbPath() },
+              );
+              if (!memResult.ok) {
+                log.warn(
+                  { error: memResult.error, backend: memResult.backend },
+                  "Memory-DB WAL checkpoint failed — exporting without checkpoint",
+                );
+              }
             }
           },
         });

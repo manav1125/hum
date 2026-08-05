@@ -35,7 +35,7 @@ import { isAssistantFeatureFlagEnabled } from "../../../config/assistant-feature
 import { getConfig } from "../../../config/loader.js";
 import type { AssistantConfig } from "../../../config/schema.js";
 import { getMessages } from "../../../memory/conversation-crud.js";
-import { getDb, getSqliteFrom } from "../../../memory/db-connection.js";
+import { getMemoryDb, getSqliteFrom } from "../../../memory/db-connection.js";
 import { stringifyMessageContent } from "../../../memory/message-content.js";
 import { getPageIndex } from "../../../memory/v2/page-index.js";
 import { readPage, renderPageContent } from "../../../memory/v2/page-store.js";
@@ -195,7 +195,7 @@ async function initLanes(config: AssistantConfig): Promise<ShadowLanes> {
     sectionIndex.byArticle.has(slug),
   );
   const hotSlugs = computeHotSet(
-    { db: getDb() },
+    { db: getMemoryDb() },
     {
       k: config.memory.v3.hotSet.k,
       halfLifeMs: config.memory.v3.hotSet.halfLifeDays * DAY_MS,
@@ -266,7 +266,7 @@ async function initLanes(config: AssistantConfig): Promise<ShadowLanes> {
   // they are first-class pages there).
   const learned = config.memory.v3.learnedEdges;
   const learnedGraph = computeLearnedEdgeGraph(
-    { db: getDb() },
+    { db: getMemoryDb() },
     {
       halfLifeMs: learned.halfLifeDays * DAY_MS,
       minCount: learned.minCount,
@@ -458,7 +458,7 @@ export function writeSelections(
   rows: SelectionRow[],
 ): void {
   if (rows.length === 0) return;
-  const raw = getSqliteFrom(getDb());
+  const raw = getSqliteFrom(getMemoryDb());
   // PK is (conversation_id, turn, slug); OR REPLACE keeps the write
   // idempotent if the same turn is observed twice (e.g. a retried turn).
   const stmt = raw.query(/*sql*/ `

@@ -59,7 +59,7 @@
  */
 
 import { getConfig } from "../../../config/loader.js";
-import { getDb, getSqliteFrom } from "../../../memory/db-connection.js";
+import { getMemoryDb, getSqliteFrom } from "../../../memory/db-connection.js";
 import {
   unwrapMemoryBlock,
   wrapMemoryBlock,
@@ -227,7 +227,7 @@ export function planPrune(
   const resident = activeEntries.reduce((sum, e) => sum + e.bytes, 0);
   if (resident <= deps.maxResidentBytes) return null;
 
-  const selectionRows = getSqliteFrom(getDb())
+  const selectionRows = getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT slug, MAX(created_at) AS lastSelectedAt FROM memory_v3_selections
@@ -272,7 +272,7 @@ export function planPrune(
 export function collectPersistedV3Cards(conversationId: string): Set<string> {
   // Substring prefilter (indexable LIKE) mirrors the Slack metadata scan;
   // rows are validated by `readInjectedBlock`'s JSON parse.
-  const rows = getSqliteFrom(getDb())
+  const rows = getSqliteFrom(getMemoryDb())
     .query(
       /*sql*/ `
       SELECT metadata FROM messages

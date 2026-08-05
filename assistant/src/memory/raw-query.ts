@@ -32,7 +32,7 @@
 
 import type { SQLQueryBindings } from "bun:sqlite";
 
-import { getSqlite } from "./db-connection.js";
+import { getMemorySqlite, getSqlite } from "./db-connection.js";
 
 type SqlParam = SQLQueryBindings;
 
@@ -82,6 +82,49 @@ export function rawChanges(): number {
   return (getSqlite().query("SELECT changes() AS c").get() as { c: number }).c;
 }
 
+// ---------------------------------------------------------------------------
+// Memory-DB variants (dedicated assistant-memory.db connection)
+// ---------------------------------------------------------------------------
+// Same helpers, routed to the dedicated memory connection. Tables relocated
+// by migrations 324–328 live there; raw SQL against them must use these —
+// the main-connection helpers above cannot see the memory DB's tables.
+
+/** {@link rawGet} against the dedicated memory DB connection. */
+export function memRawGet<T>(sql: string, ...params: SqlParam[]): T | null {
+  return (
+    (getMemorySqlite()
+      .query(sql)
+      .get(...params) as T) ?? null
+  );
+}
+
+/** {@link rawAll} against the dedicated memory DB connection. */
+export function memRawAll<T>(sql: string, ...params: SqlParam[]): T[] {
+  return getMemorySqlite()
+    .query(sql)
+    .all(...params) as T[];
+}
+
+/** {@link rawRun} against the dedicated memory DB connection. */
+export function memRawRun(sql: string, ...params: SqlParam[]): number {
+  getMemorySqlite()
+    .query(sql)
+    .run(...params);
+  return memRawChanges();
+}
+
+/** {@link rawExec} against the dedicated memory DB connection. */
+export function memRawExec(sql: string): void {
+  getMemorySqlite().exec(sql);
+}
+
+/** {@link rawChanges} against the dedicated memory DB connection. */
+export function memRawChanges(): number {
+  return (
+    getMemorySqlite().query("SELECT changes() AS c").get() as { c: number }
+  ).c;
+}
+
 /**
  * Delete all rows from the given tables in a single transaction.
  *
@@ -91,6 +134,20 @@ export function rawChanges(): number {
  */
 export function resetTestTables(...tables: string[]): void {
   const sqlite = getSqlite();
+  const deletes = tables.map((t) => `DELETE FROM "${t}"`).join(";\n");
+  sqlite.exec("BEGIN");
+  try {
+    sqlite.exec(deletes);
+    sqlite.exec("COMMIT");
+  } catch (e) {
+    sqlite.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+/** {@link resetTestTables} against the dedicated memory DB connection. */
+export function resetTestMemoryTables(...tables: string[]): void {
+  const sqlite = getMemorySqlite();
   const deletes = tables.map((t) => `DELETE FROM "${t}"`).join(";\n");
   sqlite.exec("BEGIN");
   try {

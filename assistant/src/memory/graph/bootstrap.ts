@@ -19,7 +19,7 @@ import { getConfig } from "../../config/loader.js";
 import { getLogger } from "../../util/logger.js";
 import { getWorkspaceDir } from "../../util/platform.js";
 import { getMemoryCheckpoint, setMemoryCheckpoint } from "../checkpoints.js";
-import { getDb } from "../db-connection.js";
+import { getDb, getMemoryDb } from "../db-connection.js";
 import {
   enqueueMemoryJob,
   hasActiveJobOfType,
@@ -315,11 +315,10 @@ export function resetBootstrapCheckpoint(): void {
  * already pending/running.
  */
 export function maybeEnqueueGraphBootstrap(): void {
-  const db = getDb();
-
-  // Check for non-procedural graph nodes (procedural = capability seeds, not real memories)
+  // Graph nodes live in the dedicated memory DB; segments stay in the main
+  // DB — two connections, one probe each.
   const nonProceduralCount =
-    db
+    getMemoryDb()
       .select({ count: sql<number>`count(*)` })
       .from(memoryGraphNodes)
       .where(
@@ -334,7 +333,7 @@ export function maybeEnqueueGraphBootstrap(): void {
 
   // Check for historical data to bootstrap from
   const segmentCount =
-    db
+    getDb()
       .select({ count: sql<number>`count(*)` })
       .from(memorySegments)
       .get()?.count ?? 0;
@@ -397,6 +396,11 @@ const KIND_TO_PREFIX: Record<string, string> = {
  * including them would couple this migration to those later schema changes.
  */
 export function migrateToolCreatedItems(): void {
+  // Deliberately writes MAIN-DB memory_graph_nodes via the main-connection
+  // raw helpers: this runs as a db-init step BEFORE relocation migration
+  // 325, so on the one legacy DB where it still has rows to migrate they
+  // land in main and are relocated later in the same startup pass. On every
+  // other DB the one-shot checkpoint below short-circuits it.
   if (getMemoryCheckpoint(MIGRATE_ITEMS_CHECKPOINT)) return;
   if (!isMemoryEnabled()) return;
 

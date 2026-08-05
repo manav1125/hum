@@ -20,7 +20,7 @@ import type {
 } from "../../providers/types.js";
 import { getLogger } from "../../util/logger.js";
 import { getWorkspaceDir } from "../../util/platform.js";
-import { getDb } from "../db-connection.js";
+import { getDb, getMemoryDb } from "../db-connection.js";
 import { embedWithRetry } from "../embed.js";
 import { generateSparseEmbedding } from "../embedding-backend.js";
 import { wrapMemoryBlock } from "../memory-marker.js";
@@ -888,7 +888,8 @@ export class ConversationGraphMemory {
         : extractRecentTurnPairs(messages, historicalPairs);
 
     const result = await injectMemoryV2Block({
-      database: getDb(),
+      // v2 activation state / injection events live in the memory DB.
+      database: getMemoryDb(),
       conversationId: this.conversationId,
       currentTurn,
       recentTurnPairs,

@@ -3,7 +3,12 @@ import * as Sentry from "@sentry/node";
 import type { FilingService } from "../filing/filing-service.js";
 import type { HeartbeatService } from "../heartbeat/heartbeat-service.js";
 import type { McpServerManager } from "../mcp/manager.js";
-import { getSqlite, resetDb } from "../memory/db-connection.js";
+import {
+  getMemorySqlite,
+  getSqlite,
+  isMemoryDbOpen,
+  resetDb,
+} from "../memory/db-connection.js";
 import type { QdrantManager } from "../memory/qdrant-manager.js";
 import type { MissionOrchestrator } from "../missions/mission-orchestrator.js";
 import type { RuntimeHttpServer } from "../runtime/http-server.js";
@@ -146,7 +151,21 @@ export function installShutdownHandlers(deps: ShutdownDeps): void {
     } catch (err) {
       log.warn({ err }, "WAL checkpoint failed (non-fatal)");
     }
+    // The dedicated memory connection gets the same treatment. TRUNCATE is
+    // safe here for the same reason as above: it runs on the daemon's own
+    // long-lived connection at shutdown, when no peer connections exist.
+    // Guarded by isMemoryDbOpen() so shutdown never lazily OPENS the memory
+    // DB just to checkpoint it.
     try {
+      if (isMemoryDbOpen()) {
+        getMemorySqlite().exec("PRAGMA optimize");
+        getMemorySqlite().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      }
+    } catch (err) {
+      log.warn({ err }, "Memory-DB WAL checkpoint failed (non-fatal)");
+    }
+    try {
+      // Closes both the main and memory connections.
       resetDb();
     } catch (err) {
       log.warn({ err }, "Database close failed (non-fatal)");
