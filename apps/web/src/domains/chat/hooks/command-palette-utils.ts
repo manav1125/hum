@@ -96,6 +96,53 @@ export function searchNoticeFor(
 }
 
 /**
+ * Turn a raw search excerpt into something a person can read.
+ *
+ * The index matches against stored message content, which is not prose: it
+ * holds HTML fragments, serialized tool-call payloads, workspace file paths
+ * and literal escape sequences. Rendered verbatim, ⌘K results looked like
+ * `...<span class=\"thread-name\">5 Cold-Surface Items</span>\n <span` and
+ * `...eated\":\"2023-01-09T06:50:59.000Z\",\"creator\":{\"displayName\"...` —
+ * every row starting mid-string, none showing a title.
+ *
+ * This is presentation-only repair. It does not stop such content being
+ * indexed, which is the deeper question of whether tool payloads should be
+ * searchable at all; `isUnreadableExcerpt` below at least keeps the worst of
+ * it from being shown as though it were a sentence.
+ */
+export function cleanExcerpt(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return (
+    raw
+      // Escaped sequences arrive literally, as the two characters \ and n.
+      .replace(/\\[rnt]/g, " ")
+      .replace(/\\"/g, '"')
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+/**
+ * True when an excerpt is structure rather than language — a JSON blob or a
+ * bare file path. Showing one of these tells the reader nothing about why the
+ * result matched, so the row is better off with no subtitle at all than with
+ * a line of punctuation.
+ */
+export function isUnreadableExcerpt(text: string): boolean {
+  if (text.length === 0) return true;
+  if (/^[[{]/.test(text)) return true;
+  if (/^[\w./-]+\.(md|json|ts|tsx|txt|yaml|yml)\b/.test(text)) return true;
+  // Mostly punctuation/quotes rather than words — the shape of serialized data.
+  const letters = text.replace(/[^a-zA-Z]/g, "").length;
+  return letters < text.length * 0.4;
+}
+
+/**
  * Build sections from server search results, deduplicating conversations
  * that already appear in the local recents section.
  */
@@ -107,12 +154,17 @@ export function buildServerResultSections(
 
   const serverConvItems = results.conversations
     .filter((c) => !recentConversationIds.has(c.id))
-    .map((c) => ({
-      id: `search-conv-${c.id}`,
-      icon: MessageSquare,
-      title: c.title ?? "Untitled",
-      subtitle: c.excerpt,
-    }));
+    .map((c) => {
+      const excerpt = cleanExcerpt(c.excerpt);
+      return {
+        id: `search-conv-${c.id}`,
+        icon: MessageSquare,
+        // `?? "Untitled"` only caught null, so an empty-string title left the
+        // row with no heading at all and the excerpt read as the title.
+        title: c.title?.trim() ? c.title : "Untitled",
+        subtitle: isUnreadableExcerpt(excerpt) ? undefined : excerpt,
+      };
+    });
   if (serverConvItems.length > 0) {
     sections.push({
       id: "search-conversations",

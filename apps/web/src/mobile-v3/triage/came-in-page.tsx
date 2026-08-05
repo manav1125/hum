@@ -30,7 +30,12 @@ import { useNavigate } from "react-router";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { workitemsByIdRunPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
-import { AuroraBackdrop, LargeTitleHeader, cardBody, mv3Mono } from "@/mobile-v3";
+import {
+  AuroraBackdrop,
+  LargeTitleHeader,
+  cardBody,
+  mv3Mono,
+} from "@/mobile-v3";
 import { Mv3AssessmentMark } from "@/mobile-v3/assessment-mv3";
 import { useDismissTask } from "@/mobile-v3/undo-toast";
 import { relativeTime } from "@/domains/activity/theme";
@@ -235,7 +240,8 @@ function TriageCard({
           style={{
             position: "absolute",
             inset: 0,
-            background: "color-mix(in srgb, var(--mv3-text) 14%, var(--mv3-bg))",
+            background:
+              "color-mix(in srgb, var(--mv3-text) 14%, var(--mv3-bg))",
             display: "flex",
             alignItems: "center",
             justifyContent: "flex-end",
@@ -380,7 +386,15 @@ function TriageCard({
           </div>
         ) : null}
         {(item.dueAt != null || (projectTitle && !autoFiled) || hold) && (
-          <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap", alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              marginTop: 9,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
             {/* Only the two verdicts that wait on a person get a mark. */}
             {hold ? <Mv3AssessmentMark item={item} /> : null}
             {item.dueAt != null ? (
@@ -510,8 +524,7 @@ export function CameInPage() {
   const low = items.filter((i) => i.projectId == null);
   const filedCount = filed.length;
 
-  const hide = (id: string) =>
-    setGone((prev) => new Set(prev).add(id));
+  const hide = (id: string) => setGone((prev) => new Set(prev).add(id));
 
   const confirm = (item: HqWorkItem) => {
     hide(item.id);
@@ -572,8 +585,13 @@ export function CameInPage() {
           zIndex: 2,
         }}
       >
+        {/* `N caught & filed` read as "N filed", because N is the CAUGHT
+            total and "& filed" was appended whenever any one of them was
+            filed. Live, this said "146 caught & filed" beside an HQ Deck
+            reading "139 filed · 41 kept" for the same day — two surfaces, two
+            numbers, one apparent claim. Both counts are now stated. */}
         {items.length > 0
-          ? `${items.length} caught${filedCount > 0 ? " & filed" : ""} · swipe right to confirm, left to dismiss`
+          ? `${items.length} caught${filedCount > 0 ? `, ${filedCount} filed` : ""} · swipe right to confirm, left to dismiss`
           : pending.isLoading
             ? "Checking what arrived…"
             : "Nothing new — captured work lands here the moment it arrives."}

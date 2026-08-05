@@ -23,6 +23,7 @@ import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { formatFriendlyDate } from "@/utils/format-date";
+import { C as HqC } from "@/lib/hq-theme";
 import { httpStatusFromError } from "@/utils/query-retry";
 import {
   integrationsA2aConfigDelete,
@@ -35,21 +36,19 @@ import {
   integrationsA2aConfigGetQueryKey,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 
-const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  blueS: "#2B53C4",
-  blueW: "#DBE4FB",
-  violet: "#7F77DD",
-  violetS: "#534AB7",
-  violetW: "#EEEDFB",
-  line: "#E5E9F0",
-  line2: "#D7DDE7",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#9AA6B2",
-  green: "#277E41",
-} as const;
+// This page carried its own hardcoded light-mode palette, so under the dark
+// book its headings painted #1A2230 on a #22272C card — measured 1.06:1, i.e.
+// invisible. "Enable A2A endpoint", "No paired agents yet" and "Create a
+// one-time invite" all disappeared while the muted body text beneath them
+// stayed readable, which is what made it look like a copy problem rather than
+// a palette one. The peer surfaces (automations-board, marketplace) already
+// read the theme-aware `--mv1-*` vars through `lib/hq-theme`; this now does
+// too. Same fix, same reason as the note at the top of automations-board.
+//
+// `violetW` has no token — it was a single light violet chip wash. `sunken` is
+// the in-system surface for that job and, unlike a fixed tint, stays behind
+// its `violetS` text in both themes.
+const C = { ...HqC, violetW: HqC.sunken } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
 const KEYFRAMES = `
