@@ -14,6 +14,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
+import { TableKit } from "@tiptap/extension-table";
 import { cn } from "@vellumai/design-library";
 import {
   Bold,
@@ -424,6 +425,12 @@ export function TiptapDocumentEditor({
         // History is included in StarterKit
       }),
       Link.configure({ openOnClick: false }),
+      // Tables are not in StarterKit. Without these nodes tiptap-markdown has
+      // nowhere to put a pipe table, so every cell collapses into adjacent
+      // text and a comparison table renders as "DimensionDetailWhat…".
+      // The `.tiptap table/th/td` rules further down this file were written
+      // for tables that could never appear until this landed.
+      TableKit,
       Markdown,
       CommentAnchorHighlightExtension.configure({ anchors: commentAnchors }),
       ActiveHighlightExtension.configure({ range: highlightRange }),

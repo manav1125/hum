@@ -189,25 +189,23 @@ export const YOUR_CUE_GROUPS: readonly YourCueGroup[] = [
         match: at(routes.memory),
       },
       {
-        // Still the one real gap, and still shipped honest rather than
-        // pointed at a lookalike.
+        // v17 E3's per-source accounting — "199 in — 147 filed, 52 became
+        // work", the fail-open explanation, "nothing arrived in the sampled
+        // window" — is built and live at `routes.watching`. This leaf carried
+        // `to: null` and an "unavailableReason" long after that shipped, so
+        // the nav advertised a working surface as missing and nobody opened
+        // it. A "Not built" label outlives the gap it described unless
+        // something forces it to be revisited; the guard for that is the
+        // navigation test asserting this leaf resolves to a route.
         //
-        // v17 E3 specifies Watching as per-source accounting — "40 in — 31
-        // filed, 9 dropped, 0 needed you", the no-op card, "connected but not
-        // watched", "what Cue skips". None of that is built. Automations
-        // (watchers + playbooks) is the nearest surface and answers a
-        // different question: it is where a watcher is CONFIGURED, not what
-        // flowed through it today. Channels is where a source is CONNECTED.
-        // Neither is Watching, so this leaf says so instead.
-        //
-        // This is also the surface that would have caught the 697 contact
-        // extractions that completed and wrote nothing.
+        // Worth keeping open specifically because Watching is where Cue is
+        // most honest about its own failures — it is the surface that reports
+        // "11 runs in a row read nothing", and the one that would have caught
+        // the 697 contact extractions that completed and wrote nothing.
         key: "watching",
         label: "Watching",
-        to: null,
-        unavailableReason:
-          "Not built. Sources are configured under Automations; per-source accounting doesn't exist yet.",
-        match: () => false,
+        to: routes.watching,
+        match: at(routes.watching),
       },
     ],
   },

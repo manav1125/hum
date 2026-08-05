@@ -18,7 +18,17 @@
  * preserved.
  */
 
-import { Loader2 } from "lucide-react";
+import {
+  Bot,
+  Hash,
+  Loader2,
+  Mail,
+  MessageCircle,
+  MessageSquare,
+  Phone,
+  Send,
+  type LucideIcon,
+} from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -102,6 +112,34 @@ const ICON_STYLE: Record<ChannelId, { bg: string; fg: string }> = {
 
 function iconStyle(id: ChannelId): { bg: string; fg: string } {
   return ICON_STYLE[id] ?? { bg: "#EEF1F6", fg: "#5A6672" };
+}
+
+/**
+ * The daemon sends a lucide icon NAME (`assistant/src/channels/types.ts`:
+ * "Lucide icon name without the `lucide-` prefix … web clients import the
+ * matching component from `lucide-react`"). The web client never did that
+ * resolution and rendered the string straight into the tile, so the Slack,
+ * Telegram and Phone cards read the literal words "hash", "send" and "phone"
+ * where their glyphs belong.
+ *
+ * An explicit map rather than a dynamic lookup: it stays tree-shakeable, and
+ * an unknown name fails visibly here rather than silently printing itself.
+ */
+export const CHANNEL_GLYPH: Record<string, LucideIcon> = {
+  hash: Hash,
+  send: Send,
+  phone: Phone,
+  "message-circle": MessageCircle,
+  mail: Mail,
+  "message-square": MessageSquare,
+  bot: Bot,
+};
+
+function ChannelGlyph({ name, size }: { name: string; size: number }) {
+  const Glyph = CHANNEL_GLYPH[name];
+  // A name with no mapping renders nothing rather than its own text — an
+  // unmapped icon is a gap to notice, not a word to show the user.
+  return Glyph ? <Glyph size={size} aria-hidden /> : null;
 }
 
 // Constellation node positions (visual only — mapped onto active channels).
@@ -222,7 +260,7 @@ function ActiveCard({
           flexShrink: 0,
         }}
       >
-        {icon}
+        <ChannelGlyph name={icon} size={full ? 18 : 19} />
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14.5, fontWeight: 600 }}>{title}</div>

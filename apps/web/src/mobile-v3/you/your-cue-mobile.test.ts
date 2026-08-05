@@ -79,14 +79,15 @@ describe("what closes, and why", () => {
     expect(state).toMatchObject({ state: "closed", badge: "Mac only" });
   });
 
-  test("Watching admits it does not exist on ANY platform", () => {
-    // The shared model's own `to: null` wins over any phone judgement: a
-    // surface nobody has built is not a phone limitation, and describing it as
-    // one would send someone to a desktop that also does not have it.
+  test("Watching is open on the phone now that per-source accounting exists", () => {
+    // Inverted on purpose. This asserted `badge: "Not built"`, which was true
+    // when written and false once the surface shipped — the model kept
+    // `to: null` and both platforms went on calling a working page missing.
+    // The phone follows the shared model, so the fix is one place and this
+    // assertion is what proves the model moved.
     const leaf = YOUR_CUE_LEAVES.find((l) => l.key === "watching")!;
-    const state = phoneLeafState(leaf);
-    expect(state.state).toBe("closed");
-    if (state.state === "closed") expect(state.badge).toBe("Not built");
+    expect(leaf.to).not.toBeNull();
+    expect(phoneLeafState(leaf).state).toBe("open");
   });
 
   test.each(["marketplace", "agent-network"])(

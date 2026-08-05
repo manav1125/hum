@@ -236,13 +236,18 @@ describe("the left column", () => {
     expect(getByText("Running Cue").closest("button")).toBeNull();
   });
 
-  test("Watching renders disabled and says why — it never points at a lookalike", () => {
+  test("Watching is reachable — the 'Not built' label outlived the gap", () => {
+    // This assertion is inverted from what it used to be, deliberately. The
+    // row was pinned as permanently disabled with a "Not built" title, and
+    // stayed that way after per-source accounting shipped — so the nav
+    // advertised a live surface as missing and nobody opened it. An
+    // unavailable-state test is only honest while the thing is unavailable;
+    // once it ships, the same test holds the bug in place.
     const { getByText } = renderLayout("/assistant/memory");
-    const watching = getByText(/Watching/).closest("[aria-disabled]");
-    expect(watching?.getAttribute("aria-disabled")).toBe("true");
-    expect(watching?.getAttribute("title")).toContain("Not built");
-    // No colour-only state: the row carries a glyph.
-    expect(watching?.textContent).toContain("⊘");
+    const watching = getByText(/Watching/).closest("a");
+    expect(watching).not.toBeNull();
+    expect(watching?.getAttribute("href")).toBe("/assistant/watching");
+    expect(watching?.getAttribute("aria-disabled")).not.toBe("true");
   });
 });
 
