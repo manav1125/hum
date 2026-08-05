@@ -47,6 +47,107 @@ export const LiveVoiceVadConfigSchema = z
     "Voice-activity-detection tuning for live voice sessions. Our clients own VAD; these values are the tuning surface they read (pause sensitivity + barge-in sensitivity).",
   );
 
+export const LiveVoiceProgressConfigSchema = z
+  .object({
+    enabled: z
+      .boolean({
+        error: "liveVoice.frontModel.progress.enabled must be a boolean",
+      })
+      // DEVIATION from upstream (which defaults true): our voice flags ship
+      // inert until real-device QA, matching spokenAcks/semanticEndpointing
+      // above. Flip to true once narration has been QA'd on-device.
+      .default(false)
+      .describe(
+        "Speak short progress updates during long-running tool-heavy turns. Ships OFF pending real-device QA (upstream defaults ON).",
+      ),
+    opsThreshold: z
+      .number({
+        error: "liveVoice.frontModel.progress.opsThreshold must be a number",
+      })
+      .int("liveVoice.frontModel.progress.opsThreshold must be an integer")
+      .positive(
+        "liveVoice.frontModel.progress.opsThreshold must be a positive integer",
+      )
+      .default(3)
+      .describe(
+        "Narrate after this many tool operations since the last narration",
+      ),
+    idleIntervalMs: z
+      .number({
+        error: "liveVoice.frontModel.progress.idleIntervalMs must be a number",
+      })
+      .int("liveVoice.frontModel.progress.idleIntervalMs must be an integer")
+      .positive(
+        "liveVoice.frontModel.progress.idleIntervalMs must be a positive integer",
+      )
+      .default(5_000)
+      .describe(
+        "How often (ms) a running turn's silence is checked, and so the soonest new tool activity is narrated",
+      ),
+    maxSilenceMs: z
+      .number({
+        error: "liveVoice.frontModel.progress.maxSilenceMs must be a number",
+      })
+      .int("liveVoice.frontModel.progress.maxSilenceMs must be an integer")
+      .positive(
+        "liveVoice.frontModel.progress.maxSilenceMs must be a positive integer",
+      )
+      .default(35_000)
+      .describe(
+        "Heartbeat ceiling (ms): narrate after this much unbroken silence even when nothing new has happened. Evaluated on the idle tick, so its resolution is idleIntervalMs and it must be at least that long",
+      ),
+    longOpMs: z
+      .number({
+        error: "liveVoice.frontModel.progress.longOpMs must be a number",
+      })
+      .int("liveVoice.frontModel.progress.longOpMs must be an integer")
+      .positive(
+        "liveVoice.frontModel.progress.longOpMs must be a positive integer",
+      )
+      .default(15_000)
+      .describe(
+        "A tool operation that ran at least this long (ms) narrates the moment it completes, without waiting for opsThreshold",
+      ),
+    minGapMs: z
+      .number({
+        error: "liveVoice.frontModel.progress.minGapMs must be a number",
+      })
+      .int("liveVoice.frontModel.progress.minGapMs must be an integer")
+      .positive(
+        "liveVoice.frontModel.progress.minGapMs must be a positive integer",
+      )
+      .default(6_000)
+      .describe(
+        "Minimum spacing (ms) from any spoken floor-holder — ack or narration",
+      ),
+    generationTimeoutMs: z
+      .number({
+        error:
+          "liveVoice.frontModel.progress.generationTimeoutMs must be a number",
+      })
+      .int(
+        "liveVoice.frontModel.progress.generationTimeoutMs must be an integer",
+      )
+      .positive(
+        "liveVoice.frontModel.progress.generationTimeoutMs must be a positive integer",
+      )
+      .default(1_500)
+      .describe(
+        "Budget (ms) for LLM-generated progress text — not latency-critical: it speaks into dead air",
+      ),
+  })
+  // The heartbeat is checked when the idle tick finds the turn silent, so a
+  // ceiling shorter than the tick interval would be missed by up to a full
+  // interval — a promise the cadence cannot keep. Rejecting the combination
+  // beats silently overshooting it.
+  .refine((progress) => progress.maxSilenceMs >= progress.idleIntervalMs, {
+    error:
+      "liveVoice.frontModel.progress.maxSilenceMs must be at least idleIntervalMs — the heartbeat is evaluated on the idle tick",
+  })
+  .describe(
+    "Spoken progress narration for long-running voice turns (liveVoice.frontModel.progress)",
+  );
+
 export const LiveVoiceFrontModelConfigSchema = z
   .object({
     semanticEndpointing: z
@@ -126,9 +227,12 @@ export const LiveVoiceFrontModelConfigSchema = z
       )
       .default(600)
       .describe("Budget (ms) for LLM-generated ack text"),
+    progress: LiveVoiceProgressConfigSchema.default(
+      LiveVoiceProgressConfigSchema.parse({}),
+    ),
   })
   .describe(
-    "Front-model presence layer for live voice sessions (semantic endpointing + spoken acks). Every behavior ships inert behind its own flag.",
+    "Front-model presence layer for live voice sessions (semantic endpointing + spoken acks + progress narration). Every behavior ships inert behind its own flag.",
   );
 
 export const LiveVoiceConfigSchema = z
@@ -170,4 +274,7 @@ export type LiveVoiceConfig = z.infer<typeof LiveVoiceConfigSchema>;
 export type LiveVoiceVadConfig = z.infer<typeof LiveVoiceVadConfigSchema>;
 export type LiveVoiceFrontModelConfig = z.infer<
   typeof LiveVoiceFrontModelConfigSchema
+>;
+export type LiveVoiceProgressConfig = z.infer<
+  typeof LiveVoiceProgressConfigSchema
 >;

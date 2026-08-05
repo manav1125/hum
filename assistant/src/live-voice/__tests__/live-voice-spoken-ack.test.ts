@@ -91,6 +91,19 @@ function makeMessageComplete(
   };
 }
 
+function makeToolUseStart(
+  toolName: string,
+  toolUseId: string,
+): Parameters<NonNullable<VoiceTurnCallbacks["tool_use_start"]>>[0] {
+  return {
+    type: "tool_use_start",
+    conversationId: "conversation-ack",
+    toolUseId,
+    toolName,
+    input: {},
+  } as Parameters<NonNullable<VoiceTurnCallbacks["tool_use_start"]>>[0];
+}
+
 async function waitFor(
   predicate: () => boolean,
   message: string,
@@ -209,10 +222,11 @@ describe("live-voice spoken acks", () => {
     await session.close("websocket_close");
   });
 
-  test("spokenAcks off → a slow turn speaks nothing extra", async () => {
+  test("tool use on a silent turn → the tool-flavored ack speaks immediately, once", async () => {
     const transcriber = new ControllableTranscriber();
     const sequencer = createLiveVoiceServerFrameSequencer();
     const ttsTexts: string[] = [];
+    let callbacks: VoiceTurnCallbacks | undefined;
     let started = false;
 
     const context: LiveVoiceSessionFactoryContext = {
@@ -222,7 +236,121 @@ describe("live-voice spoken acks", () => {
     };
     const session = new LiveVoiceSession(context, {
       resolveTranscriber: mock(async () => transcriber),
-      startVoiceTurn: mock(async () => {
+      startVoiceTurn: mock(async (opts: VoiceTurnOptions) => {
+        callbacks = opts.callbacks;
+        started = true;
+        // Silent turn: no delta, no completion — only tool activity.
+        return { turnId: "bridge-turn", abort: mock() };
+      }),
+      streamTtsAudio: mock(async (opts: LiveVoiceTtsOptions) => {
+        ttsTexts.push(opts.text);
+        opts.onAudioChunk(makeTtsChunk(`audio:${opts.text}`));
+        return {
+          provider: "fish-audio",
+          contentType: "audio/pcm",
+          sampleRate: 16_000,
+          chunks: 1,
+          bytes: Buffer.byteLength(opts.text),
+        } satisfies LiveVoiceTtsResult;
+      }),
+      liveVoiceConfig: LiveVoiceConfigSchema.parse({
+        credentialPreflight: false,
+        // Budget far away: only the tool_use trigger can speak here — a
+        // definitive tool start means the turn is guaranteed slow, so the
+        // ack must not wait out the first-delta timer.
+        frontModel: { spokenAcks: true, ackFirstDeltaTimeoutMs: 60_000 },
+      }),
+      createTurnId: () => "turn-ack",
+    });
+
+    await session.start();
+    await session.handleBinaryAudio(new Uint8Array([1, 2, 3, 4]));
+    await session.handleClientFrame({ type: "ptt_release" });
+    transcriber.finishUtterance("look up flights to lisbon");
+    await waitFor(() => started, "assistant turn did not start");
+
+    callbacks?.tool_use_start?.(makeToolUseStart("web_search", "t-1"));
+    await waitFor(() => ttsTexts.length > 0, "no tool-use ack was spoken");
+    expect(ttsTexts[0]).toBe(pickAckPhrase("tool_use", 0));
+
+    // One ack per turn: further tool starts share the spent budget.
+    callbacks?.tool_use_start?.(makeToolUseStart("web_fetch", "t-2"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(ttsTexts).toHaveLength(1);
+    await session.close("websocket_close");
+  });
+
+  test("tool use after the first delta → no ack speaks over the reply", async () => {
+    const transcriber = new ControllableTranscriber();
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    const ttsTexts: string[] = [];
+    let callbacks: VoiceTurnCallbacks | undefined;
+    let started = false;
+
+    const context: LiveVoiceSessionFactoryContext = {
+      sessionId: "session-ack",
+      startFrame: START_FRAME,
+      sendFrame: mock(async (payload) => sequencer.next(payload)),
+    };
+    const session = new LiveVoiceSession(context, {
+      resolveTranscriber: mock(async () => transcriber),
+      startVoiceTurn: mock(async (opts: VoiceTurnOptions) => {
+        callbacks = opts.callbacks;
+        started = true;
+        return { turnId: "bridge-turn", abort: mock() };
+      }),
+      streamTtsAudio: mock(async (opts: LiveVoiceTtsOptions) => {
+        ttsTexts.push(opts.text);
+        opts.onAudioChunk(makeTtsChunk(`audio:${opts.text}`));
+        return {
+          provider: "fish-audio",
+          contentType: "audio/pcm",
+          sampleRate: 16_000,
+          chunks: 1,
+          bytes: Buffer.byteLength(opts.text),
+        } satisfies LiveVoiceTtsResult;
+      }),
+      liveVoiceConfig: LiveVoiceConfigSchema.parse({
+        credentialPreflight: false,
+        frontModel: { spokenAcks: true, ackFirstDeltaTimeoutMs: 60_000 },
+      }),
+      createTurnId: () => "turn-ack",
+    });
+
+    await session.start();
+    await session.handleBinaryAudio(new Uint8Array([1, 2, 3, 4]));
+    await session.handleClientFrame({ type: "ptt_release" });
+    transcriber.finishUtterance("what's on my calendar");
+    await waitFor(() => started, "assistant turn did not start");
+
+    callbacks?.assistant_text_delta?.(makeTextDelta("Checking now."));
+    await waitFor(() => ttsTexts.length > 0, "reply segment never spoken");
+    callbacks?.tool_use_start?.(makeToolUseStart("calendar_list", "t-1"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const toolAckPhrases = [0, 1, 2, 3, 4].map((n) =>
+      pickAckPhrase("tool_use", n),
+    );
+    expect(ttsTexts.some((t) => toolAckPhrases.includes(t))).toBe(false);
+    await session.close("websocket_close");
+  });
+
+  test("spokenAcks off → a slow tool-using turn speaks nothing extra", async () => {
+    const transcriber = new ControllableTranscriber();
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    const ttsTexts: string[] = [];
+    let callbacks: VoiceTurnCallbacks | undefined;
+    let started = false;
+
+    const context: LiveVoiceSessionFactoryContext = {
+      sessionId: "session-ack",
+      startFrame: START_FRAME,
+      sendFrame: mock(async (payload) => sequencer.next(payload)),
+    };
+    const session = new LiveVoiceSession(context, {
+      resolveTranscriber: mock(async () => transcriber),
+      startVoiceTurn: mock(async (opts: VoiceTurnOptions) => {
+        callbacks = opts.callbacks;
         started = true;
         return { turnId: "bridge-turn", abort: mock() };
       }),
@@ -248,6 +376,8 @@ describe("live-voice spoken acks", () => {
     await session.handleClientFrame({ type: "ptt_release" });
     transcriber.finishUtterance("weather?");
     await waitFor(() => started, "assistant turn did not start");
+    // The tool_use trigger is gated on the same flag as the timer.
+    callbacks?.tool_use_start?.(makeToolUseStart("web_search", "t-1"));
     // Wait well past the ack budget; nothing should have been spoken.
     await new Promise((resolve) => setTimeout(resolve, 60));
 

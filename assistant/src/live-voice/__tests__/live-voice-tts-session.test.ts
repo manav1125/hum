@@ -239,7 +239,7 @@ describe("LiveVoiceSession TTS", () => {
     });
   });
 
-  test("flushes long assistant text as a conservative TTS segment before completion", async () => {
+  test("flushes an eager first segment, then conservative 180-char segments", async () => {
     let callbacks: VoiceTurnCallbacks | undefined;
     const ttsTexts: string[] = [];
     const startVoiceTurn = mock(async (options: VoiceTurnOptions) => {
@@ -260,9 +260,17 @@ describe("LiveVoiceSession TTS", () => {
     callbacks?.assistant_text_delta?.(makeTextDelta("steady ".repeat(32)));
     await waitFor(() => frames.some((frame) => frame.type === "tts_audio"));
 
+    // Eager mode holds only until the first segment: speech onset does not
+    // wait for a full sentence or the 180-char conservative cap.
     expect(ttsTexts).toHaveLength(1);
-    expect(ttsTexts[0]?.length).toBeGreaterThan(100);
-    expect(ttsTexts[0]?.length).toBeLessThanOrEqual(181);
+    expect(ttsTexts[0]?.length).toBeGreaterThan(20);
+    expect(ttsTexts[0]?.length).toBeLessThanOrEqual(60);
+
+    // Later segments buffer conservatively to the 180-char boundary again.
+    callbacks?.assistant_text_delta?.(makeTextDelta("steady ".repeat(8)));
+    await waitFor(() => ttsTexts.length >= 2, "no conservative second segment");
+    expect(ttsTexts[1]?.length).toBeGreaterThan(100);
+    expect(ttsTexts[1]?.length).toBeLessThanOrEqual(181);
     expect(frames.some((frame) => frame.type === "tts_done")).toBe(false);
   });
 
@@ -303,6 +311,65 @@ describe("LiveVoiceSession TTS", () => {
       type: "tts_done",
       turnId: "live-turn-1",
     });
+  });
+
+  test("prefetches the next segment's synthesis while keeping emission in segment order", async () => {
+    let callbacks: VoiceTurnCallbacks | undefined;
+    const ttsCalls: LiveVoiceTtsOptions[] = [];
+    const resolvers: Array<(result: LiveVoiceTtsResult) => void> = [];
+    const startVoiceTurn = mock(async (options: VoiceTurnOptions) => {
+      callbacks = options.callbacks;
+      return { turnId: "bridge-turn-1", abort: mock() };
+    });
+    const streamTtsAudio = mock(
+      (options: LiveVoiceTtsOptions) =>
+        new Promise<LiveVoiceTtsResult>((resolve) => {
+          ttsCalls.push(options);
+          resolvers.push(resolve);
+        }),
+    );
+    const { frames, session } = createSessionHarness({
+      startVoiceTurn,
+      streamTtsAudio,
+    });
+
+    await startReleasedTurn(session);
+    callbacks?.assistant_text_delta?.(
+      makeTextDelta("First sentence here. Second sentence here."),
+    );
+    // Prefetch: BOTH segments' provider streams open before the first has
+    // produced any audio (one emitting slot + one prefetching slot).
+    await waitFor(
+      () => ttsCalls.length === 2,
+      "second synthesis was not prefetched",
+    );
+    expect(ttsCalls.map((call) => call.text)).toEqual([
+      "First sentence here.",
+      "Second sentence here.",
+    ]);
+
+    // The prefetching job's audio arrives first — it must buffer, not emit.
+    ttsCalls[1]?.onAudioChunk(makeTtsChunk("audio:second"));
+    resolvers[1]?.(makeTtsResult("second"));
+    await flushAsyncCallbacks();
+    expect(frames.some((frame) => frame.type === "tts_audio")).toBe(false);
+
+    // Once the first segment emits, the buffered second follows in order.
+    ttsCalls[0]?.onAudioChunk(makeTtsChunk("audio:first"));
+    resolvers[0]?.(makeTtsResult("first"));
+    await waitFor(
+      () => frames.filter((frame) => frame.type === "tts_audio").length === 2,
+      "both segments' audio never emitted",
+    );
+    const audioPayloads = frames
+      .filter(
+        (
+          frame,
+        ): frame is Extract<LiveVoiceServerFrame, { type: "tts_audio" }> =>
+          frame.type === "tts_audio",
+      )
+      .map((frame) => Buffer.from(frame.dataBase64, "base64").toString());
+    expect(audioPayloads).toEqual(["audio:first", "audio:second"]);
   });
 
   test("interrupt prevents late TTS chunks from reaching the socket", async () => {
