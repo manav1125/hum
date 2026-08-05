@@ -44,7 +44,7 @@ mock.module("../../runtime/btw-sidechain.js", () => ({
 
 import { randomUUID } from "node:crypto";
 
-import { getDb, getSqliteFrom } from "../../memory/db-connection.js";
+import { getDb, getSqliteFrom, getMemoryDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { enqueueMemoryJob } from "../../memory/jobs-store.js";
 import { runMemoryJobsOnce } from "../../memory/jobs-worker.js";
@@ -110,7 +110,7 @@ beforeEach(() => {
   getDb().run("DELETE FROM contact_channels");
   getDb().run("DELETE FROM contacts");
   getDb().run("DELETE FROM arrivals");
-  getDb().run("DELETE FROM memory_jobs");
+  getMemoryDb().run("DELETE FROM memory_jobs");
   getDb().run(
     "DELETE FROM memory_checkpoints WHERE key LIKE 'contact_memory%'",
   );

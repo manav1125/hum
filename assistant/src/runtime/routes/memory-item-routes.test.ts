@@ -66,7 +66,7 @@ mock.module("../../memory/qdrant-circuit-breaker.js", () => ({
 
 import { eq } from "drizzle-orm";
 
-import { getDb } from "../../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { memoryGraphNodes, memoryJobs } from "../../memory/schema.js";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.js";
@@ -137,7 +137,7 @@ function insertItem(opts: {
   created?: number;
   lastAccessed?: number;
 }) {
-  const db = getDb();
+  const db = getMemoryDb();
   const now = Date.now();
   db.insert(memoryGraphNodes)
     .values({
@@ -181,7 +181,7 @@ describe("Memory Item Routes", () => {
   });
 
   beforeEach(() => {
-    const db = getDb();
+    const db = getMemoryDb();
     db.run("DELETE FROM memory_graph_node_edits");
     db.run("DELETE FROM memory_graph_triggers");
     db.run("DELETE FROM memory_graph_edges");
@@ -783,7 +783,7 @@ describe("Memory Item Routes", () => {
       });
 
       // Verify a memory job was enqueued
-      const db = getDb();
+      const db = getMemoryDb();
       const jobs = db.select().from(memoryJobs).all();
       const embedJobs = jobs.filter(
         (j) => j.type === "embed_graph_node" && j.status === "pending",
@@ -889,14 +889,14 @@ describe("Memory Item Routes", () => {
       });
 
       // Clear jobs first
-      getDb().run("DELETE FROM memory_jobs");
+      getMemoryDb().run("DELETE FROM memory_jobs");
 
       await callHandler(route, {
         pathParams: { id: "i1" },
         body: { statement: "new statement" },
       });
 
-      const db = getDb();
+      const db = getMemoryDb();
       const jobs = db.select().from(memoryJobs).all();
       const embedJobs = jobs.filter(
         (j) => j.type === "embed_graph_node" && j.status === "pending",
@@ -923,7 +923,7 @@ describe("Memory Item Routes", () => {
       expect(res.status).toBe(204);
 
       // Verify the node is soft-deleted (fidelity='gone')
-      const db = getDb();
+      const db = getMemoryDb();
       const node = db
         .select()
         .from(memoryGraphNodes)
@@ -951,7 +951,7 @@ describe("Memory Item Routes", () => {
       expect(res.status).toBe(204);
 
       // Verify a delete_qdrant_vectors job was enqueued with graph_node targetType
-      const db = getDb();
+      const db = getMemoryDb();
       const jobs = db.select().from(memoryJobs).all();
       const deleteJobs = jobs.filter(
         (j) => j.type === "delete_qdrant_vectors" && j.status === "pending",

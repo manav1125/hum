@@ -9,7 +9,7 @@ mock.module("../util/logger.js", () => ({
 }));
 
 import type { AssistantConfig } from "../config/schema.js";
-import { getDb } from "../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { pruneOldBackgroundConversationsJob } from "../memory/job-handlers/cleanup.js";
 import type { MemoryJob } from "../memory/jobs-store.js";
@@ -117,7 +117,7 @@ function countDependents(conversationId: string): {
 
 describe("pruneOldBackgroundConversationsJob", () => {
   beforeEach(() => {
-    const db = getDb();
+    const db = getMemoryDb();
     db.delete(memoryRecallLogs).run();
     db.delete(memoryV2ActivationLogs).run();
     db.delete(messages).run();

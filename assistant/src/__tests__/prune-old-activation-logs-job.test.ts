@@ -9,7 +9,7 @@ mock.module("../util/logger.js", () => ({
 }));
 
 import type { AssistantConfig } from "../config/schema.js";
-import { getDb } from "../memory/db-connection.js";
+import { getDb, getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { pruneOldActivationLogsJob } from "../memory/job-handlers/cleanup.js";
 import type { MemoryJob } from "../memory/jobs-store.js";
@@ -23,7 +23,7 @@ const CONFIG = {
 } as unknown as AssistantConfig;
 
 function seedActivationLog(id: string, createdAt: number): void {
-  getDb()
+  getMemoryDb()
     .insert(memoryV2ActivationLogs)
     .values({
       id,
@@ -39,7 +39,7 @@ function seedActivationLog(id: string, createdAt: number): void {
 }
 
 function seedRecallLog(id: string, createdAt: number): void {
-  getDb()
+  getMemoryDb()
     .insert(memoryRecallLogs)
     .values({
       id,
@@ -63,7 +63,7 @@ function seedRecallLog(id: string, createdAt: number): void {
 
 describe("pruneOldActivationLogsJob", () => {
   beforeEach(() => {
-    const db = getDb();
+    const db = getMemoryDb();
     db.delete(memoryV2ActivationLogs).run();
     db.delete(memoryRecallLogs).run();
   });
@@ -77,7 +77,7 @@ describe("pruneOldActivationLogsJob", () => {
 
     await pruneOldActivationLogsJob(JOB, CONFIG);
 
-    const db = getDb();
+    const db = getMemoryDb();
     expect(
       db
         .select()
@@ -101,7 +101,7 @@ describe("pruneOldActivationLogsJob", () => {
       memory: { cleanup: { activationLogRetentionDays: 0 } },
     } as unknown as AssistantConfig);
 
-    expect(getDb().select().from(memoryV2ActivationLogs).all()).toHaveLength(1);
+    expect(getMemoryDb().select().from(memoryV2ActivationLogs).all()).toHaveLength(1);
   });
 
   test("job payload retentionDays overrides config", async () => {
@@ -113,6 +113,6 @@ describe("pruneOldActivationLogsJob", () => {
       CONFIG,
     );
 
-    expect(getDb().select().from(memoryV2ActivationLogs).all()).toHaveLength(0);
+    expect(getMemoryDb().select().from(memoryV2ActivationLogs).all()).toHaveLength(0);
   });
 });
