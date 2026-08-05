@@ -6,7 +6,7 @@ import type { LiveVoiceSpokenAckKind } from "./live-voice-metrics.js";
 // finish before the real reply's audio arrives.
 // Wording is design-owned (Wave C answers, v37 W3): a capable colleague
 // mid-task — brief, plain, no enthusiasm about its own work.
-const ACK_PHRASES: readonly string[] = [
+export const ACK_PHRASES: readonly string[] = [
   "On it.",
   "Give me a second.",
   "Let me look.",
@@ -16,7 +16,7 @@ const ACK_PHRASES: readonly string[] = [
 // Tool-flavored variant spoken the moment a turn starts tool use (a
 // guaranteed-slow turn). Same rules as ACK_PHRASES: persona-neutral, no
 // domain content, ≤ 6 words.
-const TOOL_ACK_PHRASES: readonly string[] = [
+export const TOOL_ACK_PHRASES: readonly string[] = [
   "Pulling that up now.",
   "Let me look.",
   "Checking.",

@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { pickAckPhrase } from "../ack-phrases.js";
+import { ACK_PHRASES, pickAckPhrase } from "../ack-phrases.js";
 
 describe("pickAckPhrase", () => {
   test("rotates deterministically within a kind and wraps by modulo", () => {
@@ -13,7 +13,7 @@ describe("pickAckPhrase", () => {
     expect(first).not.toBe(second);
     // Wraps: counter and counter+listLength pick the same phrase.
     expect(pickAckPhrase("first_delta", 0)).toBe(
-      pickAckPhrase("first_delta", 5),
+      pickAckPhrase("first_delta", ACK_PHRASES.length),
     );
   });
 
