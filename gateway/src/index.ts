@@ -2083,6 +2083,12 @@ async function main() {
 
   // ── Slack Socket Mode lifecycle ──
   let slackSocketClient: SlackSocketModeClient | null = null;
+  // Guards concurrent startSlackSocket calls: two rapid credential-change
+  // events can both fire it, and the second call can pass the stop() guard
+  // while the first is still awaiting credentials, leaving the first client
+  // running (open WebSocket, reconnect loop, cleanup timer) with no
+  // reference to stop it.
+  let slackStartGeneration = 0;
 
   /** Fire-and-forget: notify the platform of inbound Slack activity so the
    *  idle-sleep timer is reset for this assistant.
@@ -2134,6 +2140,7 @@ async function main() {
   }
 
   async function startSlackSocket(): Promise<void> {
+    const generation = ++slackStartGeneration;
     if (slackSocketClient) {
       slackSocketClient.stop();
       slackSocketClient = null;
@@ -2145,6 +2152,11 @@ async function main() {
     const appToken = await credentialCache.get(
       credentialKey("slack_channel", "app_token"),
     );
+    // A newer call started while we awaited credentials, so let it own the
+    // client. Everything below is synchronous, so one check suffices.
+    if (generation !== slackStartGeneration) {
+      return;
+    }
     if (!botToken || !appToken) return;
 
     slackSocketClient = createSlackSocketModeClient(
@@ -2181,6 +2193,7 @@ async function main() {
           handleNewCommand(
             config,
             "slack",
+            normalized.event.actor.actorExternalId,
             normalized.event.message.conversationExternalId,
             async (text) => {
               await fetchImpl("https://slack.com/api/chat.postMessage", {

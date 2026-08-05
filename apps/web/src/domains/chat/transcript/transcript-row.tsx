@@ -27,6 +27,7 @@ export interface TranscriptRowProps {
     data?: Record<string, unknown>,
   ) => void;
   onForkConversation?: (messageId: string) => void;
+  onSummarizeUpToHere?: (messageId: string) => void;
   onInspectMessage?: (messageId: string) => void;
   /** Render-prop for `kind: "onboardingChoice"` items. Onboarding depends on
    *  props from the parent (sendMessage, didOnboarding, etc.) and has a
@@ -66,6 +67,9 @@ export interface TranscriptRowProps {
   /** Retry handler for an interrupted assistant row (turn killed by a
    *  daemon restart). Forwarded to `TranscriptMessageBody`. */
   onRetryInterrupted?: (assistantMessageId: string) => void;
+  /** Hover-action retry for this row. Only supplied by `LatestTurnRow` for
+   *  the latest completed assistant message. */
+  onRetryTurn?: () => void;
   /** True when this row belongs to the actively-streaming turn. Forwarded to
    *  `TranscriptMessageBody` so the streaming message's last tool-call group
    *  defaults open. History rows leave it `false`. */
@@ -77,6 +81,7 @@ export const TranscriptRow = memo(function TranscriptRow({
   assistantDisplayName,
   onSurfaceAction,
   onForkConversation,
+  onSummarizeUpToHere,
   onInspectMessage,
   renderOnboardingChoice,
   onOpenRuleEditor,
@@ -91,6 +96,7 @@ export const TranscriptRow = memo(function TranscriptRow({
   onSubagentClick,
   onStopSubagent,
   onRetryInterrupted,
+  onRetryTurn,
   isStreaming,
 }: TranscriptRowProps) {
   switch (item.kind) {
@@ -101,6 +107,7 @@ export const TranscriptRow = memo(function TranscriptRow({
           assistantDisplayName={assistantDisplayName}
           onSurfaceAction={onSurfaceAction}
           onForkConversation={onForkConversation}
+          onSummarizeUpToHere={onSummarizeUpToHere}
           onInspectMessage={onInspectMessage}
           onOpenRuleEditor={onOpenRuleEditor}
           unknownNudgeToolCallIds={unknownNudgeToolCallIds}
@@ -114,6 +121,7 @@ export const TranscriptRow = memo(function TranscriptRow({
           onSubagentClick={onSubagentClick}
           onStopSubagent={onStopSubagent}
           onRetryInterrupted={onRetryInterrupted}
+          onRetryTurn={onRetryTurn}
           isStreaming={isStreaming}
         />
       );

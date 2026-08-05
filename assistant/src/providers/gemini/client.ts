@@ -10,6 +10,7 @@ import { isAbortReason } from "../../util/abort-reasons.js";
 import { ProviderError } from "../../util/errors.js";
 import { getLogger } from "../../util/logger.js";
 import { PROVIDER_CATALOG } from "../model-catalog.js";
+import { recordProviderRequestDiagnostics } from "../request-diagnostics.js";
 import { createStreamTimeout } from "../stream-timeout.js";
 import type {
   ContentBlock,
@@ -310,6 +311,7 @@ export class GeminiProvider implements Provider {
       : undefined;
 
     try {
+      recordProviderRequestDiagnostics({ model_id: activeModel });
       const geminiContents = this.toGeminiContents(messages, activeModel);
 
       const geminiConfig: genai.GenerateContentConfig = {};

@@ -1,14 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
-// Silence the logger from cdp-inspect-client.
-mock.module("../../../../util/logger.js", () => ({
-  getLogger: () => ({
-    info: () => {},
-    debug: () => {},
-    warn: () => {},
-    error: () => {},
-  }),
-}));
+import { createMockLoggerModule } from "../../../../__tests__/helpers/mock-logger.js";
+
+// Silence the logger from cdp-inspect-client. Full-coverage mock: a
+// getLogger-only factory would delete `getCliLogger` etc. from the
+// process-global registry and break later files in a combined run.
+mock.module("../../../../util/logger.js", () => createMockLoggerModule());
 
 // Import under test AFTER mock.module calls so that the module's
 // top-level logger import resolves to our fake.

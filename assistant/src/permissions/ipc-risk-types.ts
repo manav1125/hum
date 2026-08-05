@@ -55,6 +55,14 @@ export interface FileContext {
   pluginsDir: string;
   actorTokenSigningKeyPath: string;
   skillSourceDirs: string[];
+  /**
+   * Workspace subtrees whose contents govern the assistant itself (system
+   * prompt overrides, personas, daemon-loaded tools/routes). Writes here are
+   * control-plane writes and classify high.
+   */
+  controlPlaneDirs: string[];
+  /** Individual control-plane files (root prompt files like SOUL.md). */
+  controlPlaneFiles: string[];
 }
 
 /**

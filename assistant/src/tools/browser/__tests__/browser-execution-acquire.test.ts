@@ -66,7 +66,12 @@ mock.module("../cdp-client/factory.js", () => ({
   isDesktopAutoCooldownActive: () => false,
 }));
 
+// Spread the real module so exports this factory does not name (e.g.
+// `takePendingColdStartNotice`, which browser-execution.ts imports) keep
+// existing — an exhaustive factory fails the import outright.
+const actualBrowserManager = await import("../browser-manager.js");
 mock.module("../browser-manager.js", () => ({
+  ...actualBrowserManager,
   browserManager: {
     getPreferredBackendKind: (_conversationId: string) => stickyKind,
     setPreferredBackendKind: setPreferredBackendKindMock,

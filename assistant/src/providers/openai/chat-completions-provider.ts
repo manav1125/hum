@@ -7,6 +7,7 @@ import { getLogger } from "../../util/logger.js";
 import { extractRetryAfterMs } from "../../util/retry.js";
 import { escapeXmlAttr } from "../../util/xml.js";
 import { PLACEHOLDER_EMPTY_TURN } from "../placeholder-sentinels.js";
+import { recordProviderRequestDiagnostics } from "../request-diagnostics.js";
 import { createStreamTimeout } from "../stream-timeout.js";
 import type {
   ContentBlock,
@@ -390,6 +391,10 @@ export class OpenAIChatCompletionsProvider implements Provider {
 
     try {
       const openaiMessages = this.toOpenAIMessages(messages, systemPrompt);
+
+      recordProviderRequestDiagnostics({
+        model_id: modelOverride ?? this.model,
+      });
 
       const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming =
         {

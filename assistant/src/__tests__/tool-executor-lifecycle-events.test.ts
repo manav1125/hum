@@ -390,7 +390,11 @@ describe("ToolExecutor lifecycle events", () => {
     const events: ToolLifecycleEvent[] = [];
     const executor = new ToolExecutor(makePrompter());
 
-    const result = await executor.execute("file_read", {}, makeContext(events));
+    const result = await executor.execute(
+      "file_read",
+      { path: "README.md" },
+      makeContext(events),
+    );
 
     expect(result.content).toContain("boom");
     expect(result.isError).toBe(true);
@@ -409,7 +413,11 @@ describe("ToolExecutor lifecycle events", () => {
     const events: ToolLifecycleEvent[] = [];
     const executor = new ToolExecutor(makePrompter());
 
-    const result = await executor.execute("file_read", {}, makeContext(events));
+    const result = await executor.execute(
+      "file_read",
+      { path: "README.md" },
+      makeContext(events),
+    );
 
     expect(result).toEqual({ content: "tool failed", isError: true });
     expect(events.map((event) => event.type)).toEqual(["start", "error"]);
@@ -560,7 +568,7 @@ describe("ToolExecutor lifecycle events", () => {
 
     await executor.execute(
       "file_read",
-      {},
+      { path: "README.md" },
       makeContext(events, { attribution: testAttribution }),
     );
 
@@ -592,7 +600,11 @@ describe("ToolExecutor lifecycle events", () => {
     const events: ToolLifecycleEvent[] = [];
     const executor = new ToolExecutor(makePrompter());
 
-    const result = await executor.execute("file_read", {}, makeContext(events));
+    const result = await executor.execute(
+      "file_read",
+      { path: "README.md" },
+      makeContext(events),
+    );
 
     expect(result.isError).toBe(true);
     const errorEvent = events.find((event) => event.type === "error");
@@ -814,7 +826,7 @@ describe("ToolExecutor lifecycle events", () => {
 
     const resultPromise = executor.execute(
       "file_read",
-      {},
+      { path: "README.md" },
       {
         workingDir: "/tmp/project",
         conversationId: "conversation-1",

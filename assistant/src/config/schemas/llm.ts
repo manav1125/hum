@@ -22,6 +22,7 @@ const LLMProvider = z.enum([
   "openrouter",
   "openai-compatible",
   "minimax",
+  "baseten",
 ]);
 type LLMProvider = z.infer<typeof LLMProvider>;
 

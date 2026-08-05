@@ -42,6 +42,8 @@ export interface TranscriptProps {
   onSurfaceAction: (surfaceId: string, action: string, input?: unknown) => void;
   /** Callback for "Fork from here" from a message's hover actions. */
   onForkConversation?: (messageId: string) => void;
+  /** Callback for "Summarize up to here" from a message's hover actions. */
+  onSummarizeUpToHere?: (messageId: string) => void;
   /** Callback for "Inspect" from a message's hover actions. */
   onInspectMessage?: (messageId: string) => void;
 
@@ -90,6 +92,10 @@ export interface TranscriptProps {
    *  daemon restart): re-sends the original user message. Forwarded to
    *  every transcript row. */
   onRetryInterrupted?: (assistantMessageId: string) => void;
+  /** Hover-action retry for the latest completed assistant message:
+   *  re-sends the latest user message as a fresh turn. Forwarded to
+   *  `LatestTurnRow` only — history rows never carry it. */
+  onRetryLatestTurn?: () => void;
   /** Optional render-prop that produces the chat avatar element to mount
    *  at the bottom of the conversation. Rendered inside the latest-edge
    *  region so the avatar pins to the bottom of the viewport while the
@@ -222,6 +228,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(
     const rowProps = {
       onSurfaceAction: rest.onSurfaceAction,
       onForkConversation: rest.onForkConversation,
+      onSummarizeUpToHere: rest.onSummarizeUpToHere,
       onInspectMessage: rest.onInspectMessage,
       renderOnboardingChoice: rest.renderOnboardingChoice,
       assistantDisplayName: rest.assistantDisplayName,
@@ -304,6 +311,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(
                   anchorMessage={partition.anchorMessage}
                   responseItems={partition.responseItems}
                   {...rowProps}
+                  onRetryLatestTurn={rest.onRetryLatestTurn}
                 />
               )}
               {rest.renderAvatar ? (

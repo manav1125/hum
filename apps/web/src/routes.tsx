@@ -1118,6 +1118,15 @@ export const routeTree = [
                                 },
                               },
                               {
+                                path: "bookmarks",
+                                lazy: {
+                                  Component: () =>
+                                    import("@/domains/settings/pages/bookmarks-page").then(
+                                      (m) => m.BookmarksPage,
+                                    ),
+                                },
+                              },
+                              {
                                 path: "billing",
                                 lazy: {
                                   Component: () =>

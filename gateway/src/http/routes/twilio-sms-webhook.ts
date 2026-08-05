@@ -121,6 +121,7 @@ export function createTwilioSmsWebhookHandler(
         await handleNewCommand(
           config,
           event.sourceChannel,
+          event.actor.actorExternalId,
           event.message.conversationExternalId,
           async (text) => {
             if (!smsSendCaches) return;

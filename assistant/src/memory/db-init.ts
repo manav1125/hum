@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { withSuppressedConfigDiskWritesSync } from "../config/loader.js";
 import { getLogger } from "../util/logger.js";
 import { ensureDataDir, getDbPath } from "../util/platform.js";
 import { backfillAppConversationIds } from "./app-store.js";
@@ -159,7 +160,6 @@ import {
   migrateMemoryGraphImageRefs,
   migrateMemoryItemSupersession,
   migrateMemoryJobOutcome,
-  migrateVolumeValve,
   migrateMemoryRecallLogsQueryContext,
   migrateMemoryRetrospectiveRememberedLog,
   migrateMemoryRetrospectiveState,
@@ -246,6 +246,7 @@ import {
   migrateUsageLlmCallCount,
   migrateVoiceInviteColumns,
   migrateVoiceInviteDisplayMetadata,
+  migrateVolumeValve,
   migrateWorkItemAssessment,
   migrateWorkItemAutoRunEligibility,
   migrateWorkItemHygiene,
@@ -260,6 +261,7 @@ import {
   runLateMigrations,
   validateMigrationState,
 } from "./migrations/index.js";
+import { PLANNER_OPTIMIZE_PRAGMA } from "./planner-statistics.js";
 
 // ---------------------------------------------------------------------------
 // Test DB template — run migrations once, reuse across test files
@@ -584,26 +586,49 @@ export function initializeDb(): void {
 
   // Run each migration step, catching and logging individual failures so one
   // broken migration doesn't prevent independent later ones from succeeding.
+  //
+  // Config disk writes are suppressed for the whole pass: DB migrations run
+  // before workspace migrations (see daemon/lifecycle.ts ordering), and a
+  // migration that reads config on a fresh workspace would otherwise trigger
+  // the first-launch write that persists every schema default — defeating any
+  // later workspace migration whose idempotency guard is "key already present
+  // in config" (migration 140 reads llm.pricingOverrides and hit exactly
+  // this). Migrations may read config; they must not cause it to be written.
   const failures: string[] = [];
-  for (const step of migrationSteps) {
-    try {
-      log.debug({ migration: step.name }, `Starting migration: ${step.name}`);
-      step(database);
-      log.debug({ migration: step.name }, `Migration succeeded: ${step.name}`);
-    } catch (err) {
-      failures.push(step.name);
-      log.error(
-        { err, migration: step.name },
-        `Migration failed: ${step.name}`,
-      );
+  withSuppressedConfigDiskWritesSync(() => {
+    for (const step of migrationSteps) {
+      try {
+        log.debug({ migration: step.name }, `Starting migration: ${step.name}`);
+        step(database);
+        log.debug(
+          { migration: step.name },
+          `Migration succeeded: ${step.name}`,
+        );
+      } catch (err) {
+        failures.push(step.name);
+        log.error(
+          { err, migration: step.name },
+          `Migration failed: ${step.name}`,
+        );
+      }
     }
-  }
+  });
 
   if (failures.length > 0) {
     log.error(
       { failedMigrations: failures, count: failures.length },
       `DB initialization completed with ${failures.length} failed migration(s)`,
     );
+  }
+
+  // An index a migration creates has no sqlite_stat1 entry until something
+  // analyzes it, which SQLite calls out as a case to handle after a schema
+  // change. The steps above carry no applied/skipped signal, so this runs
+  // every boot; the mask's analysis_limit keeps it bounded either way.
+  try {
+    getSqlite().exec(PLANNER_OPTIMIZE_PRAGMA);
+  } catch (err) {
+    log.warn({ err }, "Post-migration PRAGMA optimize failed (non-fatal)");
   }
 
   try {

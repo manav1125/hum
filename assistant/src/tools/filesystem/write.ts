@@ -10,6 +10,11 @@ import { registerTool } from "../registry.js";
 import { FileSystemOps } from "../shared/filesystem/file-ops-service.js";
 import { formatWriteSummary } from "../shared/filesystem/format-diff.js";
 import { sandboxPolicy } from "../shared/filesystem/path-policy.js";
+import {
+  invalidToolInputResult,
+  toToolInputSchema,
+} from "../shared/zod-tool-schema.js";
+import { fileWriteInputSchema } from "../tool-input-schemas.js";
 import type {
   ToolContext,
   ToolDefinition,
@@ -66,46 +71,21 @@ export const fileWriteTool = {
   executionTarget: "sandbox",
   defaultRiskLevel: RiskLevel.Low,
 
-  input_schema: {
-    type: "object",
-    properties: {
-      path: {
-        type: "string",
-        description:
-          "The path to the file to write (absolute or relative to working directory)",
-      },
-      content: {
-        type: "string",
-        description: "The content to write to the file",
-      },
-      activity: {
-        type: "string",
-        description:
-          "Brief non-technical explanation of what you are doing and why, shown as a status update.",
-      },
-    },
-    required: ["path", "content", "activity"],
-  },
+  // Derived from the same Zod source the pre-execution gate validates
+  // against (`TOOL_INPUT_SCHEMAS`), so contract and validation cannot drift.
+  input_schema: toToolInputSchema(fileWriteInputSchema, {
+    advertiseRequired: ["activity"],
+  }),
 
   async execute(
     input: Record<string, unknown>,
     context: ToolContext,
   ): Promise<ToolExecutionResult> {
-    const rawPath = input.path as string;
-    if (!rawPath || typeof rawPath !== "string") {
-      return {
-        content: "Error: path is required and must be a string",
-        isError: true,
-      };
+    const parsed = fileWriteInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return invalidToolInputResult("file_write", parsed.error);
     }
-
-    const fileContent = input.content;
-    if (typeof fileContent !== "string") {
-      return {
-        content: "Error: content is required and must be a string",
-        isError: true,
-      };
-    }
+    const { path: rawPath, content: fileContent } = parsed.data;
 
     // Redirect self-contained interactive HTML artifacts to app-builder.
     // Exempt writes that land inside the apps directory (app-builder's own

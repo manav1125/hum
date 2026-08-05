@@ -116,7 +116,23 @@ mock.module("../ipc/gateway-client.js", () => ({
     matchType: "registry" as const,
     scopeOptions: [],
   }),
-  ipcCall: async () => undefined,
+  // check() reads the per-category autonomy policy map over IPC
+  // (get_autonomy_policies). Returning undefined would trip the reader's
+  // fail-closed fallback ("other" → ask) and turn the benchmarked auto-allow
+  // paths into prompts, so serve the gateway defaults here.
+  ipcCall: async (method: string) =>
+    method === "get_autonomy_policies"
+      ? {
+          policies: {
+            research: "auto",
+            draft: "auto",
+            send: "auto",
+            money: "ask",
+            delete: "ask",
+            other: "auto",
+          },
+        }
+      : undefined,
   ipcCallPersistent: async () => undefined,
   resetPersistentClient: () => {},
 }));

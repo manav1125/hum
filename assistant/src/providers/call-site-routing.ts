@@ -34,6 +34,10 @@ import {
 } from "./connection-resolution.js";
 import { listConnections } from "./inference/connections.js";
 import type { ProvidersConfig } from "./registry.js";
+import {
+  recordProviderRequestDiagnostics,
+  withProviderRequestDiagnosticsLogging,
+} from "./request-diagnostics.js";
 import type {
   Message,
   Provider,
@@ -94,26 +98,31 @@ export class CallSiteRoutingProvider implements Provider {
     messages: Message[],
     options?: SendMessageOptions,
   ): Promise<ProviderResponse> {
-    const target = await this.selectProvider(options);
-    const isRouted = target !== this.defaultProvider;
+    // Run provider selection and the send inside one diagnostics scope so a
+    // failed request logs the connection that signed it alongside the wire
+    // evidence (URL, status, upstream error body) the clients record.
+    return withProviderRequestDiagnosticsLogging(async () => {
+      const target = await this.selectProvider(options);
+      const isRouted = target !== this.defaultProvider;
 
-    const doSend = async (): Promise<ProviderResponse> => {
-      const response = await target.sendMessage(messages, options);
-      // Also stamp actualProvider on the response so that handleUsage /
-      // llm_call_finished (which read event.actualProvider, not provider.name)
-      // attribute the call to the right provider.
-      if (isRouted && response.actualProvider == null) {
-        return { ...response, actualProvider: target.name };
-      }
-      return response;
-    };
+      const doSend = async (): Promise<ProviderResponse> => {
+        const response = await target.sendMessage(messages, options);
+        // Also stamp actualProvider on the response so that handleUsage /
+        // llm_call_finished (which read event.actualProvider, not provider.name)
+        // attribute the call to the right provider.
+        if (isRouted && response.actualProvider == null) {
+          return { ...response, actualProvider: target.name };
+        }
+        return response;
+      };
 
-    // Run inside the async context so that any code reading provider.name
-    // during streaming (e.g. emitLlmCallStartedIfNeeded on text_delta) sees
-    // the routed provider's name for this specific call, not the default.
-    return isRouted
-      ? this._activeProviderContext.run(target.name, doSend)
-      : doSend();
+      // Run inside the async context so that any code reading provider.name
+      // during streaming (e.g. emitLlmCallStartedIfNeeded on text_delta) sees
+      // the routed provider's name for this specific call, not the default.
+      return isRouted
+        ? this._activeProviderContext.run(target.name, doSend)
+        : doSend();
+    });
   }
 
   /**
@@ -185,7 +194,15 @@ export class CallSiteRoutingProvider implements Provider {
         resolved.provider,
         resolved.model,
       );
-      if (connectionProvider) return connectionProvider;
+      if (connectionProvider) {
+        // The connection whose credential the call authenticates with is only
+        // known here, and diagnostics for a failed request are unactionable
+        // without it ("which key was this?"). Recorded once the adapter exists,
+        // so a connection that fell back to the default transport is not
+        // reported as the one that signed the request.
+        recordProviderRequestDiagnostics({ connection_name: connectionName });
+        return connectionProvider;
+      }
       return this.defaultProvider;
     }
 

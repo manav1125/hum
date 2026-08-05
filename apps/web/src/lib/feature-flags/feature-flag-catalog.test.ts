@@ -21,6 +21,13 @@ describe("feature flag catalog", () => {
     expect(ASSISTANT_FLAG_DEFAULTS.selfIntroGreeting).toBe(false);
   });
 
+  test("exposes summarize-up-to-here to client and assistant flag stores", () => {
+    // Default ON in this fork: self-hosted deployments have no remote flag
+    // platform to flip it, and the gateway override path can still disable it.
+    expect(CLIENT_FLAG_DEFAULTS.summarizeUpToHere).toBe(true);
+    expect(ASSISTANT_FLAG_DEFAULTS.summarizeUpToHere).toBe(true);
+  });
+
   test("exposes the activation flow experiment as a client string flag", () => {
     expect(CLIENT_STRING_FLAG_DEFAULTS.experimentActivationFlow20260603).toBe(
       "control",

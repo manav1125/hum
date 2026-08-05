@@ -40,6 +40,16 @@ mock.module("../../telegram/verify.js", () => ({
   verifyWebhookSecret: () => true,
 }));
 
+// Channel-command authorization gate: default to an active contact so
+// gateway-terminal command flows (/new) stay allowed in these tests.
+mock.module("../../db/assistant-db-proxy.js", () => ({
+  assistantDbQuery: mock(() =>
+    Promise.resolve([{ status: "active", role: "contact" }]),
+  ),
+  assistantDbRun: mock(),
+  assistantDbExec: mock(),
+}));
+
 mock.module("../../telegram/download.js", () => ({
   downloadTelegramFile: mock(() =>
     Promise.resolve({

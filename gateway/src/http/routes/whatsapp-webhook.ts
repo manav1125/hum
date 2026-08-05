@@ -251,6 +251,7 @@ export function createWhatsAppWebhookHandler(
           await handleNewCommand(
             config,
             event.sourceChannel,
+            event.actor.actorExternalId,
             event.message.conversationExternalId,
             async (text) => {
               await sendWhatsAppReply(config, from, text, undefined, apiCaches);

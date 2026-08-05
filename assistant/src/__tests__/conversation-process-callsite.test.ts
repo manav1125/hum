@@ -249,6 +249,12 @@ mock.module("../agent/loop.js", () => ({
 mock.module("../plugins/defaults/compaction/window-manager.js", () => ({
   ContextWindowManager: class {
     constructor() {}
+    estimateInputTokens() {
+      return 0;
+    }
+    get tokenCountInputs() {
+      return { systemPrompt: "", tools: undefined };
+    }
     updateConfig() {}
     shouldCompact() {
       return { needed: false, estimatedTokens: 0 };

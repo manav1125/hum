@@ -45,6 +45,9 @@ const telegramDeliverCalls: Array<{
 mock.module("../messaging/providers/telegram-bot/send.js", () => ({
   sendTelegramReply: async (chatId: string, text: string) => {
     telegramDeliverCalls.push({ chatId, text });
+    // Mirror the real send result shape so consumers reading the sent
+    // message id (e.g. the notification adapter) keep working.
+    return {};
   },
   sendTelegramAttachments: async () => ({
     allFailed: false,

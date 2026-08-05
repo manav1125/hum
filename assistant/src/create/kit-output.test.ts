@@ -9,13 +9,10 @@
  */
 import { beforeEach, describe, expect, test } from "bun:test";
 
+import { saveDocument } from "../documents/document-store.js";
 import { initializeDb } from "../memory/db-init.js";
 import { rawRun } from "../memory/raw-query.js";
-import { saveDocument } from "../documents/document-store.js";
-import {
-  firstRunProducedOutputRef,
-  parseKitOutputRef,
-} from "./kit-output.js";
+import { firstRunProducedOutputRef, parseKitOutputRef } from "./kit-output.js";
 
 initializeDb();
 

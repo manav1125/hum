@@ -52,6 +52,11 @@ export interface CatalogModel {
   adaptiveThinkingOnly?: boolean;
   supportsCaching?: boolean;
   supportsVision?: boolean;
+  /**
+   * The model ingests audio natively (the serving surface accepts
+   * `input_audio` content parts), e.g. Thinking Machines Inkling on Baseten.
+   */
+  supportsAudioInput?: boolean;
   supportsToolUse?: boolean;
   pricing?: CatalogModelPricing;
   /**
@@ -306,6 +311,93 @@ const RAW_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       linkLabel: "Open OpenAI Platform",
     },
     models: [
+      // GPT-5.6 family (Sol / Terra / Luna). cacheRead is the 90% cached-read
+      // discount; cacheWrite is the 1.25x-input rate GPT-5.6+ bills for
+      // prompt tokens written to the cache (reported as `cache_write_tokens`
+      // in usage). Long-context (>272K input) is 2x input / 1.5x output / 2x
+      // cache-read+write for the whole request, per OpenAI's model cards.
+      // Terra/Luna rates follow OpenAI's July 30, 2026 pricing update.
+      {
+        id: "gpt-5.6-sol",
+        displayName: "GPT-5.6 Sol",
+        contextWindowTokens: 1050000,
+        maxOutputTokens: 128000,
+        longContextPricingThresholdTokens:
+          OPENAI_LONG_CONTEXT_PRICING_THRESHOLD_TOKENS,
+        supportsThinking: true,
+        supportsCaching: true,
+        supportsVision: true,
+        supportsToolUse: true,
+        pricing: {
+          inputPer1mTokens: 5.0,
+          outputPer1mTokens: 30.0,
+          cacheWritePer1mTokens: 6.25,
+          cacheReadPer1mTokens: 0.5,
+          tiers: [
+            {
+              inputTokenThreshold: OPENAI_LONG_CONTEXT_PRICING_THRESHOLD_TOKENS,
+              inputPer1mTokens: 10,
+              outputPer1mTokens: 45,
+              cacheWritePer1mTokens: 12.5,
+              cacheReadPer1mTokens: 1,
+            },
+          ],
+        },
+      },
+      {
+        id: "gpt-5.6-terra",
+        displayName: "GPT-5.6 Terra",
+        contextWindowTokens: 1050000,
+        maxOutputTokens: 128000,
+        longContextPricingThresholdTokens:
+          OPENAI_LONG_CONTEXT_PRICING_THRESHOLD_TOKENS,
+        supportsThinking: true,
+        supportsCaching: true,
+        supportsVision: true,
+        supportsToolUse: true,
+        pricing: {
+          inputPer1mTokens: 2.0,
+          outputPer1mTokens: 12.0,
+          cacheWritePer1mTokens: 2.5,
+          cacheReadPer1mTokens: 0.2,
+          tiers: [
+            {
+              inputTokenThreshold: OPENAI_LONG_CONTEXT_PRICING_THRESHOLD_TOKENS,
+              inputPer1mTokens: 4,
+              outputPer1mTokens: 18,
+              cacheWritePer1mTokens: 5,
+              cacheReadPer1mTokens: 0.4,
+            },
+          ],
+        },
+      },
+      {
+        id: "gpt-5.6-luna",
+        displayName: "GPT-5.6 Luna",
+        contextWindowTokens: 1050000,
+        maxOutputTokens: 128000,
+        longContextPricingThresholdTokens:
+          OPENAI_LONG_CONTEXT_PRICING_THRESHOLD_TOKENS,
+        supportsThinking: true,
+        supportsCaching: true,
+        supportsVision: true,
+        supportsToolUse: true,
+        pricing: {
+          inputPer1mTokens: 0.2,
+          outputPer1mTokens: 1.2,
+          cacheWritePer1mTokens: 0.25,
+          cacheReadPer1mTokens: 0.02,
+          tiers: [
+            {
+              inputTokenThreshold: OPENAI_LONG_CONTEXT_PRICING_THRESHOLD_TOKENS,
+              inputPer1mTokens: 0.4,
+              outputPer1mTokens: 1.8,
+              cacheWritePer1mTokens: 0.5,
+              cacheReadPer1mTokens: 0.04,
+            },
+          ],
+        },
+      },
       {
         id: "gpt-5.5",
         displayName: "GPT-5.5",
@@ -445,6 +537,21 @@ const RAW_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     },
     models: [
       {
+        id: "gemini-3.6-flash",
+        displayName: "Gemini 3.6 Flash",
+        contextWindowTokens: 1048576,
+        maxOutputTokens: 65536,
+        supportsThinking: true,
+        supportsCaching: true,
+        supportsVision: true,
+        supportsToolUse: true,
+        pricing: {
+          inputPer1mTokens: 1.5,
+          outputPer1mTokens: 7.5,
+          cacheReadPer1mTokens: 0.15,
+        },
+      },
+      {
         id: "gemini-3.5-flash",
         displayName: "Gemini 3.5 Flash",
         contextWindowTokens: 1048576,
@@ -457,6 +564,21 @@ const RAW_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
           inputPer1mTokens: 1.5,
           outputPer1mTokens: 9.0,
           cacheReadPer1mTokens: 0.15,
+        },
+      },
+      {
+        id: "gemini-3.5-flash-lite",
+        displayName: "Gemini 3.5 Flash-Lite",
+        contextWindowTokens: 1048576,
+        maxOutputTokens: 65536,
+        supportsThinking: true,
+        supportsCaching: true,
+        supportsVision: true,
+        supportsToolUse: true,
+        pricing: {
+          inputPer1mTokens: 0.3,
+          outputPer1mTokens: 2.5,
+          cacheReadPer1mTokens: 0.03,
         },
       },
       {
@@ -661,6 +783,22 @@ const RAW_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       linkLabel: "Open Fireworks Dashboard",
     },
     models: [
+      {
+        id: "accounts/fireworks/models/kimi-k3",
+        displayName: "Kimi K3",
+        contextWindowTokens: 1048576,
+        maxOutputTokens: 131072,
+        supportsThinking: true,
+        adaptiveThinkingOnly: true,
+        supportsCaching: true,
+        supportsVision: true,
+        supportsToolUse: true,
+        pricing: {
+          inputPer1mTokens: 3,
+          outputPer1mTokens: 15,
+          cacheReadPer1mTokens: 0.3,
+        },
+      },
       {
         id: "accounts/fireworks/models/kimi-k2p6",
         displayName: "Kimi K2.6",
@@ -901,6 +1039,22 @@ const RAW_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       },
       // xAI
       {
+        id: "x-ai/grok-4.5",
+        displayName: "Grok 4.5",
+        contextWindowTokens: 500000,
+        // xAI publishes no completion cap; 30K is the tracker-reported
+        // single-response limit.
+        maxOutputTokens: 30000,
+        supportsThinking: true,
+        supportsCaching: false,
+        supportsVision: true,
+        supportsToolUse: true,
+        // xAI's Grok 4.5 API accepts only low|medium|high reasoning effort;
+        // clamp Vellum's xhigh/max tiers down so inherited efforts don't 4xx.
+        maxEffort: "high",
+        pricing: { inputPer1mTokens: 2, outputPer1mTokens: 6 },
+      },
+      {
         id: "x-ai/grok-4.20-beta",
         displayName: "Grok 4.20 Beta",
         contextWindowTokens: 256000,
@@ -1035,6 +1189,18 @@ const RAW_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
         pricing: { inputPer1mTokens: 0.5, outputPer1mTokens: 1.5 },
       },
       // Moonshot
+      {
+        id: "moonshotai/kimi-k3",
+        displayName: "Kimi K3",
+        contextWindowTokens: 1048576,
+        maxOutputTokens: 131072,
+        supportsThinking: true,
+        adaptiveThinkingOnly: true,
+        supportsCaching: false,
+        supportsVision: true,
+        supportsToolUse: true,
+        pricing: { inputPer1mTokens: 3, outputPer1mTokens: 15 },
+      },
       {
         id: "moonshotai/kimi-k2.6",
         displayName: "Kimi K2.6",
@@ -1245,6 +1411,46 @@ const RAW_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     apiKeyPlaceholder: "Your provider's API key",
     models: [],
     defaultModel: "",
+  },
+  {
+    id: "baseten",
+    displayName: "Baseten",
+    subtitle: "Open models served by Baseten. Requires a Baseten API key.",
+    setupMode: "api-key",
+    setupHint: "Enter your Baseten API key to enable Baseten models.",
+    envVar: "BASETEN_API_KEY",
+    credentialsGuide: {
+      description: "Sign in to the Baseten dashboard and create an API key.",
+      url: "https://app.baseten.co/settings/api_keys",
+      linkLabel: "Open Baseten Dashboard",
+    },
+    models: [
+      {
+        id: "thinkingmachines/inkling",
+        displayName: "Inkling",
+        // Baseten serves Inkling with a 256K-token (262,144) input window.
+        contextWindowTokens: 262144,
+        maxOutputTokens: 32768,
+        supportsThinking: true,
+        supportsCaching: true,
+        supportsVision: true,
+        // Inkling ingests audio natively (dMel tokens); Baseten's serving
+        // surface accepts `input_audio` parts for it.
+        supportsAudioInput: true,
+        supportsToolUse: true,
+        // Baseten's reasoning_effort for Inkling tops out at "xhigh" (no
+        // "max"), matching the chat-completions client's default ceiling.
+        maxEffort: "xhigh",
+        pricing: {
+          inputPer1mTokens: 1.0,
+          outputPer1mTokens: 4.05,
+          cacheReadPer1mTokens: 0.17,
+        },
+      },
+    ],
+    defaultModel: "thinkingmachines/inkling",
+    apiKeyUrl: "https://app.baseten.co/settings/api_keys",
+    apiKeyPlaceholder: "Your Baseten API key",
   },
   {
     id: "minimax",

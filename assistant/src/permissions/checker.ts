@@ -272,6 +272,7 @@ function escapeMinimatchLiteral(value: string): string {
 // assistant-local context (file paths, skill metadata, etc.) before
 // forwarding to the gateway.
 
+import { getControlPlanePaths } from "./control-plane-paths.js";
 import type {
   ClassifyRiskParams,
   FileContext,
@@ -280,6 +281,7 @@ import type {
 
 function buildFileContext(): FileContext {
   const config = getConfig();
+  const controlPlane = getControlPlanePaths();
   return {
     protectedDir: getProtectedDir(),
     deprecatedDir: getDeprecatedDir(),
@@ -290,6 +292,8 @@ function buildFileContext(): FileContext {
       "actor-token-signing-key",
     ),
     skillSourceDirs: getSkillRoots(config.skills.load.extraDirs),
+    controlPlaneDirs: controlPlane.dirs,
+    controlPlaneFiles: controlPlane.files,
   };
 }
 

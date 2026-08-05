@@ -2,6 +2,11 @@ import { RiskLevel } from "../../permissions/types.js";
 import { registerTool } from "../registry.js";
 import { FileSystemOps } from "../shared/filesystem/file-ops-service.js";
 import { sandboxPolicy } from "../shared/filesystem/path-policy.js";
+import {
+  invalidToolInputResult,
+  toToolInputSchema,
+} from "../shared/zod-tool-schema.js";
+import { fileListInputSchema } from "../tool-input-schemas.js";
 import type {
   ToolContext,
   ToolDefinition,
@@ -16,46 +21,27 @@ export const fileListTool = {
   executionTarget: "sandbox",
   defaultRiskLevel: RiskLevel.Low,
 
-  input_schema: {
-    type: "object",
-    properties: {
-      path: {
-        type: "string",
-        description: "The directory path to list",
-      },
-      glob: {
-        type: "string",
-        description: "Filter entries by glob pattern, e.g. '*.md'",
-      },
-      activity: {
-        type: "string",
-        description:
-          "Brief non-technical explanation of what you are doing and why, shown as a status update.",
-      },
-    },
-    required: ["path", "activity"],
-  },
+  // Derived from the same Zod source the pre-execution gate validates
+  // against (`TOOL_INPUT_SCHEMAS`), so contract and validation cannot drift.
+  input_schema: toToolInputSchema(fileListInputSchema, {
+    advertiseRequired: ["activity"],
+  }),
 
   async execute(
     input: Record<string, unknown>,
     context: ToolContext,
   ): Promise<ToolExecutionResult> {
-    const rawPath = input.path as string;
-    if (!rawPath || typeof rawPath !== "string") {
-      return {
-        content: "Error: path is required and must be a string",
-        isError: true,
-      };
+    const parsed = fileListInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return invalidToolInputResult("file_list", parsed.error);
     }
+    const { path: rawPath, glob } = parsed.data;
 
     const ops = new FileSystemOps((path, opts) =>
       sandboxPolicy(path, context.workingDir, opts),
     );
 
-    const result = ops.listDirSafe({
-      path: rawPath,
-      glob: typeof input.glob === "string" ? input.glob : undefined,
-    });
+    const result = ops.listDirSafe({ path: rawPath, glob });
 
     if (!result.ok) {
       const { error } = result;

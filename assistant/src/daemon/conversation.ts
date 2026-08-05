@@ -49,6 +49,7 @@ import { resolveCanonicalGuardianRequest } from "../memory/canonical-guardian-st
 import {
   getConversation,
   getMessages,
+  type MessageRow,
   resolveOverrideProfile,
   setConversationHistoryStrippedAt,
   setConversationProcessingStartedAt,
@@ -101,6 +102,7 @@ import type { ToolPruningScanCache } from "../tools/tool-pruning.js";
 import type { ToolLifecycleEvent } from "../tools/types.js";
 import type { OnboardingContext } from "../types/onboarding-context.js";
 import type { AbortReason } from "../util/abort-reasons.js";
+import { UserError } from "../util/errors.js";
 import { getLogger } from "../util/logger.js";
 import type { WorkspaceGitService } from "../workspace/git-service.js";
 import type { commitTurnChanges } from "../workspace/turn-commit.js";
@@ -139,6 +141,7 @@ import { MessageQueue } from "./conversation-queue-manager.js";
 import {
   type ChannelCapabilities,
   getSlackCompactionWatermarkForPrefix,
+  getSlackWatermarkAdvanceForRowPrefix,
   type InboundActorContext,
   loadSlackChronologicalContext,
   stripInjectionsForCompaction,
@@ -175,6 +178,7 @@ import type { ConversationTransportMetadata } from "./message-types/conversation
 import { isHostProxyTransport } from "./message-types/conversations.js";
 import type { ConfirmationStateChanged } from "./message-types/messages.js";
 import { conversationMetadataSyncTag } from "./message-types/sync.js";
+import { resolveSummarizeBoundary } from "./summarize-boundary.js";
 import { TraceEmitter } from "./trace-emitter.js";
 
 const log = getLogger("conversation");
@@ -198,6 +202,53 @@ export interface CleanResult {
   estimatedInputTokens: number;
   maxInputTokens: number;
   preservedMessages: number;
+}
+
+/**
+ * First text block of a persisted message row's content, mirroring
+ * `loadFromDb`'s parse: non-JSON / non-array content loads as a single text
+ * block holding the raw string. Returns null when the row's block array has
+ * no text block. Used to verify the row→history boundary mapping in
+ * {@link Conversation.summarizeUpToMessage}.
+ */
+function firstPersistedTextBlockText(content: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (Array.isArray(parsed)) {
+      const block = parsed.find(
+        (b): b is { type: "text"; text: string } =>
+          typeof b === "object" &&
+          b !== null &&
+          (b as { type?: unknown }).type === "text" &&
+          typeof (b as { text?: unknown }).text === "string",
+      );
+      return block?.text ?? null;
+    }
+  } catch {
+    // Non-JSON content loads as a raw text block.
+  }
+  return content;
+}
+
+/**
+ * Row-addressed view of the in-memory history a {@link Conversation.loadFromDb}
+ * pass just built, for callers that need to translate a persisted row position
+ * into a `messages` index (e.g. "summarize up to here").
+ */
+export interface LoadFromDbResult {
+  /** Full persisted row set the load read (before any trust filtering). */
+  rows: MessageRow[];
+  /**
+   * Persisted-row index (into `rows`) → index into the conversation's
+   * `messages`, folding in the compacted-prefix slice, injection-strip drops,
+   * history-repair merges/insertions, and the prepended summary message.
+   * Per-row `null` when the row has no in-memory counterpart (behind the
+   * compacted boundary, or dropped by the pre-clean injection strip); `null`
+   * overall when the load was trust-filtered (a filtered view has no stable
+   * row↔history correspondence). Valid only until the conversation next
+   * mutates — turns append to `messages` without updating any mapping.
+   */
+  rowToHistoryIndex: (number | null)[] | null;
 }
 
 /**
@@ -225,7 +276,11 @@ export type {
   QueueDrainReason,
   QueuePolicy,
 } from "./conversation-queue-manager.js";
-import { isPersonalMemoryAllowed, type TrustContext } from "./trust-context.js";
+import {
+  INTERNAL_GUARDIAN_TRUST_CONTEXT,
+  isPersonalMemoryAllowed,
+  type TrustContext,
+} from "./trust-context.js";
 
 export interface ConversationConstructorOptions {
   maxTokens?: number;
@@ -928,12 +983,13 @@ export class Conversation {
 
   // ── Lifecycle ────────────────────────────────────────────────────
 
-  async loadFromDb(): Promise<void> {
+  async loadFromDb(): Promise<LoadFromDbResult> {
     const trustClass = this.trustContext?.trustClass;
+    const canAccessMemory = !isUntrustedTrustClass(trustClass);
     const allDbMessages = getMessages(this.conversationId);
-    const dbMessages = isUntrustedTrustClass(trustClass)
-      ? filterMessagesForUntrustedActor(allDbMessages)
-      : allDbMessages;
+    const dbMessages = canAccessMemory
+      ? allDbMessages
+      : filterMessagesForUntrustedActor(allDbMessages);
 
     const conv = getConversation(this.conversationId);
     this.conversationType = conv?.conversationType ?? undefined;
@@ -1171,16 +1227,26 @@ export class Conversation {
     });
 
     // Strip pre-clean messages only; post-clean messages keep the fresh
-    // injections they were generated with.
-    const messagesBeforeRepair =
-      preStrippedCount === 0
-        ? parsedMessages
-        : [
-            ...stripInjectionsForCompaction(
-              parsedMessages.slice(0, preStrippedCount),
-            ),
-            ...parsedMessages.slice(preStrippedCount),
-          ];
+    // injections they were generated with. Strips run per message (the
+    // transform is 1:1-or-drop) so the sliced-row → pre-repair index map
+    // below stays exact: a dropped message records `null` instead of
+    // shifting every later row's position.
+    const messagesBeforeRepair: Message[] = [];
+    const preRepairIndexBySlicedRow: (number | null)[] = new Array(
+      parsedMessages.length,
+    );
+    for (const [index, message] of parsedMessages.entries()) {
+      const stripped =
+        index < preStrippedCount
+          ? stripInjectionsForCompaction([message])
+          : [message];
+      if (stripped.length === 0) {
+        preRepairIndexBySlicedRow[index] = null;
+        continue;
+      }
+      preRepairIndexBySlicedRow[index] = messagesBeforeRepair.length;
+      messagesBeforeRepair.push(stripped[0]);
+    }
 
     // Normalize the canonical persisted history once at load. Every consumer
     // of `this.messages` outside the agent loop (history edit/undo, PKB context
@@ -1189,8 +1255,11 @@ export class Conversation {
     // loop's pre-run repair only repairs the transient per-turn message list it
     // sends to the provider and never writes back here, so this pass is not
     // redundant with it.
-    const { messages: repairedMessages, stats } =
-      repairHistory(messagesBeforeRepair);
+    const {
+      messages: repairedMessages,
+      stats,
+      inputToOutputIndex,
+    } = repairHistory(messagesBeforeRepair);
     if (
       stats.assistantToolResultsMigrated > 0 ||
       stats.missingToolResultsInserted > 0 ||
@@ -1228,6 +1297,27 @@ export class Conversation {
 
     this.restoreSurfaceStateFromHistory();
     this.graphMemory.restoreState();
+
+    // Row→history correspondence for this load: slice offset, then the
+    // injection-strip drop map, then the repair merge/insertion map, then the
+    // summary head. Untrusted views are trust-filtered row subsets with no
+    // stable correspondence — callers get null.
+    const summaryHeadOffset = contextSummaryForHistory ? 1 : 0;
+    const rowToHistoryIndex = canAccessMemory
+      ? allDbMessages.map((_, rowIndex): number | null => {
+          const slicedIndex = rowIndex - inContextCompactedCount;
+          if (slicedIndex < 0) {
+            return null;
+          }
+          const preRepairIndex = preRepairIndexBySlicedRow[slicedIndex];
+          if (preRepairIndex == null) {
+            return null;
+          }
+          const historyIndex = inputToOutputIndex?.[preRepairIndex];
+          return historyIndex == null ? null : historyIndex + summaryHeadOffset;
+        })
+      : null;
+    return { rows: allDbMessages, rowToHistoryIndex };
   }
 
   /**
@@ -1687,8 +1777,243 @@ export class Conversation {
     }
   }
 
-  async forceCompact(): Promise<ContextWindowResult> {
-    return this.runCompaction(true);
+  /**
+   * Token count for `messages` used to render the user-facing `/compact`,
+   * `/clean`, and "summarize up to here" figures. Prefers the provider's real
+   * `count_tokens` tokenizer (so the numbers match the context-window
+   * indicator's provider-reported usage) and falls back to the context-window
+   * manager's local estimate when the provider has no count endpoint or the
+   * count call fails — both measure the same system-prompt + tools
+   * composition the manager sizes against.
+   *
+   * The count is a network round-trip with its own rate limit, so this is for
+   * user-initiated actions only, never the per-turn auto-compaction gate.
+   */
+  private async calculateTokens(messages: Message[]): Promise<number> {
+    const countInputTokens = this.provider.countInputTokens;
+    if (!countInputTokens) {
+      return this.contextWindowManager.estimateInputTokens(messages);
+    }
+    try {
+      const { systemPrompt, tools } =
+        this.contextWindowManager.tokenCountInputs;
+      return await countInputTokens.call(
+        this.provider,
+        messages,
+        systemPrompt,
+        tools,
+      );
+    } catch (err) {
+      log.warn(
+        { err, conversationId: this.conversationId },
+        "Provider token count failed — falling back to local estimate",
+      );
+      return this.contextWindowManager.estimateInputTokens(messages);
+    }
+  }
+
+  /**
+   * Push the conversation's current context-window usage to clients so the
+   * context-window indicator matches the numbers a user-initiated compaction
+   * card reports. Turn-driven compaction needs no push: the turn's own
+   * `usage_update` carries the post-compaction count.
+   *
+   * Defaults to the conversation's own sender, the channel `emitActivityState`
+   * and `context_compacted` already use, so a queued `/compact` reaches the
+   * same client its result card does. Routes that resolve a conversation
+   * outside the send path never wire that sender and pass their own `onEvent`.
+   */
+  private emitContextWindowUsage(
+    tokens: number,
+    maxTokens: number,
+    onEvent?: (msg: ServerMessage) => void,
+  ): void {
+    try {
+      (onEvent ?? this.sendToClient)({
+        type: "context_window_usage",
+        conversationId: this.conversationId,
+        tokens,
+        maxTokens,
+      });
+    } catch (err) {
+      log.warn(
+        { err, conversationId: this.conversationId },
+        "sendToClient threw in emitContextWindowUsage",
+      );
+    }
+  }
+
+  /**
+   * Run a user-initiated compaction (`run`), reporting its before/after with
+   * the provider's real tokenizer (count_tokens) rather than the local chars/4
+   * estimate the compaction pipeline runs internally (it under-counts by ~25%
+   * on typical histories), and pushing the resulting count to clients.
+   * `calculateTokens` falls back to that estimate when the provider has no
+   * count endpoint or the count call fails, so behavior degrades gracefully.
+   *
+   * Only the *displayed* numbers are overridden: the compaction log and
+   * circuit-breaker accounting inside `runCompaction` keep the estimate-based
+   * figures, leaving calibration and historical logs untouched.
+   *
+   * `run` must leave the compacted history applied to `this.messages`, which
+   * every `runCompaction` path does. `onEvent` overrides the sink the usage
+   * push goes to.
+   */
+  private async runUserCompaction(
+    run: () => Promise<ContextWindowResult>,
+    onEvent?: (msg: ServerMessage) => void,
+  ): Promise<ContextWindowResult> {
+    const before = await this.calculateTokens(this.messages);
+    const result = await run();
+    // A no-op leaves the context unchanged, so before === after.
+    const after = result.compacted
+      ? await this.calculateTokens(this.messages)
+      : before;
+    this.emitContextWindowUsage(after, result.maxInputTokens, onEvent);
+    return {
+      ...result,
+      previousEstimatedInputTokens: before,
+      estimatedInputTokens: after,
+    };
+  }
+
+  /**
+   * `/compact`. `onEvent` is the sink for the context-window usage push, and
+   * callers pass whatever sink they render the result card through: the queue
+   * drain carries the queued item's own `onEvent`, and `sendToClient` is reset
+   * to a no-op once an interactive turn finishes (`process-message.ts`), so a
+   * `/compact` draining behind that turn would otherwise push into nothing
+   * while its card still reaches the client.
+   */
+  async forceCompact(
+    onEvent?: (msg: ServerMessage) => void,
+  ): Promise<ContextWindowResult> {
+    return this.runUserCompaction(() => this.runCompaction(true), onEvent);
+  }
+
+  /**
+   * "Summarize up to here": summarize everything before the turn containing
+   * `beforeMessageId`, keeping that turn and everything after it verbatim.
+   * Runs the same durable compaction pipeline as {@link forceCompact} but
+   * with a caller-fixed tail boundary instead of the token-budget cut.
+   *
+   * Owner self-maintenance operates on the full (guardian) history, so an
+   * untrusted trust context is temporarily swapped for the internal guardian
+   * context and restored afterward. Throws {@link UserError} (messages are
+   * user-facing) when the boundary cannot be resolved or the row→history
+   * index mapping cannot be verified.
+   *
+   * `onEvent` is the sink for the context-window usage push. The management
+   * route that owns this action resolves its conversation outside the send
+   * path, so the instance can still hold the store's no-op sender; it passes
+   * the same broadcast path its result card goes out on.
+   */
+  async summarizeUpToMessage(
+    beforeMessageId: string,
+    onEvent?: (msg: ServerMessage) => void,
+  ): Promise<ContextWindowResult> {
+    const priorTrustContext = this.trustContext;
+    if (isUntrustedTrustClass(priorTrustContext?.trustClass)) {
+      this.setTrustContext(INTERNAL_GUARDIAN_TRUST_CONTEXT);
+    }
+    try {
+      // Fresh guardian-scoped load so `this.messages`, the row set, and the
+      // row→history mapping all describe the same instant (rare user action;
+      // the reload cost is acceptable).
+      const { rows, rowToHistoryIndex } = await this.loadFromDb();
+      const { boundaryRowIndex } = resolveSummarizeBoundary(
+        rows,
+        beforeMessageId,
+        this.contextCompactedMessageCount,
+      );
+      // Row-space → history-space via the load's own mapping, which folds in
+      // history-repair merges/insertions and injection-strip drops. Offset
+      // arithmetic would drift by one for every repair upstream of the
+      // boundary — e.g. the user(tool_result-only) + user(text) row pair an
+      // awaiting-user-action surface pause persists, which repair merges into
+      // a single in-memory message.
+      const tailIndex = rowToHistoryIndex?.[boundaryRowIndex] ?? null;
+      const boundaryRow = rows[boundaryRowIndex];
+      const mapped: Message | undefined =
+        tailIndex == null ? undefined : this.messages[tailIndex];
+      const rowText = firstPersistedTextBlockText(boundaryRow.content);
+      // Injection rehydration PREPENDS blocks to user messages, and repair
+      // can merge a preceding continuation row's blocks in front of the
+      // boundary row's, so the row's text must appear somewhere among the
+      // mapped message's text blocks — never assume block 0. A mismatch
+      // means the in-memory view diverged from the mapping's invariants;
+      // fail safe rather than summarize at the wrong boundary.
+      const matches =
+        mapped !== undefined &&
+        mapped.role === boundaryRow.role &&
+        (rowText === null ||
+          mapped.content.some(
+            (b) => b.type === "text" && b.text.includes(rowText),
+          ));
+      if (rowToHistoryIndex == null || tailIndex == null || !matches) {
+        log.warn(
+          {
+            conversationId: this.conversationId,
+            beforeMessageId,
+            boundaryRowIndex,
+            tailIndex,
+            rowRole: boundaryRow.role,
+            mappedRole: mapped?.role,
+            rowCount: rows.length,
+            historyLength: this.messages.length,
+            contextCompactedMessageCount: this.contextCompactedMessageCount,
+          },
+          "summarizeUpToMessage: row→history boundary mapping mismatch",
+        );
+        throw new UserError(
+          "Conversation history is being reorganized — try again in a moment",
+        );
+      }
+      // Everything between the compacted watermark and the clicked turn
+      // lives inside the boundary's own merged message (at most the summary
+      // head precedes it) — there is no earlier content to summarize.
+      if (tailIndex <= (this.contextSummary?.trim() ? 1 : 0)) {
+        throw new UserError("Nothing to summarize before this message");
+      }
+      // First persisted row contributing to each in-memory message — the
+      // inverse of `rowToHistoryIndex` (descending walk so the earliest row
+      // wins a merged message's slot; summary-head/synthetic entries stay
+      // null). The compaction pipeline derives its persisted and Slack
+      // watermarks from this against the cut the compactor ACTUALLY uses,
+      // which may retreat from the requested boundary for tool pairing.
+      const firstRowByHistoryIndex: (number | null)[] = new Array(
+        this.messages.length,
+      ).fill(null);
+      for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex--) {
+        const historyIndex = rowToHistoryIndex[rowIndex];
+        if (historyIndex != null) {
+          firstRowByHistoryIndex[historyIndex] = rowIndex;
+        }
+      }
+      return await this.runUserCompaction(
+        () =>
+          this.runCompaction(true, undefined, {
+            fixedTailStartIndex: tailIndex,
+            // When repair merged preceding continuation rows into the
+            // boundary's message, the row boundary retreats to the message's
+            // first contributing row: the summary call reads
+            // messages[0..tailIndex), which excludes the merged rows' content,
+            // so the image manifest and watermarks must not treat them as
+            // summarized.
+            fixedBoundaryRowIndex:
+              firstRowByHistoryIndex[tailIndex] ?? boundaryRowIndex,
+            fixedBoundaryRowView: { rows, firstRowByHistoryIndex },
+          }),
+        onEvent,
+      );
+    } finally {
+      // Only undo the temporary guardian context this method installed. If
+      // trustContext was legitimately updated at an `await` boundary, the
+      // reference differs and is left alone.
+      if (this.trustContext === INTERNAL_GUARDIAN_TRUST_CONTEXT) {
+        this.setTrustContext(priorTrustContext ?? null);
+      }
+    }
   }
 
   /**
@@ -1716,14 +2041,31 @@ export class Conversation {
   }
 
   /**
-   * Shared compaction pipeline behind {@link forceCompact} and
-   * {@link maybeCompact}. `force` skips the auto-threshold check inside the
-   * context-window manager (user-initiated `/compact`); without it the
-   * manager no-ops below the threshold.
+   * Shared compaction pipeline behind {@link forceCompact},
+   * {@link maybeCompact}, and {@link summarizeUpToMessage}. `force` skips the
+   * auto-threshold check inside the context-window manager (user-initiated
+   * `/compact`); without it the manager no-ops below the threshold.
+   * `opts.fixedTailStartIndex` pins the kept tail to a caller-chosen history
+   * index ("summarize up to here") instead of the token-budget cut;
+   * `opts.fixedBoundaryRowIndex` is the same boundary in row space, which
+   * bounds the compactor's image manifest to rows being summarized away;
+   * `opts.fixedBoundaryRowView` carries the load's row set and the
+   * first-contributing-row inverse of its row→history mapping, from which
+   * this pipeline derives row-exact persisted and Slack watermarks against
+   * the cut the compactor actually used (the requested cut may retreat to
+   * keep tool_use/tool_result pairs together).
    */
   private async runCompaction(
     force: boolean,
     sizing?: CompactionSizing,
+    opts?: {
+      fixedTailStartIndex?: number;
+      fixedBoundaryRowIndex?: number;
+      fixedBoundaryRowView?: {
+        rows: MessageRow[];
+        firstRowByHistoryIndex: (number | null)[];
+      };
+    },
   ): Promise<ContextWindowResult> {
     const overrideProfile = resolveOverrideProfile(this) ?? null;
     const config = getConfig();
@@ -1751,7 +2093,15 @@ export class Conversation {
         effectiveContextWindow,
       ),
     );
+    // A caller-fixed tail boundary is computed and verified against
+    // `this.messages`; the Slack chronological projection is a different
+    // array (watermark-sliced, actor-filtered, re-rendered) whose indices
+    // don't correspond. Fixed-boundary runs therefore always compact
+    // `this.messages`; their Slack watermark is derived post-hoc in
+    // row-space from the compactor's actual cut (a null context makes
+    // `getSlackCompactionWatermarkForPrefix` return null below).
     const slackChronologicalContext =
+      opts?.fixedTailStartIndex == null &&
       this.channelCapabilities?.channel === "slack"
         ? loadSlackChronologicalContext(
             this.conversationId,
@@ -1767,22 +2117,67 @@ export class Conversation {
         : null;
     const messagesToCompact =
       slackChronologicalContext?.messages ?? this.messages;
-    const result = await defaultCompact({
+    const compactedRowCountAtCall = this.contextCompactedMessageCount;
+    let result = await defaultCompact({
       conversationId: this.conversationId,
       messages: messagesToCompact,
       signal: this.abortController?.signal ?? undefined,
       force,
       overrideProfile,
       actorTrustClass: this.trustContext?.trustClass,
+      fixedTailStartIndex: opts?.fixedTailStartIndex,
+      fixedBoundaryRowIndex: opts?.fixedBoundaryRowIndex,
     });
+    // Row-exact watermark accounting for a caller-fixed boundary, derived
+    // from the cut the compactor ACTUALLY used (`result.compactedMessages`
+    // is the kept tail's history-space start): the compactor may retreat
+    // the requested cut to keep tool_use/tool_result pairs together, and
+    // pinning the watermark to the requested row would hide those
+    // kept-but-unsummarized rows from every future load. The compactor's
+    // message-space count is equally unusable as a row count — it
+    // undercounts whenever load-time repair merged (or the injection strip
+    // dropped) rows in the summarized range. Mapping the actual cut through
+    // the load's first-contributing-row inverse handles both. The null
+    // fallback (a cut landing on an unmapped synthetic message) degrades to
+    // a zero advance — conservative: rows get re-summarized later rather
+    // than hidden.
+    let fixedBoundarySlackWatermarkTs: string | null = null;
+    if (result.compacted && opts?.fixedBoundaryRowView != null) {
+      const { rows, firstRowByHistoryIndex } = opts.fixedBoundaryRowView;
+      const rowBoundary =
+        firstRowByHistoryIndex[result.compactedMessages] ??
+        compactedRowCountAtCall;
+      result = {
+        ...result,
+        compactedPersistedMessages: Math.max(
+          0,
+          rowBoundary - compactedRowCountAtCall,
+        ),
+      };
+      // Slack projections gate on the persisted watermark, not on
+      // `contextCompactedMessageCount` — without an advance, the summarized
+      // rows would reappear verbatim in the projection alongside the new
+      // summary. Null for non-Slack rows or a non-advancing boundary.
+      fixedBoundarySlackWatermarkTs = getSlackWatermarkAdvanceForRowPrefix(
+        rows,
+        rowBoundary,
+        this.slackContextCompactionWatermarkTs,
+      );
+    }
     // Track circuit-breaker state for every compaction that ran a summary
     // call — user-initiated `/compact`, other forced paths, and the wake's
     // auto gate — so a success clears a stuck counter and a run of failures
     // still trips the breaker. `summaryFailed` is `undefined` on
     // early-return paths (no eligible messages, disabled, below the auto
     // threshold, etc.) — skip those so they don't silently reset the
-    // counter.
-    if (result.summaryFailed !== undefined) {
+    // counter. A user Stop aborts the summary's provider call, which the
+    // compactor reports as `summaryFailed: true`; that is a cancellation, not
+    // a genuine failure, so skip recording when the signal is aborted rather
+    // than tripping the breaker on user cancels.
+    if (
+      result.summaryFailed !== undefined &&
+      !this.abortController?.signal.aborted
+    ) {
       await this.agentLoop.compactionCircuit.recordOutcome(
         result.summaryFailed,
         this.sendToClient,
@@ -1790,10 +2185,12 @@ export class Conversation {
     }
     if (result.compacted) {
       await applyCompactionResult(this, result, this.sendToClient, null, {
-        slackContextCompactionWatermarkTs: getSlackCompactionWatermarkForPrefix(
-          slackChronologicalContext,
-          result.compactedMessages,
-        ),
+        slackContextCompactionWatermarkTs:
+          fixedBoundarySlackWatermarkTs ??
+          getSlackCompactionWatermarkForPrefix(
+            slackChronologicalContext,
+            result.compactedMessages,
+          ),
       });
     }
     return result;
@@ -1807,15 +2204,17 @@ export class Conversation {
    * activations are no longer deduped against the prior session.
    */
   async forceClean(): Promise<CleanResult> {
-    const previousEstimatedInputTokens =
-      this.contextWindowManager.estimateInputTokens(this.messages);
+    // Use the provider's real tokenizer for the displayed before/after (see
+    // `forceCompact` for why); falls back to the local estimate when count
+    // isn't available.
+    const previousEstimatedInputTokens = await this.calculateTokens(
+      this.messages,
+    );
     const stripped = stripInjectionsForCompaction(this.messages);
     this.messages = stripped;
     await this.graphMemory.onCompacted(0);
     setConversationHistoryStrippedAt(this.conversationId, Date.now());
-    const estimatedInputTokens = this.contextWindowManager.estimateInputTokens(
-      this.messages,
-    );
+    const estimatedInputTokens = await this.calculateTokens(this.messages);
     return {
       previousEstimatedInputTokens,
       estimatedInputTokens,

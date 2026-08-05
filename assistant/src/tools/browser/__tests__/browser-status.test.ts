@@ -69,7 +69,11 @@ mock.module("../../../config/loader.js", () => ({
   }),
 }));
 
+// Spread the real module: an exhaustive factory would delete
+// `importPlaywright`, which browser-manager.ts imports.
+const actualRuntimeCheck = await import("../runtime-check.js");
 mock.module("../runtime-check.js", () => ({
+  ...actualRuntimeCheck,
   checkBrowserRuntime: async () => ({
     playwrightAvailable: true,
     chromiumInstalled: true,
@@ -78,7 +82,12 @@ mock.module("../runtime-check.js", () => ({
   }),
 }));
 
+// Spread the real module so exports this factory does not name (e.g.
+// `takePendingColdStartNotice`, which browser-execution.ts imports) keep
+// existing — an exhaustive factory fails the import outright.
+const actualBrowserManager = await import("../browser-manager.js");
 mock.module("../browser-manager.js", () => ({
+  ...actualBrowserManager,
   browserManager: {
     getPreferredBackendKind: () => null,
   },

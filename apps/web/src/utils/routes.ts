@@ -290,6 +290,7 @@ export const routes = {
     privacy: r("/assistant/settings/privacy"),
     budget: r("/assistant/settings/budget"),
     archive: r("/assistant/settings/archive"),
+    bookmarks: r("/assistant/settings/bookmarks"),
     billing: r("/assistant/settings/billing"),
     debug: r("/assistant/settings/debug"),
     developer: r("/assistant/settings/developer"),

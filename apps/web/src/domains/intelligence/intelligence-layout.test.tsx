@@ -85,6 +85,7 @@ mock.module("@/stores/client-feature-flag-store", () => ({
   useClientFeatureFlagStore: {
     use: {
       platformNotifications: () => envRef.platformNotifications,
+      bookmarks: () => true,
     },
   },
 }));

@@ -1,74 +1,26 @@
 /**
- * Slack Web API client for direct outbound messaging.
+ * Slack Web API feature surface for uploads and channel metadata.
  *
  * Calls the Slack Web API directly using bot_token from the secure store,
- * eliminating the gateway HTTP proxy hop. Rate-limit retries, error
- * classification, and payload shapes follow Slack Web API conventions.
+ * eliminating the gateway HTTP proxy hop. Transport (retries, envelope
+ * checking, the unified `SlackApiError`) lives in `web-api-transport.ts`.
  */
 
 import { credentialKey } from "../../../security/credential-key.js";
 import { getSecureKeyAsync } from "../../../security/secure-keys.js";
-import { getLogger } from "../../../util/logger.js";
+import { conversationInfo } from "./client.js";
+import type {
+  SlackApiResponse,
+  SlackConversationInfoResponse,
+} from "./types.js";
+import {
+  rawSlackRequest,
+  type SlackRequestOptions,
+} from "./web-api-transport.js";
 
-const log = getLogger("slack-api");
-
-const SLACK_API_BASE = "https://slack.com/api";
-const SLACK_MAX_RATE_LIMIT_RETRIES = 3;
-const SLACK_DEFAULT_RETRY_AFTER_S = 1;
-
-// ---------------------------------------------------------------------------
-// Error types
-// ---------------------------------------------------------------------------
-
-export type SlackErrorCategory =
-  | "auth"
-  | "rate_limit"
-  | "not_found"
-  | "permission"
-  | "channel_not_found"
-  | "client_error"
-  | "transient"
-  | "unknown";
-
-const SLACK_ERROR_CODE_MAP: Record<string, SlackErrorCategory> = {
-  invalid_auth: "auth",
-  token_expired: "auth",
-  token_revoked: "auth",
-  not_authed: "auth",
-  account_inactive: "auth",
-  org_login_required: "auth",
-  rate_limited: "rate_limit",
-  ratelimited: "rate_limit",
-  channel_not_found: "channel_not_found",
-  is_archived: "channel_not_found",
-  not_in_channel: "permission",
-  missing_scope: "permission",
-  ekm_access_denied: "permission",
-  not_allowed_token_type: "permission",
-  restricted_action: "permission",
-  cannot_dm_bot: "permission",
-  user_not_found: "not_found",
-  message_not_found: "not_found",
-  thread_not_found: "not_found",
-  invalid_blocks: "client_error",
-};
-
-function classifySlackError(errorCode: string | undefined): SlackErrorCategory {
-  if (!errorCode) return "unknown";
-  return SLACK_ERROR_CODE_MAP[errorCode] ?? "unknown";
-}
-
-export class SlackApiError extends Error {
-  readonly slackError: string | undefined;
-  readonly category: SlackErrorCategory;
-
-  constructor(slackError: string | undefined) {
-    super(`Slack API error: ${slackError ?? "unknown"}`);
-    this.name = "SlackApiError";
-    this.slackError = slackError;
-    this.category = classifySlackError(slackError);
-  }
-}
+// Re-exported for callers that import the error surface alongside the
+// feature functions (e.g. runtime/routes/slack-channel-routes.ts).
+export { SlackApiError, type SlackErrorCategory } from "./web-api-transport.js";
 
 // ---------------------------------------------------------------------------
 // Credential resolution
@@ -85,23 +37,14 @@ async function resolveBotToken(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Core API caller with rate-limit retries
+// Feature surface
 // ---------------------------------------------------------------------------
 
-interface SlackApiResponse {
-  ok: boolean;
-  error?: string;
+/** Envelope fields the outbound surfaces read off successful responses. */
+interface SlackOutboundApiResponse extends SlackApiResponse {
   ts?: string;
   upload_url?: string;
   file_id?: string;
-}
-
-interface SlackConversationsInfoResponse extends SlackApiResponse {
-  channel?: {
-    id?: unknown;
-    name?: unknown;
-    name_normalized?: unknown;
-  };
 }
 
 export interface SlackConversationInfo {
@@ -111,160 +54,37 @@ export interface SlackConversationInfo {
 }
 
 /**
- * Call a Slack Web API method with rate-limit retries.
+ * Resolve the bot token and dispatch through the shared transport.
+ */
+async function slackApiRequest<T extends SlackApiResponse>(
+  method: string,
+  opts: SlackRequestOptions,
+): Promise<T> {
+  const botToken = await resolveBotToken();
+  return rawSlackRequest<T>(botToken, method, opts);
+}
+
+/**
+ * Call a Slack Web API write method as the bot, with rate-limit retries.
  *
- * Throws SlackApiError for non-retryable Slack-level errors.
- * Throws Error for transport-level failures after exhausting retries.
+ * Throws SlackApiError for non-retryable Slack-level errors and for
+ * transport-level failures after exhausting retries.
  */
 export async function callSlackApi(
   method: string,
   body: Record<string, unknown>,
-): Promise<SlackApiResponse> {
-  const botToken = await resolveBotToken();
-
-  let lastError: string | undefined;
-
-  for (let attempt = 0; attempt <= SLACK_MAX_RATE_LIMIT_RETRIES; attempt++) {
-    const response = await fetch(`${SLACK_API_BASE}/${method}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (response.status === 429) {
-      if (attempt >= SLACK_MAX_RATE_LIMIT_RETRIES) {
-        throw new Error("Slack rate limit exceeded after retries");
-      }
-      const retryAfter =
-        parseInt(response.headers.get("Retry-After") ?? "", 10) ||
-        SLACK_DEFAULT_RETRY_AFTER_S;
-      log.warn({ method, retryAfter, attempt }, "Slack rate limited, retrying");
-      await new Promise((r) => setTimeout(r, retryAfter * 1000));
-      continue;
-    }
-
-    if (response.status >= 500) {
-      if (attempt >= SLACK_MAX_RATE_LIMIT_RETRIES) {
-        throw new Error(
-          `Slack ${method} failed with status ${response.status} after retries`,
-        );
-      }
-      log.warn(
-        { method, status: response.status, attempt },
-        "Slack 5xx error, retrying",
-      );
-      await new Promise((r) =>
-        setTimeout(r, SLACK_DEFAULT_RETRY_AFTER_S * 1000),
-      );
-      continue;
-    }
-
-    const data = (await response.json()) as SlackApiResponse;
-
-    if (!data.ok) {
-      lastError = data.error;
-      const category = classifySlackError(data.error);
-
-      if (category === "rate_limit" && attempt < SLACK_MAX_RATE_LIMIT_RETRIES) {
-        log.warn(
-          { method, slackError: data.error, attempt },
-          "Slack rate limited (body), retrying",
-        );
-        await new Promise((r) =>
-          setTimeout(r, SLACK_DEFAULT_RETRY_AFTER_S * 1000),
-        );
-        continue;
-      }
-
-      throw new SlackApiError(data.error);
-    }
-
-    return data;
-  }
-
-  throw new Error(
-    `Slack ${method} failed after retries: ${lastError ?? "unknown"}`,
-  );
+): Promise<SlackOutboundApiResponse> {
+  return slackApiRequest<SlackOutboundApiResponse>(method, { body });
 }
 
 /**
- * Call a Slack Web API read method with query parameters.
+ * Call a Slack Web API method as the bot with a form-urlencoded body.
  */
-async function callSlackApiGet(
+export async function callSlackApiForm(
   method: string,
   params: URLSearchParams,
-): Promise<SlackApiResponse> {
-  const botToken = await resolveBotToken();
-  const query = params.toString();
-  const url = `${SLACK_API_BASE}/${method}${query ? `?${query}` : ""}`;
-
-  let lastError: string | undefined;
-
-  for (let attempt = 0; attempt <= SLACK_MAX_RATE_LIMIT_RETRIES; attempt++) {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-      },
-    });
-
-    if (response.status === 429) {
-      if (attempt >= SLACK_MAX_RATE_LIMIT_RETRIES) {
-        throw new Error("Slack rate limit exceeded after retries");
-      }
-      const retryAfter =
-        parseInt(response.headers.get("Retry-After") ?? "", 10) ||
-        SLACK_DEFAULT_RETRY_AFTER_S;
-      log.warn({ method, retryAfter, attempt }, "Slack rate limited, retrying");
-      await new Promise((r) => setTimeout(r, retryAfter * 1000));
-      continue;
-    }
-
-    if (response.status >= 500) {
-      if (attempt >= SLACK_MAX_RATE_LIMIT_RETRIES) {
-        throw new Error(
-          `Slack ${method} failed with status ${response.status} after retries`,
-        );
-      }
-      log.warn(
-        { method, status: response.status, attempt },
-        "Slack 5xx error, retrying",
-      );
-      await new Promise((r) =>
-        setTimeout(r, SLACK_DEFAULT_RETRY_AFTER_S * 1000),
-      );
-      continue;
-    }
-
-    const data = (await response.json()) as SlackApiResponse;
-
-    if (!data.ok) {
-      lastError = data.error;
-      const category = classifySlackError(data.error);
-
-      if (category === "rate_limit" && attempt < SLACK_MAX_RATE_LIMIT_RETRIES) {
-        log.warn(
-          { method, slackError: data.error, attempt },
-          "Slack rate limited (body), retrying",
-        );
-        await new Promise((r) =>
-          setTimeout(r, SLACK_DEFAULT_RETRY_AFTER_S * 1000),
-        );
-        continue;
-      }
-
-      throw new SlackApiError(data.error);
-    }
-
-    return data;
-  }
-
-  throw new Error(
-    `Slack ${method} failed after retries: ${lastError ?? "unknown"}`,
-  );
+): Promise<SlackOutboundApiResponse> {
+  return slackApiRequest<SlackOutboundApiResponse>(method, { form: params });
 }
 
 function normalizeSlackString(value: unknown): string | undefined {
@@ -273,14 +93,9 @@ function normalizeSlackString(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
-export async function getSlackConversationInfo(
-  channelId: string,
-): Promise<SlackConversationInfo | null> {
-  const data = (await callSlackApiGet(
-    "conversations.info",
-    new URLSearchParams({ channel: channelId }),
-  )) as SlackConversationsInfoResponse;
-
+function parseSlackConversationInfo(
+  data: SlackConversationInfoResponse,
+): SlackConversationInfo | null {
   const id = normalizeSlackString(data.channel?.id);
   if (!id) return null;
 
@@ -295,28 +110,16 @@ export async function getSlackConversationInfo(
 }
 
 /**
- * Call a Slack Web API method with form-urlencoded body.
+ * Resolve a channel's identity and display names via `conversations.info`,
+ * acting as the bot.
  */
-export async function callSlackApiForm(
-  method: string,
-  params: URLSearchParams,
-): Promise<SlackApiResponse> {
+export async function getSlackConversationInfo(
+  channelId: string,
+): Promise<SlackConversationInfo | null> {
   const botToken = await resolveBotToken();
-
-  const response = await fetch(`${SLACK_API_BASE}/${method}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${botToken}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params,
-  });
-
-  const data = (await response.json()) as SlackApiResponse;
-  if (!data.ok) {
-    throw new SlackApiError(data.error);
-  }
-  return data;
+  return parseSlackConversationInfo(
+    await conversationInfo(botToken, channelId),
+  );
 }
 
 /**

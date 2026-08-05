@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import { buildEmailTransportMetadata } from "../../channels/transport-hints.js";
 import type { ConfigFileCache } from "../../config-file-cache.js";
 import type { GatewayConfig } from "../../config.js";
@@ -6,6 +7,10 @@ import type { CredentialCache } from "../../credential-cache.js";
 import { credentialKey } from "../../credential-key.js";
 import { recordDenialReplyIfAllowed } from "../../db/denial-reply-rate-limiter.js";
 import { StringDedupCache } from "../../dedup-cache.js";
+import {
+  appendFailedEmailAttachmentNotice,
+  ingestEmailAttachments,
+} from "../../email/attachments.js";
 import type { VellumEmailPayload } from "../../email/normalize.js";
 import {
   evaluateSenderAuthentication,
@@ -90,31 +95,42 @@ function verifySvixSignature(
 
 // ── Resend inbound payload normalization ────────────────────────────
 
+const optionalString = () => z.string().optional().catch(undefined);
+
 /**
- * Shape of the Resend `email.received` webhook event.
+ * Shape of the Resend `email.received` webhook event — untrusted external input
+ * from Resend/Svix. Field types are validated while staying tolerant: a
+ * malformed value collapses to `undefined` so the existing null-checks drop an
+ * unprocessable event rather than trusting garbage (e.g. a non-array `to`).
  *
  * The webhook payload contains metadata only — the email body must be
  * fetched separately via `GET /emails/receiving/{email_id}`.
  */
-interface ResendReceivedEvent {
-  type: "email.received";
-  created_at: string;
-  data: {
-    email_id: string;
-    created_at: string;
-    from: string;
-    to: string[];
-    cc?: string[];
-    bcc?: string[];
-    subject: string;
-    message_id: string;
-    attachments?: Array<{
-      id: string;
-      filename: string;
-      content_type: string;
-    }>;
-  };
-}
+const resendReceivedEventSchema = z.object({
+  type: z.literal("email.received"),
+  created_at: optionalString(),
+  data: z.object({
+    email_id: optionalString(),
+    created_at: optionalString(),
+    from: optionalString(),
+    to: z.array(z.string()).optional().catch(undefined),
+    cc: z.array(z.string()).optional().catch(undefined),
+    bcc: z.array(z.string()).optional().catch(undefined),
+    subject: optionalString(),
+    message_id: optionalString(),
+    attachments: z
+      .array(
+        z.object({
+          id: optionalString(),
+          filename: optionalString(),
+          content_type: optionalString(),
+        }),
+      )
+      .optional()
+      .catch(undefined),
+  }),
+});
+type ResendReceivedEvent = z.infer<typeof resendReceivedEventSchema>;
 
 /**
  * Fetch the full email content from the Resend Receiving API.
@@ -183,7 +199,7 @@ function parseEmailAddress(raw: string): {
  * Normalize a Resend `email.received` webhook event into a
  * `VellumEmailPayload` suitable for `normalizeEmailWebhook()`.
  */
-function normalizeResendToVellumPayload(
+export function normalizeResendToVellumPayload(
   event: ResendReceivedEvent,
   content: {
     html: string | null;
@@ -345,7 +361,14 @@ export function createResendWebhookHandler(
         tlog.debug({ type: parsed.type }, "Ignoring non-received Resend event");
         return Response.json({ ok: true });
       }
-      event = parsed as unknown as ResendReceivedEvent;
+      const validated = resendReceivedEventSchema.safeParse(parsed);
+      if (!validated.success) {
+        // An `email.received` event whose payload is unusable carries nothing
+        // to process — acknowledge without forwarding, as Resend expects a 2xx.
+        tlog.debug("Ignoring malformed Resend email.received event");
+        return Response.json({ ok: true });
+      }
+      event = validated.data;
     } catch {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
@@ -401,7 +424,12 @@ export function createResendWebhookHandler(
       return Response.json({ ok: true });
     }
 
-    const { event: gatewayEvent, eventId, recipientAddress } = normalized;
+    const {
+      event: gatewayEvent,
+      eventId,
+      recipientAddress,
+      attachments,
+    } = normalized;
 
     tlog.info(
       {
@@ -438,7 +466,20 @@ export function createResendWebhookHandler(
     // ── Forward to runtime ──────────────────────────────────────────
 
     try {
+      // Ingest inline base64 attachments into the assistant's attachment
+      // store (stored in the conversation workspace) and forward the ids. A
+      // transient upload failure throws into the catch below → 500 so the
+      // provider retries.
+      const ingested = await ingestEmailAttachments(config, attachments, tlog);
+      const attachmentIds =
+        ingested.attachmentIds.length > 0 ? ingested.attachmentIds : undefined;
+      gatewayEvent.message.content = appendFailedEmailAttachmentNotice(
+        gatewayEvent.message.content,
+        ingested.failedAttachmentNames,
+      );
+
       const result = await handleInbound(config, gatewayEvent, {
+        ...(attachmentIds ? { attachmentIds } : {}),
         transportMetadata: buildEmailTransportMetadata({
           senderAddress: gatewayEvent.actor.actorExternalId,
           recipientAddress,

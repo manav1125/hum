@@ -182,6 +182,39 @@ export function routeSetup(ctx: SetupContext): {
   }
 
   // ── Inbound call ACL evaluation ─────────────────────────────────
+
+  // Members whose channel the guardian set to `policy: 'deny'`. This gate is
+  // trust-class independent and runs ahead of every inbound flow below: trust
+  // class derives from channel STATUS alone, so a denied channel still
+  // resolves to `unknown` (status `unverified`/`pending`) or
+  // `trusted_contact` (status `active`). Gating per class would leave the
+  // deny unenforced for whichever classes the branch order happened to
+  // exclude — an unverified-status denied contact used to receive the
+  // verification-guidance script inviting them to verify and call back.
+  //
+  // It also outranks an active voice invite: an explicit channel-level deny
+  // is the guardian's standing ruling, and an invite must not redeem past it
+  // into a trusted contact.
+  if (actorTrust.memberRecord?.channel.policy === "deny") {
+    log.info(
+      {
+        callSessionId: ctx.callSessionId,
+        from: ctx.from,
+        channelId: actorTrust.memberRecord.channel.id,
+        trustClass: actorTrust.trustClass,
+      },
+      "Inbound voice ACL: member policy deny",
+    );
+    return {
+      outcome: {
+        action: "deny",
+        message: "This number is not authorized to use this assistant.",
+        logReason: "Inbound voice ACL: member policy deny",
+      },
+      resolved,
+    };
+  }
+
   const pendingChallenge = getPendingSession("phone");
 
   if (actorTrust.trustClass === "unknown" && !pendingChallenge) {
@@ -284,27 +317,6 @@ export function routeSetup(ctx: SetupContext): {
         action: "name_capture",
         assistantId,
         fromNumber: ctx.from,
-      },
-      resolved,
-    };
-  }
-
-  // Members with policy: 'deny'
-  if (actorTrust.memberRecord?.channel.policy === "deny") {
-    log.info(
-      {
-        callSessionId: ctx.callSessionId,
-        from: ctx.from,
-        channelId: actorTrust.memberRecord.channel.id,
-        trustClass: actorTrust.trustClass,
-      },
-      "Inbound voice ACL: member policy deny",
-    );
-    return {
-      outcome: {
-        action: "deny",
-        message: "This number is not authorized to use this assistant.",
-        logReason: "Inbound voice ACL: member policy deny",
       },
       resolved,
     };

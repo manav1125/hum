@@ -19,6 +19,18 @@ mock.module("../fetch.js", () => ({
   fetchImpl: (...args: Parameters<FetchFn>) => fetchMock(...args),
 }));
 
+// Channel-command authorization gate reads contact_channels via the IPC SQL
+// proxy. Default to an active contact so /new flows stay allowed; individual
+// tests override to exercise fail-closed denials.
+const dbQueryMock = mock(() =>
+  Promise.resolve([{ status: "active", role: "contact" }]),
+);
+mock.module("../db/assistant-db-proxy.js", () => ({
+  assistantDbQuery: dbQueryMock,
+  assistantDbRun: mock(),
+  assistantDbExec: mock(),
+}));
+
 const { createTelegramWebhookHandler } =
   await import("../http/routes/telegram-webhook.js");
 
@@ -105,6 +117,9 @@ let fetchCalls: {
 
 beforeEach(() => {
   fetchCalls = [];
+  dbQueryMock.mockImplementation(() =>
+    Promise.resolve([{ status: "active", role: "contact" }]),
+  );
 });
 
 afterEach(() => {
@@ -406,6 +421,64 @@ describe("telegram webhook handler: /new rejection", () => {
       );
     });
     expect(confirmCall).toBeDefined();
+  });
+
+  test("/new from a blocked contact is denied silently: no reset, no reply", async () => {
+    const config = makeConfig({
+      routingEntries: [
+        { type: "conversation_id", key: "12345", assistantId: "assistant-a" },
+      ],
+    });
+    installFetchMock();
+    dbQueryMock.mockImplementation(() =>
+      Promise.resolve([{ status: "blocked", role: "contact" }]),
+    );
+    const { handler } = createTelegramWebhookHandler(config, makeCaches());
+
+    const payload = makeTelegramPayload("/new", 4501);
+    const req = makeWebhookRequest(payload);
+    const res = await handler(req);
+
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // No conversation reset
+    const resetCall = fetchCalls.find((c) =>
+      c.url.includes("/channels/conversation"),
+    );
+    expect(resetCall).toBeUndefined();
+
+    // Silent: no Telegram sendMessage of any kind (no confirmation, no
+    // rejection notice — a reply would be a membership oracle)
+    const sendCall = fetchCalls.find((c) => c.url.includes("/sendMessage"));
+    expect(sendCall).toBeUndefined();
+  });
+
+  test("/new from an unknown actor is denied silently when the contact store errors", async () => {
+    const config = makeConfig({
+      routingEntries: [
+        { type: "conversation_id", key: "12345", assistantId: "assistant-a" },
+      ],
+    });
+    installFetchMock();
+    dbQueryMock.mockImplementation(() =>
+      Promise.reject(new Error("assistant IPC unavailable")),
+    );
+    const { handler } = createTelegramWebhookHandler(config, makeCaches());
+
+    const payload = makeTelegramPayload("/new", 4502);
+    const req = makeWebhookRequest(payload);
+    const res = await handler(req);
+
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const resetCall = fetchCalls.find((c) =>
+      c.url.includes("/channels/conversation"),
+    );
+    expect(resetCall).toBeUndefined();
+    const sendCall = fetchCalls.find((c) => c.url.includes("/sendMessage"));
+    expect(sendCall).toBeUndefined();
   });
 
   test("/new rejection does not call resetConversation", async () => {

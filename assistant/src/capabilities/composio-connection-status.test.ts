@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("../util/logger.js", () => ({
   getLogger: () => ({
@@ -45,7 +45,8 @@ afterEach(() => {
 async function until(cond: () => boolean, ms = 1000): Promise<void> {
   const start = Date.now();
   while (!cond()) {
-    if (Date.now() - start > ms) throw new Error("timeout waiting for condition");
+    if (Date.now() - start > ms)
+      throw new Error("timeout waiting for condition");
     await new Promise((r) => setTimeout(r, 5));
   }
 }
@@ -61,7 +62,9 @@ describe("recordActiveComposioToolkits / composioToolkitStatus", () => {
     expect(composioToolkitStatus("googlesheets")).toBe("active");
     // gmail was NOT in the active set → known-inactive, i.e. broken.
     expect(composioToolkitStatus("gmail")).toBe("broken");
-    expect(getComposioConnectionStatus()?.active.has("googlesheets")).toBe(true);
+    expect(getComposioConnectionStatus()?.active.has("googlesheets")).toBe(
+      true,
+    );
   });
 
   test("a later record REPLACES the set wholesale (dropped slug goes broken)", () => {

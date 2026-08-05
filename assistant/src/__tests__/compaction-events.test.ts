@@ -198,6 +198,12 @@ mock.module("../plugins/defaults/compaction/window-manager.js", () => ({
   ContextWindowManager: class {
     nonPersistedPrefixCount = 0;
     constructor() {}
+    estimateInputTokens() {
+      return 0;
+    }
+    get tokenCountInputs() {
+      return { systemPrompt: "", tools: undefined };
+    }
     updateConfig(cfg: { maxInputTokens?: number }) {
       updateConfigCalls.push(cfg);
     }
@@ -277,7 +283,8 @@ import { Conversation } from "../daemon/conversation.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeProvider() {
+function makeProvider(counts?: number[]) {
+  const pending = counts ? [...counts] : null;
   return {
     name: "mock-provider",
     async sendMessage(): Promise<ProviderResponse> {
@@ -288,16 +295,20 @@ function makeProvider() {
         stopReason: "end_turn",
       };
     },
+    // Present only when the test supplies counts, so the other cases keep
+    // exercising the local-estimate fallback.
+    ...(pending ? { countInputTokens: async () => pending.shift() ?? 0 } : {}),
   };
 }
 
 function makeConversation(
   collected: ServerMessage[],
   id = "conv-compact-events",
+  counts?: number[],
 ): Conversation {
   return new Conversation(
     id,
-    makeProvider(),
+    makeProvider(counts),
     "system prompt",
     (msg) => {
       collected.push(msg);
@@ -439,6 +450,134 @@ describe("forceCompact event emission", () => {
       0,
     );
     expect(collected.filter((m) => m.type === "usage_update").length).toBe(0);
+  });
+});
+
+describe("forceCompact context-window usage push", () => {
+  test("pushes the post-compaction tokenizer count the result card reports", async () => {
+    const collected: ServerMessage[] = [];
+    mockCompactResult = {
+      messages: [],
+      compacted: true,
+      // Estimate-based figures the compaction pipeline records internally.
+      // The user-facing numbers come from the provider tokenizer instead.
+      previousEstimatedInputTokens: 43_000,
+      estimatedInputTokens: 12_000,
+      maxInputTokens: 200_000,
+      thresholdTokens: 160_000,
+      compactedMessages: 10,
+      compactedPersistedMessages: 5,
+      summaryCalls: 1,
+      summaryInputTokens: 500,
+      summaryOutputTokens: 200,
+      summaryModel: "test-model",
+      summaryText: "summary text",
+    };
+
+    const conversation = makeConversation(
+      collected,
+      "conv-compact-usage",
+      [56_000, 18_000],
+    );
+    const result = await conversation.forceCompact();
+
+    expect(result.previousEstimatedInputTokens).toBe(56_000);
+    expect(result.estimatedInputTokens).toBe(18_000);
+
+    const usage = collected.filter((m) => m.type === "context_window_usage");
+    expect(usage.length).toBe(1);
+    const usageEvent = usage[0] as Extract<
+      ServerMessage,
+      { type: "context_window_usage" }
+    >;
+    expect(usageEvent.conversationId).toBe("conv-compact-usage");
+    // Same figures the `/compact` card renders, so the indicator and the card
+    // cannot disagree.
+    expect(usageEvent.tokens).toBe(result.estimatedInputTokens);
+    expect(usageEvent.maxTokens).toBe(200_000);
+  });
+
+  test("pushes to the caller's sink when the conversation's own sender is dead", async () => {
+    // A `/compact` draining behind an interactive turn: `process-message.ts`
+    // resets `sendToClient` to a no-op in its `finally`, while the queued item
+    // still carries the live sink its result card streams on. The push has to
+    // follow the card, not the dead sender.
+    const stranded: ServerMessage[] = [];
+    const cardSink: ServerMessage[] = [];
+    mockCompactResult = {
+      messages: [],
+      compacted: true,
+      previousEstimatedInputTokens: 43_000,
+      estimatedInputTokens: 12_000,
+      maxInputTokens: 200_000,
+      thresholdTokens: 160_000,
+      compactedMessages: 10,
+      compactedPersistedMessages: 5,
+      summaryCalls: 1,
+      summaryInputTokens: 500,
+      summaryOutputTokens: 200,
+      summaryModel: "test-model",
+      summaryText: "summary text",
+    };
+
+    const conversation = makeConversation(
+      stranded,
+      "conv-compact-dead-sender",
+      [56_000, 18_000],
+    );
+    conversation.updateClient(() => {}, true);
+
+    const result = await conversation.forceCompact((msg) => cardSink.push(msg));
+
+    const usage = cardSink.filter((m) => m.type === "context_window_usage");
+    expect(usage.length).toBe(1);
+    expect(
+      (usage[0] as Extract<ServerMessage, { type: "context_window_usage" }>)
+        .tokens,
+    ).toBe(result.estimatedInputTokens);
+    expect(
+      stranded.filter((m) => m.type === "context_window_usage").length,
+    ).toBe(0);
+  });
+
+  test("pushes the current count when there was nothing to compact", async () => {
+    const collected: ServerMessage[] = [];
+    mockCompactResult = {
+      messages: [],
+      compacted: false,
+      previousEstimatedInputTokens: 0,
+      estimatedInputTokens: 0,
+      maxInputTokens: 200_000,
+      thresholdTokens: 160_000,
+      compactedMessages: 0,
+      compactedPersistedMessages: 0,
+      summaryCalls: 0,
+      summaryInputTokens: 0,
+      summaryOutputTokens: 0,
+      summaryModel: "",
+      summaryText: "",
+    };
+
+    const conversation = makeConversation(
+      collected,
+      "conv-compact-usage-noop",
+      // A no-op re-counts nothing, so the single count stands as before and
+      // after.
+      [56_000],
+    );
+    const result = await conversation.forceCompact();
+
+    expect(result.previousEstimatedInputTokens).toBe(56_000);
+    expect(result.estimatedInputTokens).toBe(56_000);
+
+    const usage = collected.filter((m) => m.type === "context_window_usage");
+    expect(usage.length).toBe(1);
+    const usageEvent = usage[0] as Extract<
+      ServerMessage,
+      { type: "context_window_usage" }
+    >;
+    expect(usageEvent.tokens).toBe(56_000);
+    expect(usageEvent.maxTokens).toBe(200_000);
   });
 });
 

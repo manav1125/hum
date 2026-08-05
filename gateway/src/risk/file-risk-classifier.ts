@@ -61,6 +61,19 @@ export interface FileClassificationContext {
    * path falls under any of these roots.
    */
   skillSourceDirs: string[];
+  /**
+   * Workspace subtrees whose contents govern the assistant itself: system
+   * prompt section overrides (`prompts/`), per-user and per-channel personas,
+   * and daemon-loaded executable sinks (`tools/`, `routes/`). A write here can
+   * rewrite the assistant's own security policy — the prompt sections that
+   * defend against credential custody and external-content injection are
+   * themselves override targets — so it must classify high, never as an
+   * ordinary workspace write. Optional so an older assistant that doesn't
+   * forward the field keeps its previous classification.
+   */
+  controlPlaneDirs?: string[];
+  /** Individual control-plane files (root prompt files like SOUL.md). */
+  controlPlaneFiles?: string[];
 }
 
 // -- Input type ---------------------------------------------------------------
@@ -143,6 +156,31 @@ function isPluginsPath(
     resolvedPath === pluginsDirNoTrailingSlash ||
     resolvedPath.startsWith(normalizedPluginsDir)
   );
+}
+
+/**
+ * Check whether a resolved absolute path targets a control-plane surface: a
+ * file or subtree that feeds the system prompt or is loaded as code by the
+ * daemon. Exact match on declared files; prefix match on declared dirs
+ * (including the dir itself, mirroring {@link isHooksPath}).
+ */
+function isControlPlanePath(
+  resolvedPath: string,
+  context: FileClassificationContext,
+): boolean {
+  if (context.controlPlaneFiles?.includes(resolvedPath)) {
+    return true;
+  }
+  for (const dir of context.controlPlaneDirs ?? []) {
+    const normalizedDir = normalizeDirPath(dir);
+    if (
+      resolvedPath === normalizedDir.slice(0, -1) ||
+      resolvedPath.startsWith(normalizedDir)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -314,6 +352,17 @@ export class FileRiskClassifier implements RiskClassifier<
             };
             break;
           }
+          if (isControlPlanePath(resolvedPath, context)) {
+            assessment = {
+              riskLevel: "high",
+              reason:
+                "Writes to a control-plane surface (system prompt, persona, or daemon-loaded code)",
+              scopeOptions: [],
+              matchType: "registry",
+              allowlistOptions,
+            };
+            break;
+          }
         }
         assessment = {
           riskLevel: "low",
@@ -373,6 +422,16 @@ export class FileRiskClassifier implements RiskClassifier<
             assessment = {
               riskLevel: "high",
               reason: `${actionVerb} to plugins directory`,
+              scopeOptions: [],
+              matchType: "registry",
+              allowlistOptions,
+            };
+            break;
+          }
+          if (isControlPlanePath(resolvedPath, context)) {
+            assessment = {
+              riskLevel: "high",
+              reason: `${actionVerb} to a control-plane surface (system prompt, persona, or daemon-loaded code)`,
               scopeOptions: [],
               matchType: "registry",
               allowlistOptions,

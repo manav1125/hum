@@ -16,6 +16,10 @@ import {
 import { tryResolveProviderForConnectionName } from "./connection-resolution.js";
 import { listConnections } from "./inference/connections.js";
 import { initializeProviders, listProviders } from "./registry.js";
+import {
+  recordProviderRequestDiagnostics,
+  withProviderRequestDiagnosticsLogging,
+} from "./request-diagnostics.js";
 import type {
   ContentBlock,
   Message,
@@ -57,21 +61,26 @@ export class CallSiteConfiguredProvider implements Provider {
     messages: Message[],
     options?: SendMessageOptions,
   ): Promise<ProviderResponse> {
-    const config = options?.config;
-    if (config?.callSite) {
-      return this.inner.sendMessage(messages, options);
-    }
+    // A failed send logs the per-request diagnostics (redacted URL, model,
+    // connection, HTTP status, upstream error body) recorded by the provider
+    // clients; a scope established by an outer caller is reused untouched.
+    return withProviderRequestDiagnosticsLogging(() => {
+      const config = options?.config;
+      if (config?.callSite) {
+        return this.inner.sendMessage(messages, options);
+      }
 
-    return this.inner.sendMessage(messages, {
-      ...options,
-      config: {
-        ...config,
-        callSite: this.callSite,
-        ...(config?.overrideProfile === undefined &&
-        this.overrideProfile !== undefined
-          ? { overrideProfile: this.overrideProfile }
-          : {}),
-      },
+      return this.inner.sendMessage(messages, {
+        ...options,
+        config: {
+          ...config,
+          callSite: this.callSite,
+          ...(config?.overrideProfile === undefined &&
+          this.overrideProfile !== undefined
+            ? { overrideProfile: this.overrideProfile }
+            : {}),
+        },
+      });
     });
   }
 }
@@ -169,6 +178,11 @@ export async function resolveConfiguredProvider(
     // Callers handle null as "no provider available" rather than crash.
     return null;
   }
+  // Which credential signs the request is only known here, and a failed
+  // request is unactionable without it ("which key was this?"). Recorded once
+  // the adapter exists, so a connection that resolved to nothing is never
+  // reported as the one that signed the request.
+  recordProviderRequestDiagnostics({ connection_name: connectionName });
   return {
     provider: new CallSiteConfiguredProvider(
       connectionProvider,

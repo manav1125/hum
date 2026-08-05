@@ -7,6 +7,7 @@ import { getMemoryCheckpoint, setMemoryCheckpoint } from "./checkpoints.js";
 import { getLastInteractiveUserMessageTimestamp } from "./conversation-crud.js";
 import { runAsyncSqlite } from "./db-async-query.js";
 import { getSqlite } from "./db-connection.js";
+import { PLANNER_OPTIMIZE_PRAGMA } from "./planner-statistics.js";
 
 const log = getLogger("db-maintenance");
 
@@ -56,8 +57,9 @@ async function runDbMaintenance(): Promise<void> {
     "Starting database maintenance",
   );
 
-  // VACUUM is the long-running one — minutes on a multi-GB DB. PRAGMA
-  // optimize is fast but routed through the same async path for
+  // VACUUM is the long-running one — minutes on a multi-GB DB. The planner
+  // optimize (see PLANNER_OPTIMIZE_PRAGMA for what the mask buys on a fresh
+  // connection) is fast but routed through the same async path for
   // consistency and to keep both off the main thread when the CLI
   // backend is available.
   const vacuumResult = await runAsyncSqlite("VACUUM");
@@ -68,7 +70,7 @@ async function runDbMaintenance(): Promise<void> {
     );
   }
 
-  const optimizeResult = await runAsyncSqlite("PRAGMA optimize");
+  const optimizeResult = await runAsyncSqlite(PLANNER_OPTIMIZE_PRAGMA);
   if (!optimizeResult.ok) {
     log.warn(
       { error: optimizeResult.error, backend: optimizeResult.backend },

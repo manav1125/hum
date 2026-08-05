@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { createMockLoggerModule } from "../../../../__tests__/helpers/mock-logger.js";
 import type { HostBrowserProxy } from "../../../../daemon/host-browser-proxy.js";
 import type { ToolContext } from "../../../types.js";
 import { CdpError } from "../errors.js";
@@ -138,18 +139,23 @@ mock.module("../../../../config/loader.js", () => ({
     },
   }),
 }));
-mock.module("../../../../util/logger.js", () => ({
-  getLogger: () => ({
-    debug: (...args: unknown[]) => {
-      logDebugCalls.push({ args });
-    },
-    warn: (...args: unknown[]) => {
-      logWarnCalls.push({ args });
-    },
-    info: () => {},
-    error: () => {},
+// Full-coverage logger mock: a getLogger-only factory would delete
+// `getCliLogger` etc. from the process-global registry and break later
+// files in a combined run (see assistant/CLAUDE.md).
+mock.module("../../../../util/logger.js", () =>
+  createMockLoggerModule({
+    getLogger: () => ({
+      debug: (...args: unknown[]) => {
+        logDebugCalls.push({ args });
+      },
+      warn: (...args: unknown[]) => {
+        logWarnCalls.push({ args });
+      },
+      info: () => {},
+      error: () => {},
+    }),
   }),
-}));
+);
 
 /** Mutable singleton proxy. Tests set this to control extension availability. */
 let mockSingletonProxy: HostBrowserProxy | null = null;

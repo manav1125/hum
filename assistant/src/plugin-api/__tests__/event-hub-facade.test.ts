@@ -58,14 +58,13 @@ describe("pluginAssistantEventHub.publish", () => {
 
   test("a patched String.prototype.startsWith does not bypass the guard", async () => {
     const original = String.prototype.startsWith;
-    // eslint-disable-next-line no-extend-native
+
     String.prototype.startsWith = () => false;
     try {
       await expect(
         pluginAssistantEventHub.publish(evt("host_bash_request")),
       ).rejects.toThrow(/host-proxy control events/);
     } finally {
-      // eslint-disable-next-line no-extend-native
       String.prototype.startsWith = original;
     }
   });

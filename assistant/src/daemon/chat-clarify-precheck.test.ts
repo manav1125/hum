@@ -19,9 +19,9 @@ import {
   assessChatClarify,
   buildChatClarifyPrompt,
   buildClarifyDirective,
+  type ChatClarifyModel,
   extractQuestionsArray,
   shouldConsiderClarify,
-  type ChatClarifyModel,
 } from "./chat-clarify-precheck.js";
 
 // ---------------------------------------------------------------------------
@@ -141,10 +141,7 @@ describe("buildClarifyDirective / appendClarifyDirective", () => {
   });
 
   test("batched questions each demand options with a default listed first", () => {
-    const d = buildClarifyDirective([
-      "Which trip?",
-      "Which dates?",
-    ]);
+    const d = buildClarifyDirective(["Which trip?", "Which dates?"]);
     expect(d).toContain("2–4 concrete options");
     expect(d.toLowerCase()).toContain("recommended");
     expect(d.toLowerCase()).toContain("first");
@@ -198,12 +195,8 @@ describe("extractQuestionsArray", () => {
     expect(
       extractQuestionsArray('{"verdict":"clarify","question":"x"}'),
     ).toBeNull();
-    expect(
-      extractQuestionsArray('{"questions":[]}'),
-    ).toBeNull();
-    expect(
-      extractQuestionsArray('{"questions":"not an array"}'),
-    ).toBeNull();
+    expect(extractQuestionsArray('{"questions":[]}')).toBeNull();
+    expect(extractQuestionsArray('{"questions":"not an array"}')).toBeNull();
     expect(extractQuestionsArray("no json here")).toBeNull();
   });
 
@@ -296,7 +289,10 @@ describe("assessChatClarify", () => {
   });
 
   test("model returns no reply → null (fail open)", async () => {
-    const result = await assessChatClarify("book the flights", async () => null);
+    const result = await assessChatClarify(
+      "book the flights",
+      async () => null,
+    );
     expect(result).toBeNull();
   });
 

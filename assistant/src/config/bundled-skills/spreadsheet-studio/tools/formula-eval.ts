@@ -308,7 +308,7 @@ class Evaluator {
   }
 
   private parseComparison(): CellScalar {
-    let left = this.parseAddSub();
+    const left = this.parseAddSub();
     const t = this.peek();
     if (
       t &&
@@ -384,7 +384,7 @@ class Evaluator {
   }
 
   private parsePower(): CellScalar {
-    let left = this.parseUnary();
+    const left = this.parseUnary();
     const t = this.peek();
     if (t && t.type === "op" && t.value === "^") {
       this.next();
@@ -405,7 +405,7 @@ class Evaluator {
   }
 
   private parsePostfix(): CellScalar {
-    let v = this.parsePrimary();
+    const v = this.parsePrimary();
     const t = this.peek();
     if (t && t.type === "percent") {
       this.next();
@@ -546,7 +546,8 @@ class Evaluator {
     if (!a || !b) throw new FormulaError("bad range endpoints");
     const sheet = a.sheet ?? this.currentSheet;
     // A range can't span sheets.
-    if (b.sheet && b.sheet !== sheet) throw new FormulaError("cross-sheet range");
+    if (b.sheet && b.sheet !== sheet)
+      throw new FormulaError("cross-sheet range");
     const c1 = Math.min(a.col, b.col);
     const c2 = Math.max(a.col, b.col);
     const r1 = Math.min(a.row, b.row);
@@ -661,10 +662,7 @@ export function computeResults(
       const evaluator = new Evaluator(model, sheet, resolve, tokens);
       const v = evaluator.evaluate();
       // Only cache finite numbers / strings / booleans.
-      if (
-        typeof v === "number" &&
-        (Number.isNaN(v) || !Number.isFinite(v))
-      ) {
+      if (typeof v === "number" && (Number.isNaN(v) || !Number.isFinite(v))) {
         value = undefined;
       } else {
         value = v;

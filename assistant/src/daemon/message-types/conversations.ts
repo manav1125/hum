@@ -2,6 +2,7 @@
 
 import type { CompactionCircuitClosedEvent } from "../../api/events/compaction-circuit-closed.js";
 import type { CompactionCircuitOpenEvent } from "../../api/events/compaction-circuit-open.js";
+import type { ContextWindowUsageEvent } from "../../api/events/context-window-usage.js";
 import type { ConversationErrorEvent } from "../../api/events/conversation-error.js";
 import type { ConversationListInvalidatedEvent } from "../../api/events/conversation-list-invalidated.js";
 import type { ConversationTitleUpdatedEvent } from "../../api/events/conversation-title-updated.js";
@@ -540,6 +541,7 @@ export type _ConversationsServerMessages =
   | UsageProgressEvent
   | UsageResponse
   | ContextCompacted
+  | ContextWindowUsageEvent
   | CompactionCircuitOpenEvent
   | CompactionCircuitClosedEvent
   | ConversationErrorEvent

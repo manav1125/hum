@@ -1429,3 +1429,122 @@ describe("ToolExecutionResult includes risk metadata from classifier assessment"
     ]);
   });
 });
+
+describe("ToolExecutor input-schema validation gate", () => {
+  beforeEach(() => {
+    fakeToolResult = { content: "ok", isError: false };
+    getToolOverride = undefined;
+    getAllToolsOverride = undefined;
+    checkResultOverride = undefined;
+    checkFnOverride = undefined;
+    cachedAssessmentOverride = undefined;
+  });
+
+  /**
+   * Registry-shaped tool with an optional owner and an execute that records
+   * the input it actually received (undefined until the tool runs). Core
+   * tools have no owner entry (`getToolOwner` returns undefined for them),
+   * which is what activates the `TOOL_INPUT_SCHEMAS` gate.
+   */
+  function ownedTool(
+    name: string,
+    ownerKind?: string,
+  ): { seenInput: () => Record<string, unknown> | undefined } {
+    let seen: Record<string, unknown> | undefined;
+    getToolOverride = (n: string) =>
+      n === name
+        ? ({
+            name,
+            description: "owned tool",
+            category: "test",
+            defaultRiskLevel: RiskLevel.Low,
+            executionTarget: "sandbox" as const,
+            input_schema: { type: "object" as const, properties: {} },
+            execute: async (input: Record<string, unknown>) => {
+              seen = input;
+              return fakeToolResult;
+            },
+            ...(ownerKind ? { owner: { kind: ownerKind, id: ownerKind } } : {}),
+          } as unknown as Tool)
+        : undefined;
+    return { seenInput: () => seen };
+  }
+
+  test("malformed input for a built-in tool returns a clean error without executing", async () => {
+    const probe = ownedTool("file_write");
+    const executor = new ToolExecutor(makePrompter());
+    const result = await executor.execute(
+      "file_write",
+      { path: 42, content: "hello" },
+      makeContext(),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Invalid input for tool "file_write"');
+    expect(result.content).toContain("path:");
+    expect(probe.seenInput()).toBeUndefined();
+  });
+
+  test("valid input executes with catch-recovered data, unknown keys intact", async () => {
+    const probe = ownedTool("file_read");
+    const executor = new ToolExecutor(makePrompter());
+    const result = await executor.execute(
+      "file_read",
+      { path: "a.txt", offset: "not-a-number", activity: "Reading a file" },
+      makeContext(),
+    );
+
+    expect(result.isError).toBe(false);
+    expect(probe.seenInput()).toEqual({
+      path: "a.txt",
+      activity: "Reading a file",
+    });
+  });
+
+  test("a non-core owner shadowing a registered name skips registry validation", async () => {
+    const probe = ownedTool("file_write", "workspace");
+    const executor = new ToolExecutor(makePrompter());
+    const result = await executor.execute(
+      "file_write",
+      { path: 42 },
+      makeContext(),
+    );
+
+    expect(result.isError).toBe(false);
+    expect(probe.seenInput()).toEqual({ path: 42 });
+  });
+
+  test("a built-in tool with no registered schema executes unchanged", async () => {
+    const probe = ownedTool("web_search");
+    const executor = new ToolExecutor(makePrompter());
+    const result = await executor.execute(
+      "web_search",
+      { query: 42 },
+      makeContext(),
+    );
+
+    expect(result.isError).toBe(false);
+    expect(probe.seenInput()).toEqual({ query: 42 });
+  });
+
+  test("malformed input for a sensitive tool fails validation before any grant flow", async () => {
+    // An unknown actor invoking a side-effect built-in normally routes into
+    // the scoped-grant machinery inside checkPreExecutionGates. Malformed
+    // input must short-circuit BEFORE that point — the validation error
+    // proves the call never reached grant consumption or guardian
+    // escalation (which would deny with a guardian-approval message
+    // instead).
+    const probe = ownedTool("file_write");
+    const executor = new ToolExecutor(makePrompter());
+    const result = await executor.execute(
+      "file_write",
+      { path: 42 },
+      makeContext({ trustClass: "unknown" }),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Invalid input for tool "file_write"');
+    expect(result.content).not.toContain("guardian");
+    expect(probe.seenInput()).toBeUndefined();
+  });
+});

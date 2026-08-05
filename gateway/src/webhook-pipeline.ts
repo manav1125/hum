@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { authorizeChannelCommand } from "./channel-command-authorization.js";
 import type { ChannelId } from "./channels/types.js";
 import type { GatewayConfig } from "./config.js";
 import type { StringDedupCache } from "./dedup-cache.js";
@@ -41,19 +42,33 @@ export function handleCircuitBreakerError(
 }
 
 /**
- * Handles the /new command flow: resets the conversation and sends a
- * success or error reply via the provided callback.
- * Returns `{ handled: true }` in all cases since both success and error
- * are terminal for this message.
+ * Handles the /new command flow: authorizes the actor (fail closed), then
+ * resets the conversation and sends a success or error reply via the
+ * provided callback. Unauthorized actors are denied silently — no reset,
+ * no reply (a reply would be a membership oracle).
+ * Returns `{ handled: true }` in all cases since allow, deny, and error
+ * are all terminal for this message.
  */
 export async function handleNewCommand(
   config: GatewayConfig,
   sourceChannel: ChannelId,
+  actorExternalId: string,
   conversationExternalId: string,
   sendReply: (text: string) => Promise<void>,
   logger: Logger,
   sourceThreadId?: string,
 ): Promise<{ handled: true }> {
+  const decision = await authorizeChannelCommand({
+    sourceChannel,
+    actorExternalId,
+    command: "new",
+    logger,
+  });
+  if (!decision.allowed) {
+    // Silent deny — the gate has already logged the structured denial.
+    return { handled: true };
+  }
+
   try {
     await resetConversation(
       config,

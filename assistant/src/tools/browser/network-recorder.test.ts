@@ -8,15 +8,12 @@ import {
   mock,
 } from "bun:test";
 
-// Mock the logger to avoid side effects during tests
-mock.module("../../util/logger.js", () => ({
-  getLogger: () => ({
-    info: () => {},
-    debug: () => {},
-    warn: () => {},
-    error: () => {},
-  }),
-}));
+import { createMockLoggerModule } from "../../__tests__/helpers/mock-logger.js";
+
+// Mock the logger to avoid side effects during tests. Full-coverage mock:
+// a getLogger-only factory would delete `getCliLogger` etc. from the
+// process-global registry and break later files in a combined run.
+mock.module("../../util/logger.js", () => createMockLoggerModule());
 
 const { NetworkRecorder } = await import("./network-recorder.js");
 

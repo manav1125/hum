@@ -46,6 +46,7 @@ export function SettingsLayout() {
     useAssistantFeatureFlagStore.use.settingsDeveloperNav();
   const platformNotifications =
     useClientFeatureFlagStore.use.platformNotifications();
+  const bookmarksEnabled = useClientFeatureFlagStore.use.bookmarks();
   const platformGate = usePlatformGate({ platformHostedOnly: true });
   const billingGate = usePlatformGate();
   const { pathname } = useLocation();
@@ -80,6 +81,11 @@ export function SettingsLayout() {
         if (item.id === "billing" && billingGate !== "full") {
           return false;
         }
+        // Message bookmarks ship behind the `bookmarks` client flag; the
+        // page itself also redirects as defense in depth.
+        if (item.id === "bookmarks" && !bookmarksEnabled) {
+          return false;
+        }
         if (item.id === "devices" && platformGate === "gated") {
           return false;
         }
@@ -101,6 +107,7 @@ export function SettingsLayout() {
       }),
     [
       platformNotifications,
+      bookmarksEnabled,
       platformGate,
       billingGate,
       managed,
