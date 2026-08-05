@@ -148,6 +148,27 @@ export function recordActiveComposioToolkits(slugs: Iterable<string>): void {
     .catch((err: unknown) => {
       log.warn({ err }, "watcher auto-provision from connection status failed");
     });
+
+  // Stand up the MCP servers that make those connected toolkits reachable by
+  // the agent. Same choke point and same reasoning as watcher auto-provision:
+  // Composio owns the OAuth callback, so this is the only place the daemon
+  // learns a connection exists — and because it is level-triggered on the
+  // CURRENT active set rather than edge-triggered, it also back-fills every
+  // instance that was provisioned without any MCP servers at all.
+  //
+  // Runs even when `active` is empty: the tool-router server is how the model
+  // discovers and connects apps in the first place, so a brand-new tester
+  // needs it BEFORE their first OAuth. Lazily imported and fire-and-forget for
+  // the same reasons as above — a status write never waits on provisioning,
+  // and never fails because of it.
+  void import("./composio-mcp-provision.js")
+    .then((m) => m.provisionComposioMcpServers(active))
+    .catch((err: unknown) => {
+      log.warn(
+        { err },
+        "composio MCP provisioning from connection status failed",
+      );
+    });
 }
 
 /**

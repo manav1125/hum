@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { recordActiveComposioToolkits } from "../../capabilities/composio-connection-status.js";
+import { getComposioMcpProvisionReport } from "../../capabilities/composio-mcp-provision.js";
 import { selectOwnedAccounts } from "../../oauth/composio-account-ownership.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
@@ -361,6 +362,96 @@ export function resetConnectorAppsMemosForTest(): void {
 // Handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether the agent can actually REACH connected apps on this instance.
+ *
+ * `configured` above only says "this instance holds Composio credentials". It
+ * has never said anything about whether the MCP servers that put connector
+ * tools on the wire exist — and on every provisioned instance they did not,
+ * so a finished OAuth rendered as "connected" over an agent with no tools.
+ * This block is the missing half, and it reports zero as zero: `ready` is
+ * false until a server is actually configured, and `state` says why not
+ * rather than leaving the surface to guess.
+ */
+function describeToolAccess(configured: boolean): {
+  ready: boolean;
+  serverCount: number;
+  state: "ready" | "pending" | "unconfigured" | "failed" | "unknown";
+  detail?: string;
+  checkedAt?: string;
+} {
+  const report = getComposioMcpProvisionReport();
+  // An instance with no Composio credentials never reaches the provisioner at
+  // all, so it would otherwise sit at "unknown" forever. Say the true thing:
+  // nothing can be reached here until it is seeded.
+  if (!configured) {
+    return {
+      ready: false,
+      serverCount: report?.serverCount ?? 0,
+      state: "unconfigured",
+      detail:
+        "This instance has no Composio credentials, so no connected app can " +
+        "be reached by the agent. Provisioning needs to re-run.",
+      ...(report
+        ? { checkedAt: new Date(report.lastRunAt).toISOString() }
+        : {}),
+    };
+  }
+  // Never run. Not "fine" — genuinely unknown, and must not read as ready.
+  if (!report) {
+    return {
+      ready: false,
+      serverCount: 0,
+      state: "unknown",
+      detail:
+        "Connector tool access hasn't been checked on this instance yet — " +
+        "open Connectors again in a moment.",
+    };
+  }
+  const checkedAt = new Date(report.lastRunAt).toISOString();
+  if (report.blocked) {
+    return {
+      ready: false,
+      serverCount: report.serverCount,
+      state: "unconfigured",
+      detail:
+        report.blocked === "no_composio_credentials"
+          ? "This instance has no Composio credentials, so connected apps " +
+            "have no tools behind them. Provisioning needs to re-run."
+          : `Connector tool access can't be set up: ${report.blocked}.`,
+      checkedAt,
+    };
+  }
+  if (report.failures.length > 0) {
+    return {
+      ready: report.serverCount > 0,
+      serverCount: report.serverCount,
+      state: "failed",
+      detail: `${report.failures.length} connector tool server(s) could not be set up: ${report.failures
+        .map((f) => `${f.target} (${f.error})`)
+        .join("; ")}`,
+      checkedAt,
+    };
+  }
+  if (report.serverCount === 0) {
+    return {
+      ready: false,
+      serverCount: 0,
+      state: "pending",
+      detail:
+        "No connector tool servers are configured yet — connecting an app " +
+        "will set them up.",
+      checkedAt,
+    };
+  }
+  return {
+    ready: true,
+    serverCount: report.serverCount,
+    state: "ready",
+    checkedAt,
+  };
+}
+
 async function handleListConnectorApps({ queryParams = {} }: RouteHandlerArgs) {
   const creds = readCreds();
   const [{ apps, source }, accounts] = await Promise.all([
@@ -390,6 +481,7 @@ async function handleListConnectorApps({ queryParams = {} }: RouteHandlerArgs) {
 
   return {
     configured: creds !== null,
+    toolAccess: describeToolAccess(creds !== null),
     source,
     apps: filtered.map((a) => {
       const account = accounts.get(a.slug);
@@ -501,6 +593,44 @@ const connectorHealthSchema = z
       "with a cached liveness probe. Absent on disconnected apps.",
   );
 
+const toolAccessSchema = z
+  .object({
+    ready: z
+      .boolean()
+      .describe(
+        "True only when connector tool servers are actually configured on " +
+          "this instance. A connected app with ready=false is authorized but " +
+          "the agent cannot call it yet.",
+      ),
+    serverCount: z
+      .number()
+      .describe(
+        "How many Composio MCP servers are configured. Reported literally — " +
+          "zero means zero.",
+      ),
+    state: z
+      .enum(["ready", "pending", "unconfigured", "failed", "unknown"])
+      .describe(
+        "'ready' = tools are on the wire; 'pending' = none set up yet; " +
+          "'unconfigured' = this instance cannot set them up (no Composio " +
+          "credentials); 'failed' = setup was attempted and errored; " +
+          "'unknown' = never checked — not a claim of health.",
+      ),
+    detail: z
+      .string()
+      .optional()
+      .describe("Human-readable explanation for any non-ready state."),
+    checkedAt: z
+      .string()
+      .optional()
+      .describe("ISO time of the last provisioning run."),
+  })
+  .describe(
+    "Whether the agent can actually reach connected apps — i.e. whether the " +
+      "MCP servers that carry connector tools exist. Independent of " +
+      "`configured`, which only reports that credentials are present.",
+  );
+
 const connectorAppSchema = z.object({
   slug: z.string(),
   name: z.string(),
@@ -549,6 +679,7 @@ export const ROUTES: RouteDefinition[] = [
     ],
     responseBody: z.object({
       configured: z.boolean(),
+      toolAccess: toolAccessSchema,
       source: z.enum(["composio", "curated"]),
       apps: z.array(connectorAppSchema),
     }),

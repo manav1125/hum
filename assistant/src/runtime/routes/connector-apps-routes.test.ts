@@ -62,6 +62,21 @@ describe("connector-apps routes", () => {
     ).toBe(true);
   });
 
+  it("never implies tool access it cannot back", async () => {
+    // The defect this guards: `configured` says "credentials are present",
+    // which a surface reads as readiness — while the MCP servers that carry
+    // connector tools may not exist at all. Zero must render as zero.
+    const result = (await route("listConnectorApps").handler({
+      queryParams: {},
+    })) as {
+      configured: boolean;
+      toolAccess: { ready: boolean; serverCount: number; state: string };
+    };
+    expect(result.toolAccess.ready).toBe(false);
+    expect(result.toolAccess.serverCount).toBe(0);
+    expect(result.toolAccess.state).toBe("unconfigured");
+  });
+
   it("filters the list with ?query=", async () => {
     const result = (await route("listConnectorApps").handler({
       queryParams: { query: "git" },
@@ -299,9 +314,9 @@ describe("connector-apps routes (configured, mocked Composio)", () => {
     // On Composio failure the flow errors cleanly (caller retries) rather than
     // returning a stale/dead link.
     failNext = true;
-    await expect(
-      connect.handler({ body: { slug: "gmail" } }),
-    ).rejects.toThrow(/Couldn't start the gmail connection/);
+    await expect(connect.handler({ body: { slug: "gmail" } })).rejects.toThrow(
+      /Couldn't start the gmail connection/,
+    );
   });
 
   it("surfaces passive failure signals without any probe", async () => {

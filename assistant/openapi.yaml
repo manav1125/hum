@@ -10274,6 +10274,43 @@ paths:
                 properties:
                   configured:
                     type: boolean
+                  toolAccess:
+                    type: object
+                    properties:
+                      ready:
+                        type: boolean
+                        description:
+                          True only when connector tool servers are actually configured on this instance. A connected app with
+                          ready=false is authorized but the agent cannot call it yet.
+                      serverCount:
+                        type: number
+                        description: How many Composio MCP servers are configured. Reported literally — zero means zero.
+                      state:
+                        type: string
+                        enum:
+                          - ready
+                          - pending
+                          - unconfigured
+                          - failed
+                          - unknown
+                        description:
+                          "'ready' = tools are on the wire; 'pending' = none set up yet; 'unconfigured' = this instance cannot set
+                          them up (no Composio credentials); 'failed' = setup was attempted and errored; 'unknown' =
+                          never checked — not a claim of health."
+                      detail:
+                        description: Human-readable explanation for any non-ready state.
+                        type: string
+                      checkedAt:
+                        description: ISO time of the last provisioning run.
+                        type: string
+                    required:
+                      - ready
+                      - serverCount
+                      - state
+                    additionalProperties: false
+                    description:
+                      Whether the agent can actually reach connected apps — i.e. whether the MCP servers that carry connector
+                      tools exist. Independent of `configured`, which only reports that credentials are present.
                   source:
                     type: string
                     enum:
@@ -10336,6 +10373,7 @@ paths:
                       additionalProperties: false
                 required:
                   - configured
+                  - toolAccess
                   - source
                   - apps
                 additionalProperties: false
