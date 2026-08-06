@@ -63,6 +63,8 @@ import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { rateLimitRetry } from "@/utils/rate-limit-retry";
 import { routes } from "@/utils/routes";
 
+import { novelHighlights } from "./run-output";
+
 /** Corrections that teach the item before it reruns (same set as the phone). */
 const REDO_CHIPS = [
   "Make it shorter",
@@ -155,7 +157,7 @@ function narrowOutput(raw: unknown): {
   const highlights = Array.isArray(rec.highlights)
     ? rec.highlights.filter((h): h is string => typeof h === "string")
     : [];
-  return { summary, highlights };
+  return { summary, highlights: novelHighlights(summary, highlights) };
 }
 
 /**
@@ -215,7 +217,12 @@ const reviewMarkdown: Components = {
   ),
   h3: ({ children }) => (
     <div
-      style={{ fontSize: 14, fontWeight: 600, color: C.t1, margin: "14px 0 6px" }}
+      style={{
+        fontSize: 14,
+        fontWeight: 600,
+        color: C.t1,
+        margin: "14px 0 6px",
+      }}
     >
       {children}
     </div>
@@ -260,7 +267,13 @@ const reviewMarkdown: Components = {
     </blockquote>
   ),
   hr: () => (
-    <hr style={{ border: "none", borderTop: `1px solid ${C.line}`, margin: "16px 0" }} />
+    <hr
+      style={{
+        border: "none",
+        borderTop: `1px solid ${C.line}`,
+        margin: "16px 0",
+      }}
+    />
   ),
   code: ({ children }) => (
     <code
@@ -422,7 +435,11 @@ function QueueRow({
           background: "transparent",
           border: "none",
           borderLeft: `2px solid ${
-            selected ? C.blue : hasFreshBorder(item) && !stale ? accent : "transparent"
+            selected
+              ? C.blue
+              : hasFreshBorder(item) && !stale
+                ? accent
+                : "transparent"
           }`,
           padding: "9px 8px 9px 10px",
           cursor: "pointer",
@@ -542,8 +559,7 @@ export function DesktopReviewPage() {
   // back so the URL always names what you're reading.
   const [searchParams, setSearchParams] = useSearchParams();
   const paramId = searchParams.get("item");
-  const selected =
-    queue.find((i) => i.id === paramId) ?? queue[0] ?? null;
+  const selected = queue.find((i) => i.id === paramId) ?? queue[0] ?? null;
 
   const select = (id: string) => {
     const next = new URLSearchParams(searchParams);
@@ -715,9 +731,7 @@ export function DesktopReviewPage() {
             archive: () => doArchive(selected),
             open: selected.lastRunConversationId
               ? () =>
-                  navigate(
-                    routes.conversation(selected.lastRunConversationId!),
-                  )
+                  navigate(routes.conversation(selected.lastRunConversationId!))
               : undefined,
           }
         : {},
@@ -1065,9 +1079,7 @@ export function DesktopReviewPage() {
                   marginTop: 12,
                 }}
               >
-                <span style={{ ...microLabel, marginRight: 2 }}>
-                  Redo with
-                </span>
+                <span style={{ ...microLabel, marginRight: 2 }}>Redo with</span>
                 {REDO_CHIPS.map((chip) => (
                   <button
                     key={chip}
