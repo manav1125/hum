@@ -58,8 +58,22 @@ const log = getLogger("arrival-comprehension");
  * Cut from 20 for the same reason as the judge's batch: the configured flash
  * model reasons, and a large batch of real material does not answer inside any
  * budget worth calling a budget.
+ *
+ * Cut again, 8 -> 4, on measured production behaviour. Comprehension recorded
+ * ZERO failures on 3 and 4 August, then 22 on the 5th and 34 on the 6th with
+ * no successes at all, and the daemon log gives the reason in its own words:
+ * `comprehension hit its deadline (items keep their titles)`, over and over.
+ * The provider was healthy throughout — key present, model and pinned provider
+ * both answering a probe — so this is not an outage, it is a batch that stopped
+ * fitting in {@link COMPREHEND_DEADLINE_MS}.
+ *
+ * Halving the batch is the better lever than raising the deadline, for two
+ * reasons. The deadline exists so intake always terminates, and stretching it
+ * makes every stall cost more. And a deadline miss fails the WHOLE batch: at 8
+ * per call one slow message took seven readable ones down with it, which is
+ * most of why a marginal slowdown read as a total outage.
  */
-export const MAX_COMPREHEND_BATCH = 8;
+export const MAX_COMPREHEND_BATCH = 4;
 
 /**
  * Wall-clock budget for the batched comprehension call.
@@ -504,7 +518,18 @@ async function extractWithFlashLlm(
 ): Promise<RawComprehension[] | null> {
   try {
     const provider = await getConfiguredProvider("conversationTitle");
-    if (!provider) return null;
+    if (!provider) {
+      // Returned null in total silence. Every arrival in the batch is then
+      // marked `failed` with "Cue could not read this one" — telling the owner
+      // Cue looked and did not understand, when in fact there was nothing
+      // configured to look with. A no-op is not a success, and it is not a
+      // failed reading either.
+      log.warn(
+        { callSite: "conversationTitle" },
+        "comprehension has no configured provider (items keep their titles)",
+      );
+      return null;
+    }
     const config = getConfig();
     const resolved = resolveCallSiteConfig("conversationTitle", config.llm);
     const result = await runBtwSidechain({
@@ -523,7 +548,13 @@ async function extractWithFlashLlm(
       new Set(candidates.map((c) => c.workItemId)),
     );
   } catch (err) {
-    log.debug({ err: String(err) }, "comprehension extraction failed");
+    // Was `log.debug`, which prod does not emit — so the one line naming WHY a
+    // batch read nothing was written to a level nobody reads. The batch-level
+    // warn tells you it produced nothing; only this tells you what happened.
+    log.warn(
+      { err: String(err), batch: candidates.length },
+      "comprehension extraction failed (items keep their titles)",
+    );
     return null;
   }
 }

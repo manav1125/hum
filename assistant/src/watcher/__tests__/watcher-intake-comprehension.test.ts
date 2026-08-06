@@ -28,6 +28,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import {
   type ArrivalExtractor,
   getComprehensionHealth,
+  MAX_COMPREHEND_BATCH,
   type RawComprehension,
   resetComprehensionHealth,
 } from "../../arrivals/arrival-comprehension.js";
@@ -375,7 +376,11 @@ describe("an arrival becomes a task, not a relabelled email", () => {
   });
 
   test("one batched call for the whole poll, whatever arrives", async () => {
-    for (let i = 0; i < 5; i++) {
+    // Deliberately under the cap, so this asserts the batching invariant
+    // ("one call per poll") and not the cap's current value — which moved
+    // from 8 to 4 when a full batch stopped fitting in the deadline.
+    const arrived = MAX_COMPREHEND_BATCH - 1;
+    for (let i = 0; i < arrived; i++) {
       arrive({
         externalId: `m-batch-${i}`,
         from: `Person ${i} <p${i}@example.com>`,
@@ -386,7 +391,30 @@ describe("an arrival becomes a task, not a relabelled email", () => {
     await runIntake({ now: NOW, extractor });
 
     expect(extractor.calls).toBe(1);
-    expect(extractor.batchSizes).toEqual([5]);
+    expect(extractor.batchSizes).toEqual([arrived]);
+  });
+
+  test("more than the cap still makes ONE call, and the rest is recorded", async () => {
+    // The cap is what bounds a single call's wall-clock, so it has to hold
+    // however much arrives at once — and the overflow must be visible as
+    // "not looked at yet" rather than silently dropped or quietly failed.
+    for (let i = 0; i < MAX_COMPREHEND_BATCH + 3; i++) {
+      arrive({
+        externalId: `m-over-${i}`,
+        from: `Person ${i} <p${i}@example.com>`,
+        subject: `Subject ${i}`,
+      });
+    }
+    const extractor = extractorFor([]);
+    await runIntake({ now: NOW, extractor });
+
+    expect(extractor.calls).toBe(1);
+    expect(extractor.batchSizes).toEqual([MAX_COMPREHEND_BATCH]);
+
+    const skipped = listWorkItems({ includeUnComprehended: true }).filter(
+      (i) => getComprehension(i.id)?.status === "skipped",
+    );
+    expect(skipped).toHaveLength(3);
   });
 });
 
