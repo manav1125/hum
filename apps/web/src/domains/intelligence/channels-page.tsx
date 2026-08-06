@@ -375,7 +375,11 @@ function ConnectCard({
           marginBottom: 11,
         }}
       >
-        {icon}
+        {/* The CONNECT MORE card is a SECOND renderer of the same icon name.
+            Fixing only the connected-channel tile left this one printing
+            "hash", "send", "phone" — and this is the card a new user sees
+            first, since nothing is connected yet. */}
+        <ChannelGlyph name={icon} size={21} />
       </span>
       <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
       <div style={{ fontSize: 11.5, color: C.t2, margin: "3px 0 11px" }}>
