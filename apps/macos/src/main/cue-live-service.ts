@@ -851,6 +851,11 @@ interface StreamLoopState {
   lastBannerMs: number;
   /** Guards against two overlapping ticks when a push runs long. */
   busy: boolean;
+  /**
+   * Consecutive check-ins that did not come back usable. Drives
+   * {@link checkinBackoffMs}; reset to 0 the moment one succeeds.
+   */
+  failures: number;
 }
 
 const streamLoop: StreamLoopState = {
@@ -860,7 +865,32 @@ const streamLoop: StreamLoopState = {
   maxWidth: 1280,
   lastBannerMs: 0,
   busy: false,
+  failures: 0,
 };
+
+/**
+ * How long to wait after a run of failed check-ins.
+ *
+ * This loop used to reschedule at {@link CHECKIN_IDLE_MS} whatever came back:
+ * the catch logged a warning, the `finally` re-armed the 4-second timer, and a
+ * 401 was treated exactly like a success. On this owner's Mac that turned one
+ * unauthorised check-in into a permanent 4-second retry, which the GATEWAY'S
+ * AUTH limiter counts as failed attempts — and once that trips it answers
+ * "Too many failed attempts" to EVERYTHING from the same IP. The whole desktop
+ * app went dataless on every launch: conversation list, history, bookmarks,
+ * Library. All of it, because a screen-share heartbeat could not authenticate.
+ *
+ * A failing check-in has nothing to learn and nothing to lose by waiting, so
+ * this doubles from the idle cadence up to a 5-minute ceiling. Any usable
+ * response resets it.
+ */
+const CHECKIN_BACKOFF_CEILING_MS = 300_000;
+
+export const checkinBackoffMs = (failures: number): number =>
+  Math.min(
+    CHECKIN_IDLE_MS * 2 ** Math.min(failures, 7),
+    CHECKIN_BACKOFF_CEILING_MS,
+  );
 
 /** Whether this Mac is currently sending frames off the machine. */
 export const isStreamingScreen = (): boolean => streamLoop.streaming;
@@ -986,7 +1016,14 @@ const streamTick = async (): Promise<void> => {
         deviceName: os.hostname(),
       });
       const parsed = CHECKIN_SCHEMA.safeParse(raw);
-      if (!parsed.success) return;
+      if (!parsed.success) {
+        // An error body (401/429) does not match the schema either, so this is
+        // the same "did not come back usable" as a throw — count it.
+        streamLoop.failures++;
+        return;
+      }
+      // Reached the daemon and understood it. Back to the idle cadence.
+      streamLoop.failures = 0;
       if (!parsed.data.stream.armed) return;
       streamLoop.streaming = true;
       streamLoop.intervalMs = parsed.data.stream.intervalMs;
@@ -1005,7 +1042,12 @@ const streamTick = async (): Promise<void> => {
       log.info("[cue-live] screen stream ended");
     }
   } catch (err) {
-    log.warn(`[cue-live] stream tick failed: ${errMessage(err)}`);
+    streamLoop.failures++;
+    log.warn(
+      `[cue-live] stream tick failed (${streamLoop.failures} in a row, next in ${Math.round(
+        checkinBackoffMs(streamLoop.failures) / 1000,
+      )}s): ${errMessage(err)}`,
+    );
   } finally {
     streamLoop.busy = false;
   }
@@ -1016,7 +1058,7 @@ const scheduleStreamTick = (): void => {
   const wait = streamLoop.streaming
     ? Math.max(streamLoop.intervalMs, 400)
     : assistantConnectionProbe()
-      ? CHECKIN_IDLE_MS
+      ? checkinBackoffMs(streamLoop.failures)
       : CHECKIN_DISCONNECTED_MS;
   streamLoop.timer = setTimeout(() => {
     void streamTick().finally(() => {
@@ -1040,6 +1082,9 @@ const stopStreamLoop = (): void => {
   streamLoop.timer = null;
   streamLoop.streaming = false;
   streamLoop.lastBannerMs = 0;
+  // A restart is a fresh chance to authenticate — do not inherit the old
+  // backoff, or a reconnect would sit out a penalty it did not earn.
+  streamLoop.failures = 0;
 };
 
 /**

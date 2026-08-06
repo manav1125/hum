@@ -89,6 +89,7 @@ const {
   installCueLive,
   isCueLiveEnabled,
   setCueLiveEnabledGetter,
+  checkinBackoffMs,
   describeNextMove,
   setGuidanceFetcher,
   setStartVoiceDispatcher,
@@ -609,5 +610,40 @@ describe("describeNextMove (Stage 2b action hints)", () => {
     expect(describeNextMove({ found: true, role: "AXUnknown" })).toBe(
       "Hover an element to inspect it",
     );
+  });
+});
+
+describe("checkinBackoffMs (the desktop-wide lockout)", () => {
+  // REGRESSION: the screen-share check-in rescheduled at a flat 4s whatever
+  // came back. A 401 was treated exactly like a success, so an unauthorised
+  // check-in retried forever — and the GATEWAY'S AUTH limiter counts failed
+  // attempts, then answers "Too many failed attempts" to EVERY request from
+  // that IP. The owner's whole desktop app went dataless on each launch:
+  // conversation list, history, bookmarks, Library. Because a heartbeat for a
+  // feature they were not using could not authenticate.
+
+  test("a healthy loop keeps the plain idle cadence", () => {
+    // 0 failures must not slow the normal path down at all.
+    expect(checkinBackoffMs(0)).toBe(4_000);
+  });
+
+  test("each consecutive failure doubles the wait", () => {
+    expect(checkinBackoffMs(1)).toBe(8_000);
+    expect(checkinBackoffMs(2)).toBe(16_000);
+    expect(checkinBackoffMs(3)).toBe(32_000);
+  });
+
+  test("the wait is capped, so the loop never dies entirely", () => {
+    // Recoverable: if auth starts working again the next tick still comes,
+    // just not for five minutes. A loop that backed off forever would need an
+    // app restart to recover, which is its own bug.
+    expect(checkinBackoffMs(20)).toBe(300_000);
+    expect(checkinBackoffMs(1000)).toBe(300_000);
+  });
+
+  test("it climbs fast enough to stop feeding the auth limiter", () => {
+    // The failure that caused this: ~15 attempts/minute, indefinitely. After
+    // five consecutive failures the loop must be well past a minute apart.
+    expect(checkinBackoffMs(5)).toBeGreaterThan(60_000);
   });
 });
