@@ -210,14 +210,18 @@ export function buildSelfHostedLiveVoiceWsUrl({
   conversationId,
   token,
 }: BuildSelfHostedLiveVoiceWsUrlArgs): string {
-  const localMatch = LOCAL_GATEWAY_INGRESS_PATTERN.exec(ingressUrl);
+  // Resolve first (a bare relative ingress throws in one-argument `new URL` —
+  // that was one silent "connecting…" hang), then match the local proxy shape
+  // on the PATHNAME: `getLocalGatewayUrl` returns the path relative in some
+  // hosts and absolute (page-origin-prefixed) in others, and both must dial
+  // the gateway directly — the absolute form pointed the socket at the dev
+  // server, whose proxy middleware can't upgrade it (the other silent hang).
+  const resolved = new URL(ingressUrl, window.location.origin);
+  const localMatch = LOCAL_GATEWAY_INGRESS_PATTERN.exec(resolved.pathname);
   const url = localMatch
     ? // http:// so the scheme mapping below lands on ws:.
       new URL(`http://127.0.0.1:${localMatch[1]}`)
-    : // A relative ingress that isn't the local proxy shape resolves against
-      // the page origin (`new URL(relative)` alone throws — this was the
-      // silent "connecting…" hang in local mode).
-      new URL(ingressUrl, window.location.origin);
+    : resolved;
   url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
   const prefix = url.pathname.replace(/\/+$/, "");
   url.pathname = `${prefix}/v1/live-voice`;

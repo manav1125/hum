@@ -61,6 +61,12 @@ const WORKLET_PROCESSOR_NAME = "pcm-downsample";
 // is sent.
 const BATCH_SAMPLES = 800;
 
+// Deadline for acquiring the mic stream. Long enough for a user to read and
+// answer the browser's permission prompt; short enough that a silently hung
+// `getUserMedia` (macOS TCC never surfaces a prompt) becomes a visible error
+// instead of an eternal "connecting…".
+const MEDIA_STREAM_ACQUISITION_TIMEOUT_MS = 20_000;
+
 /** Reason a capture failed to start, mapped from `getUserMedia` DOMExceptions. */
 export type LiveVoiceCaptureError =
   | "unsupported"
@@ -167,7 +173,39 @@ export class LiveVoiceAudioCapture {
 
     let stream: MediaStream;
     try {
-      stream = await getVoiceInputMediaStream();
+      // `getUserMedia` can HANG indefinitely — never prompting, never
+      // rejecting — when the browser itself lacks OS-level microphone
+      // permission (macOS TCC). Without a deadline the whole voice session
+      // sits in "connecting…" with no error until the daemon's inactivity
+      // timeout. Race a deadline and surface it as permission-denied; if the
+      // stream resolves after we gave up, release its tracks so no mic is
+      // left live.
+      stream = await new Promise<MediaStream>((resolve, reject) => {
+        let timedOut = false;
+        const timer = setTimeout(() => {
+          timedOut = true;
+          reject(
+            new DOMException(
+              "Timed out waiting for microphone access — check the browser's OS-level microphone permission.",
+              "NotAllowedError",
+            ),
+          );
+        }, MEDIA_STREAM_ACQUISITION_TIMEOUT_MS);
+        getVoiceInputMediaStream().then(
+          (s) => {
+            clearTimeout(timer);
+            if (timedOut) {
+              stopTracks(s);
+              return;
+            }
+            resolve(s);
+          },
+          (cause) => {
+            clearTimeout(timer);
+            reject(cause instanceof Error ? cause : new Error(String(cause)));
+          },
+        );
+      });
     } catch (cause) {
       return { ok: false, error: classifyError(cause), cause };
     }

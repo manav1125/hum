@@ -216,6 +216,21 @@ describe("buildSelfHostedLiveVoiceWsUrl", () => {
     expect(url.searchParams.get("conversationId")).toBe("conv-1");
   });
 
+  test("absolute page-origin __gateway ingress also dials direct", () => {
+    // getLocalGatewayUrl is origin-prefixed in some hosts — the path shape,
+    // not the origin, decides. (An absolute form once routed the socket into
+    // the dev server's upgrade-less proxy: connecting forever, no error.)
+    const url = new URL(
+      buildSelfHostedLiveVoiceWsUrl({
+        ingressUrl: `${window.location.origin}/assistant/__gateway/7830`,
+        token: "actor-tok",
+      }),
+    );
+    expect(url.protocol).toBe("ws:");
+    expect(url.host).toBe("127.0.0.1:7830");
+    expect(url.pathname).toBe("/v1/live-voice");
+  });
+
   test("unprefixed __gateway ingress also dials direct", () => {
     const url = new URL(
       buildSelfHostedLiveVoiceWsUrl({
@@ -238,8 +253,11 @@ describe("buildSelfHostedLiveVoiceWsUrl", () => {
     expect(url.pathname).toBe("/some/prefix/v1/live-voice");
   });
 
-  test("preserves the ingress path prefix (local Docker proxy) and drops query/hash", () => {
-    // Local mode reaches the gateway at a path-based proxy under the SPA origin.
+  test("__gateway ingress with query/hash dials direct and drops both", () => {
+    // The path-based proxy under the SPA origin cannot carry a WS upgrade
+    // (request/response-only hosts), so the socket dials the gateway port —
+    // superseding the old preserve-the-proxy-prefix contract, which left the
+    // room in "connecting…" forever.
     const url = new URL(
       buildSelfHostedLiveVoiceWsUrl({
         ingressUrl: "http://localhost:3000/assistant/__gateway/7821?a=1#frag",
@@ -248,9 +266,8 @@ describe("buildSelfHostedLiveVoiceWsUrl", () => {
       }),
     );
     expect(url.protocol).toBe("ws:");
-    expect(url.host).toBe("localhost:3000");
-    // Prefix preserved, /v1/live-voice appended — matches the HTTP interceptor.
-    expect(url.pathname).toBe("/assistant/__gateway/7821/v1/live-voice");
+    expect(url.host).toBe("127.0.0.1:7821");
+    expect(url.pathname).toBe("/v1/live-voice");
     expect(url.hash).toBe("");
     expect(url.searchParams.get("a")).toBeNull();
     expect(url.searchParams.get("token")).toBe("actor-tok");
