@@ -1,0 +1,1 @@
+import{n as e,t}from"./create-selectors-D0OgnmXk.js";var n=t(e((e,t)=>({isOpen:!1,draft:``,open:()=>e({isOpen:!0}),close:()=>e({isOpen:!1}),toggle:()=>e({isOpen:!t().isOpen}),setDraft:t=>e({draft:t})})));export{n as t};

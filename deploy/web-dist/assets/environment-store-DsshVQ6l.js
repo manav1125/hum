@@ -1,0 +1,1 @@
+import{n as e,t}from"./create-selectors-D0OgnmXk.js";function n(){return{emailRootDomain:`local.vellum.me`,isNonProduction:!0}}var r=t(e()(e=>({...n(),setEnvironment:t=>e(t)})));export{r as t};

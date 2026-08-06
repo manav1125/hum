@@ -1,0 +1,1 @@
+import{t as e}from"./is-electron-_kOSdZxJ.js";function t(t){e()&&window.vellum?.dock.setBadge(t)}function n(t){e()&&window.vellum?.dock.setSignedIn(t)}export{n,t};
