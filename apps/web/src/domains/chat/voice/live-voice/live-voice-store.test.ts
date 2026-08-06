@@ -63,6 +63,33 @@ describe("closing a turn records the exchange", () => {
   });
 });
 
+describe("mic dead-silence flag", () => {
+  const s = () => useLiveVoiceStore.getState();
+
+  test("defaults to false — a fresh session presumes the mic is live", () => {
+    expect(s().micSilent).toBe(false);
+  });
+
+  test("setMicSilent raises and clears the flag", () => {
+    s().setMicSilent(true);
+    expect(s().micSilent).toBe(true);
+
+    s().setMicSilent(false);
+    expect(s().micSilent).toBe(false);
+  });
+
+  test("reset clears the flag with the rest of the session state", () => {
+    // Session teardown runs `reset()`; a dead-mic warning must not survive
+    // into the next call (whose mic may be a different, working device).
+    s().setMicSilent(true);
+    s().setInputAmplitude(0.4);
+
+    s().reset();
+    expect(s().micSilent).toBe(false);
+    expect(s().inputAmplitude).toBe(0);
+  });
+});
+
 describe("W2 · minimize seq and pending approval (v37)", () => {
   const s = () => useLiveVoiceStore.getState();
 

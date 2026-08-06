@@ -62,9 +62,18 @@ const BAR_CSS = `
 `;
 
 /** The three drawn call states; everything else resolves onto one of them. */
-function stateWord(state: LiveVoiceSessionState, muted: boolean): string {
+function stateWord(
+  state: LiveVoiceSessionState,
+  muted: boolean,
+  micSilent: boolean,
+): string {
   if (state === "connecting") return "Connecting…";
   if (muted) return "Muted";
+  // The mic self-check: the input path is delivering dead silence (the TCC
+  // hole), so a state word claiming "Listening" would be pretend health —
+  // the same honesty rule the level bars follow. Lowercase quiet, and
+  // informational only: the call keeps running.
+  if (micSilent) return "can't hear you";
   switch (state) {
     case "thinking":
     case "transcribing":
@@ -88,6 +97,12 @@ export interface VoiceMinimizedBarProps {
   /** REAL smoothed mic amplitude in [0, 1] — drives the level bars. */
   amplitude: number;
   muted: boolean;
+  /**
+   * The mic self-check flagged dead silence (unmuted capture delivering pure
+   * zeros — the macOS TCC hole). Replaces the state word with "can't hear
+   * you". Informational and fail-open: nothing else about the bar changes.
+   */
+  micSilent?: boolean;
   /** Epoch ms the call started; `null` renders no timer (no made-up clock). */
   startedAt: number | null;
   /**
@@ -111,6 +126,7 @@ export function VoiceMinimizedBar({
   state,
   amplitude,
   muted,
+  micSilent = false,
   startedAt,
   thingLabel,
   error,
@@ -261,7 +277,7 @@ export function VoiceMinimizedBar({
                 lineHeight: 1.25,
               }}
             >
-              {stateWord(state, muted)}
+              {stateWord(state, muted, micSilent)}
             </span>
             <span
               style={{

@@ -146,6 +146,12 @@ class FakeCapture {
   }
   flushCount = 0;
 
+  /** Mirrors the real capture's track-enable toggle. */
+  muted = false;
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+  }
+
   /** Feed a captured PCM chunk to the controller. */
   pushChunk(buf: ArrayBuffer): void {
     this.onChunk(buf);
@@ -1316,6 +1322,177 @@ describe("teardown", () => {
       await h.view.result.current.stop();
     });
     expect(h.view.result.current.state).toBe("idle");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mic dead-silence self-check
+// ---------------------------------------------------------------------------
+
+describe("mic dead-silence self-check", () => {
+  // The macOS TCC hole: Chrome without OS-level mic permission gets a
+  // getUserMedia stream that "succeeds" and delivers exact-zero samples — no
+  // prompt, no error. The self-check raises `micSilent` after 10s of
+  // continuous dead silence so the room can say what's true instead of
+  // sitting in "Listening" looking healthy but deaf.
+
+  /** The controller's MIC_SILENCE_WINDOW_MS (kept in sync with the source). */
+  const SILENCE_WINDOW_MS_PROBE = 10_000;
+
+  const micSilent = () => useLiveVoiceStore.getState().micSilent;
+
+  /**
+   * Run `fn` against a stubbed wall clock (the suite's convention — see
+   * `pushSustainedAmplitude`): the window is sample-driven against
+   * `Date.now`, so the clock advances between readings instead of sleeping.
+   */
+  function withClock(fn: (advance: (ms: number) => void) => void): void {
+    const realNow = Date.now;
+    let clock = realNow();
+    Date.now = () => clock;
+    try {
+      fn((ms) => {
+        clock += ms;
+      });
+    } finally {
+      Date.now = realNow;
+    }
+  }
+
+  test("10s of continuous exact-zero samples raises the flag", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    withClock((advance) => {
+      act(() => {
+        h.getCapture().pushAmplitude(0); // the window opens here
+        advance(SILENCE_WINDOW_MS_PROBE - 1);
+        h.getCapture().pushAmplitude(0);
+      });
+      // One millisecond short of the window: still presumed live.
+      expect(micSilent()).toBe(false);
+
+      act(() => {
+        advance(1);
+        h.getCapture().pushAmplitude(0);
+      });
+      expect(micSilent()).toBe(true);
+    });
+  });
+
+  test("any sample above the epsilon clears the flag and restarts the window", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    withClock((advance) => {
+      act(() => {
+        h.getCapture().pushAmplitude(0);
+        advance(SILENCE_WINDOW_MS_PROBE);
+        h.getCapture().pushAmplitude(0);
+      });
+      expect(micSilent()).toBe(true);
+
+      // A room's noise floor — well below the SPEECH threshold, but far above
+      // the dead-silence epsilon — proves the mic is wired to something.
+      act(() => {
+        h.getCapture().pushAmplitude(0.01);
+      });
+      expect(micSilent()).toBe(false);
+
+      // And the window restarted: a fresh full 10s of zeros is required again.
+      act(() => {
+        h.getCapture().pushAmplitude(0);
+        advance(SILENCE_WINDOW_MS_PROBE - 1_000);
+        h.getCapture().pushAmplitude(0);
+      });
+      expect(micSilent()).toBe(false);
+      act(() => {
+        advance(1_000);
+        h.getCapture().pushAmplitude(0);
+      });
+      expect(micSilent()).toBe(true);
+    });
+  });
+
+  test("a muted mic never trips the check — muted zeros are legitimate", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    withClock((advance) => {
+      act(() => {
+        h.view.result.current.setMuted(true);
+        h.getCapture().pushAmplitude(0);
+        advance(SILENCE_WINDOW_MS_PROBE * 3);
+        h.getCapture().pushAmplitude(0);
+      });
+      expect(micSilent()).toBe(false);
+    });
+  });
+
+  test("unmuting restarts the window — only unmuted samples count", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    withClock((advance) => {
+      act(() => {
+        h.view.result.current.setMuted(true);
+        h.getCapture().pushAmplitude(0);
+        advance(SILENCE_WINDOW_MS_PROBE * 3); // a long muted stretch of zeros
+        h.getCapture().pushAmplitude(0);
+        h.view.result.current.setMuted(false);
+        h.getCapture().pushAmplitude(0); // the window opens HERE, not earlier
+        advance(SILENCE_WINDOW_MS_PROBE - 1);
+        h.getCapture().pushAmplitude(0);
+      });
+      expect(micSilent()).toBe(false);
+
+      act(() => {
+        advance(1);
+        h.getCapture().pushAmplitude(0);
+      });
+      expect(micSilent()).toBe(true);
+    });
+  });
+
+  test("muting clears an already-raised flag — the room says Muted, the true state", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    withClock((advance) => {
+      act(() => {
+        h.getCapture().pushAmplitude(0);
+        advance(SILENCE_WINDOW_MS_PROBE);
+        h.getCapture().pushAmplitude(0);
+      });
+      expect(micSilent()).toBe(true);
+
+      act(() => {
+        h.view.result.current.setMuted(true);
+      });
+      expect(micSilent()).toBe(false);
+    });
+  });
+
+  test("session teardown clears the flag", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    withClock((advance) => {
+      act(() => {
+        h.getCapture().pushAmplitude(0);
+        advance(SILENCE_WINDOW_MS_PROBE);
+        h.getCapture().pushAmplitude(0);
+      });
+    });
+    expect(micSilent()).toBe(true);
+
+    await act(async () => {
+      await h.view.result.current.stop();
+    });
+    expect(micSilent()).toBe(false);
+
+    // The check is fail-open throughout: nothing above ended the call for the
+    // user — this stop() is the test's own.
   });
 });
 

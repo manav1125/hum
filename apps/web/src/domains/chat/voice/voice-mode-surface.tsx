@@ -208,6 +208,8 @@ export function VoiceModeSurface({
   // call screen reads.
   const turnClosed = useLiveVoiceStore.use.turnClosed();
   const activityTool = useLiveVoiceStore.use.activityTool();
+  // The mic dead-silence self-check (TCC hole): the room captions it.
+  const micSilent = useLiveVoiceStore.use.micSilent();
 
   // Slice 1 cards are display-only (list/table/card), so actions don't round-trip
   // yet; wiring to the surface-action route is a later slice.
@@ -418,6 +420,7 @@ export function VoiceModeSurface({
           state={state}
           activityTool={activityTool}
           muted={muted}
+          micSilent={micSilent}
           startedAt={startedAt}
           error={error}
           failureKind={failureKind}

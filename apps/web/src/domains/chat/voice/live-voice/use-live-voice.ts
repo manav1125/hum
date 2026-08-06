@@ -147,6 +147,25 @@ const MINIMUM_SPEECH_DURATION_BEFORE_RELEASE_MS = 120;
  */
 const DRAIN_SAFETY_TIMEOUT_MS = 15000;
 
+/**
+ * Amplitude at or below which a sample counts as DEAD silence for the mic
+ * self-check. The macOS TCC failure mode this exists for — Chrome without
+ * OS-level mic permission, where `getUserMedia` "succeeds" and streams
+ * exact-zero samples with no prompt and no error — reads exactly 0; a real
+ * room's noise floor clears this within a sample or two. Deliberately far
+ * below {@link SPEECH_AMPLITUDE_THRESHOLD}: this is not a speech detector,
+ * it is a "is the mic wired to anything at all" detector.
+ */
+const MIC_SILENCE_EPSILON = 0.003;
+
+/**
+ * How long the mic must deliver continuous dead silence (while capturing and
+ * unmuted) before the session says so ({@link LiveVoiceState.micSilent}).
+ * Long enough that a held breath in a quiet room can't trip it; short enough
+ * that a deaf room doesn't sit in "Listening" for a minute before admitting it.
+ */
+const MIC_SILENCE_WINDOW_MS = 10_000;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -312,6 +331,24 @@ interface SessionContext {
    * echo transient doesn't interrupt.
    */
   bargeInSinceMs: number | null;
+  /**
+   * Whether the mic is muted, mirrored onto the session so the amplitude glue
+   * (which never re-renders) can tell a LEGITIMATE zero from a dead one: a
+   * muted mic reads 0 by design, so the dead-silence window must not run
+   * while muted. Kept in sync by `setMuted` and seeded from the retained
+   * preference on start.
+   */
+  muted: boolean;
+  /**
+   * Timestamp (ms epoch) when the current run of continuous dead-silence
+   * samples (≤ {@link MIC_SILENCE_EPSILON}, capture running, unmuted) began,
+   * or null when not in one. Once the run spans
+   * {@link MIC_SILENCE_WINDOW_MS} the store's `micSilent` flag is raised; any
+   * real sample clears both. Sample-driven against the wall clock exactly
+   * like {@link SessionContext.bargeInSinceMs} — no interval to leak on
+   * teardown.
+   */
+  micSilentSinceMs: number | null;
 }
 
 /** Number of bytes per Int16 PCM sample. */
@@ -369,7 +406,17 @@ export function useLiveVoice(
   const setMuted = useCallback((next: boolean) => {
     setMutedState(next);
     mutedRef.current = next;
-    sessionRef.current?.capture.setMuted(next);
+    const session = sessionRef.current;
+    if (!session) return;
+    session.muted = next;
+    // A muted mic legitimately reads 0, so the dead-silence window pauses
+    // for the whole muted stretch: reset it on BOTH edges (muting discards
+    // any part-run window; unmuting starts the 10s over from unmuted
+    // samples only), and never warn while muted — the room already says
+    // "Muted", which is the true state.
+    session.micSilentSinceMs = null;
+    if (next) useLiveVoiceStore.getState().setMicSilent(false);
+    session.capture.setMuted(next);
   }, []);
 
   /**
@@ -504,6 +551,8 @@ export function useLiveVoice(
         speechMs: 0,
         silenceMs: 0,
         bargeInSinceMs: null,
+        muted: mutedRef.current,
+        micSilentSinceMs: null,
       };
 
       const capture = (
@@ -834,6 +883,7 @@ function handleAmplitude(
 ): void {
   if (!session.captureRunning) return;
   useLiveVoiceStore.getState().setInputAmplitude(amplitude);
+  updateMicSilence(session, amplitude);
   // server_vad sessions: barge-in is server-detected (the daemon's
   // sustained-speech guard fires `speech_started` / `turn_cancelled`), so
   // the client's amplitude heuristic stands down — two independent
@@ -858,6 +908,46 @@ function handleAmplitude(
     }
   } else {
     session.bargeInSinceMs = null;
+  }
+}
+
+/**
+ * The mic dead-silence self-check (the honesty rule applied to the input
+ * path: "the mark IS the state" — a room that says "Listening" while the OS
+ * delivers pure zeros is faking health).
+ *
+ * While capture runs unmuted, a continuous run of samples at or below
+ * {@link MIC_SILENCE_EPSILON} spanning {@link MIC_SILENCE_WINDOW_MS} raises
+ * the store's `micSilent` flag; ANY sample above the epsilon clears the flag
+ * and restarts the window. Muting pauses the window (a muted mic reads 0 by
+ * design — `setMuted` resets it on both edges), and teardown clears the flag
+ * with the rest of the store. Purely informational and fail-open: nothing
+ * here ends, mutes, or otherwise alters the call.
+ *
+ * Sample-driven against the wall clock, like the barge-in sustain window —
+ * there is no interval to leak after teardown.
+ */
+function updateMicSilence(session: SessionContext, amplitude: number): void {
+  if (session.muted) {
+    session.micSilentSinceMs = null;
+    return;
+  }
+  const store = useLiveVoiceStore.getState();
+  if (amplitude > MIC_SILENCE_EPSILON) {
+    session.micSilentSinceMs = null;
+    if (store.micSilent) store.setMicSilent(false);
+    return;
+  }
+  const now = Date.now();
+  if (session.micSilentSinceMs === null) {
+    session.micSilentSinceMs = now;
+    return;
+  }
+  if (
+    now - session.micSilentSinceMs >= MIC_SILENCE_WINDOW_MS &&
+    !store.micSilent
+  ) {
+    store.setMicSilent(true);
   }
 }
 

@@ -147,6 +147,18 @@ export interface LiveVoiceState {
   turnClosed: boolean;
   /** Smoothed RMS mic amplitude in [0, 1] for UI / barge-in. */
   inputAmplitude: number;
+  /**
+   * The mic is delivering DEAD silence: capture is running and unmuted, yet no
+   * amplitude sample has cleared a tiny epsilon for a sustained window. The
+   * macOS/Chrome TCC failure mode — `getUserMedia` "succeeds" with no OS mic
+   * permission and streams exact-zero samples, no prompt, no error — lands
+   * exactly here, with the room sitting in "Listening" looking healthy but
+   * deaf. Real rooms have a noise floor, so a live mic clears the epsilon
+   * within the window. Informational and fail-open: surfaces caption it, the
+   * call is never ended or altered. Cleared by any real sample, and reset with
+   * the rest of the session state.
+   */
+  micSilent: boolean;
   /** Human-readable error message when `state === "failed"`, `null` otherwise. */
   error: string | null;
   /**
@@ -227,6 +239,8 @@ export interface LiveVoiceActions {
    */
   closeTurn: () => void;
   setInputAmplitude: (amplitude: number) => void;
+  /** Record whether the mic is delivering dead silence (see {@link LiveVoiceState.micSilent}). */
+  setMicSilent: (micSilent: boolean) => void;
   /** Transition to `failed` with a message and a failure kind (default `session`). */
   fail: (message: string, kind?: "mic" | "session") => void;
   /** Upsert a card by `surfaceId` (appends when new, replaces the entry when seen). */
@@ -271,6 +285,7 @@ const INITIAL_STATE: LiveVoiceState = {
   assistantTranscript: "",
   turnClosed: false,
   inputAmplitude: 0,
+  micSilent: false,
   error: null,
   failureKind: null,
   cards: [],
@@ -358,6 +373,7 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
       };
     }),
   setInputAmplitude: (inputAmplitude) => set({ inputAmplitude }),
+  setMicSilent: (micSilent) => set({ micSilent }),
   fail: (message, kind = "session") =>
     set({ state: "failed", error: message, failureKind: kind }),
   showCard: (frame) =>

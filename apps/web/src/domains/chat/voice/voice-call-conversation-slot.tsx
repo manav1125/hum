@@ -70,6 +70,7 @@ export function ConversationVoiceRoomOverlay({
   const cards = useLiveVoiceStore.use.cards();
   const error = useLiveVoiceStore.use.error();
   const failureKind = useLiveVoiceStore.use.failureKind();
+  const micSilent = useLiveVoiceStore.use.micSilent();
 
   const open = boundHere && !minimized;
 
@@ -113,6 +114,7 @@ export function ConversationVoiceRoomOverlay({
         state={state}
         activityTool={activityTool}
         muted={muted}
+        micSilent={micSilent}
         startedAt={session.startedAt}
         error={error}
         failureKind={failureKind}
@@ -178,6 +180,7 @@ export function ConversationVoiceBar({
   const failureKind = useLiveVoiceStore.use.failureKind();
   const cards = useLiveVoiceStore.use.cards();
   const pendingApproval = useLiveVoiceStore.use.pendingApproval();
+  const micSilent = useLiveVoiceStore.use.micSilent();
 
   // Display-only here, like the room (actions don't round-trip on the
   // live-voice channel).
@@ -228,6 +231,7 @@ export function ConversationVoiceBar({
         state={state}
         amplitude={inputAmplitude}
         muted={controls?.muted ?? false}
+        micSilent={micSilent}
         startedAt={session.startedAt}
         thingLabel={thingLabelFor(cards, conversationTitle)}
         error={error}

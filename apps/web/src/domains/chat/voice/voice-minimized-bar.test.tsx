@@ -72,6 +72,25 @@ describe("what the bar keeps (v37 W1)", () => {
     expect(view.container.textContent).not.toMatch(/\d+:\d{2}/);
   });
 
+  test("micSilent replaces the state word with the quiet admission", () => {
+    // The mic self-check flagged dead silence (the TCC hole): "Listening"
+    // would be pretend health. The bar keeps everything else — informational,
+    // fail-open.
+    const view = renderBar({ micSilent: true });
+    expect(view.queryByText("can't hear you")).not.toBeNull();
+    expect(view.queryByText("Listening")).toBeNull();
+    // The call itself is untouched: the controls all stay.
+    expect(view.queryByLabelText("Mute microphone")).not.toBeNull();
+    expect(view.queryByLabelText("End call")).not.toBeNull();
+    expect(view.queryByLabelText("Expand the call")).not.toBeNull();
+
+    cleanup();
+    // Muted wins — a muted mic reads 0 legitimately, and "Muted" is true.
+    const muted = renderBar({ micSilent: true, muted: true });
+    expect(muted.queryByText("Muted")).not.toBeNull();
+    expect(muted.queryByText("can't hear you")).toBeNull();
+  });
+
   test("state words follow the call: thinking · speaking · muted", () => {
     expect(
       renderBar({ state: "thinking" }).queryByText("Thinking"),

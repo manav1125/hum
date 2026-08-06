@@ -169,6 +169,14 @@ export interface VoiceFullScreenProps {
    */
   activityTool: string | null;
   muted: boolean;
+  /**
+   * The mic self-check says the input path is delivering DEAD silence (the
+   * macOS TCC hole: `getUserMedia` "succeeds" without OS mic permission and
+   * streams pure zeros — no prompt, no error, a room that looks healthy but
+   * is deaf). Draws a quiet caption under the state word. Informational and
+   * fail-open: the call itself is never ended or altered.
+   */
+  micSilent?: boolean;
   /** Epoch ms the call started. The clock is real or it is absent. */
   startedAt: number | null;
   /** Failure message when `state === "failed"`. */
@@ -218,6 +226,7 @@ export function VoiceFullScreen({
   state,
   activityTool,
   muted,
+  micSilent = false,
   startedAt,
   error,
   failureKind,
@@ -354,6 +363,7 @@ export function VoiceFullScreen({
             call={call}
             connecting={connecting}
             muted={muted}
+            micSilent={micSilent}
             currentUser={currentUser}
             currentAssistant={currentAssistant}
             activityTool={activityTool}
@@ -630,6 +640,7 @@ function LiveWords({
   call,
   connecting,
   muted,
+  micSilent,
   currentUser,
   currentAssistant,
   activityTool,
@@ -637,6 +648,7 @@ function LiveWords({
   call: CallState;
   connecting: boolean;
   muted: boolean;
+  micSilent: boolean;
   currentUser: string;
   currentAssistant: string;
   activityTool: string | null;
@@ -688,6 +700,25 @@ function LiveWords({
         tone={muted ? MUTED : BLUE_INK}
         label={muted ? "Muted — Cue can't hear you" : "Listening"}
       />
+      {/* The mic self-check's quiet caption: the input path is delivering
+          dead silence (the TCC hole), so "Listening" alone would be a lie.
+          Never while muted — a muted mic reads 0 legitimately, and the state
+          word above already says the true thing. Informational only. */}
+      {micSilent && !muted ? (
+        <p
+          role="status"
+          style={{
+            fontSize: 11.5,
+            color: MUTED,
+            textAlign: "center",
+            margin: "10px 0 0",
+            lineHeight: 1.5,
+            maxWidth: 300,
+          }}
+        >
+          {"Cue can't hear anything — check your microphone permissions."}
+        </p>
+      ) : null}
       {currentUser ? (
         <p
           style={{

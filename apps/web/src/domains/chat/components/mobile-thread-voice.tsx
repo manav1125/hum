@@ -189,6 +189,8 @@ export function MobileThreadVoice({
   // demotion here means collapsing back to the strip + bar.
   const roomMinimizeSeq = useLiveVoiceStore.use.roomMinimizeSeq();
   const pendingApproval = useLiveVoiceStore.use.pendingApproval();
+  // The mic dead-silence self-check (TCC hole): the room captions it.
+  const micSilent = useLiveVoiceStore.use.micSilent();
 
   // The call clock. It belongs HERE, not on the full-screen surface, for the
   // same reason the session does: this component stays mounted for the whole
@@ -304,6 +306,7 @@ export function MobileThreadVoice({
         state={state}
         activityTool={activityTool}
         muted={muted}
+        micSilent={micSilent}
         startedAt={callStartedAt}
         error={error}
         failureKind={failureKind}
