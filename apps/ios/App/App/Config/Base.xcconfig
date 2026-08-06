@@ -3,11 +3,25 @@
 // target-specific keys (bundle ID, display name, icon, URL scheme,
 // associated domain).
 
-// MARKETING_VERSION and CURRENT_PROJECT_VERSION are intentionally not set
-// here. Release builds inject them as xcodebuild CLI overrides at archive
-// time (see .github/workflows/release-ios.yaml), so any value committed
-// here would only affect local Xcode builds and quickly go stale after
-// each release.
+// MARKETING_VERSION and CURRENT_PROJECT_VERSION are injected by release
+// builds as xcodebuild CLI overrides at archive time (see
+// .github/workflows/release-ios.yaml). CLI overrides beat xcconfig, so the
+// values below are ONLY ever used by local builds and cannot affect a
+// release — the original concern about a committed value going stale still
+// holds, and is why these are placeholders rather than a real version.
+//
+// They are set at all because leaving them unset made the shipping app
+// impossible to install locally. `CueWidgets/Info.plist` declares
+// `CFBundleShortVersionString = $(MARKETING_VERSION)` and
+// `CFBundleVersion = $(CURRENT_PROJECT_VERSION)`; with nothing to expand,
+// both resolved to empty, Xcode dropped the keys, and the embedded
+// extension shipped with no version at all. `simctl install` rejects that
+// with "Invalid placeholder attributes" — an unresolved placeholder is
+// exactly what it means. The Dev target installed fine throughout because
+// it embeds no PlugIns, which is what made this look like a signing problem
+// rather than a versioning one.
+MARKETING_VERSION = 0.0.1
+CURRENT_PROJECT_VERSION = 1
 
 CODE_SIGN_ENTITLEMENTS = App/App.entitlements
 CODE_SIGN_STYLE = Automatic
