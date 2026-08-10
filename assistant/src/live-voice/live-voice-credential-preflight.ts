@@ -212,12 +212,32 @@ async function resolveTtsGap(): Promise<GapWithClause | null> {
 
 /**
  * A TTS secret resolves when the secure-key store returns a non-empty value
- * for its `credential/<service>/<field>` account. Mirrors how each provider
- * adapter reads its own key at synth time.
+ * for its `credential/<service>/<field>` account, OR the conventional process
+ * env var carries one (`credential/elevenlabs/api_key` → `ELEVENLABS_API_KEY`).
+ * The env leg mirrors each provider adapter's own synth-time fallback — the
+ * preflight must never refuse a session the adapter would have served. (It
+ * did exactly that on containerized self-host, where the credential store is
+ * wiped on restart and only the env key survives: prod voice reported a
+ * missing ElevenLabs key that synth-time resolution had all along.)
  */
 async function ttsSecretResolves(credentialStoreKey: string): Promise<boolean> {
   const value = await getSecureKeyAsync(credentialStoreKey);
-  return typeof value === "string" && value.trim().length > 0;
+  if (typeof value === "string" && value.trim().length > 0) return true;
+  const envValue = process.env[ttsSecretEnvVar(credentialStoreKey)];
+  return typeof envValue === "string" && envValue.trim().length > 0;
+}
+
+/**
+ * Conventional env var for a `credential/<service>/<field>` store key:
+ * service and field, upper-snake-cased and joined —
+ * `credential/elevenlabs/api_key` → `ELEVENLABS_API_KEY`,
+ * `credential/fish-audio/api_key` → `FISH_AUDIO_API_KEY`.
+ */
+function ttsSecretEnvVar(credentialStoreKey: string): string {
+  return credentialStoreKey
+    .replace(/^credential\//, "")
+    .replace(/[/-]/g, "_")
+    .toUpperCase();
 }
 
 /** Fish-audio needs a non-empty `referenceId` in its resolved provider config. */

@@ -18,8 +18,35 @@ export type VoiceEngine = "cascade" | "gemini-live";
 /** localStorage key. Unchanged, so an existing choice survives the move. */
 export const LS_VOICE_ENGINE = "cue.voiceEngine";
 
+/**
+ * One-time migration marker (see {@link migrateLegacyEngineChoice}): before
+ * the voice re-platform, `gemini-live` was the de-facto production engine and
+ * old clients wrote it here as a standing choice. The re-platformed cascade
+ * supersedes it (tools, memory, hands-free turn-taking — gemini-live has
+ * three tools and no web access, which read as "voice can't answer and then
+ * drops"). A stored `gemini-live` WITHOUT this marker is that legacy default,
+ * not a decision, and migrates to cascade once; choosing gemini-live in
+ * Preferences afterwards sets the marker and is respected.
+ */
+const LS_VOICE_ENGINE_MIGRATED = "cue.voiceEngine.postReplatform";
+
 /** The engine used when nothing has been chosen. */
 export const DEFAULT_VOICE_ENGINE: VoiceEngine = "cascade";
+
+function migrateLegacyEngineChoice(stored: string | null): string | null {
+  if (stored !== "gemini-live") return stored;
+  try {
+    if (window.localStorage.getItem(LS_VOICE_ENGINE_MIGRATED) === "1") {
+      return stored;
+    }
+    window.localStorage.setItem(LS_VOICE_ENGINE, DEFAULT_VOICE_ENGINE);
+    window.localStorage.setItem(LS_VOICE_ENGINE_MIGRATED, "1");
+    return DEFAULT_VOICE_ENGINE;
+  } catch {
+    // Locked-down storage: fall through with the stored value untouched.
+    return stored;
+  }
+}
 
 function isVoiceEngine(value: unknown): value is VoiceEngine {
   return value === "cascade" || value === "gemini-live";
@@ -39,7 +66,9 @@ export function resolveVoiceEngine(explicit?: VoiceEngine): VoiceEngine {
       "voiceEngine",
     );
     if (isVoiceEngine(param)) return param;
-    const stored = window.localStorage.getItem(LS_VOICE_ENGINE);
+    const stored = migrateLegacyEngineChoice(
+      window.localStorage.getItem(LS_VOICE_ENGINE),
+    );
     if (isVoiceEngine(stored)) return stored;
   } catch {
     // Access to location/localStorage can throw in locked-down contexts.
@@ -51,7 +80,9 @@ export function resolveVoiceEngine(explicit?: VoiceEngine): VoiceEngine {
 export function readVoiceEngine(): VoiceEngine {
   if (typeof window === "undefined") return DEFAULT_VOICE_ENGINE;
   try {
-    const stored = window.localStorage.getItem(LS_VOICE_ENGINE);
+    const stored = migrateLegacyEngineChoice(
+      window.localStorage.getItem(LS_VOICE_ENGINE),
+    );
     return isVoiceEngine(stored) ? stored : DEFAULT_VOICE_ENGINE;
   } catch {
     return DEFAULT_VOICE_ENGINE;
@@ -63,6 +94,9 @@ export function writeVoiceEngine(engine: VoiceEngine): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(LS_VOICE_ENGINE, engine);
+    // A write is a deliberate choice: mark it so the legacy migration never
+    // second-guesses a post-re-platform gemini-live selection.
+    window.localStorage.setItem(LS_VOICE_ENGINE_MIGRATED, "1");
   } catch {
     // Locked-down storage: the choice simply does not persist.
   }

@@ -343,4 +343,28 @@ describe("resolveLiveVoiceCredentialReadiness", () => {
     expect(readiness.userMessage).not.toContain("\n");
     expect(readiness.userMessage.endsWith(".")).toBe(true);
   });
+
+  test("a TTS key absent from the vault but present in env → ready (the adapter's own fallback)", async () => {
+    // Containerized self-host wipes the credential store on restart; the
+    // provider adapters fall back to env at synth time. The preflight must
+    // not refuse a session the adapter would serve.
+    ttsKeys = {};
+    process.env.FISH_AUDIO_API_KEY = "env-key";
+    try {
+      expect(await resolveLiveVoiceCredentialReadiness()).toEqual({
+        status: "ready",
+      });
+    } finally {
+      delete process.env.FISH_AUDIO_API_KEY;
+    }
+  });
+
+  test("a TTS key absent from vault AND env → not-ready", async () => {
+    ttsKeys = {};
+    delete process.env.FISH_AUDIO_API_KEY;
+    const readiness = expectNotReady(
+      await resolveLiveVoiceCredentialReadiness(),
+    );
+    expect(readiness.missing.map((gap) => gap.kind)).toEqual(["tts"]);
+  });
 });
