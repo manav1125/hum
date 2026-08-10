@@ -20,6 +20,7 @@ import {
   searchContacts,
   updateChannelStatus,
 } from "../../contacts/contact-store.js";
+import { getQuietLately } from "../../contacts/quiet-lately-store.js";
 import type {
   ChannelPolicy,
   ChannelStatus,
@@ -283,6 +284,63 @@ export async function handleTriggerInviteCall({
 // ---------------------------------------------------------------------------
 
 export const ROUTES: RouteDefinition[] = [
+  // ── quiet lately (exact — must precede contacts/:id) ────────────────
+  {
+    operationId: "contactsQuietLately",
+    endpoint: "contacts/quiet-lately",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "People who have gone quiet relative to their own rhythm",
+    description:
+      "Design v38 §2. Quiet means silence greater than 3x this person's own " +
+      "median inbound gap AND greater than 14 days — both, so a daily " +
+      "correspondent silent for four days is not flagged and a monthly one " +
+      "is not flagged for being monthly. Ranked by how far past their OWN " +
+      "normal, never by raw silence.\n\n" +
+      "`eligible` is what separates the two empty states, which are " +
+      "different facts and must never share a sentence: rows empty with " +
+      "eligible > 0 means everyone is talking at their usual pace; eligible " +
+      "= 0 means Cue has no rhythm yet and should say so. This endpoint " +
+      "THROWS on a read failure rather than returning an empty list — an " +
+      "empty list is a claim about the owner's relationships and must not be " +
+      "producible by a database error.",
+    tags: ["contacts"],
+    responseBody: z.object({
+      rows: z.array(
+        z.object({
+          contactId: z.string(),
+          name: z.string().nullable(),
+          address: z.string(),
+          medianGapDays: z
+            .number()
+            .int()
+            .describe(
+              "Their normal, in whole days — the 'usually every 3 days' number.",
+            ),
+          silentDays: z
+            .number()
+            .int()
+            .describe("Days since they last wrote — the 'silent 19' number."),
+          ratio: z
+            .number()
+            .describe("silentDays / medianGapDays. The sort key."),
+        }),
+      ),
+      eligible: z
+        .number()
+        .int()
+        .describe("Contacts with enough history to be judged at all."),
+      considered: z
+        .number()
+        .int()
+        .describe("Contacts looked at, whether or not they had a baseline."),
+    }),
+    handler: () => getQuietLately(),
+  },
+
   // ── contacts (exact) ────────────────────────────────────────────────
   {
     operationId: "listContacts",
