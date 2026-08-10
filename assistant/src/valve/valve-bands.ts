@@ -295,7 +295,18 @@ function awaitsTheOwner(item: WorkItem): boolean {
 function cueIsHolding(item: WorkItem): boolean {
   if (awaitsTheOwner(item)) return false;
   if (item.status === "running") return true;
-  return item.status === "queued" && item.autoRunEligibility === "eligible";
+  // `"eligible"` is not a value this column ever holds. Migration 305 defines
+  // the sentinel the other way round: NULL means eligible for the policy-gated
+  // auto-run path, and `"parked"` is the durable "the user parked this" marker.
+  // Nothing in the daemon writes the string `"eligible"` — so this rule could
+  // never fire, and prod confirms it: `cue_is_holding` has 0 firings across the
+  // whole banding table while every other rule has hundreds.
+  //
+  // The cost of that was quiet and in the wrong direction: work Cue is actually
+  // holding never got the "nothing needed from you" band, so it kept presenting
+  // as the owner's problem. A dead rule in the valve does not fail loudly, it
+  // just silently declines to quieten anything.
+  return item.status === "queued" && item.autoRunEligibility !== "parked";
 }
 
 /**

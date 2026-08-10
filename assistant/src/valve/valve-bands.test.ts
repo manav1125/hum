@@ -331,8 +331,14 @@ describe("demotion requires positive evidence", () => {
   });
 
   test("Cue's own queue is held, but a parked item never is", () => {
+    // NULL is the eligible sentinel — migration 305 defines the column as
+    // "NULL = eligible for the policy-gated auto-run path, 'parked' = the user
+    // parked this". Nothing writes the string "eligible", so a test that used
+    // it proved this rule reachable with an input production never produces.
+    // It did, and `cue_is_holding` had 0 firings in prod while this suite was
+    // green.
     const holding = bandItem(
-      item({ status: "queued", autoRunEligibility: "eligible" }),
+      item({ status: "queued", autoRunEligibility: null }),
       arrival({ ruleId: "other", decidedBy: "rule" }),
       ctx(),
     );
@@ -547,8 +553,10 @@ describe("rule bookkeeping", () => {
       [
         "cue_is_holding",
         () =>
+          // Must use the REAL sentinel. Reachability proved with a value the
+          // daemon never writes is not reachability.
           bandItem(
-            item({ autoRunEligibility: "eligible" }),
+            item({ status: "queued", autoRunEligibility: null }),
             arrival({ ruleId: "other" }),
             ctx(),
           ).ruleId,
