@@ -1,1 +1,0 @@
-import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{jt as t}from"./design-library-CRpa8G9v.js";import{f as n}from"./react-vendor-BDCQYcwm.js";import{i as r}from"./routes-Ddyk86y7.js";var i=e(t(),1);function a(){let e=n();return(0,i.useEffect)(()=>{e(r.settings.general,{replace:!0})},[e]),null}export{a as DangerZoneRedirectPage};

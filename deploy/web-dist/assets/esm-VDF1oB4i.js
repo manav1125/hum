@@ -1,2 +1,0 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-C7152Jgl.js","assets/dist-DwnLNmws.js"])))=>i.map(i=>d[i]);
-import{_ as e}from"./react-vendor-BDCQYcwm.js";import{i as t}from"./dist-DwnLNmws.js";var n=t(`Browser`,{web:()=>e(()=>import(`./web-C7152Jgl.js`).then(e=>new e.BrowserWeb),__vite__mapDeps([0,1]))});export{n as Browser};
