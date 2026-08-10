@@ -151,6 +151,15 @@ type SubscriberInput = DistributiveOmit<
 export class AssistantEventHub {
   private readonly subscribers = new Set<SubscriberEntry>();
   private readonly maxSubscribers: number;
+
+  /**
+   * Ceiling on concurrent subscribers sharing one clientId (a per-install
+   * id, so all windows of the desktop app and all tabs of a browser profile
+   * share it). Healthy multi-window use sits at 2-3; a reconnect burst that
+   * outruns the old connections' aborts briefly stacks a few more and the
+   * oldest are drained here. See the eviction comment in {@link subscribe}.
+   */
+  private static readonly MAX_SUBSCRIBERS_PER_CLIENT = 6;
   /** Monotonic source for per-connection ids, scoped to this hub. */
   private connectionCounter = 0;
 
@@ -161,45 +170,60 @@ export class AssistantEventHub {
   /**
    * Register a subscriber that will be called for each matching event.
    *
-   * **Client deduplication:** When a client subscriber is registered with a
-   * `clientId` that already exists, all stale entries for that clientId are
-   * disposed first. This prevents subscriber stacking when clients reconnect
-   * (e.g. Chrome extension reload, SSE token refresh) before the old
-   * connection's abort signal fires.
+   * **Per-client bounding:** subscribers sharing a `clientId` are capped at
+   * {@link MAX_SUBSCRIBERS_PER_CLIENT}; registration beyond the cap evicts
+   * that client's OLDEST connections (their `onEvict` closes the SSE). Live
+   * siblings under the cap are never touched — a clientId is per-install and
+   * legitimately shared by several windows/tabs at once.
    *
    * When the subscriber cap (`maxSubscribers`) has been reached, the **oldest**
    * subscriber is evicted to make room: its `onEvict` callback is invoked (so
    * it can close its SSE stream) and its entry is removed from the hub.
    */
   subscribe(subscriber: SubscriberInput): AssistantEventSubscription {
-    // Deduplicate: dispose stale subscribers for the same clientId.
+    // Bound same-client subscribers WITHOUT killing live siblings. A clientId
+    // is per-install, so every window of the desktop app (main + command
+    // palette) and every tab of one browser profile SHARE it — the old
+    // dispose-all-on-reconnect dedup made those connections evict each other
+    // in an endless ping-pong (observed in prod: 44k evictions/day at ~1/s,
+    // starving the SSE stream that carries streamed replies and UI events —
+    // the whole app read as stuck). Reconnect stacking (the problem dedup
+    // existed for: extension reloads, token refreshes racing the old
+    // connection's abort) is instead bounded by a per-client cap that evicts
+    // only the OLDEST connections beyond it — a burst of dead reconnects
+    // still drains, and a healthy multi-window client sits far under the cap.
     if (subscriber.type === "client") {
-      const stale: SubscriberEntry[] = [];
+      const sameClient: SubscriberEntry[] = [];
       for (const existing of this.subscribers) {
         if (
           existing.type === "client" &&
           existing.clientId === subscriber.clientId
         ) {
-          stale.push(existing);
+          sameClient.push(existing);
         }
       }
-      for (const entry of stale) {
-        entry.active = false;
-        this.subscribers.delete(entry);
-        try {
-          entry.onEvict();
-        } catch {
-          /* ignore eviction callback errors */
+      const excess =
+        sameClient.length + 1 - AssistantEventHub.MAX_SUBSCRIBERS_PER_CLIENT;
+      if (excess > 0) {
+        // Set iteration is insertion-ordered: sameClient is oldest-first.
+        const evicted = sameClient.slice(0, excess);
+        for (const entry of evicted) {
+          entry.active = false;
+          this.subscribers.delete(entry);
+          try {
+            entry.onEvict();
+          } catch {
+            /* ignore eviction callback errors */
+          }
         }
-      }
-      if (stale.length > 0) {
         log.info(
           {
             clientId: subscriber.clientId,
-            count: stale.length,
-            disposedConnectionIds: stale.map((entry) => entry.connectionId),
+            count: evicted.length,
+            kept: sameClient.length - evicted.length + 1,
+            disposedConnectionIds: evicted.map((entry) => entry.connectionId),
           },
-          "disposed stale subscribers for reconnecting client",
+          "evicted oldest subscribers over the per-client cap",
         );
       }
     }
