@@ -17,6 +17,10 @@
  * the day's cards in place instead of duplicating them.
  */
 
+import {
+  type EventSummary,
+  fetchTodaysEvents,
+} from "../calendar/todays-events.js";
 import type { MessagingProvider } from "../messaging/provider.js";
 import { getConnectedProviders } from "../messaging/registry.js";
 import { emitNotificationSignal } from "../notifications/emit-signal.js";
@@ -41,11 +45,9 @@ import { recordImpact, TIME_SAVED_MINUTES } from "./impact-store.js";
 const log = getLogger("action-board");
 
 const GMAIL_BASE = "https://gmail.googleapis.com";
-const CALENDAR_BASE = "https://www.googleapis.com";
 
 /** How many unread emails / events to feed the synthesis model. */
 const MAX_EMAILS = 15;
-const MAX_EVENTS = 12;
 /** Hard cap on cards written, regardless of what the model returns. */
 const MAX_ITEMS = 8;
 
@@ -80,14 +82,6 @@ interface EmailSummary {
   subject: string;
   snippet: string;
   date: string;
-}
-
-export interface EventSummary {
-  summary: string;
-  start: string;
-  end: string;
-  attendees: number;
-  location: string;
 }
 
 /** A bounded slice of one messaging conversation, tagged with its channel. */
@@ -205,54 +199,6 @@ async function fetchUnreadEmails(
     });
   }
   return out;
-}
-
-export async function fetchTodaysEvents(
-  conn: OAuthConnection,
-  now: Date,
-  signal?: AbortSignal,
-): Promise<EventSummary[]> {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
-
-  const res = await conn.request({
-    method: "GET",
-    baseUrl: CALENDAR_BASE,
-    path: "/calendar/v3/calendars/primary/events",
-    query: {
-      timeMin: start.toISOString(),
-      timeMax: end.toISOString(),
-      singleEvents: "true",
-      orderBy: "startTime",
-      maxResults: String(MAX_EVENTS),
-    },
-    signal,
-  });
-  if (res.status >= 400) {
-    log.warn({ status: res.status }, "Calendar list failed");
-    return [];
-  }
-  const items =
-    (
-      res.body as {
-        items?: Array<{
-          summary?: string;
-          location?: string;
-          start?: { dateTime?: string; date?: string };
-          end?: { dateTime?: string; date?: string };
-          attendees?: unknown[];
-        }>;
-      }
-    ).items ?? [];
-  return items.map((e) => ({
-    summary: e.summary ?? "(no title)",
-    start: e.start?.dateTime ?? e.start?.date ?? "",
-    end: e.end?.dateTime ?? e.end?.date ?? "",
-    attendees: Array.isArray(e.attendees) ? e.attendees.length : 0,
-    location: e.location ?? "",
-  }));
 }
 
 // ---------------------------------------------------------------------------
