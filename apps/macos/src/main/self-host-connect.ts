@@ -16,6 +16,26 @@ import { current as currentMainWindow } from "./main-window";
 import { readSetting, writeSetting } from "./settings";
 
 /**
+ * The instance URL currently being loaded, or null.
+ *
+ * Guards {@link connectToInstance} against re-entry — see the comment at the
+ * loadURL call for what happened without it.
+ */
+let loadInFlight: string | null = null;
+
+/**
+ * Strip query strings out of any URL in a log-bound string.
+ *
+ * The instance link carries `?cueToken=<jwt>`, so anything that interpolates it
+ * into a message is writing a live credential to disk. Exported for its own
+ * test — this is a rule about what leaves the process, and it should fail
+ * loudly rather than silently stop working.
+ */
+export function redactUrls(text: string): string {
+  return text.replace(/(https?:\/\/[^\s'"]*?)\?[^\s'"]*/g, "$1?<redacted>");
+}
+
+/**
  * Normalize a connect link into the SPA-root URL to load.
  *
  * Accepts what HQ actually emails — `https://<instance>/assistant/?cueToken=…`
@@ -71,9 +91,34 @@ export function connectToInstance(input: string): string | null {
   // up the new instance on this load — no relaunch.
   const win = currentMainWindow();
   if (win && !win.webContents.isDestroyed()) {
-    void win.loadURL(resolved).catch((err: unknown) => {
-      log.warn(`[self-host-connect] load failed: ${String(err)}`);
-    });
+    // Idempotent by target URL. This used to call loadURL unconditionally, and
+    // the sign-in handoff arrives more than once — macOS can deliver `open-url`
+    // repeatedly, and the web page re-opens the link while it waits. Each call
+    // started a fresh navigation that CANCELLED the one before it, so every
+    // load died with ERR_ABORTED (-3) and the window sat white forever, never
+    // signing in. Connecting to the instance you are already loading is a
+    // no-op, not a competing navigation.
+    if (loadInFlight === resolved) {
+      log.info("[self-host-connect] already loading this instance — ignoring");
+      return resolved;
+    }
+    loadInFlight = resolved;
+    void win
+      .loadURL(resolved)
+      .catch((err: unknown) => {
+        // Electron's load errors embed the URL they were loading, and this URL
+        // carries `?cueToken=` — a live bearer token for the instance. Logging
+        // the raw error wrote a months-valid actor JWT into a plaintext file
+        // that anything on the machine can read. The failure code is the whole
+        // diagnostic value; the credential is not.
+        log.warn(`[self-host-connect] load failed: ${redactUrls(String(err))}`);
+      })
+      .finally(() => {
+        // Cleared whether it succeeded or failed: a failed load must not latch
+        // the guard shut and make every later attempt a silent no-op, which
+        // would turn one transient error into a permanently unusable app.
+        if (loadInFlight === resolved) loadInFlight = null;
+      });
   }
   return resolved;
 }
