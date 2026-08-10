@@ -157,17 +157,32 @@ async function resolveTtsGap(): Promise<GapWithClause | null> {
   }
 
   // The adapter registry is populated at daemon boot (`registerBuiltinTtsProviders`).
-  // A missing registration is a boot-order fault, not a credential gap — treat
-  // it as a non-streaming gap so the session fails cleanly rather than throwing.
-  let supportsStreaming = false;
+  // A missing registration is a boot-order fault, not a credential gap — but it
+  // must still fail the preflight with its own clear message: without this the
+  // session would start and then fall silent when synthesis looks the adapter
+  // up ("Live voice TTS provider ... is missing"), which is exactly the mute
+  // failure class this preflight exists to kill.
+  let adapter: ReturnType<typeof getTtsProvider> | null = null;
   try {
-    const adapter = getTtsProvider(entry.id);
-    supportsStreaming =
-      adapter.capabilities.supportsStreaming &&
-      typeof adapter.synthesizeStream === "function";
+    adapter = getTtsProvider(entry.id);
   } catch {
-    supportsStreaming = false;
+    adapter = null;
   }
+
+  if (!adapter) {
+    return {
+      gap: {
+        kind: "tts",
+        providerId: entry.id,
+        reason: `TTS provider "${entry.id}" has no registered live-voice synthesis adapter (daemon registration fault)`,
+      },
+      clause: `a registered text-to-speech adapter for the configured provider "${entry.id}" (the daemon did not register one at startup — this is a bug, not a credential problem)`,
+    };
+  }
+
+  const supportsStreaming =
+    adapter.capabilities.supportsStreaming &&
+    typeof adapter.synthesizeStream === "function";
 
   if (!supportsStreaming) {
     return {

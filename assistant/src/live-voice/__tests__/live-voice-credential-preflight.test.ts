@@ -55,6 +55,8 @@ let sttConfiguredProvider: string;
 let ttsProviderId: string;
 let ttsProviderConfig: Record<string, unknown>;
 let ttsSupportsStreaming: boolean;
+// When true, getTtsProvider throws (adapter never registered at daemon boot).
+let ttsRegistryMissing: boolean;
 let ttsKeys: Record<string, string>;
 // Catalog entries by id; a missing id makes getCatalogProvider "throw"
 // (unknown provider) exactly as the real catalog does.
@@ -104,6 +106,9 @@ mock.module("../../tts/provider-registry.js", () => ({
   ...realRegistryModule,
   getTtsProvider: (id: string) => {
     if (!preflightMocksActive) return realRegistryModule.getTtsProvider(id);
+    if (ttsRegistryMissing) {
+      throw new Error(`Unknown TTS provider "${id}".`);
+    }
     return {
       capabilities: { supportsStreaming: ttsSupportsStreaming },
       synthesizeStream: ttsSupportsStreaming ? () => {} : undefined,
@@ -143,6 +148,7 @@ beforeEach(() => {
   ttsProviderId = "fish-audio";
   ttsProviderConfig = { referenceId: "ref-123" };
   ttsSupportsStreaming = true;
+  ttsRegistryMissing = false;
   ttsKeys = { "credential/fish-audio/api_key": "test-key" };
   ttsCatalog = {
     "fish-audio": {
@@ -266,6 +272,28 @@ describe("resolveLiveVoiceCredentialReadiness", () => {
     ]);
     expect(readiness.userMessage).toContain('"xai"');
     expect(readiness.userMessage).toContain("streaming synthesis");
+  });
+
+  test("catalog provider with no registered adapter → not-ready with a registration-fault message", async () => {
+    // A provider present in the catalog (config validates, credentials
+    // resolve) whose live-voice adapter was never registered at daemon boot.
+    // Without this gap the session would start and fall silent when synthesis
+    // looks the adapter up mid-turn.
+    ttsRegistryMissing = true;
+
+    const readiness = expectNotReady(
+      await resolveLiveVoiceCredentialReadiness(),
+    );
+    expect(readiness.missing).toEqual([
+      {
+        kind: "tts",
+        providerId: "fish-audio",
+        reason:
+          'TTS provider "fish-audio" has no registered live-voice synthesis adapter (daemon registration fault)',
+      },
+    ]);
+    expect(readiness.userMessage).toContain('"fish-audio"');
+    expect(readiness.userMessage).toContain("did not register");
   });
 
   test("streaming TTS provider missing credentials → not-ready naming the missing key", async () => {

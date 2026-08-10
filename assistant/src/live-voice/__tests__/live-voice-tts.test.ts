@@ -193,6 +193,89 @@ describe("streamLiveVoiceTtsAudio", () => {
     });
   });
 
+  test("labels raw PCM frames with the provider's fixed sample rate, not the requested one", async () => {
+    // Fish Audio raw PCM is fixed at 44.1 kHz — the client plays exactly
+    // what each frame's label says, so a 24 kHz request must not mislabel
+    // 44.1 kHz audio (it would play at ~half speed).
+    registerTtsProvider({
+      id: "fish-audio",
+      capabilities: {
+        supportsStreaming: true,
+        supportedFormats: ["mp3", "wav", "opus", "pcm"],
+        pcmSampleRateHz: 44_100,
+      },
+      async synthesize(): Promise<TtsSynthesisResult> {
+        throw new Error("buffered synthesis should not be used");
+      },
+      async synthesizeStream(
+        request: TtsSynthesisRequest,
+        onChunk: (chunk: Uint8Array) => void,
+      ): Promise<TtsSynthesisResult> {
+        expect(request.outputFormat).toBe("pcm");
+        onChunk(Buffer.from([1, 2]));
+        onChunk(Buffer.from([3, 4]));
+        return {
+          audio: Buffer.from([1, 2, 3, 4]),
+          contentType: "audio/pcm",
+        };
+      },
+    });
+
+    const frames: LiveVoiceTtsAudioChunk[] = [];
+    const result = await streamLiveVoiceTtsAudio({
+      config,
+      text: "hello from live voice",
+      outputFormat: "pcm",
+      sampleRate: 24_000,
+      onAudioChunk: (chunk) => frames.push(chunk),
+    });
+
+    expect(frames.map((frame) => frame.sampleRate)).toEqual([44_100, 44_100]);
+    expect(frames.map((frame) => frame.contentType)).toEqual([
+      "audio/pcm",
+      "audio/pcm",
+    ]);
+    // Chunks streamed incrementally — not buffered into one frame.
+    expect(result).toMatchObject({
+      provider: "fish-audio",
+      contentType: "audio/pcm",
+      sampleRate: 44_100,
+      chunks: 2,
+      bytes: 4,
+    });
+  });
+
+  test("keeps the requested sample rate when the provider declares no fixed PCM rate", async () => {
+    registerTtsProvider({
+      id: "fish-audio",
+      capabilities: {
+        supportsStreaming: true,
+        supportedFormats: ["mp3", "wav", "opus", "pcm"],
+      },
+      async synthesize(): Promise<TtsSynthesisResult> {
+        throw new Error("buffered synthesis should not be used");
+      },
+      async synthesizeStream(
+        _request: TtsSynthesisRequest,
+        onChunk: (chunk: Uint8Array) => void,
+      ): Promise<TtsSynthesisResult> {
+        onChunk(Buffer.from([1, 2]));
+        return { audio: Buffer.from([1, 2]), contentType: "audio/pcm" };
+      },
+    });
+
+    const frames: LiveVoiceTtsAudioChunk[] = [];
+    await streamLiveVoiceTtsAudio({
+      config,
+      text: "hello",
+      outputFormat: "pcm",
+      sampleRate: 24_000,
+      onAudioChunk: (chunk) => frames.push(chunk),
+    });
+
+    expect(frames.map((frame) => frame.sampleRate)).toEqual([24_000]);
+  });
+
   test("returns a typed configuration error for a non-streaming provider", async () => {
     config = makeConfig({ provider: "elevenlabs" });
     registerTtsProvider({

@@ -142,6 +142,19 @@ export interface TtsProviderCapabilities {
   supportedFormats: string[];
 
   /**
+   * Fixed sample rate (Hz) of the raw PCM this provider emits when it
+   * honours `outputFormat: "pcm"` (e.g. 44100 for Fish Audio, 16000 for
+   * ElevenLabs `pcm_16000`).
+   *
+   * Providers cannot resample, so consumers that label raw-PCM frames with
+   * a sample rate (e.g. the live-voice transport) MUST prefer this value
+   * over any caller-requested rate — a mislabeled rate makes the client
+   * play the audio at the wrong speed/pitch. Omit when the provider does
+   * not produce raw PCM.
+   */
+  pcmSampleRateHz?: number;
+
+  /**
    * Whether the provider can emit {@link TtsAlignmentEvent}s via the optional
    * `onAlignment` callback of `synthesizeStream`. Consumers use this to pick
    * between a viseme-driven lip-sync path and an RMS-amplitude fallback.

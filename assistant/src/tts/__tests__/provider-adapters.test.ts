@@ -4,7 +4,25 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 // Module mocks — must appear before any imports of the modules under test
 // ---------------------------------------------------------------------------
 
+// Every factory spreads the real module and overrides only the seams under
+// test — mock.module is process-global in Bun, and an exhaustive factory
+// silently deletes the exports it does not name for every file that runs
+// after this one (see assistant/CLAUDE.md).
+
+const realLoggerModule = { ...(await import("../../util/logger.js")) };
+const realSecureKeysModule = {
+  ...(await import("../../security/secure-keys.js")),
+};
+const realCredentialKeyModule = {
+  ...(await import("../../security/credential-key.js")),
+};
+const realConfigLoaderModule = { ...(await import("../../config/loader.js")) };
+const realFishAudioClientModule = {
+  ...(await import("../../calls/fish-audio-client.js")),
+};
+
 mock.module("../../util/logger.js", () => ({
+  ...realLoggerModule,
   getLogger: () =>
     new Proxy({} as Record<string, unknown>, {
       get: () => () => {},
@@ -24,6 +42,7 @@ let mockElevenLabsConfig = {
 
 let mockFishAudioConfig = {
   referenceId: "test-reference-id",
+  model: "s2-pro",
   chunkLength: 200,
   format: "mp3" as "mp3" | "wav" | "opus",
   latency: "normal" as "normal" | "balanced",
@@ -44,6 +63,7 @@ let mockXaiConfig = {
 };
 
 mock.module("../../config/loader.js", () => ({
+  ...realConfigLoaderModule,
   getConfig: () => ({
     services: {
       tts: {
@@ -65,6 +85,7 @@ let mockDeepgramApiKey: string | null = "test-deepgram-api-key";
 let mockXaiApiKey: string | null = "test-xai-api-key";
 
 mock.module("../../security/secure-keys.js", () => ({
+  ...realSecureKeysModule,
   getSecureKeyAsync: async (key?: string) => {
     if (key === "credential/xai/api_key") return mockXaiApiKey;
     return mockApiKey;
@@ -76,17 +97,24 @@ mock.module("../../security/secure-keys.js", () => ({
 }));
 
 mock.module("../../security/credential-key.js", () => ({
+  ...realCredentialKeyModule,
   credentialKey: (service: string, field: string) =>
     `credential/${service}/${field}`,
 }));
 
 // -- Fish Audio client mock ------------------------------------------------
 
+let mockFishApiKey: string | null = "test-fish-api-key";
+
 const mockSynthesizeWithFishAudio = mock(
   async (
     _text: string,
     _config: unknown,
-    options?: { onChunk?: (chunk: Uint8Array) => void; signal?: AbortSignal },
+    options?: {
+      onChunk?: (chunk: Uint8Array) => void;
+      signal?: AbortSignal;
+      apiKey?: string;
+    },
   ) => {
     const audioData = Buffer.from("fake-fish-audio-data");
     if (options?.onChunk) {
@@ -97,7 +125,16 @@ const mockSynthesizeWithFishAudio = mock(
 );
 
 mock.module("../../calls/fish-audio-client.js", () => ({
+  ...realFishAudioClientModule,
   synthesizeWithFishAudio: mockSynthesizeWithFishAudio,
+  resolveFishAudioApiKey: async () => {
+    if (!mockFishApiKey) {
+      throw new Error(
+        "Fish Audio API key not configured. Store it via: assistant credentials set --service fish-audio --field api_key <key>",
+      );
+    }
+    return mockFishApiKey;
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -147,8 +184,10 @@ beforeEach(() => {
     similarityBoost: 0.75,
     conversationTimeoutSeconds: 30,
   };
+  mockFishApiKey = "test-fish-api-key";
   mockFishAudioConfig = {
     referenceId: "test-reference-id",
+    model: "s2-pro",
     chunkLength: 200,
     format: "mp3",
     latency: "normal",
@@ -217,10 +256,12 @@ describe("ElevenLabs TTS provider adapter", () => {
     expect(provider.id).toBe("elevenlabs");
   });
 
-  test("advertises mp3 and pcm format support without streaming", () => {
+  test("advertises mp3 and pcm format support with streaming at a fixed 16 kHz PCM rate", () => {
     const provider = createElevenLabsProvider();
-    expect(provider.capabilities.supportsStreaming).toBe(false);
+    expect(provider.capabilities.supportsStreaming).toBe(true);
     expect(provider.capabilities.supportedFormats).toEqual(["mp3", "pcm"]);
+    // resolveOutputFormat maps outputFormat "pcm" to pcm_16000.
+    expect(provider.capabilities.pcmSampleRateHz).toBe(16_000);
   });
 
   // -- Request mapping -----------------------------------------------------
@@ -484,14 +525,17 @@ describe("Fish Audio TTS provider adapter", () => {
     expect(provider.id).toBe("fish-audio");
   });
 
-  test("advertises streaming support with multiple formats", () => {
+  test("advertises streaming support with multiple formats including raw PCM", () => {
     const provider = createFishAudioProvider();
     expect(provider.capabilities.supportsStreaming).toBe(true);
     expect(provider.capabilities.supportedFormats).toEqual([
       "mp3",
       "wav",
       "opus",
+      "pcm",
     ]);
+    // Fish Audio raw PCM is fixed at 44.1 kHz mono s16le.
+    expect(provider.capabilities.pcmSampleRateHz).toBe(44_100);
   });
 
   test("implements synthesizeStream", () => {
@@ -553,6 +597,97 @@ describe("Fish Audio TTS provider adapter", () => {
     );
     // The mock calls onChunk once; verify it was received
     expect(chunks.length).toBeGreaterThan(0);
+  });
+
+  test("synthesizeStream with outputFormat pcm requests raw PCM and labels audio/pcm", async () => {
+    const provider = createFishAudioProvider();
+    const result = await provider.synthesizeStream!(
+      makeRequest({ outputFormat: "pcm" }),
+      () => {},
+    );
+
+    const [, config, options] = mockSynthesizeWithFishAudio.mock.calls[0]!;
+    expect((config as { format: string }).format).toBe("pcm");
+    expect((options as { apiKey?: string } | undefined)?.apiKey).toBe(
+      "test-fish-api-key",
+    );
+    expect(result.contentType).toBe("audio/pcm");
+  });
+
+  test("synthesizeStream keeps the configured format when no pcm hint is given", async () => {
+    mockFishAudioConfig.format = "opus";
+    const provider = createFishAudioProvider();
+    const result = await provider.synthesizeStream!(makeRequest(), () => {});
+
+    const [, config] = mockSynthesizeWithFishAudio.mock.calls[0]!;
+    expect((config as { format: string }).format).toBe("opus");
+    expect(result.contentType).toBe("audio/opus");
+  });
+
+  test("buffer synthesize with outputFormat pcm keeps the WAV-container override for the phone path", async () => {
+    const provider = createFishAudioProvider();
+    const result = await provider.synthesize(
+      makeRequest({ outputFormat: "pcm" }),
+    );
+
+    const [, config] = mockSynthesizeWithFishAudio.mock.calls[0]!;
+    expect((config as { format: string }).format).toBe("wav");
+    expect(result.contentType).toBe("audio/wav");
+  });
+
+  test("passes the configured model through to the client", async () => {
+    mockFishAudioConfig.model = "s1";
+    const provider = createFishAudioProvider();
+    await provider.synthesize(makeRequest());
+
+    const [, config] = mockSynthesizeWithFishAudio.mock.calls[0]!;
+    expect((config as { model?: string }).model).toBe("s1");
+  });
+
+  test("emits only 2-byte-aligned chunks when streaming raw PCM", async () => {
+    // The upstream network stream splits a 16-bit sample across chunk
+    // boundaries: 3 bytes then 5 bytes. The adapter must re-align so no
+    // emitted chunk has odd length (which would shift every later sample).
+    mockSynthesizeWithFishAudio.mockImplementationOnce(
+      async (
+        _text: string,
+        _config: unknown,
+        options?: { onChunk?: (chunk: Uint8Array) => void },
+      ) => {
+        options?.onChunk?.(Uint8Array.from([1, 2, 3]));
+        options?.onChunk?.(Uint8Array.from([4, 5, 6, 7, 8]));
+        return Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]);
+      },
+    );
+
+    const chunks: Uint8Array[] = [];
+    const provider = createFishAudioProvider();
+    await provider.synthesizeStream!(
+      makeRequest({ outputFormat: "pcm" }),
+      (chunk) => chunks.push(Uint8Array.from(chunk)),
+    );
+
+    expect(chunks.map((c) => [...c])).toEqual([
+      [1, 2],
+      [3, 4, 5, 6, 7, 8],
+    ]);
+  });
+
+  test("throws FISH_AUDIO_TTS_NO_API_KEY when the key resolves from neither vault nor env", async () => {
+    mockFishApiKey = null;
+
+    const provider = createFishAudioProvider();
+
+    try {
+      await provider.synthesizeStream!(makeRequest(), () => {});
+      throw new Error("Expected synthesizeStream to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FishAudioTtsError);
+      expect((err as FishAudioTtsError).code).toBe("FISH_AUDIO_TTS_NO_API_KEY");
+      expect((err as FishAudioTtsError).message).toContain(
+        "API key not configured",
+      );
+    }
   });
 
   // -- Content type / format -----------------------------------------------

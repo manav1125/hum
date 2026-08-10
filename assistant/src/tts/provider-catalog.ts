@@ -169,7 +169,7 @@ const CATALOG: readonly TtsProviderCatalogEntry[] = [
     allowNativeFallback: true,
     capabilities: {
       supportsStreaming: true,
-      supportedFormats: ["mp3", "wav", "opus"],
+      supportedFormats: ["mp3", "wav", "opus", "pcm"],
     },
     secretRequirements: [
       {

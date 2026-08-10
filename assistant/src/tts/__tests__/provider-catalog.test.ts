@@ -112,8 +112,8 @@ describe("ElevenLabs catalog entry", () => {
     expect(entry.callMode).toBe("native-twilio");
   });
 
-  test("does not support streaming", () => {
-    expect(entry.capabilities.supportsStreaming).toBe(false);
+  test("supports streaming (live voice requires it)", () => {
+    expect(entry.capabilities.supportsStreaming).toBe(true);
   });
 
   test("supports mp3 format", () => {

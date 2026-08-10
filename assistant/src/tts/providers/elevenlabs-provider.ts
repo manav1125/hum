@@ -204,6 +204,10 @@ export function createElevenLabsProvider(): TtsProvider {
     // which live voice requires (it plays TTS as chunks arrive).
     supportsStreaming: true,
     supportedFormats: ["mp3", "pcm"],
+    // resolveOutputFormat maps outputFormat "pcm" to `pcm_16000` — 16-bit
+    // signed little-endian at 16 kHz. Consumers labeling raw-PCM frames
+    // (live voice) must use this rate rather than a requested one.
+    pcmSampleRateHz: 16_000,
   };
 
   return {
@@ -383,9 +387,7 @@ export function createElevenLabsProvider(): TtsProvider {
             if (carry) buf = Buffer.concat([carry, buf]);
             const evenLen = buf.length - (buf.length % 2);
             carry =
-              buf.length % 2 === 1
-                ? Buffer.from([buf[buf.length - 1]!])
-                : null;
+              buf.length % 2 === 1 ? Buffer.from([buf[buf.length - 1]!]) : null;
             buf = buf.subarray(0, evenLen);
             if (buf.length === 0) continue;
           }

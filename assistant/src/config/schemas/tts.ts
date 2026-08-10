@@ -104,6 +104,13 @@ export const TtsFishAudioProviderConfigSchema = z
       })
       .default("")
       .describe("Fish Audio voice/clone reference ID"),
+    model: z
+      .string({
+        error: "services.tts.providers.fish-audio.model must be a string",
+      })
+      .transform((v) => v || "s2-pro")
+      .default("s2-pro")
+      .describe("Fish Audio TTS model identifier (e.g. s2-pro, s1)"),
     chunkLength: z
       .number({
         error: "services.tts.providers.fish-audio.chunkLength must be a number",

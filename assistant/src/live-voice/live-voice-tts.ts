@@ -6,6 +6,9 @@ import type {
   TtsSynthesisRequest,
   TtsUseCase,
 } from "../tts/types.js";
+import { getLogger } from "../util/logger.js";
+
+const log = getLogger("live-voice:tts");
 
 export const DEFAULT_LIVE_VOICE_TTS_SAMPLE_RATE = 24_000;
 
@@ -72,13 +75,37 @@ export async function streamLiveVoiceTtsAudio(
 ): Promise<LiveVoiceTtsResult> {
   const { provider, providerId, providerConfig } =
     await resolveLiveVoiceStreamingTtsProvider(options.config);
-  const sampleRate = resolveSampleRate(options.sampleRate, providerConfig);
+  const requestedSampleRate = resolveSampleRate(
+    options.sampleRate,
+    providerConfig,
+  );
   const chunkContentType = resolveChunkContentType(
     provider,
     providerConfig,
     options.outputFormat,
   );
   const canStreamChunks = isRawPcmContentType(chunkContentType);
+
+  // Honest sample-rate labeling: providers emit raw PCM at a fixed rate they
+  // cannot change (ElevenLabs 16 kHz, Fish Audio 44.1 kHz). The client plays
+  // exactly what each frame's label says, so when the provider declares its
+  // fixed PCM rate it MUST win over the requested one — a mislabel plays the
+  // audio at the wrong speed/pitch.
+  const providerPcmSampleRate = provider.capabilities.pcmSampleRateHz;
+  const sampleRate =
+    canStreamChunks && isPositiveFiniteNumber(providerPcmSampleRate)
+      ? providerPcmSampleRate
+      : requestedSampleRate;
+  if (sampleRate !== requestedSampleRate) {
+    log.warn(
+      {
+        provider: providerId,
+        requestedSampleRate,
+        providerSampleRate: sampleRate,
+      },
+      "Live voice TTS provider emits raw PCM at a fixed sample rate; labeling frames with the provider's actual rate instead of the requested one",
+    );
+  }
   let chunks = 0;
   let bytes = 0;
 
