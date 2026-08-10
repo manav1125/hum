@@ -35,6 +35,7 @@ import { randomUUID } from "node:crypto";
 import { PermissionPrompter } from "../permissions/prompter.js";
 import { createTask } from "../tasks/task-store.js";
 import { ToolExecutor } from "../tools/executor.js";
+import { getTool } from "../tools/registry.js";
 import type { ToolContext, ToolExecutionResult } from "../tools/types.js";
 import { getLogger } from "../util/logger.js";
 import { getSandboxWorkingDir } from "../util/platform.js";
@@ -168,13 +169,32 @@ export const GEMINI_LIVE_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
   {
     name: "get_schedule",
     description:
-      "List the user's reminders and scheduled automations, or details of one by id.",
+      "List the reminders and scheduled automations Cue set for the user, or details of one by id. NOT their Google Calendar — that is get_calendar.",
     parameters: {
       type: "object",
       properties: {
         job_id: {
           type: "string",
           description: "Optional: show details for one schedule.",
+        },
+      },
+    },
+  },
+  {
+    name: "get_calendar",
+    description:
+      "List events on the user's real Google Calendar (meetings, appointments) in a time range. Use for any what's-on-my-calendar question; distinct from get_schedule (Cue reminders you set).",
+    parameters: {
+      type: "object",
+      properties: {
+        time_min: {
+          type: "string",
+          description:
+            "Range start, ISO 8601 with offset, e.g. 2026-08-10T00:00:00+08:00. Default: now.",
+        },
+        time_max: {
+          type: "string",
+          description: "Range end, ISO 8601 with offset. Default: 7 days on.",
         },
       },
     },
@@ -290,11 +310,27 @@ export const GEMINI_LIVE_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
 ];
 
 /**
+ * The Composio-registered MCP tool `get_calendar` dispatches to. Present only
+ * on an instance with a live Composio Google Calendar connection (prod); on a
+ * local instance the name is absent from the registry and `get_calendar`
+ * degrades to the honest not-connected answer.
+ *
+ * READ-ONLY by design: the write siblings (GOOGLECALENDAR_CREATE_EVENT,
+ * GOOGLECALENDAR_QUICK_ADD, update/delete) are deliberately NOT bridged —
+ * calendar writes can invite guests (outward-facing sends) and wait for the
+ * approval-frames workstream (H-4 / V-3). GOOGLECALENDAR_FIND_EVENT also
+ * exists on prod but the ranged EVENTS_LIST covers the voice use case.
+ */
+export const GEMINI_LIVE_CALENDAR_EVENTS_TOOL =
+  "mcp__composio_googlecalendar__GOOGLECALENDAR_EVENTS_LIST";
+
+/**
  * Registry tool names the voice declarations dispatch to. Doubles as the
  * execution-layer allowlist on the {@link ToolContext}, so even a mapping bug
- * here could not reach a tool outside the curated surface.
+ * here could not reach a tool outside the curated surface. Exported so tests
+ * can assert the surface stays curated.
  */
-const REGISTRY_TOOL_ALLOWLIST = new Set([
+export const GEMINI_LIVE_REGISTRY_TOOL_ALLOWLIST = new Set([
   "web_search",
   "recall",
   "remember",
@@ -304,6 +340,7 @@ const REGISTRY_TOOL_ALLOWLIST = new Set([
   "followup_list",
   "messaging_list_conversations",
   "messaging_read",
+  GEMINI_LIVE_CALENDAR_EVENTS_TOOL,
 ]);
 
 /**
@@ -334,6 +371,13 @@ export interface GeminiLiveToolExecutionContext {
     name: string,
     input: Record<string, unknown>,
   ) => Promise<ToolExecutionResult>;
+  /**
+   * Test seam: registry-presence probe for MCP-backed declarations
+   * (`get_calendar`). Production leaves this unset and the REAL registry is
+   * consulted — which is exactly how a locally-unconnected instance degrades
+   * to the honest not-connected answer instead of a confabulated calendar.
+   */
+  isToolRegistered?: (name: string) => boolean;
 }
 
 // ── Registry dispatch ────────────────────────────────────────────────
@@ -378,7 +422,7 @@ async function runRegistryToolDefault(
     executionChannel: "live-voice",
     callSessionId: ctx.conversationId,
     signal: ctx.signal,
-    allowedToolNames: REGISTRY_TOOL_ALLOWLIST,
+    allowedToolNames: GEMINI_LIVE_REGISTRY_TOOL_ALLOWLIST,
   };
   return getSharedExecutor().execute(name, input, context);
 }
@@ -416,6 +460,236 @@ async function dispatchRegistryTool(
   const run = ctx.runRegistryTool ?? runRegistryToolDefault;
   const result = await run(name, input, ctx);
   return fromToolResult(result);
+}
+
+// ── get_calendar (Google Calendar via Composio MCP) ──────────────────
+
+const MAX_CALENDAR_EVENTS = 15;
+
+/**
+ * Spoken-safe degradation the model reads when the Composio calendar tool is
+ * absent (local instance, no connection) or the connection is dead. The
+ * reported failure mode this guards: the model improvising a calendar answer
+ * "from my comms"/the briefing when it had no calendar at all.
+ */
+const CALENDAR_NOT_CONNECTED_ERROR =
+  "Google Calendar isn't connected, so you cannot see the user's calendar right now. " +
+  "Tell them plainly that their calendar isn't linked yet and that they can connect " +
+  "Google Calendar in Settings → Connectors. Do not guess or invent events from anything else.";
+
+/**
+ * Error shapes that mean "the calendar connection is absent or dead" rather
+ * than a transient tool failure. Includes the executor's unknown-tool text
+ * (the MCP server can drop mid-call, after the registry probe) and the MCP
+ * client's own not-connected errors. Deliberately does NOT match permission
+ * denials — those must surface as "needs your okay", not "not connected".
+ */
+const CALENDAR_CONNECTION_ERROR_PATTERN =
+  /not connected|no connected account|connected account (was )?not found|connection (is )?(expired|inactive|not found|disabled)|re-?authenticat|re-?connect|unauthori[sz]ed|invalid[_ ]grant|authentication|\b401\b|\b403\b|MCP server .{0,80} not found|Unknown tool/i;
+
+function defaultIsToolRegistered(name: string): boolean {
+  return getTool(name) !== undefined;
+}
+
+/** The compact per-event shape a voice model can narrate and `ui_show` can tile. */
+interface ShapedCalendarEvent {
+  title: string;
+  start?: string;
+  end?: string;
+  location?: string;
+  /** Attendee COUNT — never the raw attendee objects (emails stay off-wire). */
+  attendees?: number;
+}
+
+/** Google/Composio event times come as `{dateTime}|{date}` or plain strings. */
+function eventTime(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (typeof record.dateTime === "string") return record.dateTime;
+    if (typeof record.date === "string") return record.date;
+  }
+  return undefined;
+}
+
+function shapeCalendarEvent(raw: unknown): ShapedCalendarEvent | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  if (record.status === "cancelled") return null;
+  const title =
+    typeof record.summary === "string" && record.summary.trim()
+      ? record.summary
+      : typeof record.title === "string" && record.title.trim()
+        ? record.title
+        : "(no title)";
+  const start = eventTime(record.start) ?? eventTime(record.start_time);
+  const end = eventTime(record.end) ?? eventTime(record.end_time);
+  const location =
+    typeof record.location === "string" && record.location.trim()
+      ? record.location.slice(0, 120)
+      : undefined;
+  const attendees = Array.isArray(record.attendees)
+    ? record.attendees.length
+    : undefined;
+  return {
+    title: title.slice(0, 160),
+    ...(start !== undefined ? { start } : {}),
+    ...(end !== undefined ? { end } : {}),
+    ...(location !== undefined ? { location } : {}),
+    ...(attendees !== undefined && attendees > 0 ? { attendees } : {}),
+  };
+}
+
+/**
+ * Find the events array inside Composio's verbose envelope without pinning its
+ * exact nesting: Google's events.list puts events under `items`, and Composio
+ * wraps the whole response under `data` (shallow search covers both plus one
+ * level of drift).
+ */
+function findEventArray(node: unknown, depth = 0): unknown[] | null {
+  if (node === null || typeof node !== "object" || Array.isArray(node)) {
+    return null;
+  }
+  if (depth > 3) return null;
+  const record = node as Record<string, unknown>;
+  for (const key of ["items", "events"]) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+  }
+  for (const value of Object.values(record)) {
+    const found = findEventArray(value, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Parse a successful (per MCP `isError`) calendar result. Composio can still
+ * report failure INSIDE the envelope (`successful: false` / `error`), so that
+ * is surfaced as an error rather than "no events". `null` → unrecognized shape
+ * (the caller falls back to the generic clipped result — never hide real data
+ * behind a shape mismatch).
+ */
+function parseCalendarContent(
+  content: string,
+):
+  | { kind: "events"; events: ShapedCalendarEvent[] }
+  | { kind: "error"; message: string }
+  | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content) as unknown;
+  } catch {
+    return null;
+  }
+  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>;
+    const envelopeError =
+      typeof record.error === "string" && record.error.trim()
+        ? record.error
+        : null;
+    if (record.successful === false || envelopeError) {
+      return {
+        kind: "error",
+        message: envelopeError ?? "calendar request failed",
+      };
+    }
+  }
+  const raw = Array.isArray(parsed) ? parsed : findEventArray(parsed);
+  if (!raw) return null;
+  return {
+    kind: "events",
+    events: raw
+      .map(shapeCalendarEvent)
+      .filter((event): event is ShapedCalendarEvent => event !== null),
+  };
+}
+
+/**
+ * "What's on my calendar?" against the user's REAL Google Calendar, through
+ * the same executor path (gates + permission checks) as every other bridged
+ * tool. Results are reduced to {@link ShapedCalendarEvent} BEFORE the generic
+ * clip so the model narrates clean fields and `ui_show` can tile them, instead
+ * of chewing through Composio's verbose envelope.
+ */
+async function executeGetCalendar(
+  args: Record<string, unknown>,
+  ctx: GeminiLiveToolExecutionContext,
+): Promise<Record<string, unknown>> {
+  const isRegistered = ctx.isToolRegistered ?? defaultIsToolRegistered;
+  if (!isRegistered(GEMINI_LIVE_CALENDAR_EVENTS_TOOL)) {
+    return { ok: false, error: CALENDAR_NOT_CONNECTED_ERROR };
+  }
+
+  const timeMinArg = String(args.time_min ?? "").trim();
+  const timeMaxArg = String(args.time_max ?? "").trim();
+  if (timeMinArg && Number.isNaN(Date.parse(timeMinArg))) {
+    return { ok: false, error: "time_min must be an ISO 8601 timestamp" };
+  }
+  if (timeMaxArg && Number.isNaN(Date.parse(timeMaxArg))) {
+    return { ok: false, error: "time_max must be an ISO 8601 timestamp" };
+  }
+  // Defaults: now → +7 days. Valid caller values pass through verbatim so a
+  // client-local offset (e.g. +08:00) reaches Google unchanged.
+  const timeMin = timeMinArg || new Date().toISOString();
+  const timeMax =
+    timeMaxArg ||
+    new Date(Date.parse(timeMin) + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const run = ctx.runRegistryTool ?? runRegistryToolDefault;
+  const result = await run(
+    GEMINI_LIVE_CALENDAR_EVENTS_TOOL,
+    {
+      // ASSUMED arg names: the Google-standard events.list params. Composio's
+      // live schema exists only in a connected instance's registry, so the
+      // exact names could not be confirmed from code — verify on prod before
+      // the voice-engine default flip (extra/unrecognized params are the
+      // failure mode to watch for).
+      calendarId: "primary",
+      timeMin,
+      timeMax,
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: MAX_CALENDAR_EVENTS,
+    },
+    ctx,
+  );
+
+  const content =
+    typeof result.content === "string"
+      ? result.content
+      : JSON.stringify(result.content);
+  if (result.isError) {
+    if (CALENDAR_CONNECTION_ERROR_PATTERN.test(content)) {
+      return { ok: false, error: CALENDAR_NOT_CONNECTED_ERROR };
+    }
+    return { ok: false, error: clip(content) };
+  }
+
+  const parsed = parseCalendarContent(content);
+  if (parsed === null) {
+    // Unrecognized (but successful) shape: fall back to the generic clipped
+    // result rather than hiding real data behind our shaping.
+    return fromToolResult(result);
+  }
+  if (parsed.kind === "error") {
+    if (CALENDAR_CONNECTION_ERROR_PATTERN.test(parsed.message)) {
+      return { ok: false, error: CALENDAR_NOT_CONNECTED_ERROR };
+    }
+    return { ok: false, error: clip(parsed.message) };
+  }
+  const events = parsed.events.slice(0, MAX_CALENDAR_EVENTS);
+  if (events.length === 0) {
+    return {
+      ok: true,
+      count: 0,
+      events: [],
+      message: "No calendar events in that range.",
+    };
+  }
+  return { ok: true, count: events.length, events };
 }
 
 // ── ui_show (voice tile subset) ──────────────────────────────────────
@@ -649,6 +923,9 @@ export async function executeGeminiLiveFunctionCall(
           ),
         );
       }
+
+      case "get_calendar":
+        return wrap(await executeGetCalendar(call.args, ctx));
 
       case "set_reminder": {
         const message = String(call.args.message ?? "").trim();

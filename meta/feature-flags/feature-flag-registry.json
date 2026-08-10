@@ -208,7 +208,7 @@
       "scope": "client",
       "key": "bookmarks",
       "label": "Message Bookmarks",
-      "description": "Show the bookmark icon on messages and enable the Bookmarks tab in Settings",
+      "description": "Show the bookmark icon on messages and the Bookmarked filter in All conversations",
       "defaultEnabled": true
     },
     {

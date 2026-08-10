@@ -24,7 +24,9 @@ mock.module("../../util/logger.js", () => ({
 
 const {
   executeGeminiLiveFunctionCall,
+  GEMINI_LIVE_CALENDAR_EVENTS_TOOL,
   GEMINI_LIVE_FUNCTION_DECLARATIONS,
+  GEMINI_LIVE_REGISTRY_TOOL_ALLOWLIST,
   GEMINI_LIVE_TOOL_SCHEMA_BUDGET_BYTES,
   GEMINI_LIVE_VOICE_SKILLS,
   geminiLiveDeclarationsJsonBytes,
@@ -242,6 +244,330 @@ describe("registry-backed dispatch", () => {
     );
     expect(calls2).toHaveLength(0);
     expect((out.response as { ok: boolean }).ok).toBe(false);
+  });
+});
+
+describe("get_calendar (Google Calendar via Composio MCP)", () => {
+  /**
+   * A realistic slice of Composio's verbose envelope around Google's
+   * events.list response: envelope + calendar metadata + per-event noise
+   * (etags, links, conferenceData, attendee objects with emails).
+   */
+  const VERBOSE_CALENDAR_FIXTURE = JSON.stringify({
+    successful: true,
+    error: null,
+    data: {
+      kind: "calendar#events",
+      etag: '"p33g67o1k5vugc0o"',
+      summary: "owner@example.com",
+      description: "",
+      updated: "2026-08-10T02:11:00.000Z",
+      timeZone: "Asia/Singapore",
+      accessRole: "owner",
+      defaultReminders: [{ method: "popup", minutes: 10 }],
+      nextPageToken: undefined,
+      items: [
+        {
+          kind: "calendar#event",
+          etag: '"3465113772538000"',
+          id: "abc123def456",
+          status: "confirmed",
+          htmlLink: "https://www.google.com/calendar/event?eid=YWJjMTIz",
+          created: "2026-07-30T08:00:00.000Z",
+          updated: "2026-08-09T02:11:00.000Z",
+          summary: "Investor sync",
+          description:
+            "Q3 numbers walkthrough. Agenda:\n1. Pipeline\n2. Burn\n3. Hiring\n" +
+            "Dial-in details below…",
+          location: "Zoom",
+          creator: { email: "owner@example.com", self: true },
+          organizer: { email: "owner@example.com", self: true },
+          start: {
+            dateTime: "2026-08-10T09:00:00+08:00",
+            timeZone: "Asia/Singapore",
+          },
+          end: {
+            dateTime: "2026-08-10T09:45:00+08:00",
+            timeZone: "Asia/Singapore",
+          },
+          iCalUID: "fixture-uid@example.com",
+          sequence: 2,
+          attendees: [
+            {
+              email: "owner@example.com",
+              self: true,
+              responseStatus: "accepted",
+            },
+            { email: "alice@example.com", responseStatus: "accepted" },
+            { email: "bob@example.com", responseStatus: "needsAction" },
+          ],
+          hangoutLink: "https://meet.google.com/xyz-abcd-efg",
+          conferenceData: {
+            entryPoints: [
+              {
+                entryPointType: "video",
+                uri: "https://meet.google.com/xyz-abcd-efg",
+              },
+            ],
+            conferenceSolution: { name: "Google Meet" },
+            conferenceId: "xyz-abcd-efg",
+          },
+          reminders: { useDefault: true },
+          eventType: "default",
+        },
+        {
+          kind: "calendar#event",
+          id: "cancelled-1",
+          status: "cancelled",
+          summary: "Old standup",
+          start: { dateTime: "2026-08-10T10:00:00+08:00" },
+          end: { dateTime: "2026-08-10T10:15:00+08:00" },
+        },
+        {
+          kind: "calendar#event",
+          etag: '"3465113772538001"',
+          id: "allday789",
+          status: "confirmed",
+          htmlLink: "https://www.google.com/calendar/event?eid=YWxsZGF5",
+          summary: "Block: deep work",
+          creator: { email: "owner@example.com", self: true },
+          organizer: { email: "owner@example.com", self: true },
+          start: { date: "2026-08-11" },
+          end: { date: "2026-08-12" },
+          transparency: "opaque",
+          reminders: { useDefault: false },
+          eventType: "focusTime",
+        },
+      ],
+    },
+  });
+
+  test("the allowlist contains the calendar MCP tool (and only curated names)", () => {
+    expect(
+      GEMINI_LIVE_REGISTRY_TOOL_ALLOWLIST.has(GEMINI_LIVE_CALENDAR_EVENTS_TOOL),
+    ).toBe(true);
+    expect(GEMINI_LIVE_CALENDAR_EVENTS_TOOL).toBe(
+      "mcp__composio_googlecalendar__GOOGLECALENDAR_EVENTS_LIST",
+    );
+    // Read-only: no calendar write tool is reachable from the voice surface.
+    for (const name of GEMINI_LIVE_REGISTRY_TOOL_ALLOWLIST) {
+      expect(name).not.toMatch(/CREATE_EVENT|QUICK_ADD|UPDATE|DELETE|PATCH/);
+    }
+  });
+
+  test("dispatches the Composio tool with Google-standard args through the registry seam", async () => {
+    const { ctx, registryCalls } = makeCtx({
+      content: VERBOSE_CALENDAR_FIXTURE,
+    });
+    await executeGeminiLiveFunctionCall(
+      {
+        name: "get_calendar",
+        args: {
+          time_min: "2026-08-10T00:00:00+08:00",
+          time_max: "2026-08-11T00:00:00+08:00",
+        },
+      },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    expect(registryCalls).toEqual([
+      {
+        name: GEMINI_LIVE_CALENDAR_EVENTS_TOOL,
+        input: {
+          calendarId: "primary",
+          timeMin: "2026-08-10T00:00:00+08:00",
+          timeMax: "2026-08-11T00:00:00+08:00",
+          singleEvents: true,
+          orderBy: "startTime",
+          maxResults: 15,
+        },
+      },
+    ]);
+  });
+
+  test("with no range it defaults to now → +7 days", async () => {
+    const { ctx, registryCalls } = makeCtx({
+      content: VERBOSE_CALENDAR_FIXTURE,
+    });
+    const before = Date.now();
+    await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    const input = registryCalls[0]!.input as {
+      timeMin: string;
+      timeMax: string;
+    };
+    const timeMin = Date.parse(input.timeMin);
+    const timeMax = Date.parse(input.timeMax);
+    expect(timeMin).toBeGreaterThanOrEqual(before - 1000);
+    expect(timeMin).toBeLessThanOrEqual(Date.now() + 1000);
+    expect(timeMax - timeMin).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  test("an unparsable range is refused without dispatching", async () => {
+    const { ctx, registryCalls } = makeCtx();
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: { time_min: "next tuesday-ish" } },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    expect(registryCalls).toHaveLength(0);
+    const response = out.response as { ok: boolean; error: string };
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("ISO 8601");
+  });
+
+  test("shapes the verbose Composio envelope down to voice-sized events", async () => {
+    const { ctx } = makeCtx({ content: VERBOSE_CALENDAR_FIXTURE });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: { time_min: "2026-08-10T00:00:00+08:00" } },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    const response = out.response as {
+      ok: boolean;
+      count: number;
+      events: Array<Record<string, unknown>>;
+    };
+    expect(response.ok).toBe(true);
+    // The cancelled event is dropped.
+    expect(response.count).toBe(2);
+    expect(response.events[0]).toEqual({
+      title: "Investor sync",
+      start: "2026-08-10T09:00:00+08:00",
+      end: "2026-08-10T09:45:00+08:00",
+      location: "Zoom",
+      attendees: 3,
+    });
+    // All-day events keep their date form; no attendees key when there are none.
+    expect(response.events[1]).toEqual({
+      title: "Block: deep work",
+      start: "2026-08-11",
+      end: "2026-08-12",
+    });
+    // The verbose junk is gone entirely — nothing for the model to read aloud.
+    const wire = JSON.stringify(response);
+    for (const junk of [
+      "conferenceData",
+      "htmlLink",
+      "iCalUID",
+      "etag",
+      "alice@example.com",
+      "Dial-in",
+    ]) {
+      expect(wire).not.toContain(junk);
+    }
+    expect(wire.length).toBeLessThan(VERBOSE_CALENDAR_FIXTURE.length / 4);
+  });
+
+  test("absent from the registry → honest not-connected error, no dispatch", async () => {
+    const { ctx, registryCalls } = makeCtx({
+      content: VERBOSE_CALENDAR_FIXTURE,
+    });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      { ...ctx, isToolRegistered: () => false },
+    );
+    expect(registryCalls).toHaveLength(0);
+    const response = out.response as { ok: boolean; error: string };
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("isn't connected");
+    expect(response.error).toContain("Settings → Connectors");
+    expect(response.error).toContain("Do not guess or invent events");
+  });
+
+  test("without a seam the real (empty in tests) registry yields the same honest answer", async () => {
+    // No isToolRegistered override: the default consults the actual registry,
+    // where the Composio tool is absent on an unconnected instance — exactly
+    // the local degradation path.
+    const { ctx, registryCalls } = makeCtx();
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      ctx,
+    );
+    expect(registryCalls).toHaveLength(0);
+    const response = out.response as { ok: boolean; error: string };
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("isn't connected");
+  });
+
+  test("a connection-shaped execution error degrades to not-connected", async () => {
+    const { ctx } = makeCtx({
+      content:
+        "MCP tool execution failed: no connected account found for toolkit googlecalendar (status: EXPIRED)",
+      isError: true,
+    });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    const response = out.response as { ok: boolean; error: string };
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("isn't connected");
+    expect(response.error).toContain("Settings → Connectors");
+  });
+
+  test("a Composio in-envelope auth failure (isError false) also degrades honestly", async () => {
+    const { ctx } = makeCtx({
+      content: JSON.stringify({
+        successful: false,
+        error: "Connected account is expired, please re-authenticate",
+        data: {},
+      }),
+    });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    const response = out.response as { ok: boolean; error: string };
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("isn't connected");
+  });
+
+  test("a permission denial stays a permission denial, not a fake disconnect", async () => {
+    const { ctx } = makeCtx({
+      content:
+        'Permission denied: tool "mcp__composio_googlecalendar__GOOGLECALENDAR_EVENTS_LIST" requires user approval but no interactive client is connected.',
+      isError: true,
+    });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    const response = out.response as { ok: boolean; error: string };
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("Permission denied");
+    expect(response.error).not.toContain("Settings → Connectors");
+  });
+
+  test("an empty range reports zero events, never an error", async () => {
+    const { ctx } = makeCtx({
+      content: JSON.stringify({
+        successful: true,
+        error: null,
+        data: { kind: "calendar#events", items: [] },
+      }),
+    });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    expect(out.response).toEqual({
+      ok: true,
+      count: 0,
+      events: [],
+      message: "No calendar events in that range.",
+    });
+  });
+
+  test("an unrecognized successful shape falls back to the clipped raw result", async () => {
+    const { ctx } = makeCtx({ content: "Fetched 2 events: standup, review" });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      { ...ctx, isToolRegistered: () => true },
+    );
+    expect(out.response).toEqual({
+      ok: true,
+      result: "Fetched 2 events: standup, review",
+    });
   });
 });
 
