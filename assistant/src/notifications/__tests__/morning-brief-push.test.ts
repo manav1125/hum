@@ -155,6 +155,51 @@ describe("composeMorningBriefCopy", () => {
     expect(copy.body).toBe("All quiet overnight — your day's ready.");
   });
 
+  // REGRESSION: this push said "All quiet overnight — your day's ready." on a
+  // morning with SEVEN items waiting on the owner. None of them had changed
+  // state inside the window, and `gatherOvernight` only returns items that
+  // did — so every count was legitimately zero and the copy read the absence
+  // of movement as an absence of work. A quiet night is not a clear day.
+  test("standing work overrides the calm variant", () => {
+    const copy = composeMorningBriefCopy({
+      overnight: [],
+      ask: null,
+      standingNeedsYou: 7,
+    });
+    expect(copy.body).toBe("Nothing new overnight · 7 still need your OK");
+    expect(copy.body).not.toContain("All quiet");
+  });
+
+  test("a single standing item reads singular", () => {
+    const copy = composeMorningBriefCopy({
+      overnight: [],
+      ask: null,
+      standingNeedsYou: 1,
+    });
+    expect(copy.body).toBe("Nothing new overnight · 1 still needs your OK");
+  });
+
+  test("overnight activity still wins — standing work does not double-count", () => {
+    // The seven standing items INCLUDE anything that also moved overnight, so
+    // reporting both would count the same item twice. Movement is the more
+    // specific story and keeps the line.
+    const copy = composeMorningBriefCopy({
+      overnight: items(2, 0),
+      ask: null,
+      standingNeedsYou: 7,
+    });
+    expect(copy.body).toBe("2 finished overnight");
+  });
+
+  test("genuinely nothing waiting still gets the calm variant", () => {
+    const copy = composeMorningBriefCopy({
+      overnight: [],
+      ask: null,
+      standingNeedsYou: 0,
+    });
+    expect(copy.body).toBe("All quiet overnight — your day's ready.");
+  });
+
   test("done-only night omits the OK part", () => {
     const copy = composeMorningBriefCopy({ overnight: items(2, 0), ask: null });
     expect(copy.body).toBe("2 finished overnight");

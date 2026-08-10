@@ -39,6 +39,7 @@ import {
   pickAsk,
 } from "../runtime/routes/morning-brief-routes.js";
 import { getLogger } from "../util/logger.js";
+import { listWorkItems } from "../work-items/work-item-store.js";
 import { isApnsConfigured } from "./apns-sender.js";
 import { emitNotificationSignal } from "./emit-signal.js";
 import { localClock } from "./local-clock.js";
@@ -86,6 +87,19 @@ export interface MorningBriefPushCopy {
 export function composeMorningBriefCopy(input: {
   overnight: OvernightItem[];
   ask: BriefAsk | null;
+  /**
+   * Items awaiting the owner RIGHT NOW, irrespective of the overnight window.
+   *
+   * `gatherOvernight` only returns items whose status CHANGED inside the
+   * window — correct for "what happened overnight", and silent about anything
+   * that has been standing there for days. So on a morning with seven items
+   * waiting, none of them touched overnight, every count above was zero and
+   * this push said "All quiet overnight — your day's ready."
+   *
+   * A quiet night is not a clear day. This is the number that stops the brief
+   * reassuring somebody past work that is genuinely waiting on them.
+   */
+  standingNeedsYou?: number;
 }): MorningBriefPushCopy {
   const done = input.overnight.filter((o) => o.state === "done").length;
   const review = input.overnight.filter((o) => o.state === "review").length;
@@ -107,12 +121,25 @@ export function composeMorningBriefCopy(input: {
     parts.push(`${needsOk} need${needsOk === 1 ? "s" : ""} your OK`);
   }
 
+  if (parts.length > 0) {
+    return { title: "Your morning brief is ready", body: parts.join(" · ") };
+  }
+
+  // Nothing MOVED overnight. Before claiming the day is clear, ask whether
+  // anything is still standing there waiting.
+  const standing = input.standingNeedsYou ?? 0;
+  if (standing > 0) {
+    return {
+      title: "Your morning brief is ready",
+      body: `Nothing new overnight · ${standing} still need${
+        standing === 1 ? "s" : ""
+      } your OK`,
+    };
+  }
+
   return {
     title: "Your morning brief is ready",
-    body:
-      parts.length > 0
-        ? parts.join(" · ")
-        : "All quiet overnight — your day's ready.",
+    body: "All quiet overnight — your day's ready.",
   };
 }
 
@@ -152,6 +179,27 @@ export function shouldFireNow(opts: {
 // Emission
 // ---------------------------------------------------------------------------
 
+/**
+ * How many work items are awaiting the owner right now, window-independent.
+ *
+ * Deliberately fails to ZERO rather than throwing: a store failure must not
+ * stop the brief going out. That does mean an outage could let "all quiet"
+ * through, which is the same limitation the surrounding pipeline already
+ * accepts — and strictly better than the previous behaviour, where a fully
+ * healthy store said "all quiet" over seven waiting items.
+ */
+function countStandingNeedsYou(): number {
+  try {
+    return listWorkItems().filter((i) => i.status === "awaiting_review").length;
+  } catch (err) {
+    log.warn(
+      { err: String(err) },
+      "morning-brief: standing needs-you read failed",
+    );
+    return 0;
+  }
+}
+
 export interface MorningBriefSendResult {
   /** True when the pipeline accepted the signal (sent or deduplicated). */
   handled: boolean;
@@ -173,7 +221,11 @@ export async function sendMorningBriefPush(
   // is only wrong if the stores themselves are down — acceptable for v1).
   const overnight = gatherOvernight(sinceMs);
   const ask = pickAsk();
-  const copy = composeMorningBriefCopy({ overnight, ask });
+  const copy = composeMorningBriefCopy({
+    overnight,
+    ask,
+    standingNeedsYou: countStandingNeedsYou(),
+  });
 
   const deepLinkMetadata = {
     kind: "morning_brief",
