@@ -41,9 +41,31 @@ afterEach(async () => {
 });
 
 describe("computeConnectorHealth", () => {
+  it("distinguishes 'no probe exists' from 'probed and could not tell'", () => {
+    // Google Sheets has no entry in LIVENESS_PROBES, so it rode passive
+    // signals alone and rendered as a BLANK cell beside nine connectors
+    // showing a state. A blank reads as a bug. `unknown` was carrying two
+    // different facts; this separates them so the client can say "not
+    // actively checked" and give the reason.
+    const noProbe = computeConnectorHealth({
+      now: NOW,
+      activelyChecked: false,
+    });
+    expect(noProbe.status).toBe("unknown");
+    expect(noProbe.activelyChecked).toBe(false);
+
+    const probedInconclusive = computeConnectorHealth({
+      now: NOW,
+      probe: { checkedAt: NOW, status: "inconclusive", error: "timeout" },
+    });
+    expect(probedInconclusive.status).toBe("unknown");
+    expect(probedInconclusive.activelyChecked).toBe(true);
+  });
+
   it("is unknown with no evidence (linked ≠ verified)", () => {
     expect(computeConnectorHealth({ now: NOW })).toEqual({
       status: "unknown",
+      activelyChecked: true,
     });
   });
 

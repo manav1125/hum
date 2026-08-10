@@ -252,6 +252,22 @@ export interface ConnectorHealth {
   lastError?: string;
   /** When the active probe last ran for this app (absent = never probed). */
   checkedAt?: string;
+  /**
+   * Whether this toolkit has a liveness probe at all (see LIVENESS_PROBES).
+   *
+   * `unknown` was carrying two different facts: "we checked and could not
+   * tell" and "there is nothing here that checks this app". Google Sheets is
+   * the second — it has no probe, so it rode passive signals alone and
+   * rendered as a blank cell beside nine connectors showing a state. A blank
+   * reads as a bug.
+   *
+   * Deliberately NOT solved by adding a Sheets probe: the Sheets API has no
+   * scope-free "me" endpoint, so a guessed probe would show "failed" on a
+   * perfectly healthy connector — worse than blank and worse than silent.
+   * Naming the gap is the honest move; the client renders "not actively
+   * checked" and says why.
+   */
+  activelyChecked: boolean;
 }
 
 const iso = (t: number | undefined): string | undefined =>
@@ -274,6 +290,12 @@ export function computeConnectorHealth(input: {
   signal?: ConnectorSignal;
   probe?: ConnectorProbeResult;
   now?: number;
+  /**
+   * Does a liveness probe exist for this toolkit? Defaults to true so callers
+   * that do not know keep the previous shape; connectorHealthFor supplies the
+   * real answer from LIVENESS_PROBES.
+   */
+  activelyChecked?: boolean;
 }): ConnectorHealth {
   const now = input.now ?? Date.now();
   const fresh = (t: number | undefined): number | undefined =>
@@ -311,6 +333,7 @@ export function computeConnectorHealth(input: {
 
   return {
     status,
+    activelyChecked: input.activelyChecked ?? true,
     ...(successAt !== undefined ? { lastSuccessAt: iso(successAt) } : {}),
     ...(errorAt !== undefined ? { lastErrorAt: iso(errorAt) } : {}),
     ...(status !== "ok" && lastError !== undefined
@@ -334,5 +357,6 @@ export function connectorHealthFor(
     signal: signals[slug],
     probe: probes[slug],
     now,
+    activelyChecked: LIVENESS_PROBES[slug] !== undefined,
   });
 }
