@@ -48,3 +48,14 @@ safe re-run), but the backup taken BEFORE it runs is the only cheap rollback.
   (`liveVoice.frontModel.spokenAcks`, `liveVoice.frontModel.progress.enabled`).
 - Design-polish surfaces (bookmarks relocation, system cards, decided approvals, import
   flow) are ordinary web/daemon changes with no deploy caveats.
+
+## ⚠️ DEPLOY LINEAGE RULE (2026-08-10, standing)
+
+Prod deploys MUST come from the `cue/voice-replatform` lineage (or merge it
+into your branch first). The voice hybrid (H-1/H-3, engine migration, idle
+re-arm, preflight env fallback) lives there; a wave-c-only deploy SILENTLY
+UN-SHIPS VOICE — this happened on 2026-08-10 13:12Z and burned a full QA
+round. `cue/voice-replatform` already contains all of wave-c (merged at
+3c6a16ea25 and continuously); when in doubt, merge it and deploy the result.
+Before diagnosing any prod symptom, confirm the running image tag is the one
+you think it is: `fly machine list -a cue-manav-prod`.
