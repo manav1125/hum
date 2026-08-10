@@ -37,7 +37,12 @@
  */
 
 import { useMemo, useState } from "react";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import {
   hqValveFeedbackGetOptions,
@@ -80,27 +85,47 @@ export interface ValveStopMeta {
   readonly explains: string;
 }
 
+/**
+ * Every label names the RULE that produces it (design v38 §1).
+ *
+ * "Needs you" was a claim about the owner's OBLIGATION, and no rule in the
+ * valve can make that claim — at 264 items it was plainly false, and a label
+ * that outruns its rule is the same defect as a count beside contradicting
+ * copy. "Anything a person sent you" is a claim about the SENDER, which is
+ * exactly what `direct_person` establishes and nothing more.
+ *
+ * Once responsiveness lands (have I ever replied to this sender?) a fourth
+ * stop — "People you answer", ~40 — slots between the top two and becomes the
+ * default. That is the genuinely useful middle: 4 is too quiet to live on and
+ * 264 is barely a filter. The default stays at the middle stop before and
+ * after, because over-filtering is invisible to the owner and expensive
+ * (they never learn what they didn't see), while over-showing is annoying,
+ * visible, and self-corrects through the ✕.
+ */
 export const VALVE_STOP_META: Record<ValveStop, ValveStopMeta> = {
   everything: {
-    label: "Everything",
+    label: "Everything, including automated",
     sub: "unfiltered",
     countSuffix: "a day, unfiltered",
     explains:
-      "Every open item interrupts you. Nothing is judged and nothing is held — this is the valve doing no work at all.",
+      "Every open item interrupts you, automated senders included. Nothing is judged and nothing is held — this is the valve doing no work at all.",
   },
   needs_you: {
-    label: "Needs you",
+    label: "Anything a person sent you",
     sub: "the default",
+    // v38 renamed the LABEL, not this clause. The "quietens" promise is a
+    // standing ruling from an earlier round and is still true — `learned_down`
+    // demotes a sender the owner has ✕'d — so it stays.
     countSuffix: "now · shrinks as Cue learns",
     explains:
-      "Work that names you, anything waiting on you, and everything Cue could not judge. The last of those is why this stop starts loud and quietens: each ✕ teaches it, and nothing is ever thrown away.",
+      "Anything a person addressed to you, plus what Cue could not judge — that last part is why this stop starts loud and quietens, because each ✕ teaches it and nothing is ever thrown away. Automated senders with nothing to act on wait in Work.",
   },
   only_urgent: {
-    label: "Only urgent",
-    sub: "deadlines & errors only",
-    countSuffix: "now · deadlines & errors only",
+    label: "Deadlines & errors",
+    sub: "the tightest stop",
+    countSuffix: "now · a clock on it, or broken",
     explains:
-      "Only what Cue is blocked on, what is due inside a day, and people you already know. Everything else waits in Work for you to come to it.",
+      "Only what has a clock on it or broke: what Cue is blocked on, what is due inside a day, and people you deliberately saved. A colleague's ordinary question does not reach you here — everything else waits in Work.",
   },
 };
 
@@ -343,7 +368,10 @@ export function ValveDoor({
   const stop = state?.stop ?? null;
   const label = stop ? VALVE_STOP_META[stop].label : null;
   const pick = (next: ValveStop) => {
-    setStop.mutate({ path: { assistant_id: assistantId }, body: { stop: next } });
+    setStop.mutate({
+      path: { assistant_id: assistantId },
+      body: { stop: next },
+    });
     setOpen(false);
   };
 
@@ -479,7 +507,8 @@ export function MissionValveChip({
   const override =
     state?.missionOverrides.find((o) => o.missionId === missionId) ?? null;
   const globalStop = state?.stop ?? null;
-  const finished = missionStatus === "achieved" || missionStatus === "abandoned";
+  const finished =
+    missionStatus === "achieved" || missionStatus === "abandoned";
 
   // Nothing to say until the valve has answered. A chip offering to override a
   // stop we have not read would be writing blind.
