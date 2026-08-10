@@ -30,6 +30,7 @@ import {
   type ConnectorProbeResult,
   type ConnectorSignal,
   getConnectorHealthState,
+  pruneProbesWithoutActiveAccount,
   recordConnectorProbe,
 } from "../../oauth/connector-health-store.js";
 import { getLogger } from "../../util/logger.js";
@@ -202,6 +203,14 @@ export function kickHealthRefresh(
 ): void {
   if (inFlight) return;
   if (!shouldRunHealthRefresh({ now: Date.now(), lastRunAt, force })) return;
+  // Drop stale evidence FIRST, and on every sweep — including the early-return
+  // path below. `accounts` holds only ACTIVE connections, so a toolkit missing
+  // from it has no usable account; leaving its last probe in place is how
+  // googlecalendar and googledrive both sat at "ok" here while Composio held
+  // zero active accounts for either and the agent correctly refused to use
+  // them. Evidence about an account that no longer exists is not evidence.
+  pruneProbesWithoutActiveAccount(new Set(accounts.keys()));
+
   const targets = [...accounts.entries()]
     .filter(([slug]) => LIVENESS_PROBES[slug] !== undefined)
     .slice(0, PROBE_CAP);
