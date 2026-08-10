@@ -172,24 +172,32 @@ describe("the sidebar's Tier-2 rows are one column", () => {
   // The bug: v20 laid these out as a two-column grid to fit six rows in, and
   // the live app rendered "Watching" as "Wat…". Design's ruling — a grid reads
   // as a keypad, breaks vertical scanning, truncates labels — is enforced here
-  // structurally rather than in CSS: with two entries there is nothing to pair
-  // off into columns, and a third would have to argue for itself.
-  test("exactly two rows survive — People and Library", () => {
+  // structurally rather than in CSS: a third row had to argue for itself, and
+  // Apps did — an owner decision (2026-08-10), the People-ungating precedent.
+  // Apps is flag-gated dark, so the RENDERED rail is still the two rows design
+  // signed off on until `ventureverse-apps` flips on.
+  test("exactly three rows survive — People, Library, and gated Apps", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
       "people",
       "library",
+      "apps",
     ]);
   });
 
-  test("both pass the admission test: the data accumulates on its own", () => {
-    // Agents, Skills, Rhythms and Watching do not — you go to those to change
-    // something, which makes them leaves inside Your Cue.
+  test("only Apps is flag-gated — the ungated pair stays ungated", () => {
+    expect(
+      SIDEBAR_DESTINATIONS.map((d) => d.flag ?? null),
+    ).toEqual([null, null, "ventureverseApps"]);
+  });
+
+  test("every row lands on an assistant route", () => {
     for (const destination of SIDEBAR_DESTINATIONS) {
       expect(destination.to.startsWith("/assistant/")).toBe(true);
     }
     expect(SIDEBAR_DESTINATIONS.map((d) => d.to)).toEqual([
       routes.people,
       routes.library.root,
+      routes.ventureverseApps.root,
     ]);
   });
 
@@ -225,10 +233,12 @@ describe("People is ungated — the owner overruled design", () => {
   });
 
   test("People sits beside Library, People first, per the final brief", () => {
-    // The brief's block is `👤 People / ▦ Library`.
+    // The brief's block is `👤 People / ▦ Library`; the gated Apps row
+    // (owner decision 2026-08-10) joins BELOW the pair, never between them.
     expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
       "people",
       "library",
+      "apps",
     ]);
   });
 

@@ -240,9 +240,17 @@ export function readWorkView(search: string | URLSearchParams): WorkView {
  * natural rendering: two entries have nothing to pair off into.
  */
 export interface SidebarDestination {
-  key: "people" | "library";
+  key: "people" | "library" | "apps";
   label: string;
   to: string;
+  /**
+   * Assistant feature flag (store key) that must be ON for the row to render.
+   * The rail hides flag-gated rows until the first real `/feature-flags`
+   * response lands (`hasHydrated`), and the row's page self-redirects when
+   * the flag is off, so a deep link is safe either way — the same contract
+   * as {@link ../../domains/intelligence/your-cue-model} leaves.
+   */
+  flag?: "ventureverseApps";
   match: (pathname: string) => boolean;
 }
 
@@ -282,6 +290,26 @@ export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
     label: "Library",
     to: routes.library.root,
     match: (p) => p.includes("/library"),
+  },
+  {
+    /**
+     * VentureVerse apps — the parent-org app store (24 founder-focused AI
+     * apps) embedded in Cue. **Owner decision (2026-08-10): a Tier-2 row
+     * beside Library**, which widens the "exactly two rows" ruling the same
+     * way the People ungating did — deliberately, on the owner's call.
+     *
+     * Flag-gated dark (`ventureverse-apps`, default OFF) rather than
+     * admission-tested: the catalog doesn't accumulate on its own, but it is
+     * a destination users return to, not configuration — and until the flag
+     * flips on, the rail renders exactly the two rows design signed off on.
+     */
+    key: "apps",
+    label: "Apps",
+    to: routes.ventureverseApps.root,
+    flag: "ventureverseApps",
+    match: (p) =>
+      p === routes.ventureverseApps.root ||
+      p.startsWith(`${routes.ventureverseApps.root}/`),
   },
 ] as const;
 

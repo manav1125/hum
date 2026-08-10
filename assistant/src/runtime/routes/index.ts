@@ -164,6 +164,7 @@ import { ROUTES as USAGE_ROUTES } from "./usage-routes.js";
 import { ROUTES as USER_ROUTES } from "./user-routes.js";
 import { ROUTES as USER_ROUTES_CLI } from "./user-routes-cli.js";
 import { ROUTES as VALVE_ROUTES } from "./valve-routes.js";
+import { ROUTES as VENTUREVERSE_APPS_ROUTES } from "./ventureverse-apps-routes.js";
 import { ROUTES as VOICE_INTAKE_ROUTES } from "./voice-intake-routes.js";
 import { ROUTES as WAKE_CONVERSATION_ROUTES } from "./wake-conversation-routes.js";
 import { ROUTES as WATCHER_ROUTES } from "./watcher-routes.js";
@@ -203,6 +204,7 @@ export const ROUTES: RouteDefinition[] = [
   ...CHANNEL_AVAILABILITY_ROUTES,
   ...CHANNEL_READINESS_ROUTES,
   ...CONNECTOR_APPS_ROUTES,
+  ...VENTUREVERSE_APPS_ROUTES,
   ...BROWSER_ROUTES,
   ...BROWSER_TABS_ROUTES,
   ...BTW_ROUTES,

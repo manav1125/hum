@@ -292,6 +292,14 @@
       "defaultEnabled": true
     },
     {
+      "id": "ventureverse-apps",
+      "scope": "assistant",
+      "key": "ventureverse-apps",
+      "label": "VentureVerse Apps",
+      "description": "Enable the embedded VentureVerse app store: the daemon ventureverse-apps catalog route (fetched from ventureverse.com with a curated static fallback) and the web Apps surface that embeds apps in an iframe of www.ventureverse.com. Users sign into VentureVerse inside the embedded frame; no Cue credentials are shared.",
+      "defaultEnabled": false
+    },
+    {
       "id": "external-plugins",
       "scope": "assistant",
       "key": "external-plugins",

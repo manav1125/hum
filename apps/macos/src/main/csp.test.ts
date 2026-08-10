@@ -60,6 +60,16 @@ describe("CSP_POLICY", () => {
     expect(connectSrc).not.toMatch(/\bhttps:\s/);
   });
 
+  test("frame-src allows self + ventureverse.com and nothing broader", () => {
+    // The VentureVerse Apps surface embeds www.ventureverse.com; every other
+    // external frame stays refused. `https:` alone would be the regression.
+    const frameSrc = directiveValue("frame-src")!;
+    expect(frameSrc).toContain("'self'");
+    expect(frameSrc).toContain("https://www.ventureverse.com");
+    expect(frameSrc).toContain("https://*.ventureverse.com");
+    expect(frameSrc).not.toMatch(/\bhttps:(\s|$)/);
+  });
+
   test("connect-src allows loopback gateway WebSockets but not broad ws:", () => {
     const connectSrc = directiveValue("connect-src")!;
     expect(connectSrc).toContain("ws://localhost:*");

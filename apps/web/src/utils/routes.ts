@@ -265,6 +265,14 @@ export const routes = {
     root: r("/assistant/library"),
     app: (slug: string) => dyn(r("/assistant/library"), slug),
   },
+  // VentureVerse apps — the embedded parent-org app store (a Tier-2 "Apps"
+  // sidebar row beside Library, gated by the `ventureverse-apps` assistant
+  // feature flag). The detail route embeds the VentureVerse shell in an
+  // iframe with the app launched; users sign into VentureVerse in-frame.
+  ventureverseApps: {
+    root: r("/assistant/apps"),
+    app: (slug: string) => dyn(r("/assistant/apps"), slug),
+  },
 
   document: (surfaceId: string) => dyn(r("/assistant/documents"), surfaceId),
 

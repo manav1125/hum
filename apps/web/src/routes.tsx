@@ -1425,6 +1425,27 @@ export const routeTree = [
                         },
                       },
                       {
+                        // VentureVerse apps — gated by the
+                        // `ventureverse-apps` assistant feature flag; the
+                        // page redirects to HQ when the flag is off.
+                        path: "apps",
+                        lazy: {
+                          Component: () =>
+                            import(
+                              "@/domains/ventureverse/ventureverse-apps-page"
+                            ).then((m) => m.VentureverseAppsPage),
+                        },
+                      },
+                      {
+                        path: "apps/:slug",
+                        lazy: {
+                          Component: () =>
+                            import(
+                              "@/domains/ventureverse/ventureverse-app-embed-page"
+                            ).then((m) => m.VentureverseAppEmbedPage),
+                        },
+                      },
+                      {
                         path: "connect",
                         lazy: {
                           Component: () =>

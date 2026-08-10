@@ -1,4 +1,5 @@
 import {
+  Blocks,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -44,6 +45,7 @@ import {
 } from "@/domains/chat/use-sidebar-state";
 import { isChannelConversation } from "@/domains/chat/utils/conversation-channel";
 import { isConversationPinned } from "@/domains/chat/utils/group-conversations";
+import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { usePinnedAppsStore } from "@/stores/pinned-apps-store";
 import type { Conversation } from "@/types/conversation-types";
 import { canMarkRead, canMarkUnread } from "@/utils/conversation-predicates";
@@ -229,9 +231,10 @@ const PRIMARY_ICON: Record<PrimaryNavKey, typeof Target> = {
   work: LayoutList,
 };
 
-const SIDEBAR_ICON: Record<"people" | "library", typeof Target> = {
+const SIDEBAR_ICON: Record<"people" | "library" | "apps", typeof Target> = {
   people: Users,
   library: LayoutGrid,
+  apps: Blocks,
 };
 
 /*
@@ -353,6 +356,15 @@ export function AssistantSideMenu({
   // The number beside `👤 People`. Queried, never guessed — `null` while
   // unread, which renders no badge rather than a `0`.
   const peopleCount = usePeopleCount(assistantId);
+  // Flag-gated Tier-2 rows (today: the VentureVerse Apps row). Hidden until
+  // the first real /feature-flags response lands — a defaultEnabled:false
+  // flag briefly reading as true would flash a row and yank it back.
+  const flagsHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
+  const ventureverseAppsOn =
+    useAssistantFeatureFlagStore.use.ventureverseApps();
+  const sidebarDestinations = SIDEBAR_DESTINATIONS.filter((d) =>
+    d.flag === "ventureverseApps" ? flagsHydrated && ventureverseAppsOn : true,
+  );
   const openSection = useRailPeekStore.use.openSection();
   const togglePeek = useRailPeekStore.use.toggle();
   const peekPanelId = useId();
@@ -1074,7 +1086,7 @@ export function AssistantSideMenu({
             collapsed && variant === "rail" && "items-center",
           )}
         >
-          {SIDEBAR_DESTINATIONS.map((destination) => {
+          {sidebarDestinations.map((destination) => {
             // Both rows always render. People used to be gated on relationship
             // extraction having written something; the owner overruled that and
             // the predicate was deleted rather than stubbed — see

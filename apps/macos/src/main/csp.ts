@@ -12,10 +12,20 @@ import { session } from "electron";
 // loopback ingress is the one shape a static CSP can allowlist. A REMOTE
 // self-hosted ingress (e.g. an ngrok wss:// URL) still can't be — those
 // connections need the planned proxy-through-main follow-up.
+//
+// frame-src: with no directive, frames fall back to `default-src 'self'`,
+// which silently refuses every external iframe — the browser build (which
+// ships no CSP) renders it while the desktop app shows an empty rectangle.
+// ventureverse.com is the one allowed external frame: the parent-org app
+// store the web "Apps" surface embeds (`ventureverse-apps` feature flag).
+// Only the DIRECT child frame needs listing here — the per-app frames the
+// VentureVerse shell nests inside itself are governed by ITS policy, not
+// this one.
 export const CSP_POLICY = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
+  "frame-src 'self' https://www.ventureverse.com https://*.ventureverse.com",
   "connect-src 'self' blob: data: https://*.vellum.ai wss://*.vellum.ai https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://api.elevenlabs.io https://api.deepgram.com ws://localhost:* ws://127.0.0.1:*",
   "img-src 'self' https: data: blob:",
   "media-src 'self' blob:",

@@ -10365,11 +10365,18 @@ paths:
                             lastError:
                               description: Human-readable last failure.
                               type: string
+                            activelyChecked:
+                              type: boolean
+                              description:
+                                Whether a liveness probe exists for this toolkit. False means nothing here actively checks it, so 'unknown'
+                                is the absence of a CHECK rather than the absence of evidence — render 'not actively
+                                checked' with the reason, never a blank cell.
                             checkedAt:
                               description: ISO time the active liveness probe last ran for this app.
                               type: string
                           required:
                             - status
+                            - activelyChecked
                           additionalProperties: false
                           description:
                             Health signal for a connected app, combining passive call outcomes with a cached liveness probe. Absent on
@@ -43732,6 +43739,83 @@ paths:
       responses:
         "200":
           description: Successful response
+  /v1/ventureverse-apps:
+    get:
+      operationId: ventureverseapps_get
+      summary: List VentureVerse apps
+      description:
+        Return the VentureVerse app-store catalog for the embedded Apps surface. Server-side cached (24h) from
+        ventureverse.com's public catalog API; falls back to a static curated snapshot when unreachable. 404 while the
+        `ventureverse-apps` feature flag is off.
+      tags:
+        - ventureverse
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source:
+                    type: string
+                    enum:
+                      - remote
+                      - curated
+                    description: "'remote' = live (or cached) ventureverse.com data; 'curated' = the static fallback snapshot."
+                  origin:
+                    type: string
+                    description: The VentureVerse web origin the client should embed and allow framing for.
+                  apps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: number
+                          description: VentureVerse's numeric app id.
+                        name:
+                          type: string
+                        slug:
+                          type: string
+                          description:
+                            Launch slug (`<id>-<kebab-name>`, e.g. '10-alchemy') — what the VentureVerse shell's `?launch=` parameter
+                            takes.
+                        category:
+                          type: string
+                        description:
+                          type: string
+                        iconUrl:
+                          description:
+                            App icon URL (assets.ventureverse.com). Clients render a monogram chip when missing or when the image fails
+                            to load.
+                          type: string
+                        appUrl:
+                          description: The app's own deployment origin. Informational — clients embed `launchUrl`, not this.
+                          type: string
+                        launchUrl:
+                          type: string
+                          description: "The URL clients embed in an iframe: the VentureVerse shell with this app launched."
+                      required:
+                        - id
+                        - name
+                        - slug
+                        - category
+                        - description
+                        - launchUrl
+                      additionalProperties: false
+                required:
+                  - source
+                  - origin
+                  - apps
+                additionalProperties: false
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive filter over name, category, and description.
   /v1/voice-intake:
     post:
       operationId: voiceintake_post

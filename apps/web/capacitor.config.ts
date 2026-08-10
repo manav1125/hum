@@ -64,8 +64,15 @@ const config: CapacitorConfig = {
   // `server` block carries only `allowNavigation` (no `url`), so Capacitor
   // still serves the bundled connect shell from `capacitor://localhost` and the
   // shell navigates to the owner's instance at runtime.
+  // `*.ventureverse.com` rides along for the embedded VentureVerse Apps
+  // surface (`ventureverse-apps` feature flag): the in-frame sign-in and
+  // shell navigation must stay in the WebView, not bounce to Safari.
   server: {
-    allowNavigation: ["*.justcue.app", "*.justcue.io"],
+    allowNavigation: [
+      "*.justcue.app",
+      "*.justcue.io",
+      "*.ventureverse.com",
+    ],
     ...(SERVER_URL
       ? { url: SERVER_URL, cleartext: SERVER_URL.startsWith("http://") }
       : {}),
