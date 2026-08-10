@@ -714,15 +714,21 @@ export class GeminiLiveClient {
   }
 
   /**
-   * Inject a text-only user context note (no audio, no turn trigger). Used by
-   * the session layer after a NON-resumed reconnect to hand the fresh session
-   * a recap of the conversation it never saw.
+   * Inject a text-only user context note (no audio; by default no turn
+   * trigger). Used by the session layer after a NON-resumed reconnect to hand
+   * the fresh session a recap of the conversation it never saw.
+   *
+   * `triggerTurn: true` closes the client turn (`turnComplete`), which makes
+   * the model respond to the note NOW instead of waiting for the user's next
+   * utterance. Used by the deep-task completion path: a finished background
+   * task must be announced into the open call, not parked until the user
+   * happens to speak again.
    */
-  sendUserText(text: string): void {
+  sendUserText(text: string, opts?: { triggerTurn?: boolean }): void {
     this.send({
       clientContent: {
         turns: [{ role: "user", parts: [{ text }] }],
-        turnComplete: false,
+        turnComplete: opts?.triggerTurn === true,
       },
     });
   }

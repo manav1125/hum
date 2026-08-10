@@ -363,6 +363,15 @@ export interface GeminiLiveToolExecutionContext {
   /** Show a visual card (the session emits the `card` frame). */
   showCard?: (card: GeminiLiveCard) => void;
   /**
+   * Called when `run_deep_task` hands work to the background agent loop, with
+   * the created work item's id + spoken title. The session uses it to register
+   * interest in that item's completion so a still-open call can announce the
+   * result (the escalation's return path — without it the task finishes into
+   * Review while the user sits in a silent call). Optional: when absent the
+   * escalation stays fire-and-forget exactly as before.
+   */
+  onDeepTaskStarted?: (workItem: { id: string; title: string }) => void;
+  /**
    * Test seam: overrides the shared registry-executor path. Production leaves
    * this unset and every registry-backed call runs through the real
    * {@link ToolExecutor} (permission checks included).
@@ -868,12 +877,17 @@ export async function executeGeminiLiveFunctionCall(
       case "run_deep_task": {
         const request = String(call.args.request ?? "").trim();
         if (!request) return wrap({ ok: false, error: "empty request" });
+        const title =
+          request.length > 80 ? `${request.slice(0, 77)}…` : request;
         const id = createWorkItemFast({
-          title: request.length > 80 ? `${request.slice(0, 77)}…` : request,
+          title,
           executionPrompt: request,
           conversationId: ctx.conversationId,
           autoRun: true,
         });
+        // Let the session watch for this item's completion while the call is
+        // still open (the announce-back half of the escalation).
+        ctx.onDeepTaskStarted?.({ id, title });
         log.info({ id }, "gemini-live run_deep_task");
         return wrap({
           ok: true,

@@ -31,6 +31,11 @@ import {
 } from "../live-voice/live-voice-thread.js";
 import { synthesizeLiveVoiceSession } from "../live-voice/synthesize-live-voice-session.js";
 import { resolveVoicePersona } from "../live-voice/voice-personas.js";
+import type { AssistantEvent } from "../runtime/assistant-event.js";
+import {
+  assistantEventHub,
+  type AssistantEventSubscription,
+} from "../runtime/assistant-event-hub.js";
 import { getLogger } from "../util/logger.js";
 import {
   GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
@@ -47,6 +52,20 @@ import {
 } from "./gemini-live-tools.js";
 
 const log = getLogger("gemini-live-session");
+
+/**
+ * Cap on the result summary a deep-task completion note injects back into the
+ * live model (~1.5KB). The full result lives in Review; the model only needs
+ * enough to speak one or two sentences, and an unbounded summary would bloat
+ * the realtime session context for every remaining turn. Exported for tests.
+ */
+export const DEEP_TASK_SUMMARY_CLIP_CHARS = 1536;
+
+function clipDeepTaskSummary(summary: string): string {
+  const trimmed = summary.trim();
+  if (trimmed.length <= DEEP_TASK_SUMMARY_CLIP_CHARS) return trimmed;
+  return `${trimmed.slice(0, DEEP_TASK_SUMMARY_CLIP_CHARS)}… (truncated)`;
+}
 
 /**
  * Cue's identity + voice etiquette for the realtime engine. Kept in sync in
@@ -117,6 +136,20 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private readonly skillToolVersions = new Map<string, string>();
   /** Aborted on close so in-flight registry tool calls stop with the call. */
   private readonly toolAbort = new AbortController();
+  /**
+   * Deep tasks (`run_deep_task`) started from THIS call that have not reached
+   * a terminal state yet: work-item id → spoken title. When one completes
+   * while the call is still open, the session announces the result into the
+   * live conversation (see {@link onDeepTaskCompleted}); after close the map
+   * is moot — the result lands in Review as before.
+   */
+  private readonly pendingDeepTasks = new Map<string, string>();
+  /**
+   * Hub subscription watching for `work_item_completed` events on the tracked
+   * deep tasks. Created lazily on the first `run_deep_task` of the call (a
+   * call that never escalates registers no subscriber) and disposed on close.
+   */
+  private deepTaskSubscription: AssistantEventSubscription | null = null;
 
   constructor(context: LiveVoiceSessionFactoryContext) {
     this.context = context;
@@ -366,6 +399,73 @@ export class GeminiLiveSession implements LiveVoiceSession {
     this.client?.sendUserText(note);
   }
 
+  // ── Deep-task completion announce-back ───────────────────────────────
+
+  /**
+   * Register interest in a `run_deep_task` work item's completion. The
+   * matching signal is the runner's `work_item_completed` broadcast (fired
+   * exactly once per terminal transition, summary included), observed here
+   * through an in-process hub subscription scoped to this session.
+   */
+  private trackDeepTask(workItem: { id: string; title: string }): void {
+    if (this.closed) return;
+    this.pendingDeepTasks.set(workItem.id, workItem.title);
+    this.deepTaskSubscription ??= assistantEventHub.subscribe({
+      type: "process",
+      callback: (event) => this.onAssistantEvent(event),
+    });
+  }
+
+  /** Hub callback: never throws (a bad event must not break hub fanout). */
+  private onAssistantEvent(event: AssistantEvent): void {
+    try {
+      const msg = event.message;
+      if (msg.type !== "work_item_completed") return;
+      const title = this.pendingDeepTasks.get(msg.workItemId);
+      if (title === undefined) return;
+      this.pendingDeepTasks.delete(msg.workItemId);
+      this.onDeepTaskCompleted(title, msg.status, msg.result.summary);
+    } catch (err) {
+      log.warn({ err }, "deep-task completion handling failed");
+    }
+  }
+
+  /**
+   * A deep task this call started just finished while the call is still open:
+   * inject a silent context note (same mechanism as the reconnect recap —
+   * proven safe mid-session) carrying the clipped result summary plus an
+   * instruction to announce the outcome aloud NOW, with `triggerTurn` so the
+   * model actually speaks instead of waiting for the user's next utterance.
+   * This is the missing half of the escalation: without it the task finished
+   * into Review while the user sat in a silent call and concluded voice hung.
+   *
+   * Failures are announced honestly — "hit a problem, it's in Review" — never
+   * a fake result. `beginTurn()` opens the turn up front so the announcement's
+   * audio, transcript, and any `ui_show` card attribute to a proper turn.
+   */
+  private onDeepTaskCompleted(
+    title: string,
+    status: "done" | "awaiting_review" | "failed",
+    summary: string,
+  ): void {
+    if (this.closed || !this.client) return;
+    const note =
+      status === "failed"
+        ? [
+            `[Context note — not spoken by the user: the background task you started for them ("${title}") hit a problem and did not finish.`,
+            "Tell them honestly, in one short sentence, that the task hit a problem and that it's in their Review area — do not invent a result and do not retry silently.]",
+          ].join("\n")
+        : [
+            `[Context note — not spoken by the user: the background task you started for them ("${title}") just finished.`,
+            `Result summary:\n${clipDeepTaskSummary(summary) || "(no summary was captured — the full result is in their Review area.)"}`,
+            "Tell them the outcome aloud now in one or two sentences — natural, no ids or raw data, and mention the full result is in their Review area. If the result is something to LOOK at (options, a list, a table), you may show it with ui_show after announcing.]",
+          ].join("\n");
+    // Attribute the announcement (and any card it shows) to a real turn.
+    this.beginTurn();
+    this.client.sendUserText(note, { triggerTurn: true });
+    log.info({ status }, "gemini-live deep-task completion announced");
+  }
+
   private async onToolCall(
     calls: Array<{ id?: string; name: string; args: Record<string, unknown> }>,
   ): Promise<void> {
@@ -388,6 +488,9 @@ export class GeminiLiveSession implements LiveVoiceSession {
         executeGeminiLiveFunctionCall(call, {
           conversationId: this.conversationId,
           signal: this.toolAbort.signal,
+          // Deep-task escalation return path: watch the spawned work item so
+          // its completion is announced into the call if it's still open.
+          onDeepTaskStarted: (workItem) => this.trackDeepTask(workItem),
           // `ui_show` tiles: the same `card` frame the cascade forwards from
           // `ui_surface_show`, so the client renders both engines' cards
           // through the same store. Attributed to the current turn (opening
@@ -414,6 +517,12 @@ export class GeminiLiveSession implements LiveVoiceSession {
   close(_reason: LiveVoiceSessionCloseReason): void {
     this.closed = true;
     this.toolAbort.abort();
+    // Stop watching deep-task completions: a task that finishes after the
+    // call ends lands in Review (existing behavior) with nothing announced,
+    // and the session must not linger as a hub subscriber.
+    this.deepTaskSubscription?.dispose();
+    this.deepTaskSubscription = null;
+    this.pendingDeepTasks.clear();
     // Release this session's skill-tool registrations (refcounted — other
     // sessions/conversations holding the same skills are unaffected).
     try {
