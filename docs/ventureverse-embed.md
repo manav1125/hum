@@ -27,6 +27,43 @@ QA'd 2026-08-10 against a local flip-on stack: the catalog route returned all
 24 apps (`source: remote`, cache written), the sidebar row + gallery rendered,
 and the embed page loaded the live VentureVerse sign-in inside the iframe.
 
+## Phase 2 — chat awareness (this repo)
+
+The Cue brain can recommend and open the right app mid-conversation, entirely
+Cue-side (no VentureVerse cooperation). Same `ventureverse-apps` flag.
+
+- **`external_app` ui_show surface** — a new surface type the model emits via
+  `ui_show` (`data: { slug, name, category?, description?, iconUrl? }`). Renders
+  an in-chat card whose **Open** button navigates the SPA to
+  `/assistant/apps/<slug>` — the same embed page the gallery opens, which
+  resolves the slug itself, so only `slug`+`name` are load-bearing. Display-only:
+  never posts a surface action, never parks the turn.
+  - Wire: `assistant/src/daemon/message-types/surfaces.ts`
+    (`ExternalAppSurfaceData`, `UiSurfaceShowExternalApp`).
+  - Emit + guard: `assistant/src/tools/ui-surface/definitions.ts` (enum +
+    description line); `assistant/src/daemon/conversation-surfaces.ts` rejects
+    emission when the flag is off (mirrors the route 404) and requires a slug.
+  - Render: `apps/web/src/domains/chat/components/surfaces/external-app-surface.tsx`
+    + a `surface-router.tsx` case.
+- **`ventureverse` bundled skill** —
+  `assistant/src/config/bundled-skills/ventureverse/SKILL.md`. Carries the full
+  24-app catalog (exact slugs, cross-checked against the live API), the match
+  rules ("only when the task is exactly what an app does; at most one per turn;
+  never invent a slug"), and the `feature-flag: ventureverse-apps` frontmatter
+  that hides it from the model entirely when the feature is off.
+
+Verified 2026-08-10 on a local flip-on stack: **flag on → the `ventureverse`
+skill is in the catalog (26 skills) and the route serves; flag off → skill
+absent (25) and the route 404s.** Emission is unit-covered
+(`external-app-surface-guard.test.ts`: emits with a slug when on, rejects when
+off, rejects a slug-less card) and the enum⟷surface-type contract by
+`surface-type-parity.test.ts`.
+
+**No VentureVerse-side change and no data bridge yet.** Phase 2 opens the app in
+context; the user still does the work inside it. Silent data passing (inject a
+deck / pull a result) is Phase 3 and needs VentureVerse to add handlers to their
+shell — see the phase-3 section below.
+
 ## Security verification (2026-08-10)
 
 The earlier open question was whether VentureVerse's per-launch `iframe_token`

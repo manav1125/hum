@@ -14,6 +14,7 @@ import { ConnectorRecommendSurface } from "@/domains/chat/components/surfaces/co
 import { CopyBlockSurface } from "@/domains/chat/components/surfaces/copy-block-surface";
 import { DocumentPreviewSurface } from "@/domains/chat/components/surfaces/document-preview-surface";
 import { DynamicPageSurface } from "@/domains/chat/components/surfaces/dynamic-page-surface";
+import { ExternalAppSurface } from "@/domains/chat/components/surfaces/external-app-surface";
 import { FileUploadSurface } from "@/domains/chat/components/surfaces/file-upload-surface";
 import { FormSurface } from "@/domains/chat/components/surfaces/form-surface";
 import { ListSurface } from "@/domains/chat/components/surfaces/list-surface";
@@ -150,6 +151,11 @@ export function SurfaceRouter({
     // `TranscriptMessageBody`; never blocks the turn.
     case "adjacent_offer":
       return <AdjacentOfferRow surface={surface} onAction={onAction} />;
+
+    // "This looks like a job for <app>" — opens the embedded VentureVerse app
+    // in Cue. Display-only; navigates rather than posting a surface action.
+    case "external_app":
+      return <ExternalAppSurface surface={surface} />;
 
     case "document_preview":
       return (

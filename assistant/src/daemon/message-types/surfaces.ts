@@ -18,7 +18,8 @@ export type SurfaceType =
   | "task_preferences"
   | "work_result"
   | "artefact"
-  | "adjacent_offer";
+  | "adjacent_offer"
+  | "external_app";
 
 export const INTERACTIVE_SURFACE_TYPES: SurfaceType[] = [
   "choice",
@@ -271,6 +272,22 @@ export interface WorkResultSurfaceData {
   sections?: WorkResultSection[];
 }
 
+/**
+ * A recommendation to open one embedded VentureVerse app, emitted mid-chat
+ * when the model recognises a task one of the apps handles. Display-only: the
+ * card carries an "Open" affordance that navigates the client to the embedded
+ * app surface (`/assistant/apps/<slug>`), which resolves the slug itself — so
+ * only `slug` and `name` are load-bearing; the rest enrich the card.
+ */
+export interface ExternalAppSurfaceData {
+  /** Launch slug (`<id>-<kebab-name>`, e.g. "10-alchemy"). */
+  slug: string;
+  name: string;
+  category?: string;
+  description?: string;
+  iconUrl?: string;
+}
+
 export type SurfaceData =
   | CardSurfaceData
   | ChoiceSurfaceData
@@ -284,7 +301,8 @@ export type SurfaceData =
   | FileUploadSurfaceData
   | DocumentPreviewSurfaceData
   | SpreadsheetPreviewSurfaceData
-  | WorkResultSurfaceData;
+  | WorkResultSurfaceData
+  | ExternalAppSurfaceData;
 
 // === Client → Server ===
 
@@ -410,6 +428,17 @@ export interface UiSurfaceShowAdjacentOffer extends UiSurfaceShowBase {
   data: Record<string, unknown>;
 }
 
+/**
+ * "This looks like a job for <app>" — one embedded VentureVerse app the model
+ * recommends mid-chat. Display-only and NOT in {@link
+ * INTERACTIVE_SURFACE_TYPES}: opening the app is the user's choice, so the card
+ * must never park the turn awaiting them.
+ */
+export interface UiSurfaceShowExternalApp extends UiSurfaceShowBase {
+  surfaceType: "external_app";
+  data: ExternalAppSurfaceData;
+}
+
 export type UiSurfaceShow =
   | UiSurfaceShowCard
   | UiSurfaceShowChoice
@@ -425,7 +454,8 @@ export type UiSurfaceShow =
   | UiSurfaceShowSpreadsheetPreview
   | UiSurfaceShowWorkResult
   | UiSurfaceShowArtefact
-  | UiSurfaceShowAdjacentOffer;
+  | UiSurfaceShowAdjacentOffer
+  | UiSurfaceShowExternalApp;
 
 export interface UiSurfaceUpdate {
   type: "ui_surface_update";

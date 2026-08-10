@@ -140,6 +140,7 @@ export const uiShowTool = {
     '- work_result: { eyebrow?, status?: "completed"|"partial"|"failed"|"in_progress", summary?, metrics?: [{ label, value, detail?, tone?: "neutral"|"positive"|"warning"|"negative" }], sections?: [{ id?, title, description?, type?: "items"|"timeline"|"diff"|"artifacts"|"warnings", items?: [{ id?, title, description?, status?, tone?, metadata?: [{ label, value }], href? }], diffs?: [{ label?, before?, after? }] }] }. Shows a structured receipt after real work: what changed, what was skipped, proof points, and next actions. Keep display-only unless explicit follow-up buttons are needed.\n\n' +
     '- artefact: { kind?, title, body?, fields?: [{ label, value }], actions?: [{ id, label, primary? }] }. ANYTHING SENDABLE, SAVABLE OR SCHEDULABLE MUST BE AN ARTEFACT, never prose in your reply — a drafted email, a proposed meeting, a document. Never make someone copy text out of a message. `body` is the artefact\'s own words shown in full; `fields` are the facts about it (To, When, Amount). Each action\'s `label` is the verb ("Send", "Book it"). Consequential verbs are detected from the label and the client marks them as needing your approval, so name the verb plainly rather than softening it.\n\n' +
     '- adjacent_offer: { note, from?: "mail"|"calendar"|"messages"|"documents"|"spreadsheets"|"crm", actions?: [{ id, label }] }. AT MOST ONE per turn, and ONLY about something you actually touched while doing the work you were asked to do. One sentence naming what you noticed and what you would do. Two is nagging; something you did not touch is unsettling. `from` must name the source family you genuinely read — the client DROPS the offer when it names a family the turn never touched. If nothing came up, say nothing: this is the rarest surface you emit.\n\n' +
+    "- external_app: { slug, name, category?, description?, iconUrl? }. Recommends ONE embedded VentureVerse app to open when the user's task is exactly what that app does (e.g. a term sheet -> Alchemy, a pitch deck -> Deck Analysis). The card's Open button takes the user into the app inside Cue. Only emit for a genuine match, at most one per turn; `slug` and `name` must come from the ventureverse skill catalog, never invented. Load the `ventureverse` skill for the catalog and the match rules before using this.\n\n" +
     "Emit a task_progress card BEFORE your first tool call on any multi-step, long-running, or post-form turn (web searches, file operations, research), and keep its steps updated as work progresses. Skills that estimate >30s of work should declare progress upfront with concrete step labels (and counts when known).",
   category: "ui-surface",
   defaultRiskLevel: RiskLevel.Low,
@@ -166,6 +167,7 @@ export const uiShowTool = {
           "work_result",
           "artefact",
           "adjacent_offer",
+          "external_app",
         ],
         description: "The type of surface to display",
       },

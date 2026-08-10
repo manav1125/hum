@@ -55,6 +55,7 @@ describe("ui_show surface types", () => {
       "work_result",
       "artefact",
       "adjacent_offer",
+      "external_app",
     ] satisfies (SurfaceType | "connector_recommend")[] as string[]);
 
     for (const type of emittableTypes()) {

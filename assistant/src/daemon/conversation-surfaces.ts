@@ -1,5 +1,7 @@
 import { v4 as uuid } from "uuid";
 
+import { isAssistantFeatureFlagEnabled } from "../config/assistant-feature-flags.js";
+import { getConfig } from "../config/loader.js";
 import { isActivationSession } from "../memory/activation-session-store.js";
 import {
   addAppConversationId,
@@ -2525,6 +2527,30 @@ export async function surfaceProxyResolver(
     const surfaceType = input.surface_type as SurfaceType;
     const title = typeof input.title === "string" ? input.title : undefined;
     const rawData = isPlainObject(input.data) ? input.data : {};
+
+    // The external_app surface embeds VentureVerse; it exists only when the
+    // `ventureverse-apps` feature is on. Reject emission when off (mirrors the
+    // route's 404) so a stale skill can't surface a card into a build where the
+    // Apps destination isn't even mounted. The slug is load-bearing — the card
+    // navigates to /assistant/apps/<slug> — so an empty one is a hard error,
+    // not a blank card.
+    if (surfaceType === "external_app") {
+      if (!isAssistantFeatureFlagEnabled("ventureverse-apps", getConfig())) {
+        return {
+          content:
+            "external_app surfaces are unavailable: the ventureverse-apps feature is off on this instance.",
+          isError: true,
+        };
+      }
+      const slug = (rawData as { slug?: unknown }).slug;
+      if (typeof slug !== "string" || slug.trim().length === 0) {
+        return {
+          content:
+            "external_app surfaces require data.slug (a VentureVerse launch slug like '10-alchemy' from the ventureverse skill catalog).",
+          isError: true,
+        };
+      }
+    }
     const data = (
       surfaceType === "card"
         ? normalizeCardShowData(input, rawData)
