@@ -1,1 +1,0 @@
-function e(e){return e.kind===`installed`||e.kind===`bundled`}function t(e){return e.kind===`catalog`}function n(e){return e.kind===`installed`}export{e as n,n as r,t};

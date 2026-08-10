@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:deploy/web-dist/assets/voice-mode-page-CuA4Luys.js
-import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{U as t,V as n}from"./design-library-PLdIta_8.js";import{d as r,f as i}from"./react-vendor-ClZQnK6j.js";import{t as a}from"./voice-mode-surface-CAgD4YTW.js";import{i as o}from"./routes-D-RiCeXR.js";var s=e(t(),1),c=n();function l(){let e=i(),t=r().key!==`default`;return(0,c.jsx)(a,{onExit:(0,s.useCallback)(()=>{t?e(-1):e(o.hq,{replace:!0})},[t,e])})}export{l as VoiceModePage};
-========
-import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{U as t,V as n}from"./design-library-PLdIta_8.js";import{d as r,f as i}from"./react-vendor-ClZQnK6j.js";import{t as a}from"./voice-mode-surface-BOpevtY7.js";import{i as o}from"./routes-htzCFbIQ.js";var s=e(t(),1),c=n();function l(){let e=i(),t=r().key!==`default`;return(0,c.jsx)(a,{onExit:(0,s.useCallback)(()=>{t?e(-1):e(o.hq,{replace:!0})},[t,e])})}export{l as VoiceModePage};
->>>>>>>> cue/upstream-wave-c:deploy/web-dist/assets/voice-mode-page-BRLwJwgP.js

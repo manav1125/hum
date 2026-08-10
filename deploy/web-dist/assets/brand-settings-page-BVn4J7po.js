@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:deploy/web-dist/assets/brand-settings-page-BVn4J7po.js
-import{V as e}from"./design-library-PLdIta_8.js";import{t}from"./brand-kit-page-ntd_XRxH.js";var n=e();function r(){return(0,n.jsx)(`div`,{style:{maxWidth:980,margin:`0 auto`,padding:`8px 4px 40px`},children:(0,n.jsx)(t,{})})}export{r as BrandSettingsPage};
-========
-import{V as e}from"./design-library-PLdIta_8.js";import{t}from"./brand-kit-page-BeXTA9a4.js";var n=e();function r(){return(0,n.jsx)(`div`,{style:{maxWidth:980,margin:`0 auto`,padding:`8px 4px 40px`},children:(0,n.jsx)(t,{})})}export{r as BrandSettingsPage};
->>>>>>>> cue/upstream-wave-c:deploy/web-dist/assets/brand-settings-page-ClVUMlus.js
