@@ -116,6 +116,7 @@ mock.module("../../providers/speech-to-text/resolve.js", () => ({
 import { CURRENT_POLICY_EPOCH } from "../../runtime/auth/policy.js";
 import { mintToken } from "../../runtime/auth/token-service.js";
 import { RuntimeHttpServer } from "../../runtime/http-server.js";
+import { LIVE_VOICE_TAKEN_OVER_MESSAGE } from "../live-voice-session-manager.js";
 
 type JsonFrame = Record<string, unknown>;
 
@@ -406,27 +407,57 @@ describe("RuntimeHttpServer live voice WebSocket shell", () => {
     expect(ready.seq as number).toBeGreaterThan(error.seq as number);
   });
 
-  test("releases the session lock when the WebSocket closes", async () => {
+  test("a newer start takes over the active session instead of busy", async () => {
     const first = openLiveVoiceClient();
     const second = openLiveVoiceClient();
     await Promise.all([waitForOpen(first), waitForOpen(second)]);
 
     first.send(startFrame("conversation-first"));
-    const firstReady = await waitForJsonFrame(first);
-    expect(firstReady.type).toBe("ready");
+    const firstReady = await waitForFrameOfType(first, "ready");
 
+    // Register the old-socket listener BEFORE the takeover happens — the
+    // terminal error frame goes out during the new start's admission.
+    const takeoverPromise = waitForFrameOfType(first, "error");
     second.send(startFrame("conversation-second"));
-    const busy = await waitForJsonFrame(second);
-    expect(busy).toMatchObject({
-      type: "busy",
-      activeSessionId: firstReady.sessionId,
+    const secondReady = await waitForFrameOfType(second, "ready");
+    expect(secondReady).toMatchObject({
+      type: "ready",
+      conversationId: "conversation-second",
     });
+    expect(secondReady.sessionId).not.toBe(firstReady.sessionId);
+
+    const takeover = await takeoverPromise;
+    expect(takeover).toMatchObject({
+      type: "error",
+      code: "invalid_frame",
+      message: LIVE_VOICE_TAKEN_OVER_MESSAGE,
+      fatal: true,
+    });
+
+    // The preempted socket closing afterwards must not disturb the new
+    // session: its audio still flows.
+    first.close(1000, "client finished");
+    await waitForClose(first);
+
+    second.send(new Uint8Array([1, 2, 3]));
+    const partial = await waitForFrameOfType(second, "stt_partial");
+    expect(partial).toMatchObject({ type: "stt_partial" });
+  });
+
+  test("releases the session lock when the WebSocket closes", async () => {
+    const first = openLiveVoiceClient();
+    await waitForOpen(first);
+
+    first.send(startFrame("conversation-first"));
+    const firstReady = await waitForFrameOfType(first, "ready");
 
     first.close(1000, "client finished");
     await waitForClose(first);
 
+    const second = openLiveVoiceClient();
+    await waitForOpen(second);
     second.send(startFrame("conversation-second"));
-    const secondReady = await waitForJsonFrame(second);
+    const secondReady = await waitForFrameOfType(second, "ready");
     expect(secondReady).toMatchObject({
       type: "ready",
       conversationId: "conversation-second",

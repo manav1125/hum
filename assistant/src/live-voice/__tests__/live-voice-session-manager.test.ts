@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 
 import {
+  LIVE_VOICE_CLIENT_INACTIVITY_MESSAGE,
+  LIVE_VOICE_TAKEN_OVER_MESSAGE,
   type LiveVoiceSession,
   type LiveVoiceSessionCloseReason,
   type LiveVoiceSessionFactoryContext,
@@ -61,6 +63,23 @@ function createSink() {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor(
+  condition: () => boolean,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error("waitFor timed out");
+    }
+    await sleep(5);
+  }
+}
+
 describe("LiveVoiceSessionManager", () => {
   test("creates and starts the first accepted live voice session", async () => {
     const sessions: TestSession[] = [];
@@ -104,7 +123,7 @@ describe("LiveVoiceSessionManager", () => {
     ]);
   });
 
-  test("rejects concurrent start attempts with a busy frame", async () => {
+  test("newest start preempts the active session instead of sending busy", async () => {
     const sessions: TestSession[] = [];
     const manager = new LiveVoiceSessionManager({
       createSessionId: mock(() => `session-${sessions.length + 1}`),
@@ -118,27 +137,169 @@ describe("LiveVoiceSessionManager", () => {
     const second = createSink();
 
     const accepted = await manager.startSession(START_FRAME, first.sink);
-    const rejected = await manager.startSession(START_FRAME, second.sink);
+    const preempting = await manager.startSession(START_FRAME, second.sink);
 
     expect(accepted).toEqual({ status: "accepted", sessionId: "session-1" });
-    expect(rejected).toEqual({
-      status: "busy",
-      activeSessionId: "session-1",
-      frame: {
-        type: "busy",
-        seq: 1,
-        activeSessionId: "session-1",
-      },
-    });
-    expect(second.frames).toEqual([
+    // The newer session is admitted — never a busy rejection.
+    expect(preempting).toEqual({ status: "accepted", sessionId: "session-2" });
+    expect(manager.activeSessionId).toBe("session-2");
+    expect(second.frames).toEqual([]);
+    expect(
+      [...first.frames, ...second.frames].filter((f) => f.type === "busy"),
+    ).toEqual([]);
+
+    // The old session's client got the terminal takeover error on its own
+    // sequenced channel, and its normal close path (finalize) ran.
+    expect(first.frames).toEqual([
       {
-        type: "busy",
+        type: "error",
         seq: 1,
-        activeSessionId: "session-1",
+        code: "invalid_frame",
+        message: LIVE_VOICE_TAKEN_OVER_MESSAGE,
+        fatal: true,
       },
     ]);
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0]?.start).toHaveBeenCalledTimes(1);
+    expect(sessions[0]?.close).toHaveBeenCalledTimes(1);
+    expect(sessions[0]?.closeReasons).toEqual(["superseded"]);
+    expect(sessions).toHaveLength(2);
+    expect(sessions[1]?.start).toHaveBeenCalledTimes(1);
+    expect(sessions[1]?.close).not.toHaveBeenCalled();
+  });
+
+  test("preemption completes old teardown before the new session starts", async () => {
+    const events: string[] = [];
+    const sessions: TestSession[] = [];
+    const manager = new LiveVoiceSessionManager({
+      createSessionId: mock(() => `session-${sessions.length + 1}`),
+      createSession: (context) => {
+        const session = createTestSession({
+          start: mock(() => {
+            events.push(`start:${context.sessionId}`);
+          }),
+          close: mock(async (reason: LiveVoiceSessionCloseReason) => {
+            session.closeReasons.push(reason);
+            events.push(`close:${context.sessionId}`);
+            // Async but prompt teardown — well inside the bound.
+            await Promise.resolve();
+          }),
+        });
+        sessions.push(session);
+        return session;
+      },
+    });
+
+    await manager.startSession(START_FRAME, createSink().sink);
+    await manager.startSession(START_FRAME, createSink().sink);
+
+    expect(events).toEqual([
+      "start:session-1",
+      "close:session-1",
+      "start:session-2",
+    ]);
+  });
+
+  test("a wedged old teardown still admits the new session within the bound", async () => {
+    const sessions: TestSession[] = [];
+    const manager = new LiveVoiceSessionManager({
+      createSessionId: mock(() => `session-${sessions.length + 1}`),
+      preemptTeardownTimeoutMs: 20,
+      createSession: (context) => {
+        const session = createTestSession(
+          context.sessionId === "session-1"
+            ? {
+                close: mock((reason: LiveVoiceSessionCloseReason) => {
+                  sessions[0]?.closeReasons.push(reason);
+                  // Never settles: a wedged session teardown.
+                  return new Promise<void>(() => {});
+                }),
+              }
+            : {},
+        );
+        sessions.push(session);
+        return session;
+      },
+    });
+    const first = createSink();
+    const second = createSink();
+
+    await manager.startSession(START_FRAME, first.sink);
+    const preempting = await manager.startSession(START_FRAME, second.sink);
+
+    expect(preempting).toEqual({ status: "accepted", sessionId: "session-2" });
+    expect(manager.activeSessionId).toBe("session-2");
+    // The wedged close was still attempted (finalize had its chance) and the
+    // old client still got the takeover frame.
+    expect(sessions[0]?.closeReasons).toEqual(["superseded"]);
+    expect(first.frames).toEqual([
+      {
+        type: "error",
+        seq: 1,
+        code: "invalid_frame",
+        message: LIVE_VOICE_TAKEN_OVER_MESSAGE,
+        fatal: true,
+      },
+    ]);
+  });
+
+  for (const engine of ["cascade", "gemini-live"] as const) {
+    test(`reaps a frame-silent ${engine} session after the client-liveness bound`, async () => {
+      const sessions: TestSession[] = [];
+      const manager = new LiveVoiceSessionManager({
+        createSessionId: mock(() => `session-${sessions.length + 1}`),
+        clientInactivityTimeoutMs: 30,
+        createSession: () => {
+          const session = createTestSession();
+          sessions.push(session);
+          return session;
+        },
+      });
+      const { frames, sink } = createSink();
+
+      await manager.startSession({ ...START_FRAME, engine }, sink);
+      expect(manager.activeSessionId).toBe("session-1");
+
+      await waitFor(() => manager.activeSessionId === null, 500);
+
+      expect(sessions[0]?.close).toHaveBeenCalledTimes(1);
+      expect(sessions[0]?.closeReasons).toEqual(["client_inactivity"]);
+      expect(frames).toEqual([
+        {
+          type: "error",
+          seq: 1,
+          code: "invalid_frame",
+          message: LIVE_VOICE_CLIENT_INACTIVITY_MESSAGE,
+          fatal: true,
+        },
+      ]);
+    });
+  }
+
+  test("a session actively sending frames is never reaped", async () => {
+    const sessions: TestSession[] = [];
+    const manager = new LiveVoiceSessionManager({
+      createSessionId: mock(() => `session-${sessions.length + 1}`),
+      clientInactivityTimeoutMs: 60,
+      createSession: () => {
+        const session = createTestSession();
+        sessions.push(session);
+        return session;
+      },
+    });
+
+    await manager.startSession(START_FRAME, createSink().sink);
+
+    // Keep frames flowing well past several liveness windows.
+    const deadline = Date.now() + 200;
+    while (Date.now() < deadline) {
+      await manager.handleBinaryAudio("session-1", new Uint8Array([1]));
+      await sleep(15);
+    }
+
+    expect(manager.activeSessionId).toBe("session-1");
+    expect(sessions[0]?.close).not.toHaveBeenCalled();
+
+    await manager.releaseSession("session-1", "manager_shutdown");
+    expect(manager.activeSessionId).toBeNull();
   });
 
   test("releases the active session once for repeated close events", async () => {
@@ -328,50 +489,55 @@ describe("LiveVoiceSessionManager", () => {
     expect(manager.activeSessionId).toBe("session-1");
   });
 
-  test("holds the session lock until close completes", async () => {
+  test("admits a start racing an in-flight close without clobbering the new session", async () => {
     const sessions: TestSession[] = [];
     let resolveClose: (() => void) | undefined;
     const manager = new LiveVoiceSessionManager({
       createSessionId: mock(() => `session-${sessions.length + 1}`),
       createSession: () => {
-        const session = createTestSession({
-          close: mock(
-            (reason: LiveVoiceSessionCloseReason) =>
-              new Promise<void>((resolve) => {
-                sessions[sessions.length - 1]?.closeReasons.push(reason);
-                resolveClose = resolve;
-              }),
-          ),
-        });
+        const session = createTestSession(
+          sessions.length === 0
+            ? {
+                close: mock(
+                  (reason: LiveVoiceSessionCloseReason) =>
+                    new Promise<void>((resolve) => {
+                      sessions[0]?.closeReasons.push(reason);
+                      resolveClose = resolve;
+                    }),
+                ),
+              }
+            : {},
+        );
         sessions.push(session);
         return session;
       },
     });
     const first = createSink();
     const second = createSink();
-    const third = createSink();
 
     await manager.startSession(START_FRAME, first.sink);
     const releasePromise = manager.releaseSession("session-1", "client_end");
-    const concurrent = await manager.startSession(START_FRAME, second.sink);
+    // The closing session is unreachable for frames while it tears down.
     const concurrentDispatch = await manager.handleClientFrame("session-1", {
       type: "interrupt",
     });
-
-    expect(concurrent).toEqual({
-      status: "busy",
-      activeSessionId: "session-1",
-      frame: { type: "busy", seq: 1, activeSessionId: "session-1" },
-    });
     expect(concurrentDispatch).toEqual({ status: "not_found" });
-    expect(sessions).toHaveLength(1);
 
+    // Newest-wins: the racing start detaches the closing registration and is
+    // admitted immediately — no busy, no takeover frame to a client that is
+    // already ending its own session.
+    const concurrent = await manager.startSession(START_FRAME, second.sink);
+    expect(concurrent).toEqual({ status: "accepted", sessionId: "session-2" });
+    expect(manager.activeSessionId).toBe("session-2");
+    expect(first.frames).toEqual([]);
+    expect(sessions).toHaveLength(2);
+
+    // When the old close finally completes it must not clobber the new slot.
     resolveClose?.();
     await releasePromise;
-
-    const next = await manager.startSession(START_FRAME, third.sink);
-    expect(next).toEqual({ status: "accepted", sessionId: "session-2" });
     expect(manager.activeSessionId).toBe("session-2");
+    expect(sessions[0]?.closeReasons).toEqual(["client_end"]);
+    expect(sessions[1]?.close).not.toHaveBeenCalled();
   });
 
   test("does not import runtime, gateway, provider, or conversation modules", async () => {
