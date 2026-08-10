@@ -41,13 +41,19 @@ Two calls worth keeping:
 - **The ✕ prohibitions are permanent, not tier-dependent.** A thing an owner said "never" about must not quietly become possible at a higher tier.
 
 ### S2 · Watching (the trial)
-Day 6 of 7, **taking nothing, $0 spent**. Shows: *"It would have taken 38 things this week"* → **34 you'd have agreed · 3 you said no · 1 not looked at**, with the individual claims inspectable.
+Day 6 of 7, **taking nothing, $0 spent**. Shows: *"It claimed 38 things this week and took none of them. You've checked 12 so far."* → **38 it claimed · 9 you said yes · 3 you said no · 26 you haven't looked**, with the individual claims inspectable and a **"Check five ›"** row.
+
+**Every trial number is an act the owner performed — never an inference.** The 26 unchecked are reported as unchecked and counted for neither side: *"Cue handled them as usual and you didn't object — but not objecting isn't agreeing."* **Absence of objection is never scored as approval** — rule 2 (a no-op is not a success) applied to the owner's attention rather than the system's. A trial scoring itself on the owner's inattention would be a fake number in the most load-bearing position in the programme.
+
+This costs the headline its impressive number and makes it a better argument: **an agent reporting it was only checked twelve times is more credible than one claiming 89%** — and it makes the reviewed fraction something the owner can improve, which is the behaviour we want during a trial. Hence the cheap **"Check five"** gesture: if agreement must be an act, the act has to be cheap or nobody performs it.
 
 **The misses are the product.** Three wrong claims sharing one cause becomes one fixable sentence — *"all three were payments Xero hadn't caught up on; a 24-hour wait after any payment event fixes all of them"* → **[Add it]**. That's how a generic agent becomes *yours* without anyone writing a prompt.
 
 Why it's acceptable as the default rather than an advanced mode: **matching is a string operation over work that already arrived**, so watching costs nothing and risks nothing.
 
 ### S3 · Granting
+Headline: *"You checked 12 of its 38 claims. It got 9 right."* — with the unchecked remainder stated, and the choice offered honestly: check a few more, or decide on what you've seen.
+
 **It asks, you give, and every withheld thing states its fallback.**
 - Granted scopes: green, plain language, scoped ("internal and vendor addresses only")
 - **Withheld: "it'll draft and hand back to you instead. Nothing breaks; it just stops one step earlier."**
