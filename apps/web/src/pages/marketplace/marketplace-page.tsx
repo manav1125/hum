@@ -53,7 +53,13 @@ type TabKey = "explore" | "sources" | "installed";
 // ─── Shared micro-components ─────────────────────────────────────────────────
 
 /** GitHub mark (the octocat glyph the mock uses for source attribution). */
-function GithubMark({ size = 10, color = C.t3 }: { size?: number; color?: string }) {
+function GithubMark({
+  size = 10,
+  color = C.t3,
+}: {
+  size?: number;
+  color?: string;
+}) {
   return (
     <svg
       width={size}
@@ -159,7 +165,9 @@ function CapChip({ cap }: { cap: Cap }) {
         whiteSpace: "nowrap",
       }}
     >
-      <span style={{ color: cap.elevated ? C.amber : C.violet }}>{cap.glyph}</span>
+      <span style={{ color: cap.elevated ? C.amber : C.violet }}>
+        {cap.glyph}
+      </span>
       {cap.label}
     </span>
   );
@@ -787,8 +795,8 @@ function ExploreTab({
             </div>
           ) : group.isError ? (
             <div style={{ fontSize: 12.5, color: C.t3 }}>
-              Couldn’t index this source just now — it stays cached for 24h
-              once it loads.
+              Couldn’t index this source just now — it stays cached for 24h once
+              it loads.
             </div>
           ) : group.items.length === 0 ? (
             <div style={{ fontSize: 12.5, color: C.t3 }}>
@@ -1472,7 +1480,13 @@ export function MarketplacePage() {
   return (
     <div style={{ minHeight: "100%", background: C.bg }}>
       <HqStyle />
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: isNarrow ? "8px 14px 60px" : "8px 0 60px" }}>
+      <div
+        style={{
+          maxWidth: 1000,
+          margin: "0 auto",
+          padding: isNarrow ? "8px 14px 60px" : "8px 0 60px",
+        }}
+      >
         {/* Dark ink hero: serif headline + right-aligned live skill/source count. */}
         <div
           style={{
@@ -1502,7 +1516,15 @@ export function MarketplacePage() {
               style={{
                 fontFamily: serif,
                 fontSize: isNarrow ? 22 : 24,
-                color: "#fff",
+                // `C.ink` is `--mv1-t1` — the primary TEXT token, used here as
+                // the hero's background. That inverts with the theme: in light
+                // themes t1 is dark so a hardcoded "#fff" headline read fine,
+                // but under the dark book t1 resolves light, the panel turns
+                // white, and white-on-white measured 1.04:1 — "New skills,"
+                // was invisible and the hero read as a lowercase fragment.
+                // `C.bg` is the canvas, so it contrasts with `C.ink` by
+                // construction in whichever direction the theme points.
+                color: C.bg,
                 letterSpacing: "-0.2px",
                 lineHeight: 1.2,
               }}
@@ -1531,7 +1553,10 @@ export function MarketplacePage() {
               style={{
                 fontFamily: mono,
                 fontSize: 22,
-                color: "#fff",
+                // Same inversion as the headline above — this sits on the same
+                // `C.ink` hero, so it needs the canvas colour, not a hardcoded
+                // white that only survives one of the two themes.
+                color: C.bg,
                 fontWeight: 500,
               }}
             >

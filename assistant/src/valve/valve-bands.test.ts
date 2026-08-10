@@ -196,6 +196,88 @@ describe("fail open", () => {
   });
 });
 
+describe("a filing decision is not evidence of urgency", () => {
+  // MUTATION CHECK for the `decidedBy === "floor"` clause removed from the
+  // known-person branch. Restoring it turns all four of these red.
+  //
+  // The floor's job is FILING — "do not lose this". `direct_human` clears it
+  // for any robot that addresses you by name: measured, 226 of 441 arrivals
+  // on this instance, and the gate skips the judge on any floor hit. While
+  // the valve read that stamp as urgency, half of everything was urgent and
+  // the three stops passed 164 / 151 / 104 with "held for you" at zero.
+
+  test("a bulk sender with nothing to action is demoted, floor or not", () => {
+    // Previously unreachable: the floor stamp returned urgent ~70 lines
+    // before the `automated_sender` rule written for exactly this case.
+    const verdict = bandItem(
+      item(),
+      arrival({
+        decidedBy: "floor",
+        ruleId: "direct_human",
+        senderAddress: "no-reply@example.com",
+        title: "Your weekly deals",
+        snippet: "Save big this week",
+      }),
+      ctx(),
+    );
+    expect(verdict.ruleId).toBe("automated_sender");
+    expect(verdict.band).toBe(BAND_EVERYTHING);
+  });
+
+  test("a real person writing directly needs you — but is not urgent", () => {
+    const verdict = bandItem(
+      item(),
+      arrival({ decidedBy: "floor", ruleId: "direct_human" }),
+      ctx(),
+    );
+    expect(verdict.ruleId).toBe("direct_person");
+    expect(verdict.band).toBe(BAND_NEEDS_YOU);
+  });
+
+  test("a bulk sender WITH something to action is not demoted", () => {
+    // The guard that keeps the demotion safe: an automated sender carrying a
+    // real obligation stays up. Without it this fix would quiet a payment
+    // failure.
+    const verdict = bandItem(
+      item(),
+      arrival({
+        decidedBy: "floor",
+        ruleId: "direct_human",
+        senderAddress: "no-reply@example.com",
+        title: "Your payment failed",
+      }),
+      ctx(),
+    );
+    expect(verdict.band).not.toBe(BAND_EVERYTHING);
+  });
+
+  test("a deliberately-known human is still urgent", () => {
+    // The half of the old condition that was always right, and must survive.
+    for (const ruleId of ["known_contact", "thread_participant"]) {
+      const verdict = bandItem(item(), arrival({ ruleId }), ctx());
+      expect(verdict.ruleId).toBe("known_person");
+      expect(verdict.band).toBe(BAND_URGENT);
+    }
+  });
+
+  test("the gate failing to judge still fails open, floor stamp or not", () => {
+    // The fail-open clause sits ABOVE every demotion and is untouched by this
+    // change. This codebase has emptied a task list once by getting it wrong.
+    const verdict = bandItem(
+      item(),
+      arrival({
+        decidedBy: "fallback",
+        ruleId: null,
+        senderAddress: "no-reply@example.com",
+        title: "Your weekly deals",
+      }),
+      ctx(),
+    );
+    expect(verdict.ruleId).toBe("gate_unsure");
+    expect(verdict.band).toBe(BAND_NEEDS_YOU);
+  });
+});
+
 describe("demotion requires positive evidence", () => {
   test("a learned-down sender drops to the everything band", () => {
     const verdict = bandItem(
@@ -249,8 +331,14 @@ describe("demotion requires positive evidence", () => {
   });
 
   test("Cue's own queue is held, but a parked item never is", () => {
+    // NULL is the eligible sentinel — migration 305 defines the column as
+    // "NULL = eligible for the policy-gated auto-run path, 'parked' = the user
+    // parked this". Nothing writes the string "eligible", so a test that used
+    // it proved this rule reachable with an input production never produces.
+    // It did, and `cue_is_holding` had 0 firings in prod while this suite was
+    // green.
     const holding = bandItem(
-      item({ status: "queued", autoRunEligibility: "eligible" }),
+      item({ status: "queued", autoRunEligibility: null }),
       arrival({ ruleId: "other", decidedBy: "rule" }),
       ctx(),
     );
@@ -401,8 +489,14 @@ describe("rule bookkeeping", () => {
           ).ruleId,
       ],
       [
+        // Was `decidedBy: "floor"`. That is a FILING decision — the gate
+        // keeping something rather than losing it — and treating it as
+        // urgency is what flattened the three stops to 164 / 151 / 104.
+        // Only the gate rules that name a deliberately-known human mean
+        // "urgent" here now.
         "known_person",
-        () => bandItem(item(), arrival({ decidedBy: "floor" }), ctx()).ruleId,
+        () =>
+          bandItem(item(), arrival({ ruleId: "known_contact" }), ctx()).ruleId,
       ],
       [
         "gate_unsure",
@@ -459,8 +553,10 @@ describe("rule bookkeeping", () => {
       [
         "cue_is_holding",
         () =>
+          // Must use the REAL sentinel. Reachability proved with a value the
+          // daemon never writes is not reachability.
           bandItem(
-            item({ autoRunEligibility: "eligible" }),
+            item({ status: "queued", autoRunEligibility: null }),
             arrival({ ruleId: "other" }),
             ctx(),
           ).ruleId,

@@ -263,12 +263,20 @@ function GuardrailsPageDesktop() {
   // Week/Month window (SET 3) — one knob re-queries the whole payload.
   const [days, setDays] = useState<7 | 30>(7);
 
-  const query = useQuery(
-    guardrailsGetOptions({
+  const query = useQuery({
+    ...guardrailsGetOptions({
       path: { assistant_id: assistantId },
       query: { days },
     }),
-  );
+    // Every other query on a page load retries and recovers; this one did not,
+    // so a single transient failure left Guardrails permanently on its error
+    // card while HQ beside it healed itself. Observed live: one 429 on
+    // `guardrails?days=7`, never retried, page dead until you navigated away.
+    // Guardrails is also where the valve's REACHING YOU band lives, so a
+    // surface that stays broken here hides a control, not just a panel.
+    retry: 2,
+    retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 5000),
+  });
 
   const data = query.data;
   const pad = isMobile ? "16px 14px 60px" : "24px 24px 80px";
@@ -305,6 +313,26 @@ function GuardrailsPageDesktop() {
           >
             Couldn&rsquo;t load your guardrails. Cue stays inside its default
             lines — everyday work runs; sending, money, and deletes ask first.
+            {/* The card stated the fail-safe honestly but offered no way out:
+                the only escape was navigating away and back. */}
+            <button
+              type="button"
+              onClick={() => void query.refetch()}
+              disabled={query.isFetching}
+              style={{
+                display: "block",
+                marginTop: 8,
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                font: "inherit",
+                color: C.blue,
+                cursor: query.isFetching ? "default" : "pointer",
+                textDecoration: "underline",
+              }}
+            >
+              {query.isFetching ? "Trying…" : "Try again"}
+            </button>
           </div>
         ) : (
           <GuardrailsBody

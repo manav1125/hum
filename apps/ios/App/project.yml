@@ -180,6 +180,17 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.ventureverse.cue.widgets
         BUNDLE_DISPLAY_NAME: Cue Widgets
         INFOPLIST_FILE: CueWidgets/Info.plist
+        # This target defines its own `settings.base` and has NO `configFiles`,
+        # so it never reads Base.xcconfig — the defaults there do not reach it.
+        # `CueWidgets/Info.plist` expands both of these; with nothing to expand
+        # they resolved to empty, Xcode dropped the keys, and the extension
+        # shipped with no version. `simctl install` then rejected the whole app
+        # with "Invalid placeholder attributes", which is literally what an
+        # unresolved placeholder produces. The Dev target embeds no PlugIns and
+        # installed fine throughout, which is what disguised this as signing.
+        # Release still wins: xcodebuild CLI overrides beat target settings.
+        MARKETING_VERSION: "0.0.1"
+        CURRENT_PROJECT_VERSION: "1"
         DEVELOPMENT_TEAM: XU8BLQACGU
         CODE_SIGN_STYLE: Automatic
         SWIFT_VERSION: "5.0"

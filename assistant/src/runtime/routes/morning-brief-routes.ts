@@ -30,7 +30,7 @@ import { z } from "zod";
 import {
   type EventSummary,
   fetchTodaysEvents,
-} from "../../home/action-board.js";
+} from "../../calendar/todays-events.js";
 import { resolveOAuthConnection } from "../../oauth/connection-resolver.js";
 import { getLogger } from "../../util/logger.js";
 import { getAgentByAssignee } from "../../work-items/agent-store.js";

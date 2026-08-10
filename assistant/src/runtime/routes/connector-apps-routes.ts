@@ -583,6 +583,14 @@ const connectorHealthSchema = z
       .optional()
       .describe("ISO time of the last connection-shaped failure."),
     lastError: z.string().optional().describe("Human-readable last failure."),
+    activelyChecked: z
+      .boolean()
+      .describe(
+        "Whether a liveness probe exists for this toolkit. False means " +
+          "nothing here actively checks it, so 'unknown' is the absence of a " +
+          "CHECK rather than the absence of evidence — render 'not actively " +
+          "checked' with the reason, never a blank cell.",
+      ),
     checkedAt: z
       .string()
       .optional()

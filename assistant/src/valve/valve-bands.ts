@@ -295,7 +295,18 @@ function awaitsTheOwner(item: WorkItem): boolean {
 function cueIsHolding(item: WorkItem): boolean {
   if (awaitsTheOwner(item)) return false;
   if (item.status === "running") return true;
-  return item.status === "queued" && item.autoRunEligibility === "eligible";
+  // `"eligible"` is not a value this column ever holds. Migration 305 defines
+  // the sentinel the other way round: NULL means eligible for the policy-gated
+  // auto-run path, and `"parked"` is the durable "the user parked this" marker.
+  // Nothing in the daemon writes the string `"eligible"` — so this rule could
+  // never fire, and prod confirms it: `cue_is_holding` has 0 firings across the
+  // whole banding table while every other rule has hundreds.
+  //
+  // The cost of that was quiet and in the wrong direction: work Cue is actually
+  // holding never got the "nothing needed from you" band, so it kept presenting
+  // as the owner's problem. A dead rule in the valve does not fail loudly, it
+  // just silently declines to quieten anything.
+  return item.status === "queued" && item.autoRunEligibility !== "parked";
 }
 
 /**
@@ -393,11 +404,26 @@ export function bandItem(
   // already established this; the valve reads its verdict rather than
   // re-deriving it, so there is exactly one definition of "a known person" in
   // the daemon and it lives in the gate.
-  if (
-    arrival &&
-    (arrival.decidedBy === "floor" ||
-      (arrival.ruleId != null && KNOWN_PERSON_GATE_RULES.has(arrival.ruleId)))
-  ) {
+  //
+  // `decidedBy === 'floor'` USED TO SATISFY THIS TOO, and that single clause
+  // is what made the three stops meaningless: 164 / 151 / 104 items, with
+  // "held for you" at zero. The floor's job is FILING — "do not lose this" —
+  // and `direct_human` clears it for any robot that addresses you by name.
+  // Measured on this instance: `direct_human` fired on 226 of 441 arrivals,
+  // and the gate skips the judge on any floor hit (arrival-gate.ts:608). So
+  // half of everything arrived stamped `floor`, landed here, and was called
+  // urgent — which is why "only urgent" still showed 104 items.
+  //
+  // Worse, it shadowed the two rules written for exactly this case. The
+  // `automated_sender` demotion below carries a measurement in its own comment
+  // (68 of 93 surfaced arrivals were `direct_human` — HSBC, Uber, Temu), and
+  // `direct_person` bands a real person writing to you as needs-you. Neither
+  // could ever be reached from a floor-decided arrival.
+  //
+  // A filing decision is not evidence of urgency. Only the gate rules that
+  // name a deliberately-known human keep that meaning here; everything else
+  // the floor kept now falls through to the rules that were written for it.
+  if (arrival?.ruleId != null && KNOWN_PERSON_GATE_RULES.has(arrival.ruleId)) {
     return {
       band: BAND_URGENT,
       ruleId: "known_person",

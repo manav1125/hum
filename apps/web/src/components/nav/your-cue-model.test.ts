@@ -171,25 +171,33 @@ describe("Connections is not a leaf", () => {
   });
 });
 
-describe("a leaf with no surface admits it", () => {
-  test("Watching has no destination and says why", () => {
+describe("every leaf resolves to a surface", () => {
+  test("Watching points at its own page", () => {
+    // This asserted `to === null` and a non-empty `unavailableReason`. Both
+    // were true when written and both went on being true after the surface
+    // shipped — three separate tests across this file, the layout suite and
+    // the mobile suite held "Not built" in place while the page was live.
+    // An unavailable-state assertion is only honest while the thing is
+    // unavailable; after that it is a bug with a guard around it.
     const watching = YOUR_CUE_LEAVES.find((leaf) => leaf.key === "watching");
-    expect(watching?.to).toBeNull();
-    expect(watching?.unavailableReason?.length).toBeGreaterThan(0);
+    expect(watching?.to).toBe(routes.watching);
+    expect(watching?.unavailableReason).toBeUndefined();
   });
 
   test("Watching never claims a lookalike surface", () => {
     // Automations is where a watcher is CONFIGURED; Channels is where a source
-    // is CONNECTED. Neither is "what flowed through it today".
+    // is CONNECTED. Neither is "what flowed through it today" — so matching
+    // either would still be wrong, now for the opposite reason.
     const watching = YOUR_CUE_LEAVES.find((leaf) => leaf.key === "watching");
     expect(watching?.match(routes.automations)).toBe(false);
     expect(watching?.match(routes.channels)).toBe(false);
     expect(watching?.match(routes.memory)).toBe(false);
+    expect(watching?.match(routes.watching)).toBe(true);
   });
 
-  test("it is the ONLY unbuilt leaf — everything else resolves", () => {
+  test("no leaf is left without a destination", () => {
     const unbuilt = YOUR_CUE_LEAVES.filter((leaf) => leaf.to === null);
-    expect(unbuilt.map((l) => l.key)).toEqual(["watching"]);
+    expect(unbuilt.map((l) => l.key)).toEqual([]);
   });
 });
 

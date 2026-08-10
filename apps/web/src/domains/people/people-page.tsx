@@ -719,11 +719,13 @@ function DossierPane({
         <ReachableSection
           channels={dossier?.reachability ?? []}
           loading={dossierQuery.isLoading}
+          error={dossierQuery.isError}
         />
         <InteractionsSection
           interactions={dossier?.interactions ?? []}
           count={rel?.interactionCount ?? contact.interactionCount}
           loading={dossierQuery.isLoading}
+          error={dossierQuery.isError}
           displayName={displayName}
           now={now}
           onOpen={(id) => navigate(routes.conversation(id))}
@@ -1161,12 +1163,19 @@ function MemoryRow({
 
 // ── REACHABLE ON ────────────────────────────────────────────────────────────
 
+/**
+ * Same split as `InteractionsSection`: without `error`, a failed dossier fetch
+ * rendered "No channels connected yet." — which reads as a fact about the
+ * person (you cannot reach them) when all that happened is we failed to look.
+ */
 function ReachableSection({
   channels,
   loading,
+  error,
 }: {
   channels: DossierChannel[];
   loading: boolean;
+  error: boolean;
 }) {
   return (
     <div style={PANEL}>
@@ -1186,7 +1195,9 @@ function ReachableSection({
         </div>
       ) : channels.length === 0 ? (
         <div style={{ fontSize: 12.5, color: C.t2, marginTop: 8 }}>
-          No channels connected yet.
+          {error
+            ? "Couldn’t read the channels. Try again shortly."
+            : "No channels connected yet."}
         </div>
       ) : (
         <div
@@ -1270,10 +1281,22 @@ function ChannelChip({ channel }: { channel: DossierChannel }) {
 
 // ── INTERACTIONS ────────────────────────────────────────────────────────────
 
+/**
+ * `count` and `interactions` come from two different places: `count` is the
+ * counter stored on the contact/relationship row, `interactions` is the
+ * separately-fetched dossier. They can disagree, and when they did this panel
+ * printed "Interactions · 2" directly above "No interactions recorded yet" —
+ * one of those two is always a lie.
+ *
+ * Only `loading` used to be passed, so a *failed* dossier fetch rendered as
+ * the "nothing yet" copy: a read error dressed up as a fact about the person.
+ * Four states now, and none of them claims more than we know.
+ */
 function InteractionsSection({
   interactions,
   count,
   loading,
+  error,
   displayName,
   now,
   onOpen,
@@ -1281,6 +1304,7 @@ function InteractionsSection({
   interactions: DossierInteraction[];
   count: number;
   loading: boolean;
+  error: boolean;
   displayName: string;
   now: number;
   onOpen: (conversationId: string) => void;
@@ -1316,8 +1340,23 @@ function InteractionsSection({
             marginTop: 10,
           }}
         >
-          No interactions recorded yet. As Cue talks with {displayName} across
-          your channels, the history fills in here.
+          {error ? (
+            <>
+              Couldn’t read the history with {displayName}. Try again shortly.
+            </>
+          ) : count > 0 ? (
+            // The counter says there are some and the dossier returned none.
+            // Say exactly that rather than picking whichever reads better.
+            <>
+              Cue counts {count} {count === 1 ? "interaction" : "interactions"}{" "}
+              with {displayName} but couldn’t retrieve the history.
+            </>
+          ) : (
+            <>
+              No interactions recorded yet. As Cue talks with {displayName}{" "}
+              across your channels, the history fills in here.
+            </>
+          )}
         </div>
       ) : (
         <div style={{ marginTop: 12 }}>

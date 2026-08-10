@@ -2,7 +2,9 @@ import { Cron } from "croner";
 import { and, asc, desc, eq, isNull, lt, lte, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
+import { getConfig } from "../config/loader.js";
 import { notifyConfigChange } from "../config-repo/notify.js";
+import { canonicalizeTimeZone } from "../daemon/date-context.js";
 import { getDb } from "../memory/db-connection.js";
 import { rawChanges } from "../memory/raw-query.js";
 import { scheduleJobs, scheduleRuns } from "../memory/schema.js";
@@ -15,6 +17,34 @@ import {
 import type { ScheduleSyntax } from "./recurrence-types.js";
 
 const logger = getLogger("schedule-store");
+
+/**
+ * The zone a schedule should run in when the caller did not name one.
+ *
+ * A null `timezone` column is not "unset" at execution time — the recurrence
+ * engine evaluates the cron in UTC. Prod daemons run UTC, so a recurring
+ * schedule created without an explicit zone silently fires at a different wall
+ * clock than the one the owner read back. Two of this instance's schedules did
+ * exactly that: "0 18 * * *" fired at 02:00 the next morning for an owner in
+ * Hong Kong, and the weekly review landed eight hours off, both for months.
+ *
+ * The owner's configured zone is the honest default, falling back to whatever
+ * the client last detected. If neither is set we still return null rather than
+ * substituting the host zone: prod's host zone is UTC, so guessing it would
+ * reintroduce the same wrong answer while making it look deliberate.
+ */
+export function resolveDefaultScheduleTimeZone(): string | null {
+  try {
+    const ui = getConfig().ui;
+    return (
+      canonicalizeTimeZone(ui?.userTimezone) ??
+      canonicalizeTimeZone(ui?.detectedTimezone)
+    );
+  } catch {
+    // Config unreadable (early boot, test harness) — leave it unset.
+    return null;
+  }
+}
 
 function notifySchedulesChanged(): void {
   publishSchedulesChanged();
@@ -175,6 +205,11 @@ export function createSchedule(params: {
   const isOneShot = expression == null;
   const syntax = params.syntax ?? "cron";
 
+  // Resolved once, before validation, so the zone the expression is checked
+  // against is the same one it will actually run in. One-shots carry an
+  // absolute instant in nextRunAt and are unaffected either way.
+  const timezone = params.timezone ?? resolveDefaultScheduleTimeZone();
+
   if (isOneShot) {
     // One-shot schedules must have nextRunAt provided directly
     if (params.nextRunAt == null) {
@@ -183,7 +218,7 @@ export function createSchedule(params: {
       );
     }
   } else {
-    const spec = { syntax, expression, timezone: params.timezone };
+    const spec = { syntax, expression, timezone };
     if (!isValidScheduleExpression(spec)) {
       throw new Error(`Invalid ${syntax} expression: "${expression}"`);
     }
@@ -208,7 +243,6 @@ export function createSchedule(params: {
   const id = uuid();
   const now = Date.now();
   const enabled = params.enabled ?? true;
-  const timezone = params.timezone ?? null;
   const mode = params.mode ?? "execute";
   const routingIntent = params.routingIntent ?? "all_channels";
   const routingHints = params.routingHints ?? {};

@@ -395,7 +395,11 @@
         <div class="card" style="animation:gvRise 1s cubic-bezier(.2,.8,.2,1) 6.4s both;">
           <button class="btn light" id="splash-go" type="button">Get started<span class="sheen" style="animation:gvSheen 3.2s ease 7.4s infinite"></span></button>
         </div>
-        <p style="position:absolute;top:14px;left:0;right:0;text-align:center;font-size:12px;color:var(--muted);z-index:3;pointer-events:none;">Tap anywhere to continue</p>
+        <!-- Absolutely positioned, so it escapes .screen's safe-area padding and
+             must carry its own inset. At a flat top:14px this landed underneath
+             the Dynamic Island on every 14 Pro-and-later device: the hint read
+             "Ta        ue" with the middle covered. -->
+        <p style="position:absolute;top:calc(env(safe-area-inset-top, 0px) + 14px);left:0;right:0;text-align:center;font-size:12px;color:var(--muted);z-index:3;pointer-events:none;">Tap anywhere to continue</p>
       </section>
 
       <!-- A · Sign in — the system idles behind the glass -->

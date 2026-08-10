@@ -272,3 +272,49 @@ describe("useActiveAssistantLifecycleIsLoading", () => {
     }
   });
 });
+
+describe("usePlatformGate — a self-hosted owner is never told to log in", () => {
+  // REGRESSION (#70). Every caller that omits `platformHostedOnly` used to
+  // fall through to "disabled" for a self-hosted assistant, and "disabled"
+  // renders "Log in to the Cue platform…" — no link, no next step, an
+  // instruction that cannot be followed. It reached TEN surfaces, including
+  // the managed-email card the owner reported.
+  //
+  // They DO have a session: with their own instance. What they do not have,
+  // and cannot get, is a cue-hq one.
+
+  test('self-hosted returns "gated", not "disabled", on the default branch', () => {
+    useAuthStore.setState({ platformSession: "absent" });
+    setLifecycle({ kind: "self_hosted" });
+    const { result } = renderHook(() => usePlatformGate());
+    expect(result.current).toBe("gated");
+  });
+
+  test("holds even with a live platform session", () => {
+    // Signed into cue-hq in another tab does not make hosted-only features
+    // meaningful for a self-hosted assistant.
+    useAuthStore.setState({ platformSession: "present" });
+    setLifecycle({ kind: "self_hosted" });
+    expect(renderHook(() => usePlatformGate()).result.current).toBe("gated");
+  });
+
+  test("the default branch now agrees with the platformHostedOnly branch", () => {
+    // The two branches disagreeing about the SAME assistant is what produced
+    // the dead end: one said "gated", the other "log in".
+    useAuthStore.setState({ platformSession: "absent" });
+    setLifecycle({ kind: "self_hosted" });
+    const plain = renderHook(() => usePlatformGate()).result.current;
+    const hostedOnly = renderHook(() =>
+      usePlatformGate({ platformHostedOnly: true }),
+    ).result.current;
+    expect(plain).toBe(hostedOnly);
+  });
+
+  test('a platform-hosted assistant with no session still gets "disabled"', () => {
+    // The fix must not swallow the genuine logged-out case — that one CAN be
+    // followed, and the copy is correct there.
+    useAuthStore.setState({ platformSession: "absent" });
+    setLifecycle({ kind: "active", isLocal: false } as AssistantState);
+    expect(renderHook(() => usePlatformGate()).result.current).toBe("disabled");
+  });
+});

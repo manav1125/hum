@@ -181,6 +181,17 @@ export function usePlatformGate(
 
   const local = isLocalMode();
   if (local && platformDisabled) return "gated";
+  // A self-hosted owner HAS a session — with their own instance. They have no
+  // cue-hq session and cannot get one, so "disabled" here rendered "Log in to
+  // the Cue platform…" as a dead end: no link, no next step, an instruction
+  // that cannot be followed. It reached TEN surfaces, because every caller
+  // that omits `platformHostedOnly` lands in this branch.
+  //
+  // `gated` is the honest state for them: the feature belongs to the hosted
+  // platform, and they are not on it. Same conclusion the
+  // `platformHostedOnly` branch above already reaches — this just stops the
+  // default branch disagreeing with it about the same assistant.
+  if (activeIsSelfHosted) return "gated";
   if (!hasPlatformSession) return "disabled";
   return "full";
 }

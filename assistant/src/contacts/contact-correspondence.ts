@@ -82,6 +82,66 @@ export function looksLikeEmailAddress(address: string): boolean {
 }
 
 /**
+ * Sending subdomains that only ever front a bulk mailer.
+ *
+ * Deliberately the LEFTMOST label only, and deliberately not shared with
+ * `isBulkSenderAddress`: that predicate is the arrival gate's FILING rule, and
+ * widening it would start filing a real person's mail — the one direction this
+ * codebase must never move in. This list is used at the contact layer alone,
+ * where the cost of a wrong call is a missing row on People rather than a
+ * missed message.
+ */
+const BULK_SENDING_SUBDOMAINS = new Set([
+  "mail",
+  "email",
+  "mailer",
+  "mailing",
+  "welcome",
+  "communication",
+  "communications",
+  "news",
+  "newsletter",
+  "notify",
+  "notification",
+  "notifications",
+  "reply",
+  "replies",
+  "info",
+  "marketing",
+  "campaign",
+  "campaigns",
+  "em",
+]);
+
+/**
+ * True when the address is sent from a dedicated bulk-mail subdomain.
+ *
+ * `isBulkSenderAddress` reads only the LOCAL part against a 21-name list, so
+ * every shape below slipped through and became a "human" on People — a card
+ * issuer at `welcome.`, a delivery app at `mail.`, a cloud vendor at
+ * `communication.`, a bank at `info.`, a school platform at `mail1.`. Not one
+ * has a bulk local part; every one announces itself in the domain.
+ *
+ * Trailing digits are stripped so `mail1.` and `em2.` match — ESPs number
+ * their sending pools. A bare two-label domain never matches, and neither does
+ * a person at one; the cost of the rule is a human who genuinely sends from a
+ * `mail.` subdomain, which is rare enough to accept here and whose mail still
+ * reaches the owner normally, since filing is untouched.
+ */
+export function hasBulkSendingSubdomain(address: string): boolean {
+  const at = address.lastIndexOf("@");
+  if (at <= 0) return false;
+  const labels = address
+    .slice(at + 1)
+    .toLowerCase()
+    .split(".");
+  // Needs a subdomain: `mail.example.com` has 3 labels, `example.com` has 2.
+  if (labels.length < 3) return false;
+  const first = labels[0]?.replace(/\d+$/, "") ?? "";
+  return BULK_SENDING_SUBDOMAINS.has(first);
+}
+
+/**
  * Turn `jane.doe` into `Jane Doe` for an address whose mail never carried a
  * display name. Better than showing a raw address on a person card, and never
  * invents a surname that was not in the address.
@@ -279,6 +339,13 @@ export function listCorrespondents(
     const address = (row.address ?? "").trim().toLowerCase();
     if (!address || !looksLikeEmailAddress(address)) continue;
     if (isBulkSenderAddress(address)) continue;
+    // The gate's local-part rule is not enough on its own: `direct_human`
+    // SURFACES these senders, so `isNeverSurfacedSender` below can never
+    // retire them either — a sender the safety floor surfaces is by
+    // definition not "never surfaced". Without this line the People list
+    // filled with card issuers, delivery apps, cloud vendors and banks — 22
+    // of them in one day, every row labelled `human`.
+    if (hasBulkSendingSubdomain(address)) continue;
     if (guardians.has(address)) continue;
     if (isNeverSurfacedSender(judgements.get(address))) continue;
     const name = nameByAddress.get(address)?.trim();

@@ -110,7 +110,7 @@ mock.module("../memory/db-maintenance.js", () => ({
   maybeRunDbMaintenance: () => {},
 }));
 
-import { getDb, getMemoryDb } from "../memory/db-connection.js";
+import { getMemoryDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { enqueueMemoryJob } from "../memory/jobs-store.js";
 import { runMemoryJobsOnce } from "../memory/jobs-worker.js";

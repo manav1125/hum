@@ -704,7 +704,15 @@ export function WebAutomationsBoard() {
 
   const watchers = watchersQ.data ?? [];
   const playbooks = playbooksQ.data?.playbooks ?? [];
-  const dial: GlobalDial = playbooksQ.data?.globalDial ?? "assist";
+  // The autonomy level is never defaulted. This read `?? "assist"`, so any
+  // failed or in-flight fetch rendered "Assist — playbooks can draft, not
+  // auto-send" as though it were fact; observed live during a transient 429
+  // while the instance was actually "Autonomous — playbooks can act on their
+  // own". Someone checking whether Cue may act unattended got the opposite
+  // answer. A value we could not read is shown as unread, never as a safe
+  // guess — a reassuring default is the worst possible failure direction for
+  // a permission display.
+  const dial: GlobalDial | null = playbooksQ.data?.globalDial ?? null;
 
   return (
     <div
@@ -780,7 +788,15 @@ export function WebAutomationsBoard() {
           >
             GLOBAL TRUST:{" "}
           </span>
-          {dialBanner(dial)}
+          {dial ? (
+            dialBanner(dial)
+          ) : (
+            <span style={{ color: MUTED }}>
+              {playbooksQ.isLoading
+                ? "—"
+                : "couldn't read — Cue's autonomy level is unchanged, this panel just can't show it"}
+            </span>
+          )}
         </div>
 
         <div
@@ -804,7 +820,16 @@ export function WebAutomationsBoard() {
             {watchers.map((w) => (
               <WatcherCard key={w.id} watcher={w} />
             ))}
-            {watchers.length === 0 && !watchersQ.isLoading && !newWatcher ? (
+            {/* "nothing yet" and "couldn't read" are never the same sentence.
+                This branch checked only `isLoading`, so a failed fetch fell
+                through to "No watchers yet" — seen live claiming zero while
+                three healthy watchers were running. */}
+            {watchers.length === 0 && watchersQ.isError && !newWatcher ? (
+              <div style={{ fontSize: 13, color: MUTED }}>
+                Couldn't read your watchers. Any that are running keep running —
+                this list just isn't loading.
+              </div>
+            ) : watchers.length === 0 && !watchersQ.isLoading && !newWatcher ? (
               <div style={{ fontSize: 13, color: MUTED }}>
                 No watchers yet — add one to monitor a source.
               </div>
@@ -819,7 +844,12 @@ export function WebAutomationsBoard() {
           >
             {newPlaybook ? (
               <NewPlaybookForm
-                dial={dial}
+                // A creation default is not a permission display: if the dial
+                // is unreadable, a NEW playbook starts at the most restrictive
+                // setting. Guessing "assist" is safe here precisely because it
+                // constrains rather than reassures — the opposite of what the
+                // banner above must never do.
+                dial={dial ?? "assist"}
                 watchers={watchers}
                 onDone={() => setNewPlaybook(false)}
               />

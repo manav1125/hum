@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { Server } from "bun";
 
 import { isActorTokenRevoked } from "../../auth/actor-token-revocation.js";
@@ -15,6 +17,28 @@ import { getLogger } from "../../logger.js";
 import { isLoopbackPeer } from "../../util/is-loopback-address.js";
 
 const log = getLogger("auth");
+
+/**
+ * A stable, non-reversible label for the credential a request presented.
+ *
+ * Fed to `AuthRateLimiter.recordFailure` so repeated failures of the SAME
+ * credential collapse to one counted attempt. The limiter exists to stop
+ * credential GUESSING, and a guesser must present different credentials — so
+ * counting distinct failures measures the attack, while a broken client
+ * replaying one dead token no longer exhausts the budget and locks the owner
+ * out of every /v1/* route.
+ *
+ * Truncated SHA-256 of the raw header: enough to distinguish guesses, useless
+ * to anyone who obtains it. It is a map key only — never logged, never
+ * returned, never persisted.
+ */
+function credentialFingerprint(req: Request): string {
+  const header = req.headers.get("authorization");
+  // No header at all is its own bucket: absence cannot be a guess, so every
+  // such failure from an IP folds into a single slot.
+  if (!header) return "none";
+  return createHash("sha256").update(header).digest("base64url").slice(0, 16);
+}
 
 // Suppresses repeat "legacy loopback fallback" warnings: each (guard, path)
 // logs at most once per cooldown window so the rollout signal stays visible
@@ -251,7 +275,7 @@ export function createAuthMiddleware(
       ) {
         return null;
       }
-      authRateLimiter.recordFailure(getClientIp());
+      authRateLimiter.recordFailure(getClientIp(), credentialFingerprint(req));
       log.warn(
         { path: new URL(req.url).pathname, reason: result.reason },
         "Edge auth rejected: token validation failed",
@@ -278,7 +302,7 @@ export function createAuthMiddleware(
       ) {
         return null;
       }
-      authRateLimiter.recordFailure(getClientIp());
+      authRateLimiter.recordFailure(getClientIp(), credentialFingerprint(req));
       log.warn(
         { path: new URL(req.url).pathname, scope, reason: result.reason },
         "Scoped edge auth rejected: token validation failed",
@@ -317,7 +341,7 @@ export function createAuthMiddleware(
     ) {
       return null;
     }
-    authRateLimiter.recordFailure(getClientIp());
+    authRateLimiter.recordFailure(getClientIp(), credentialFingerprint(req));
     log.warn(
       { path: new URL(req.url).pathname, ...extra },
       `${label} rejected: missing Authorization header`,
@@ -340,7 +364,7 @@ export function createAuthMiddleware(
     ) {
       return null;
     }
-    authRateLimiter.recordFailure(getClientIp());
+    authRateLimiter.recordFailure(getClientIp(), credentialFingerprint(req));
     log.warn(
       { path: new URL(req.url).pathname, ...extra },
       `${label} rejected: malformed Authorization header`,
@@ -370,7 +394,7 @@ export function createAuthMiddleware(
       authRateLimiter.clearIp(getClientIp());
       return null;
     }
-    authRateLimiter.recordFailure(getClientIp());
+    authRateLimiter.recordFailure(getClientIp(), credentialFingerprint(req));
     log.warn(
       { path: new URL(req.url).pathname },
       "Edge auth rejected: actor token revoked",
@@ -439,7 +463,7 @@ export function createAuthMiddleware(
       ) {
         return null;
       }
-      authRateLimiter.recordFailure(getClientIp());
+      authRateLimiter.recordFailure(getClientIp(), credentialFingerprint(req));
       log.warn(
         { path: new URL(req.url).pathname },
         "Guardian edge auth rejected: missing or malformed Authorization header",
@@ -456,7 +480,7 @@ export function createAuthMiddleware(
       ) {
         return null;
       }
-      authRateLimiter.recordFailure(getClientIp());
+      authRateLimiter.recordFailure(getClientIp(), credentialFingerprint(req));
       log.warn(
         { path: new URL(req.url).pathname, reason: result.reason },
         "Guardian edge auth rejected: token validation failed",
@@ -592,7 +616,7 @@ export function wrapWithAuthFailureTracking(
     }
 
     if (failureStatuses.includes(res.status)) {
-      authRateLimiter.recordFailure(getClientIp());
+      authRateLimiter.recordFailure(getClientIp(), credentialFingerprint(req));
     }
     return res;
   };
