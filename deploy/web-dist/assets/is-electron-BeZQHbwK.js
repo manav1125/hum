@@ -1,1 +1,0 @@
-function e(){return typeof window<`u`&&window.vellum?.platform===`electron`}export{e as t};

@@ -1,1 +1,0 @@
-function e(e){return Array.isArray(e)&&e.every(e=>typeof e==`string`)}function t(t){let n=JSON.parse(t);return e(n)?n:null}export{t as n,e as t};

@@ -1,1 +1,0 @@
-var e=`hello@justcue.ai`,t=`mailto:${e}`,n=t;export{t as n,n as r,e as t};

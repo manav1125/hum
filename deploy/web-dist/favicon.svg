@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="cue app icon">
-  <title>cue</title>
-  <rect width="512" height="512" rx="114" fill="#1A2230"/>
-  <circle cx="232" cy="256" r="150" fill="none" stroke="#EEF2F7" stroke-width="40" stroke-linecap="round" stroke-dasharray="707 236" transform="rotate(42 232 256)"/>
-  <circle cx="392" cy="372" r="30" fill="#3D6EE8"/>
-</svg>

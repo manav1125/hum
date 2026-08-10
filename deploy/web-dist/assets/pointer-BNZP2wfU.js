@@ -1,1 +1,0 @@
-function e(){return typeof window<`u`&&window.matchMedia(`(pointer: coarse)`).matches}export{e as t};

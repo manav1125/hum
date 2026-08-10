@@ -148,7 +148,12 @@ body {
   --mv1-surface-2: #2a3547;
   --mv1-t1: #ffffff;
   --mv1-t2: #8a97ac;
-  --mv1-t3: #5e6b80;
+  /* Design's `--muted-on-dark`. This was #5e6b80 — the CANVAS-ground muted
+   * value — painted on the dark grounds, which is precisely the mistake the
+   * "-on-<ground>" naming exists to prevent. Measured on the live app it gave
+   * 2.96:1 on --mv1-card and 3.37:1 on --mv1-sunken, both under AA, and
+   * accounted for 11 of HQ's 15 sub-AA nodes. #9a9aa8 clears at 5.75 / 6.54. */
+  --mv1-t3: #9a9aa8;
   --mv1-line: rgba(255, 255, 255, 0.08);
   --mv1-blue: #3d6ee8;
   --mv1-blue-eyebrow: #86a9f2;
@@ -174,10 +179,16 @@ body {
   --mv1-red-wash: rgba(229, 103, 91, 0.12);
   --mv1-teal: #4fc7c7;
 
-  /* Text legs — dark. Deliberately identical to the accents above: on the ink
-   * canvases the bright values already clear the contrast floor at small
-   * sizes, so switching a call site to a text leg must be a no-op in dark. */
-  --mv1-blue-text: #3d6ee8;
+  /* Text legs — dark. The premise below held for every accent EXCEPT blue,
+   * and it was never measured. `#3d6ee8` on the ink grounds is 3.49:1 on
+   * --mv1-card and 3.97:1 on --mv1-sunken — under AA at the small sizes these
+   * legs are used at, and the other 4 of HQ's 15 sub-AA nodes. The bright
+   * value it should have been is already defined a few lines up as
+   * --mv1-blue-strong (#86a9f2), which clears at 6.82 / 7.76.
+   *
+   * The rest DO clear the floor and stay identical to their accents, so
+   * switching a call site to a text leg remains a no-op in dark for those. */
+  --mv1-blue-text: #86a9f2;
   --mv1-violet-text: #9b94ec;
   --mv1-amber-text: #d9a84e;
   --mv1-teal-text: #4fc7c7;
