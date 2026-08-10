@@ -12,6 +12,10 @@
 
 import { randomUUID } from "node:crypto";
 
+import {
+  projectSkillTools,
+  resetSkillToolProjection,
+} from "../daemon/conversation-skill-tools.js";
 import { formatTurnTimestamp } from "../daemon/date-context.js";
 import { buildLiveBriefing } from "../live-voice/build-live-briefing.js";
 import type {
@@ -39,6 +43,7 @@ import {
 import {
   executeGeminiLiveFunctionCall,
   GEMINI_LIVE_FUNCTION_DECLARATIONS,
+  GEMINI_LIVE_VOICE_SKILLS,
 } from "./gemini-live-tools.js";
 
 const log = getLogger("gemini-live-session");
@@ -66,8 +71,9 @@ function buildSystemInstruction(
     // co-founder). Empty → the base warm-chief-of-staff default.
     ...(persona ? [persona] : []),
     timeLine,
-    "You can take real actions with your tools. To note a quick reminder or to-do, call add_task. For anything substantive that needs real work (research, drafting, multi-step tasks), call run_deep_task and tell them you're on it. To tell them what's on their plate, call get_open_tasks.",
-    "Never claim you have done something unless you actually called the tool for it and it succeeded. If a tool fails, say so in one short sentence and offer a next step.",
+    "You can take real actions and pull the user's real data with your tools. Quick to-do → add_task. Substantive work (research, drafting, multi-step) → run_deep_task, then tell them you're on it. What's on their plate → get_open_tasks. Current facts, news, or weather → web_search. Anything about the user's own life, work, files, or past conversations → recall_memory before you say you don't know. A lasting fact or preference they just told you → remember. Their reminders and automations → get_schedule; setting one → set_reminder. Who someone is or how to reach them → find_contact. Replies they're waiting on → get_followups. Their email or messages → check_inbox, then read_messages for one conversation. Never read ids, email addresses, or raw data aloud — speak the human part.",
+    "When a result is something to LOOK at — options, search results, a list, a table — announce it aloud first in one short sentence (for example: Here's what I found), then call ui_show to put it on screen, and give a one- or two-sentence spoken summary. The card is seen, not spoken: never read it item by item.",
+    "Never claim you have done something unless you actually called the tool for it and it succeeded. If a tool fails, say so in one short sentence and offer a next step. If a tool says it needs approval or isn't permitted, tell them briefly that this one needs their okay in the app — never pretend it happened and never work around it.",
     "When you add a to-do, say simply that you saved it to their task list — do NOT invent specific screen names like 'My Day' or claim it's in a particular place you can't verify. When run_deep_task finishes, its result appears in their Review area; only mention Review for run_deep_task work, never for a plain reminder.",
     "Do not spell things out letter by letter or read punctuation, tool names, or code aloud. Just speak like a helpful person.",
     "The user speaks English. Always understand their speech as English and reply in English, even if a word is unclear.",
@@ -94,6 +100,15 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private pendingAssistantText = "";
   // Titles of tasks captured during the call, listed in the closing recap.
   private readonly capturedTaskTitles: string[] = [];
+  /**
+   * Skill-tool registrations held for this session (skillId → version hash),
+   * fed to the shared projection machinery so the registry-backed voice tools
+   * (schedule/contacts/messaging/followups) resolve for the session's
+   * lifetime and are refcounted back out on close.
+   */
+  private readonly skillToolVersions = new Map<string, string>();
+  /** Aborted on close so in-flight registry tool calls stop with the call. */
+  private readonly toolAbort = new AbortController();
 
   constructor(context: LiveVoiceSessionFactoryContext) {
     this.context = context;
@@ -117,6 +132,19 @@ export class GeminiLiveSession implements LiveVoiceSession {
       briefing = buildLiveBriefing();
     } catch (err) {
       log.warn({ err }, "live briefing assembly failed; continuing without it");
+    }
+
+    // Register the bundled skill tools the voice declarations dispatch to
+    // (same projection machinery as the cascade's preactivation, refcounted).
+    // Best-effort: a failed registration degrades those tools to clean
+    // "not available" errors at call time; it must never block the call.
+    try {
+      projectSkillTools([], {
+        preactivatedSkillIds: [...GEMINI_LIVE_VOICE_SKILLS],
+        previouslyActiveSkillIds: this.skillToolVersions,
+      });
+    } catch (err) {
+      log.warn({ err }, "voice skill tool registration failed; continuing");
     }
 
     // Resolve the selected conversation mode (defaults to companion).
@@ -285,6 +313,24 @@ export class GeminiLiveSession implements LiveVoiceSession {
       calls.map((call) =>
         executeGeminiLiveFunctionCall(call, {
           conversationId: this.conversationId,
+          signal: this.toolAbort.signal,
+          // `ui_show` tiles: the same `card` frame the cascade forwards from
+          // `ui_surface_show`, so the client renders both engines' cards
+          // through the same store. Attributed to the current turn (opening
+          // one if the model called the tool before speaking).
+          showCard: (card) => {
+            if (this.closed) return;
+            const turnId = this.beginTurn();
+            void this.context.sendFrame({
+              type: "card",
+              op: "show",
+              surfaceId: card.surfaceId,
+              surfaceType: card.surfaceType,
+              ...(card.title !== undefined ? { title: card.title } : {}),
+              data: card.data,
+              turnId,
+            });
+          },
         }),
       ),
     );
@@ -293,6 +339,14 @@ export class GeminiLiveSession implements LiveVoiceSession {
 
   close(_reason: LiveVoiceSessionCloseReason): void {
     this.closed = true;
+    this.toolAbort.abort();
+    // Release this session's skill-tool registrations (refcounted — other
+    // sessions/conversations holding the same skills are unaffected).
+    try {
+      resetSkillToolProjection(this.skillToolVersions);
+    } catch (err) {
+      log.warn({ err }, "voice skill tool teardown failed");
+    }
     this.client?.close();
     this.client = null;
     // Flush any un-flushed final turn, then write the recap + auto-title. All
