@@ -1,0 +1,1 @@
+var e=`cue:signon:introDone`;function t(){try{return localStorage.getItem(e)===`1`}catch{return!0}}function n(){try{localStorage.setItem(e,`1`)}catch{}}export{n,t};

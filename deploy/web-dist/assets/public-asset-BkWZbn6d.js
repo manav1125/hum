@@ -1,0 +1,1 @@
+function e(e){return`/assistant/${e.startsWith(`/`)?e.slice(1):e}`}export{e as t};
