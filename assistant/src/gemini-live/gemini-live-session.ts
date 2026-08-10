@@ -98,6 +98,13 @@ export class GeminiLiveSession implements LiveVoiceSession {
   // Turn transcript accumulation, flushed to the saved thread on turnComplete.
   private pendingUserText = "";
   private pendingAssistantText = "";
+  /**
+   * Rolling window of the most recent completed turns, kept so a NON-resumed
+   * upstream reconnect (fresh Gemini session — no conversation context) can be
+   * handed a recap instead of amnesia mid-call. Bounded; the saved thread is
+   * the durable record, this is only the reconnect bridge.
+   */
+  private readonly recentTurns: Array<{ user: string; assistant: string }> = [];
   // Titles of tasks captured during the call, listed in the closing recap.
   private readonly capturedTaskTitles: string[] = [];
   /**
@@ -183,18 +190,51 @@ export class GeminiLiveSession implements LiveVoiceSession {
           this.currentTurnId = null;
         },
         onError: (message) => {
+          // Recoverable by contract (the client's close/reconnect path owns
+          // terminal outcomes), so the browser must NOT tear the call down.
           void this.context.sendFrame({
             type: "error",
-            code: "invalid_frame",
+            code: "invalid_field",
             message,
+            fatal: false,
           });
         },
+        onReconnecting: () => {
+          // The upstream leg dropped and the client is reconnecting (with
+          // session resume where the server granted a handle). OUR WebSocket
+          // to the browser stays open the whole time — the user hears at most
+          // a brief gap, so this frame is explicitly non-fatal: same
+          // convention as the cascade's recovered-transcriber hiccups.
+          if (this.closed) return;
+          // A drop mid-model-turn strands the open turn: its remaining audio
+          // and `turnComplete` died with the socket, and after a resume the
+          // server does not replay them. Close the turn now (flushing its
+          // transcript) so the client's per-turn state cannot wedge on a
+          // turn that will never finish.
+          if (this.currentTurnId) this.onTurnComplete();
+          void this.context.sendFrame({
+            type: "error",
+            code: "invalid_field",
+            message: "Voice link hiccup — reconnecting.",
+            fatal: false,
+          });
+        },
+        onReconnected: ({ resumed }) => {
+          if (this.closed) return;
+          // Resumed → the same server-side session continues, context intact:
+          // nothing to repair. Fresh → the new session only got the replayed
+          // setup (identity + briefing), NOT the conversation so far; hand it
+          // an honest recap so it neither blanks on the call nor bluffs.
+          if (!resumed) this.injectReconnectContext();
+        },
         onClose: (code, reason) => {
-          if (!this.closed && code !== 1000) {
+          // TERMINAL by contract: reconnect attempts are exhausted. `fatal`
+          // omitted → the client treats it as session-ending, which it is.
+          if (!this.closed) {
             void this.context.sendFrame({
               type: "error",
               code: "invalid_frame",
-              message: `Gemini Live closed (code=${code} ${reason})`,
+              message: `Voice connection lost and could not be restored (code=${code}${reason ? ` ${reason}` : ""}). Please start a new call.`,
             });
           }
         },
@@ -288,8 +328,41 @@ export class GeminiLiveSession implements LiveVoiceSession {
     this.pendingAssistantText = "";
     if (userText.trim() || assistantText.trim()) {
       void persistLiveVoiceTurn(this.conversationId, userText, assistantText);
+      // Keep a bounded recap window for non-resumed upstream reconnects.
+      this.recentTurns.push({ user: userText, assistant: assistantText });
+      if (this.recentTurns.length > 8) this.recentTurns.shift();
     }
     void this.context.sendFrame({ type: "tts_done", turnId });
+  }
+
+  /**
+   * After a fresh (non-resumed) upstream reconnect, the new Gemini session
+   * knows the system instruction and briefing but none of THIS call's turns.
+   * Feed it a compact transcript recap as a silent text note (no turn
+   * trigger), plus an honesty instruction — the tradeoff of fast-reconnect
+   * without a resumption handle is possible loss of detail, and the model
+   * should ask rather than confabulate.
+   */
+  private injectReconnectContext(): void {
+    const recap = this.recentTurns
+      .map(({ user, assistant }) =>
+        [
+          user.trim() ? `User: ${user.trim()}` : null,
+          assistant.trim() ? `You: ${assistant.trim()}` : null,
+        ]
+          .filter((line) => line !== null)
+          .join("\n"),
+      )
+      .filter((turn) => turn.length > 0)
+      .join("\n");
+    const note = [
+      "[Context note — not spoken by the user: the audio connection dropped briefly and was restored mid-call.",
+      recap
+        ? `The conversation so far:\n${recap}`
+        : "Earlier parts of this call may be missing from your context.",
+      "Continue the conversation naturally; do not mention the reconnect unless asked, and if you are unsure of an earlier detail, ask instead of guessing.]",
+    ].join("\n");
+    this.client?.sendUserText(note);
   }
 
   private async onToolCall(
