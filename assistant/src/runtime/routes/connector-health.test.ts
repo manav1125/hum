@@ -15,6 +15,9 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import {
   type ConnectorProbeResult,
+  getConnectorHealthState,
+  pruneProbesWithoutActiveAccount,
+  recordConnectorProbe,
   resetConnectorHealthStoreForTest,
 } from "../../oauth/connector-health-store.js";
 import {
@@ -338,5 +341,62 @@ describe("kickHealthRefresh", () => {
     kickHealthRefresh("key", accounts, false, fetchImpl);
     await settleHealthRefreshForTest();
     expect(n).toBe(1);
+  });
+});
+
+describe("a probe for a connector with no active account is not evidence", () => {
+  // MEASURED ON PROD: googlecalendar and googledrive both reported probe "ok"
+  // while Composio held ZERO active accounts for either (8 and 5 expired rows).
+  // The agent was simultaneously and correctly refusing to use them — "No
+  // active connection found for toolkit(s) in this session". So the HEALTH
+  // SURFACE was the thing telling the owner a comforting lie, which is why the
+  // dead connectors went unnoticed.
+  //
+  // The mechanism: the refresh sweep only probes toolkits with an ACTIVE
+  // account, so when an account expires its toolkit stops being probed and its
+  // last successful result is simply left behind, claiming ok forever.
+
+  it("drops probes whose toolkit lost its active account", () => {
+    resetConnectorHealthStoreForTest();
+    recordConnectorProbe("gmail", { checkedAt: NOW, status: "ok" });
+    recordConnectorProbe("googlecalendar", { checkedAt: NOW, status: "ok" });
+
+    const dropped = pruneProbesWithoutActiveAccount(new Set(["gmail"]));
+
+    expect(dropped).toEqual(["googlecalendar"]);
+    const { probes } = getConnectorHealthState();
+    expect(probes.gmail?.status).toBe("ok");
+    expect(probes.googlecalendar).toBeUndefined();
+  });
+
+  it("an absent probe reads as unknown and NOT actively checked", () => {
+    // Silence is the honest state for a connector nothing can probe. The
+    // `activelyChecked` flag already distinguishes "no probe exists" from
+    // "probed and could not tell", so the surface can say why.
+    const h = computeConnectorHealth({ now: NOW, activelyChecked: false });
+    expect(h.status).toBe("unknown");
+    expect(h.activelyChecked).toBe(false);
+  });
+
+  it("keeps every probe when every toolkit is still active", () => {
+    resetConnectorHealthStoreForTest();
+    recordConnectorProbe("gmail", { checkedAt: NOW, status: "ok" });
+    recordConnectorProbe("slack", { checkedAt: NOW, status: "failed" });
+
+    expect(
+      pruneProbesWithoutActiveAccount(new Set(["gmail", "slack"])),
+    ).toEqual([]);
+    const { probes } = getConnectorHealthState();
+    expect(probes.gmail?.status).toBe("ok");
+    expect(probes.slack?.status).toBe("failed");
+  });
+
+  it("an empty active set drops everything rather than keeping stale ok", () => {
+    // The exact end-state of a fully-expired instance. Nothing active means
+    // nothing may claim ok.
+    resetConnectorHealthStoreForTest();
+    recordConnectorProbe("gmail", { checkedAt: NOW, status: "ok" });
+    expect(pruneProbesWithoutActiveAccount(new Set())).toEqual(["gmail"]);
+    expect(getConnectorHealthState().probes.gmail).toBeUndefined();
   });
 });

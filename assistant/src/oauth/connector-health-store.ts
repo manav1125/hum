@@ -152,6 +152,48 @@ export function recordConnectorProbe(
   }
 }
 
+/**
+ * Forget probe results for connectors that no longer have an ACTIVE account.
+ *
+ * A probe result is evidence about a SPECIFIC connected account. When that
+ * account expires it leaves the ACTIVE set, so the refresh sweep stops probing
+ * that toolkit entirely — and the last successful result sits here claiming
+ * "ok" for a connector that can no longer be used at all.
+ *
+ * Measured on this instance: googlecalendar and googledrive both reported
+ * `probe: ok` while Composio held ZERO active accounts for either (8 and 5
+ * expired rows respectively). The agent was simultaneously and correctly
+ * reporting "No active connection found for toolkit(s) in this session" — so
+ * the health surface was the thing telling the owner a comforting lie, which
+ * is why nobody noticed the connectors had died.
+ *
+ * Called with the slugs that DO have an active account; everything else is
+ * dropped. Silence is the honest state for a connector nothing can probe:
+ * `activelyChecked` already distinguishes "no probe exists" from "probed and
+ * could not tell", and an absent probe now means "there is nothing here to
+ * probe", which is the truth.
+ */
+export function pruneProbesWithoutActiveAccount(
+  activeSlugs: ReadonlySet<string>,
+): string[] {
+  const dropped: string[] = [];
+  try {
+    const s = load();
+    for (const slug of Object.keys(s.probes)) {
+      if (activeSlugs.has(slug)) continue;
+      delete s.probes[slug];
+      dropped.push(slug);
+    }
+    if (dropped.length > 0) {
+      persist();
+      log.info({ dropped }, "dropped probe results with no active account");
+    }
+  } catch (err) {
+    log.warn({ err }, "pruneProbesWithoutActiveAccount failed");
+  }
+  return dropped;
+}
+
 /** Current signals + probes (loaded from disk on first read). */
 export function getConnectorHealthState(): {
   signals: Record<string, ConnectorSignal>;
