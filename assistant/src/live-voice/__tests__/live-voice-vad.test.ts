@@ -452,6 +452,45 @@ describe("server VAD ingress", () => {
     ).toHaveLength(2);
   });
 
+  test("speech after a transcriber idle-close re-arms listening (the two-exchange drop)", async () => {
+    // Deepgram closes its realtime socket after ~30s without audio — routine
+    // between exchanges, since idle silence never reaches STT. The regression:
+    // the close parked the session in "transcriber_closed" and the next
+    // utterance (speech, boundary and all) parked forever — the only other
+    // re-arm runs at assistant-turn end, and no turn was running. Real calls
+    // read as "voice works for two exchanges, then the room goes deaf".
+    const h = createHarness({
+      scripts: [
+        { responseText: "First reply.", assistantMessageId: "assistant-1" },
+        { responseText: "Second reply.", assistantMessageId: "assistant-2" },
+      ],
+    });
+    await h.session.start();
+
+    await sendAudio(h.session, LOUD_CHUNK, 2);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => h.transcribers[0]!.stopped);
+    h.transcribers[0]!.finishUtterance("first utterance");
+    await waitFor(() => frameTypes(h.frames).includes("tts_done"));
+    await waitFor(() => h.transcribers.length === 2);
+
+    // The idle gap: the freshly armed transcriber times out and closes with
+    // no utterance in flight.
+    h.transcribers[1]!.emit({ type: "closed" });
+
+    // New speech must resolve a fresh transcriber and run a full cycle.
+    await sendAudio(h.session, LOUD_CHUNK, 2);
+    await waitFor(() => h.transcribers.length === 3);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => h.transcribers[2]!.stopped);
+    h.transcribers[2]!.finishUtterance("after the idle gap");
+    await waitFor(() => h.turnStartCount() === 2);
+    expect(h.turnCalls[1]!.content).toBe("after the idle gap");
+    expect(
+      h.frames.filter((frame) => frame.type === "utterance_end"),
+    ).toHaveLength(2);
+  });
+
   test("speech during an in-flight turn parks in the ring and flushes into the next cycle", async () => {
     const h = createHarness({
       scripts: [

@@ -727,6 +727,12 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
    */
   private vadPendingTurnEnd: "silence" | "max-duration" | null = null;
   /**
+   * Guards the idle-wedge re-arm below against re-entry: chunks keep arriving
+   * every ~50ms while `beginNextListeningTurn` is still resolving the fresh
+   * transcriber, and each of them sees `state === "transcriber_closed"`.
+   */
+  private vadRearmInFlight = false;
+  /**
    * Sustained-speech barge-in guard, armed at speech onset while the
    * assistant turn is in flight or its playback tail is still (estimatedly)
    * audible: above-gate speech-chunk duration accumulates until it reaches
@@ -1205,6 +1211,32 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     // transcriber still gets leading context ahead of the first syllable.
     if (!hasSpeech && !detector.isActive) {
       this.pushVadPreRoll(chunk, false);
+      return;
+    }
+
+    // A transcriber idle-close (Deepgram drops its realtime socket after
+    // ~30s without audio — routine between exchanges, since idle silence
+    // never reaches STT here) parks the session in "transcriber_closed".
+    // That is the right idle posture, but new speech must re-arm listening
+    // itself: the only other re-arm runs at assistant-turn end, and no turn
+    // is running — without this, the utterance and its boundary park forever
+    // and the room goes permanently deaf ("voice drops after two exchanges").
+    // `beginNextListeningTurn` resolves a fresh transcriber, returns the
+    // session to "active", and flushes the parked ring — including this
+    // chunk, parked first so the utterance keeps its onset.
+    if (
+      hasSpeech &&
+      this.state === "transcriber_closed" &&
+      !this.activeAssistantTurn &&
+      !this.vadRearmInFlight
+    ) {
+      this.pushVadPreRoll(chunk, true);
+      this.vadRearmInFlight = true;
+      try {
+        await this.beginNextListeningTurn();
+      } finally {
+        this.vadRearmInFlight = false;
+      }
       return;
     }
 
