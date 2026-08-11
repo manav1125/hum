@@ -197,6 +197,130 @@ describe("ConversationEvictor", () => {
     });
   });
 
+  describe("stale-processing sweep (phase 0)", () => {
+    function createWedgedSession(options: {
+      liveRun: boolean;
+      processingAgeMs: number | null;
+      withHooks?: boolean;
+    }): EvictableConversation & {
+      disposed: boolean;
+      processing: boolean;
+      clearedBy: string[];
+    } {
+      const session = {
+        disposed: false,
+        processing: true,
+        clearedBy: [] as string[],
+        isProcessing() {
+          return this.processing;
+        },
+        dispose() {
+          this.disposed = true;
+        },
+        ...(options.withHooks === false
+          ? {}
+          : {
+              hasLiveAgentRun: () => options.liveRun,
+              processingSince: () =>
+                options.processingAgeMs === null
+                  ? null
+                  : Date.now() - options.processingAgeMs,
+              forceClearStaleProcessing(source: string) {
+                session.clearedBy.push(source);
+                session.processing = false;
+                return true;
+              },
+            }),
+      };
+      return session;
+    }
+
+    test("clears a wedged flag with no live run once past staleProcessingMaxMs", () => {
+      const staleEvictor = new ConversationEvictor(
+        sessions as Map<string, EvictableConversation>,
+        {
+          ttlMs: 60_000,
+          maxConversations: 10,
+          memoryThresholdBytes: Number.MAX_SAFE_INTEGER,
+          staleProcessingMaxMs: 1000,
+        },
+      );
+      const wedged = createWedgedSession({
+        liveRun: false,
+        processingAgeMs: 5000,
+      });
+      sessions.set("wedged", wedged as never);
+      staleEvictor.touch("wedged");
+
+      const result = staleEvictor.sweep();
+
+      expect(result.staleProcessingCleared).toBe(1);
+      expect(wedged.processing).toBe(false);
+      expect(wedged.clearedBy).toEqual(["stale-processing-sweep"]);
+      // Rescued, not evicted — the conversation stays usable.
+      expect(wedged.disposed).toBe(false);
+      expect(sessions.has("wedged")).toBe(true);
+    });
+
+    test("never touches a conversation with a live agent run, however old", () => {
+      const staleEvictor = new ConversationEvictor(
+        sessions as Map<string, EvictableConversation>,
+        {
+          ttlMs: 60_000,
+          maxConversations: 10,
+          memoryThresholdBytes: Number.MAX_SAFE_INTEGER,
+          staleProcessingMaxMs: 1000,
+        },
+      );
+      const busy = createWedgedSession({
+        liveRun: true,
+        processingAgeMs: 60 * 60 * 1000, // 1h-long legitimate deep task
+      });
+      sessions.set("busy", busy as never);
+      staleEvictor.touch("busy");
+
+      const result = staleEvictor.sweep();
+
+      expect(result.staleProcessingCleared).toBe(0);
+      expect(busy.processing).toBe(true);
+      expect(busy.clearedBy).toEqual([]);
+    });
+
+    test("spares a young flag (short-lived non-loop holders finish inside the TTL)", () => {
+      const staleEvictor = new ConversationEvictor(
+        sessions as Map<string, EvictableConversation>,
+        {
+          ttlMs: 60_000,
+          maxConversations: 10,
+          memoryThresholdBytes: Number.MAX_SAFE_INTEGER,
+          staleProcessingMaxMs: 60_000,
+        },
+      );
+      const young = createWedgedSession({
+        liveRun: false,
+        processingAgeMs: 500,
+      });
+      sessions.set("young", young as never);
+      staleEvictor.touch("young");
+
+      const result = staleEvictor.sweep();
+
+      expect(result.staleProcessingCleared).toBe(0);
+      expect(young.processing).toBe(true);
+    });
+
+    test("leaves conversations without introspection hooks alone", () => {
+      const legacy = createMockSession(true); // processing, no hooks
+      sessions.set("legacy", legacy);
+      evictor.touch("legacy");
+
+      const result = evictor.sweep();
+
+      expect(result.staleProcessingCleared).toBe(0);
+      expect(sessions.has("legacy")).toBe(true);
+    });
+  });
+
   describe("start/stop", () => {
     test("stop clears tracking state", () => {
       evictor.touch("a");

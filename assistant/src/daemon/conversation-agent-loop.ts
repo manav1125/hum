@@ -1567,97 +1567,113 @@ export async function runAgentLoopImpl(
       publishLoopMessagesChanged();
     }
   } finally {
-    // Settle the debounced partial-content flush before anything downstream
-    // reads or rewrites the assistant row. The happy path settles it in
-    // `handleMessageComplete`; a cancelled/errored turn exits with the timer
-    // still armed, and a zombie flush firing after teardown would rewrite
-    // the row with raw partial content — e.g. re-leaking a voice verdict
-    // token into a row the voice bridge's transcript-hygiene pass (which
-    // runs right after this loop resolves) has already cleaned or deleted.
-    await settlePendingPartialFlush(state);
+    // ── Bracketed teardown work ──────────────────────────────────────
+    // Everything up to the state clear below is best-effort: a throw here
+    // must never skip `ctx.setProcessing(false)`. A skipped clear wedges the
+    // conversation server-side — `enqueueMessage` silently queues every
+    // subsequent send behind a turn that will never end, the evictor skips
+    // the conversation forever, and every client renders a phantom
+    // "run in progress" indicator from the server-authoritative
+    // `conversation.isProcessing` flag across full page reloads (observed
+    // in prod on a voice-originated turn, 2026-08-11).
+    try {
+      // Settle the debounced partial-content flush before anything downstream
+      // reads or rewrites the assistant row. The happy path settles it in
+      // `handleMessageComplete`; a cancelled/errored turn exits with the timer
+      // still armed, and a zombie flush firing after teardown would rewrite
+      // the row with raw partial content — e.g. re-leaking a voice verdict
+      // token into a row the voice bridge's transcript-hygiene pass (which
+      // runs right after this loop resolves) has already cleaned or deleted.
+      await settlePendingPartialFlush(state);
 
-    // Terminal-path cleanup for the in-flight marker stamped at reserve time
-    // (`handleLlmCallStarted`). The happy path clears it in
-    // `handleMessageComplete`; error/cancellation exits leave the last
-    // reserved row un-finalized, and without this clear the next daemon boot
-    // would re-classify an already-surfaced failure as a fresh interruption.
-    // Best-effort — never lets a metadata write reject the turn teardown.
-    if (state.lastAssistantMessageId) {
-      try {
-        updateMessageMetadata(state.lastAssistantMessageId, {
-          [TURN_IN_FLIGHT_METADATA_KEY]: undefined,
-        });
-      } catch (err) {
-        rlog.warn(
-          { err, messageId: state.lastAssistantMessageId },
-          "Failed to clear in-flight marker at turn teardown (non-fatal)",
-        );
+      // Terminal-path cleanup for the in-flight marker stamped at reserve time
+      // (`handleLlmCallStarted`). The happy path clears it in
+      // `handleMessageComplete`; error/cancellation exits leave the last
+      // reserved row un-finalized, and without this clear the next daemon boot
+      // would re-classify an already-surfaced failure as a fresh interruption.
+      // Best-effort — never lets a metadata write reject the turn teardown.
+      if (state.lastAssistantMessageId) {
+        try {
+          updateMessageMetadata(state.lastAssistantMessageId, {
+            [TURN_IN_FLIGHT_METADATA_KEY]: undefined,
+          });
+        } catch (err) {
+          rlog.warn(
+            { err, messageId: state.lastAssistantMessageId },
+            "Failed to clear in-flight marker at turn teardown (non-fatal)",
+          );
+        }
       }
-    }
 
-    if (turnStarted) {
-      ctx.turnCount++;
-      const config = getConfig();
-      const maxWait = config.workspaceGit?.turnCommitMaxWaitMs ?? 4000;
-      const deadlineMs = Date.now() + maxWait;
-      const commitTurnChangesFn = ctx.commitTurnChanges ?? commitTurnChanges;
-      const commitPromise = commitTurnChangesFn(
-        ctx.workingDir,
-        ctx.conversationId,
-        ctx.turnCount,
-        undefined,
-        deadlineMs,
-      );
-      const outcome = await raceWithTimeout(commitPromise, maxWait);
-      if (outcome === "timed_out") {
-        rlog.warn(
+      if (turnStarted) {
+        ctx.turnCount++;
+        const config = getConfig();
+        const maxWait = config.workspaceGit?.turnCommitMaxWaitMs ?? 4000;
+        const deadlineMs = Date.now() + maxWait;
+        const commitTurnChangesFn = ctx.commitTurnChanges ?? commitTurnChanges;
+        const commitPromise = commitTurnChangesFn(
+          ctx.workingDir,
+          ctx.conversationId,
+          ctx.turnCount,
+          undefined,
+          deadlineMs,
+        );
+        const outcome = await raceWithTimeout(commitPromise, maxWait);
+        if (outcome === "timed_out") {
+          rlog.warn(
+            {
+              turnNumber: ctx.turnCount,
+              maxWaitMs: maxWait,
+              conversationId: ctx.conversationId,
+            },
+            "Turn-boundary commit timed out — continuing without waiting (commit still runs in background)",
+          );
+        }
+
+        // Commit app changes (fire-and-forget — apps repo is separate from workspace)
+        void commitAppTurnChanges(ctx.conversationId, ctx.turnCount);
+
+        // Recompute relationship-state.json at turn boundary (fire-and-forget).
+        // The writer swallows its own errors, but we still guard with catch()
+        // here so a regression in the writer can never bubble out of the
+        // agent loop and reject an otherwise-complete turn.
+        void writeRelationshipState().catch(() => {});
+      }
+
+      ctx.profiler.emitSummary(ctx.traceEmitter, reqId);
+
+      // Single structured line per turn breaking wall-clock into stages.
+      // `postLoopMs` is everything after the primary agent-loop run returned:
+      // tool-result flush, attachment resolution, disk sync, turn commit.
+      {
+        const totalMs = Math.round(performance.now() - turnStartedAtMs);
+        const postLoopMs =
+          agentLoopMs !== null && contextAssemblyMs !== null
+            ? totalMs - agentLoopMs - contextAssemblyMs
+            : null;
+        rlog.info(
           {
-            turnNumber: ctx.turnCount,
-            maxWaitMs: maxWait,
-            conversationId: ctx.conversationId,
+            totalMs,
+            contextAssemblyMs,
+            // Named sub-stage durations recorded by the user-prompt-submit
+            // hooks (e.g. memoryRetrievalMs / runtimeInjectionMs), so a
+            // contextAssembly regression points at the responsible sub-stage.
+            contextAssemblyStages: takeTurnStageTimings(reqId) ?? null,
+            agentLoopMs,
+            postLoopMs,
+            llmCallCount: state.exchangeLlmCallCount,
+            inputTokens: state.exchangeInputTokens,
+            outputTokens: state.exchangeOutputTokens,
+            callSite: turnCallSite,
+            aborted: abortController.signal.aborted,
           },
-          "Turn-boundary commit timed out — continuing without waiting (commit still runs in background)",
+          "turn_timing",
         );
       }
-
-      // Commit app changes (fire-and-forget — apps repo is separate from workspace)
-      void commitAppTurnChanges(ctx.conversationId, ctx.turnCount);
-
-      // Recompute relationship-state.json at turn boundary (fire-and-forget).
-      // The writer swallows its own errors, but we still guard with catch()
-      // here so a regression in the writer can never bubble out of the
-      // agent loop and reject an otherwise-complete turn.
-      void writeRelationshipState().catch(() => {});
-    }
-
-    ctx.profiler.emitSummary(ctx.traceEmitter, reqId);
-
-    // Single structured line per turn breaking wall-clock into stages.
-    // `postLoopMs` is everything after the primary agent-loop run returned:
-    // tool-result flush, attachment resolution, disk sync, turn commit.
-    {
-      const totalMs = Math.round(performance.now() - turnStartedAtMs);
-      const postLoopMs =
-        agentLoopMs !== null && contextAssemblyMs !== null
-          ? totalMs - agentLoopMs - contextAssemblyMs
-          : null;
-      rlog.info(
-        {
-          totalMs,
-          contextAssemblyMs,
-          // Named sub-stage durations recorded by the user-prompt-submit
-          // hooks (e.g. memoryRetrievalMs / runtimeInjectionMs), so a
-          // contextAssembly regression points at the responsible sub-stage.
-          contextAssemblyStages: takeTurnStageTimings(reqId) ?? null,
-          agentLoopMs,
-          postLoopMs,
-          llmCallCount: state.exchangeLlmCallCount,
-          inputTokens: state.exchangeInputTokens,
-          outputTokens: state.exchangeOutputTokens,
-          callSite: turnCallSite,
-          aborted: abortController.signal.aborted,
-        },
-        "turn_timing",
+    } catch (err) {
+      rlog.error(
+        { err, conversationId: ctx.conversationId },
+        "Turn teardown work failed before the state clear (non-fatal — state clear still runs)",
       );
     }
 

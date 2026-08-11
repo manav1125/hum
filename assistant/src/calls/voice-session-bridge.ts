@@ -19,6 +19,7 @@ import type {
 } from "../channels/types.js";
 import { getConfig } from "../config/loader.js";
 import type { Conversation } from "../daemon/conversation.js";
+import { rescueLeakedProcessing } from "../daemon/conversation-lifecycle.js";
 import { resolveChannelCapabilities } from "../daemon/conversation-runtime-assembly.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
 import type { TrustContext } from "../daemon/trust-context.js";
@@ -889,7 +890,7 @@ export async function startVoiceTurn(
   const autoDeny = !isGuardian;
   const autoAllow = isGuardian;
   let lastError: string | null = null;
-  conversation.updateClient(async (msg: ServerMessage) => {
+  const voiceTurnClientHandler = async (msg: ServerMessage) => {
     if (msg.type === "confirmation_state_changed") {
       // A decision landed on a request this turn put to the user — however it
       // landed: the user answered (`approved`/`denied`, from the voice card,
@@ -1052,7 +1053,20 @@ export async function startVoiceTurn(
       return;
     }
     broadcastMessage(msg);
-  });
+  };
+  try {
+    conversation.updateClient(voiceTurnClientHandler);
+  } catch (err) {
+    // Setup failed after `persistUserMessage` already claimed the processing
+    // lock — clear it (scoped to this turn's requestId) so the conversation
+    // is not left wedged with no run to end the turn.
+    cleanup();
+    rescueLeakedProcessing(conversation, {
+      source: "voice-turn-setup",
+      requestId,
+    });
+    throw err;
+  }
   clientCallbackInstalled = true;
 
   // Pairs the front-door leg's toolsDisabledDepth increment with its
@@ -1297,7 +1311,23 @@ export async function startVoiceTurn(
       if (frontDoorToolsSuppressed) {
         conversation.toolsDisabledDepth--;
       }
-      cleanup();
+      try {
+        cleanup();
+      } catch (err) {
+        log.warn({ err, turnId }, "Voice turn cleanup threw; continuing");
+      }
+      // Unclean-teardown rescue: the agent loop's own finally owns the
+      // processing clear, but if that finally threw (e.g. a partial-flush
+      // settle or turn-boundary commit failure after a preempt/barge-in
+      // abort) the flag would outlive the run — wedging the conversation
+      // into a phantom "run in progress" state that swallows every
+      // subsequent send into the in-memory queue. Scoped to this turn's
+      // requestId so a follow-on turn already started via drainQueue is
+      // never clobbered. No-op on the clean path.
+      rescueLeakedProcessing(conversation, {
+        source: "voice-turn-teardown",
+        requestId,
+      });
       await finalizeVoiceLegTranscript();
       settleTurnTeardown();
     }

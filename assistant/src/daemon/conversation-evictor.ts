@@ -6,6 +6,19 @@ const log = getLogger("conversation-evictor");
 export interface EvictableConversation {
   isProcessing(): boolean;
   dispose(): void;
+  /**
+   * Optional stale-processing introspection (sweep phase 0). A conversation
+   * that claims to be processing while no live agent run backs it is wedged,
+   * not busy: its flag leaked past a failed teardown. Left alone it would
+   * queue (and silently swallow) every subsequent send, dodge eviction
+   * forever, and render a phantom "run in progress" indicator on every
+   * client. `hasLiveAgentRun` reports whether a run is actually executing,
+   * `processingSince` dates the flag, and `forceClearStaleProcessing`
+   * clears it (returning true when something was cleared).
+   */
+  hasLiveAgentRun?(): boolean;
+  processingSince?(): number | null;
+  forceClearStaleProcessing?(source: string): boolean;
 }
 
 export interface EvictorOptions {
@@ -17,6 +30,15 @@ export interface EvictorOptions {
   memoryThresholdBytes?: number;
   /** Interval between periodic sweeps (ms). Default: 60 s. */
   sweepIntervalMs?: number;
+  /**
+   * Max age of a processing flag with NO live agent run backing it before
+   * the sweep force-clears it (ms). Default: 3 min. Deliberately generous:
+   * short-lived non-loop holders (canned greeting, summarize-up-to) finish
+   * well inside it, while a wedged flag is still bounded to a few minutes
+   * instead of forever. Turns with a live run are never touched — long runs
+   * are legitimate and their own settle guard clears the flag.
+   */
+  staleProcessingMaxMs?: number;
 }
 
 export interface EvictionResult {
@@ -28,18 +50,22 @@ export interface EvictionResult {
   memoryEvicted: number;
   /** Conversations skipped because they were actively processing. */
   skipped: number;
+  /** Wedged processing flags (no live run) force-cleared this sweep. */
+  staleProcessingCleared: number;
 }
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_MAX_CONVERSATIONS = 100;
 const DEFAULT_MEMORY_THRESHOLD_BYTES = 3072 * 1024 * 1024; // 3 GB
 const DEFAULT_SWEEP_INTERVAL_MS = 60 * 1000; // 60 seconds
+const DEFAULT_STALE_PROCESSING_MAX_MS = 3 * 60 * 1000; // 3 minutes
 
 export class ConversationEvictor {
   private readonly ttlMs: number;
   private readonly maxConversations: number;
   private readonly memoryThresholdBytes: number;
   private readonly sweepIntervalMs: number;
+  private readonly staleProcessingMaxMs: number;
 
   /** Tracks last access time per conversation ID. */
   private lastAccess = new Map<string, number>();
@@ -65,6 +91,8 @@ export class ConversationEvictor {
       options?.memoryThresholdBytes ?? DEFAULT_MEMORY_THRESHOLD_BYTES;
     this.sweepIntervalMs =
       options?.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
+    this.staleProcessingMaxMs =
+      options?.staleProcessingMaxMs ?? DEFAULT_STALE_PROCESSING_MAX_MS;
   }
 
   /** Record an access for the given conversation (resets its idle clock). */
@@ -84,7 +112,10 @@ export class ConversationEvictor {
       try {
         const result = this.sweep();
         const total =
-          result.ttlEvicted + result.lruEvicted + result.memoryEvicted;
+          result.ttlEvicted +
+          result.lruEvicted +
+          result.memoryEvicted +
+          result.staleProcessingCleared;
         if (total > 0) {
           log.info(result, "Conversation eviction sweep completed");
         }
@@ -114,7 +145,34 @@ export class ConversationEvictor {
       lruEvicted: 0,
       memoryEvicted: 0,
       skipped: 0,
+      staleProcessingCleared: 0,
     };
+
+    // Phase 0: stale-processing rescue — force-clear a processing flag that
+    // no live agent run is backing once it exceeds staleProcessingMaxMs.
+    // This is the TTL backstop behind the run-settle rescue in
+    // Conversation.runAgentLoop: it bounds how long a wedged conversation
+    // can visibly claim "run in progress" (and swallow queued sends) to a
+    // few minutes, no matter which teardown path leaked the flag. Runs
+    // before the eviction phases so a rescued conversation becomes
+    // evictable again.
+    for (const [id, conversation] of this.conversations) {
+      if (!conversation.isProcessing()) continue;
+      if (!conversation.forceClearStaleProcessing) continue;
+      // Only a definitive "no live run" verdict qualifies — a missing
+      // introspection hook or a live run means hands off.
+      if (conversation.hasLiveAgentRun?.() !== false) continue;
+      const since = conversation.processingSince?.();
+      const ageMs = since == null ? Number.POSITIVE_INFINITY : now - since;
+      if (ageMs < this.staleProcessingMaxMs) continue;
+      if (conversation.forceClearStaleProcessing("stale-processing-sweep")) {
+        log.warn(
+          { conversationId: id, processingAgeMs: ageMs },
+          "Cleared stale processing flag with no live agent run",
+        );
+        result.staleProcessingCleared++;
+      }
+    }
 
     // Phase 1: TTL eviction — remove conversations idle longer than ttlMs.
     for (const [id, conversation] of this.conversations) {

@@ -326,6 +326,150 @@ describe("voice-session-bridge", () => {
     expect(abortCalled).toBe(true);
   });
 
+  test("unclean teardown: a run that dies with the processing flag still set is rescued", async () => {
+    // Simulates the prod wedge: the agent loop's finally threw before
+    // `setProcessing(false)` ran, so the run promise rejects while the
+    // conversation still claims to be processing. The voice bridge's
+    // teardown must clear the flag and drain the queue — otherwise the
+    // conversation shows a phantom "run in progress" forever and every
+    // subsequent send is silently swallowed into the queue.
+    const conversation = createConversation("voice bridge wedge test");
+    let processing = false;
+    let drainCalls = 0;
+    const session = {
+      conversationId: conversation.id,
+      isProcessing: () => processing,
+      setProcessing: (value: boolean) => {
+        processing = value;
+      },
+      abortController: null as AbortController | null,
+      currentRequestId: undefined as string | undefined,
+      persistUserMessage: async (options: { requestId?: string }) => {
+        // Mirrors the real persistUserMessage: claims the processing lock
+        // and records the owning request id.
+        session.currentRequestId = options.requestId;
+        processing = true;
+        session.abortController = new AbortController();
+        return { id: "test-msg-id", deduplicated: false };
+      },
+      memoryPolicy: {
+        scopeId: "default",
+        includeDefaultFallback: false,
+      },
+      setChannelCapabilities: () => {},
+      setAssistantId: () => {},
+      setTrustContext: () => {},
+      setCommandIntent: () => {},
+      setTurnChannelContext: () => {},
+      setTurnInterfaceContext: () => {},
+      setVoiceCallControlPrompt: () => {},
+      updateClient: () => {},
+      ensureActorScopedHistory: async () => {},
+      drainQueue: async () => {
+        drainCalls++;
+      },
+      runAgentLoop: async () => {
+        // Unclean exit: rejects WITHOUT clearing processing/currentRequestId,
+        // exactly like a throw inside the loop's own teardown finally.
+        throw new Error("teardown exploded before setProcessing(false)");
+      },
+      handleConfirmationResponse: () => {},
+      abort: () => {},
+    } as unknown as Conversation;
+
+    injectDeps(() => session);
+
+    const errors: string[] = [];
+    await startVoiceTurn({
+      conversationId: conversation.id,
+      content: "Hello",
+      isInbound: true,
+      onTextDelta: () => {},
+      onComplete: () => {},
+      onError: (msg) => errors.push(msg),
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // The wedge is rescued: flag cleared, turn state reset, queue drained.
+    expect(processing).toBe(false);
+    expect(
+      (session as unknown as { currentRequestId?: string }).currentRequestId,
+    ).toBeUndefined();
+    expect(drainCalls).toBe(1);
+    expect(errors.length).toBe(1);
+  });
+
+  test("clean completion does not trigger the teardown rescue drain", async () => {
+    // Control for the wedge test above: when runAgentLoop clears its own
+    // state (the normal path), the bridge's rescue must be a no-op — no
+    // spurious drainQueue, no clobbered state.
+    const conversation = createConversation("voice bridge clean test");
+    let processing = false;
+    let drainCalls = 0;
+    const session = {
+      conversationId: conversation.id,
+      isProcessing: () => processing,
+      setProcessing: (value: boolean) => {
+        processing = value;
+      },
+      abortController: null as AbortController | null,
+      currentRequestId: undefined as string | undefined,
+      persistUserMessage: async (options: { requestId?: string }) => {
+        session.currentRequestId = options.requestId;
+        processing = true;
+        return { id: "test-msg-id", deduplicated: false };
+      },
+      memoryPolicy: {
+        scopeId: "default",
+        includeDefaultFallback: false,
+      },
+      setChannelCapabilities: () => {},
+      setAssistantId: () => {},
+      setTrustContext: () => {},
+      setCommandIntent: () => {},
+      setTurnChannelContext: () => {},
+      setTurnInterfaceContext: () => {},
+      setVoiceCallControlPrompt: () => {},
+      updateClient: () => {},
+      ensureActorScopedHistory: async () => {},
+      drainQueue: async () => {
+        drainCalls++;
+      },
+      runAgentLoop: async (
+        _content: string,
+        _messageId: string,
+        options?: { onEvent?: (msg: ServerMessage) => void },
+      ) => {
+        options?.onEvent?.({
+          type: "message_complete",
+          conversationId: conversation.id,
+        });
+        // Normal teardown clears its own state.
+        processing = false;
+        session.currentRequestId = undefined;
+      },
+      handleConfirmationResponse: () => {},
+      abort: () => {},
+    } as unknown as Conversation;
+
+    injectDeps(() => session);
+
+    await startVoiceTurn({
+      conversationId: conversation.id,
+      content: "Hello",
+      isInbound: true,
+      onTextDelta: () => {},
+      onComplete: () => {},
+      onError: () => {},
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(processing).toBe(false);
+    expect(drainCalls).toBe(0);
+  });
+
   test("startVoiceTurn passes callSite: 'callAgent' to runAgentLoop", async () => {
     const conversation = createConversation("voice bridge callSite test");
     const events: ServerMessage[] = [

@@ -1707,31 +1707,43 @@ async function handleSendMessageImpl(
       }
 
       setTimeout(() => {
-        broadcastMessage({
-          type: "user_message_echo",
-          text: rawContent,
-          conversationId,
-          messageId: persisted.id,
-          clientMessageId,
-        });
-        broadcastMessage({
-          type: "assistant_text_delta",
-          text: cannedGreeting,
-          conversationId,
-        });
-        emitCannedMessageComplete(
-          broadcastMessage,
-          conversationId,
-          persistedAssistant.id,
-        );
-        publishConversationMessagesChanged(conversationId, originClientId);
-        conversation.setProcessing(false);
-        silentlyWithLog(
-          conversation.drainQueue(),
-          "canned-greeting queue drain",
-        );
+        // The processing clear is in a `finally` so a broadcast/publish
+        // throw can never leave the conversation wedged in a phantom
+        // "processing" state that queues (and thus swallows) every
+        // subsequent send.
+        try {
+          broadcastMessage({
+            type: "user_message_echo",
+            text: rawContent,
+            conversationId,
+            messageId: persisted.id,
+            clientMessageId,
+          });
+          broadcastMessage({
+            type: "assistant_text_delta",
+            text: cannedGreeting,
+            conversationId,
+          });
+          emitCannedMessageComplete(
+            broadcastMessage,
+            conversationId,
+            persistedAssistant.id,
+          );
+          publishConversationMessagesChanged(conversationId, originClientId);
+        } catch (err) {
+          log.warn(
+            { err, conversationId },
+            "Canned-greeting broadcast failed (non-fatal — processing clear still runs)",
+          );
+        } finally {
+          conversation.setProcessing(false);
+          silentlyWithLog(
+            conversation.drainQueue(),
+            "canned-greeting queue drain",
+          );
 
-        conversation.warmPromptCache();
+          conversation.warmPromptCache();
+        }
       }, 0);
 
       log.info(

@@ -106,6 +106,94 @@ export interface DisposeContext extends AbortContext {
   abort(): void;
 }
 
+// ── stale-processing rescue ──────────────────────────────────────────
+
+/**
+ * Minimal surface needed to rescue a leaked `processing` flag. Matches the
+ * relevant slice of {@link Conversation}; kept narrow so the voice bridge
+ * and tests can drive it with fakes.
+ */
+export interface ProcessingRescueContext {
+  readonly conversationId: string;
+  isProcessing(): boolean;
+  setProcessing(value: boolean): void;
+  abortController: AbortController | null;
+  currentRequestId?: string;
+  drainQueue?(reason?: "loop_complete" | "checkpoint_handoff"): Promise<void>;
+  emitActivityState?(phase: "idle", reason: "error_terminal"): void;
+}
+
+/**
+ * Force-clear a `processing` flag that no live run is backing.
+ *
+ * The server-authoritative `Conversation._processing` flag is what every
+ * client renders as the "run in progress" indicator (avatar ring, thinking
+ * spinner) and what `enqueueMessage` uses to divert sends into the in-memory
+ * queue. The agent loop clears it in its `finally`, but that `finally` also
+ * performs teardown work (partial-flush settle, turn-boundary commit,
+ * profiling) — a throw there historically skipped the clear and wedged the
+ * conversation: every subsequent send silently queued behind a turn that
+ * would never end, the evictor skipped the conversation forever, and clients
+ * showed a phantom in-progress indicator across full page reloads (observed
+ * in prod on a voice-originated turn, 2026-08-11).
+ *
+ * Callers invoke this at run-settle boundaries (and from the periodic
+ * stale-processing sweep) so the flag can never outlive the run that set it.
+ * When `requestId` is provided, the rescue only fires if that request still
+ * owns the conversation — a queued turn that already started (via
+ * `drainQueue`) replaces `currentRequestId` and must never be clobbered.
+ *
+ * Returns true when a leaked flag was actually cleared.
+ */
+export function rescueLeakedProcessing(
+  ctx: ProcessingRescueContext,
+  options: { source: string; requestId?: string },
+): boolean {
+  if (!ctx.isProcessing()) return false;
+  if (
+    options.requestId !== undefined &&
+    ctx.currentRequestId !== options.requestId
+  ) {
+    return false;
+  }
+  log.error(
+    {
+      conversationId: ctx.conversationId,
+      source: options.source,
+      requestId: options.requestId ?? ctx.currentRequestId ?? null,
+    },
+    "Processing flag leaked past turn teardown — force-clearing so the conversation cannot stay wedged",
+  );
+  ctx.abortController = null;
+  ctx.currentRequestId = undefined;
+  try {
+    ctx.setProcessing(false);
+  } catch (err) {
+    log.warn(
+      { err, conversationId: ctx.conversationId },
+      "setProcessing(false) threw during processing rescue; continuing",
+    );
+  }
+  // Tell connected clients the turn is over so their spinner drops without
+  // waiting for a metadata refetch. Best-effort.
+  try {
+    ctx.emitActivityState?.("idle", "error_terminal");
+  } catch {
+    // Best-effort only.
+  }
+  // Un-swallow any sends that queued behind the wedge.
+  const drained = ctx.drainQueue?.("loop_complete");
+  if (drained) {
+    drained.catch((err) => {
+      log.warn(
+        { err, conversationId: ctx.conversationId },
+        "Queue drain after processing rescue failed",
+      );
+    });
+  }
+  return true;
+}
+
 // ── abort ─────────────────────────────────────────────────────────────
 
 export function abortConversation(

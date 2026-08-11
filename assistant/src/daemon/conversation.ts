@@ -118,6 +118,7 @@ import {
   abortConversation,
   disposeConversation,
   reinjectImageSourcePaths,
+  rescueLeakedProcessing,
 } from "./conversation-lifecycle.js";
 import type {
   EnqueueMessageOptions,
@@ -295,6 +296,15 @@ export class Conversation {
   /** @internal */ messages: Message[] = [];
   /** @internal */ agentLoop: AgentLoop;
   private _processing = false;
+  /** Epoch-ms when `_processing` last flipped false→true; null while idle. */
+  private _processingSince: number | null = null;
+  /**
+   * Number of agent-loop runs currently executing for this conversation
+   * (normally 0 or 1). The stale-processing sweep uses this to distinguish
+   * a genuinely busy conversation from one whose `_processing` flag leaked
+   * past a failed teardown — only the latter may be force-cleared.
+   */
+  private _activeAgentRunCount = 0;
   private stale = false;
   /** @internal */ abortController: AbortController | null = null;
   /** @internal */ prompter: PermissionPrompter;
@@ -1452,6 +1462,26 @@ export class Conversation {
     return this._processing;
   }
 
+  /** Epoch-ms since the processing flag was set; null while idle. */
+  processingSince(): number | null {
+    return this._processingSince;
+  }
+
+  /** True while an agent-loop run is actually executing for this conversation. */
+  hasLiveAgentRun(): boolean {
+    return this._activeAgentRunCount > 0;
+  }
+
+  /**
+   * Force-clear a `processing` flag that no live run is backing. Called by
+   * the periodic stale-processing sweep ({@link ConversationEvictor}) as the
+   * TTL backstop behind the run-settle rescue in {@link runAgentLoop}.
+   * Returns true when a leaked flag was actually cleared.
+   */
+  forceClearStaleProcessing(source: string): boolean {
+    return rescueLeakedProcessing(this, { source });
+  }
+
   /**
    * Mutate the server-authoritative `processing` flag. Web/Capacitor/CLI
    * caches treat this flag as the source of truth for the avatar streaming
@@ -1468,6 +1498,11 @@ export class Conversation {
   setProcessing(value: boolean): void {
     const wasProcessing = this._processing;
     this._processing = value;
+    if (value && !wasProcessing) {
+      this._processingSince = Date.now();
+    } else if (!value) {
+      this._processingSince = null;
+    }
     // Persist a durable mid-turn marker so the daemon at the NEXT boot can
     // detect a turn a dead prior process was running (see
     // `daemon/interrupted-turn-reconciler.ts`). Best-effort: a DB error here
@@ -2380,13 +2415,31 @@ export class Conversation {
     },
   ): Promise<void> {
     const { onEvent, ...rest } = options ?? {};
-    return runAgentLoopImpl(
-      this,
-      content,
-      userMessageId,
-      onEvent ?? this.sendToClient,
-      rest,
-    );
+    // Snapshot the request id that owns this run. If the loop's own teardown
+    // throws before it clears the processing flag, the settle guard in the
+    // finally below rescues it — matched on the request id so a queued turn
+    // that already started via `drainQueue` is never clobbered. This is the
+    // "derive in-progress from actually-live state" invariant: `_processing`
+    // cannot outlive the run promise that set it.
+    const requestIdAtStart = this.currentRequestId;
+    this._activeAgentRunCount++;
+    try {
+      return await runAgentLoopImpl(
+        this,
+        content,
+        userMessageId,
+        onEvent ?? this.sendToClient,
+        rest,
+      );
+    } finally {
+      this._activeAgentRunCount--;
+      if (requestIdAtStart !== undefined) {
+        rescueLeakedProcessing(this, {
+          source: "runAgentLoop.settle",
+          requestId: requestIdAtStart,
+        });
+      }
+    }
   }
 
   drainQueue(reason: QueueDrainReason = "loop_complete"): Promise<void> {
