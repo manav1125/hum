@@ -387,21 +387,13 @@ export class GeminiLiveClient {
     // restores the same full context). With it, old turns are compressed away
     // and the session can run indefinitely.
     setup.contextWindowCompression = { slidingWindow: {} };
-    // Low-sensitivity turn detection: on real devices whose echo cancellation
-    // does not cover WebAudio playback (the packaged desktop app), the
-    // assistant's own voice bleeds into the mic and DEFAULT sensitivity
-    // interrupts the reply mid-sentence on its own echo — every turn. LOW
-    // start sensitivity requires clearly-voiced speech to open a user turn,
-    // and a longer end padding stops clipped finals. Deliberate interruptions
-    // still work; the echo of a reply no longer counts as one.
-    setup.realtimeInputConfig = {
-      automaticActivityDetection: {
-        startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
-        endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
-        prefixPaddingMs: 120,
-        silenceDurationMs: 800,
-      },
-    };
+    // Turn detection stays at DEFAULT sensitivity. Echo protection lives in
+    // the session's half-duplex gate (mic input is replaced with silence
+    // while assistant audio is playing — see gateEcho in
+    // gemini-live-session.ts), so detection does not need to be desensitized:
+    // LOW start sensitivity was tried against speaker echo and made relaxed,
+    // quieter follow-ups stop opening turns — the session "stopped engaging"
+    // a few exchanges into a real conversation.
     return setup;
   }
 

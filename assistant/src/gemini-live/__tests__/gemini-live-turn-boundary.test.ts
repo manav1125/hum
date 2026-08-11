@@ -28,12 +28,17 @@ const clientActual = await import("../gemini-live-client.js");
 /** Callbacks the session handed to the client — the test's drive handles. */
 let captured: import("../gemini-live-client.js").GeminiLiveClientCallbacks;
 
+/** Mic audio the session actually forwarded to Gemini (post echo gate). */
+const forwardedAudio: Uint8Array[] = [];
+
 class FakeGeminiLiveClient {
   constructor(options: { callbacks: typeof captured }) {
     captured = options.callbacks;
   }
   async connect(): Promise<void> {}
-  sendAudio(): void {}
+  sendAudio(chunk: Uint8Array): void {
+    forwardedAudio.push(chunk);
+  }
   sendAudioStreamEnd(): void {}
   sendToolResponse(): void {}
   close(): void {}
@@ -91,6 +96,7 @@ async function startSession() {
 
 beforeEach(() => {
   captured = undefined as unknown as typeof captured;
+  forwardedAudio.length = 0;
 });
 
 describe("gemini-live turn boundary", () => {
@@ -142,5 +148,41 @@ describe("gemini-live turn boundary", () => {
     captured.onAudio?.(Buffer.from([0, 1, 2, 3]));
 
     expect(frames.map((f) => f.type)).toEqual(["thinking", "tts_audio"]);
+  });
+});
+
+describe("gemini-live echo gate", () => {
+  const loudMic = () => {
+    const b = Buffer.alloc(320);
+    for (let i = 0; i < b.length; i += 2) b.writeInt16LE(8000, i);
+    return b;
+  };
+  const isSilent = (chunk: Uint8Array) => chunk.every((byte) => byte === 0);
+
+  test("mic audio during assistant playback reaches Gemini as silence, not echo", async () => {
+    const { session } = await startSession();
+
+    // 2 seconds of assistant audio (24kHz s16le) = playback tail ~2s out.
+    captured.onAudio?.(Buffer.alloc(2 * 24000 * 2));
+    session.handleClientFrame({
+      type: "audio",
+      dataBase64: loudMic().toString("base64"),
+    });
+
+    expect(forwardedAudio).toHaveLength(1);
+    expect(forwardedAudio[0]!.length).toBe(320);
+    expect(isSilent(forwardedAudio[0]!)).toBe(true);
+  });
+
+  test("mic audio with no playback in flight passes through untouched", async () => {
+    const { session } = await startSession();
+
+    session.handleClientFrame({
+      type: "audio",
+      dataBase64: loudMic().toString("base64"),
+    });
+
+    expect(forwardedAudio).toHaveLength(1);
+    expect(isSilent(forwardedAudio[0]!)).toBe(false);
   });
 });

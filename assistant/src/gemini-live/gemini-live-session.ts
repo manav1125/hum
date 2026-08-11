@@ -54,6 +54,27 @@ import {
 const log = getLogger("gemini-live-session");
 
 /**
+ * Post-playback margin for the echo gate: covers client buffering/network
+ * jitter between "we sent the last audio chunk" and "the speaker went quiet",
+ * so trailing echo cannot open a phantom user turn.
+ */
+const ECHO_GATE_MARGIN_MS = 400;
+
+/** Lazily-cached silence buffers keyed by chunk length (mic chunks are uniform). */
+const SILENCE_CHUNKS = {
+  cache: new Map<number, Uint8Array>(),
+  get(length: number): Uint8Array {
+    let buf = this.cache.get(length);
+    if (!buf) {
+      buf = new Uint8Array(length);
+      // Mic chunk sizes are client-fixed; keep the cache tiny regardless.
+      if (this.cache.size < 8) this.cache.set(length, buf);
+    }
+    return buf;
+  },
+};
+
+/**
  * Cap on the result summary a deep-task completion note injects back into the
  * live model (~1.5KB). The full result lives in Review; the model only needs
  * enough to speak one or two sentences, and an unbounded summary would bloat
@@ -115,6 +136,8 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private client: GeminiLiveClient | null = null;
   private currentTurnId: string | null = null;
   private closed = false;
+  /** Estimated client playback end (epoch ms) of assistant audio sent so far. */
+  private playbackTailUntilMs = 0;
   // Turn transcript accumulation, flushed to the saved thread on turnComplete.
   private pendingUserText = "";
   private pendingAssistantText = "";
@@ -301,7 +324,9 @@ export class GeminiLiveSession implements LiveVoiceSession {
     switch (frame.type) {
       case "audio":
         if (frame.dataBase64) {
-          this.client.sendAudio(Buffer.from(frame.dataBase64, "base64"));
+          this.client.sendAudio(
+            this.gateEcho(Buffer.from(frame.dataBase64, "base64")),
+          );
         }
         break;
       case "ptt_release":
@@ -317,7 +342,31 @@ export class GeminiLiveSession implements LiveVoiceSession {
   }
 
   handleBinaryAudio(chunk: Uint8Array): void {
-    this.client?.sendAudio(chunk);
+    this.client?.sendAudio(this.gateEcho(chunk));
+  }
+
+  /**
+   * Half-duplex echo gate: while the assistant's own audio is (estimated to
+   * be) playing on the client, replace mic input with equal-length silence
+   * before it reaches Gemini.
+   *
+   * Real-device evidence (2026-08-11): echo cancellation does not cover
+   * WebAudio playback in the packaged desktop app, so the reply loops back
+   * through the mic and Gemini's activity detection reads it as the user —
+   * interrupting the reply with its own echo on every turn. Desensitizing
+   * detection (START_SENSITIVITY_LOW) traded that for the opposite failure:
+   * relaxed, quieter follow-ups stopped opening turns and the session
+   * "stopped engaging" a few exchanges in. Gating removes the echo at the
+   * source instead, so detection can stay at full sensitivity. Silence (not
+   * dropped frames) keeps the input stream continuous for Gemini's VAD. The
+   * cost is no mid-reply barge-in on this engine for now — the same stopgap
+   * the cascade engine currently runs.
+   */
+  private gateEcho(chunk: Uint8Array): Uint8Array {
+    if (Date.now() < this.playbackTailUntilMs + ECHO_GATE_MARGIN_MS) {
+      return SILENCE_CHUNKS.get(chunk.length) ?? new Uint8Array(chunk.length);
+    }
+    return chunk;
   }
 
   /**
@@ -342,6 +391,12 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private onModelAudio(pcm: Buffer): void {
     if (this.closed) return;
     this.beginTurn();
+    // Advance the playback-tail estimate: chunks queue on the client, so the
+    // tail is cumulative from where playback currently stands (never behind
+    // now). s16le mono at the output rate → duration = bytes / 2 / rate.
+    const durationMs = (pcm.length / 2 / GEMINI_LIVE_OUTPUT_SAMPLE_RATE) * 1000;
+    this.playbackTailUntilMs =
+      Math.max(this.playbackTailUntilMs, Date.now()) + durationMs;
     void this.context.sendFrame({
       type: "tts_audio",
       mimeType: "audio/pcm",
