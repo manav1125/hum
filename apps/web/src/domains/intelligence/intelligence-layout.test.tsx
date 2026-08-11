@@ -210,7 +210,12 @@ describe("the left column", () => {
   test("the four look-alikes are four separate leaves", () => {
     flagsRef.externalPlugins = true;
     flagsRef.marketplace = true;
-    const column = renderLayout("/assistant/skills").getByLabelText("Your Cue");
+    // Rendered on Identity, not Skills: Skills is now a promoted focus surface
+    // whose Your Cue menu collapses by default, so the column would be tucked
+    // away. This asserts the leaf SET, which is the same from any settings leaf.
+    const column = renderLayout("/assistant/identity").getByLabelText(
+      "Your Cue",
+    );
     for (const label of [
       "Agents",
       "Skills",
@@ -223,7 +228,9 @@ describe("the left column", () => {
   });
 
   test("flag-gated leaves stay out until their flag is on", () => {
-    const column = renderLayout("/assistant/skills").getByLabelText("Your Cue");
+    const column = renderLayout("/assistant/identity").getByLabelText(
+      "Your Cue",
+    );
     expect(column.textContent).not.toContain("Plugins");
     expect(column.textContent).not.toContain("Marketplace");
   });
@@ -248,6 +255,41 @@ describe("the left column", () => {
     expect(watching).not.toBeNull();
     expect(watching?.getAttribute("href")).toBe("/assistant/watching");
     expect(watching?.getAttribute("aria-disabled")).not.toBe("true");
+  });
+});
+
+describe("the promoted focus surfaces collapse the menu", () => {
+  // Connectors, Skills and Agents are Tier-2 rail rows now; you arrive to use
+  // the page, so the 200px Your Cue menu collapses by default and hands the
+  // width to the content. Genuine settings leaves keep it open.
+  test.each([
+    "/assistant/connectors",
+    "/assistant/skills",
+    "/assistant/hq/agents",
+  ])("%s hides the menu behind a Show control by default", (path) => {
+    const { queryByLabelText, getByLabelText, container } = renderLayout(path);
+    expect(queryByLabelText("Your Cue")).toBeNull();
+    expect(getByLabelText("Show Your Cue menu")).toBeTruthy();
+    // The shell title stands down too — you are here for the page.
+    expect(container.querySelector("h1")?.className).toContain("hidden");
+  });
+
+  test("Show reopens the menu, and Hide tucks it away again", () => {
+    const { getByLabelText, queryByLabelText } = renderLayout(
+      "/assistant/skills",
+    );
+    fireEvent.click(getByLabelText("Show Your Cue menu"));
+    expect(getByLabelText("Your Cue")).toBeTruthy();
+    fireEvent.click(getByLabelText("Hide Your Cue menu"));
+    expect(queryByLabelText("Your Cue")).toBeNull();
+    expect(getByLabelText("Show Your Cue menu")).toBeTruthy();
+  });
+
+  test("a genuine settings leaf keeps the menu open, no Show control", () => {
+    const { getByLabelText, queryByLabelText } =
+      renderLayout("/assistant/identity");
+    expect(getByLabelText("Your Cue")).toBeTruthy();
+    expect(queryByLabelText("Show Your Cue menu")).toBeNull();
   });
 });
 

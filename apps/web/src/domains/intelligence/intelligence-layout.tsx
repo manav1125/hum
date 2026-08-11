@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 import { Typography, cn } from "@vellumai/design-library";
@@ -108,6 +108,20 @@ const SELF_CANVAS_PATHS: readonly string[] = [
   routes.agentNetwork,
 ];
 
+/**
+ * The surfaces that were promoted OUT of the Your Cue door into their own
+ * Tier-2 rail rows (2026-08-11 — see `SIDEBAR_DESTINATIONS`). You arrive at
+ * these to use the *page*, not to browse settings, so the 200px Your Cue menu
+ * is noise here: it collapses by default, freeing the width for the content.
+ * The user can still open it (the `☰` control) to hop to a sibling settings
+ * leaf. Genuine settings leaves (reached via the Your Cue door) keep it open.
+ */
+const FOCUS_SURFACE_PATHS: readonly string[] = [
+  routes.connectors,
+  routes.skills,
+  routes.hqAgents,
+];
+
 export function IntelligenceLayout() {
   const hasHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
   const externalPlugins = useAssistantFeatureFlagStore.use.externalPlugins();
@@ -204,6 +218,24 @@ export function IntelligenceLayout() {
     (to) => pathname === to || pathname.startsWith(to + "/"),
   );
 
+  // A promoted product surface (Connectors / Skills / Agents) — you came for
+  // the page, so the Your Cue menu collapses by default to hand the width to
+  // the content. Crossing the focus/non-focus boundary resets the collapse to
+  // the default for the side you land on; a manual toggle persists as long as
+  // you stay on the same side. Desktop only — the mobile branch never renders
+  // this strip.
+  const isFocusSurface = FOCUS_SURFACE_PATHS.some(
+    (to) => pathname === to || pathname.startsWith(to + "/"),
+  );
+  const [navCollapsed, setNavCollapsed] = useState(isFocusSurface);
+  const wasFocusSurface = useRef(isFocusSurface);
+  useEffect(() => {
+    if (wasFocusSurface.current !== isFocusSurface) {
+      wasFocusSurface.current = isFocusSurface;
+      setNavCollapsed(isFocusSurface);
+    }
+  }, [isFocusSurface]);
+
   // Mobile section identity lives in the v3 back row below ("‹ You" + the
   // section title), so the shared top-bar center stays empty everywhere —
   // desktop keeps the in-body <h1>.
@@ -225,7 +257,7 @@ export function IntelligenceLayout() {
       <h1
         className={cn(
           "mb-4 shrink-0 text-title-large text-[var(--content-default)]",
-          (isMobile || isSelfCanvas) && "hidden",
+          (isMobile || isSelfCanvas || isFocusSurface) && "hidden",
         )}
       >
         Your Cue
@@ -267,11 +299,38 @@ export function IntelligenceLayout() {
         scrollbar instead of scrolling the column and the surface separately.
       */}
       <div className="flex min-h-0 flex-1 gap-6 max-md:gap-0">
-        {isMobile ? null : (
+        {isMobile ? null : navCollapsed ? (
+          // Collapsed: a single control that hands the row's width back to the
+          // content. The menu is one click away, so nothing is unreachable.
+          <div className="shrink-0 pr-1">
+            <button
+              type="button"
+              onClick={() => setNavCollapsed(false)}
+              aria-label="Show Your Cue menu"
+              title="Show Your Cue menu"
+              className="flex h-8 w-8 items-center justify-center rounded-[6px] border border-[var(--border-base)] bg-transparent text-body-medium-default text-[var(--content-secondary)] outline-none transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--content-default)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            >
+              <span aria-hidden>☰</span>
+            </button>
+          </div>
+        ) : (
           <nav
             aria-label="Your Cue"
-            className="w-[200px] shrink-0 overflow-y-auto border-r border-[var(--border-base)] pr-3"
+            className="flex w-[200px] shrink-0 flex-col overflow-y-auto border-r border-[var(--border-base)] pr-3"
           >
+            {/* Collapse control. Sits above the groups so the menu can be tucked
+                away on any Your Cue surface, not only the promoted three. */}
+            <div className="mb-2 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setNavCollapsed(true)}
+                aria-label="Hide Your Cue menu"
+                title="Hide Your Cue menu"
+                className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-transparent text-body-medium-default text-[var(--content-secondary)] outline-none transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--content-default)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                <span aria-hidden>‹</span>
+              </button>
+            </div>
             {groups.map((group) => (
               <div key={group.key} className="mb-4 last:mb-0">
                 {/* The question the leaves under it answer. A heading, not a
