@@ -1,6 +1,6 @@
 ---
 name: ventureverse
-description: Recommend and open embedded VentureVerse founder apps (legal, fundraising, GTM, finance) when a task is exactly what one of them does
+description: "Cue does founder & investor work natively in chat — this skill adds an OPTIONAL 'try this app too' bonus card. Consult it whenever the user's task also maps to a VentureVerse app: reviewing a term sheet/SAFE, analysing a pitch deck, sizing a market (TAM/SAM/SOM), fundraising readiness, pricing or GTM, dilution/ESOP, hiring, investor updates, financial analysis, or company due diligence."
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🚀"
@@ -9,50 +9,54 @@ metadata:
     category: "apps"
     feature-flag: "ventureverse-apps"
     activation-hints:
-      - "User is working on something one of the VentureVerse founder apps does end to end: reviewing a term sheet or SAFE, analysing a pitch deck, sizing a market (TAM/SAM/SOM), checking fundraising readiness, pricing a product, modelling dilution or an ESOP, prepping a sales call, writing an investor update, analysing a financial statement, or researching a company for investment"
-      - "User asks what apps or tools are available, or asks Cue to help with a founder task that maps to a named app"
+      - "The user is doing any founder/investor task that also maps to a VentureVerse app — reviewing a term sheet or SAFE, analysing a pitch deck, sizing a market (TAM/SAM/SOM), checking fundraising readiness, pricing a product or decoding GTM, modelling dilution or an ESOP, prepping a sales call, writing an investor update, analysing a financial statement, hiring, or researching a company for investment. Load this to OFFER the matching app as a bonus — never to replace Cue's own answer."
+      - "User asks what founder apps or tools are available."
 ---
 
 VentureVerse is Cue's companion app store — 24 focused AI apps for founders and
-investors, embedded inside Cue under the **Apps** destination. This skill lets
-you recommend the RIGHT app at the RIGHT moment and open it in one tap, instead
-of doing a shallow version of the work in chat.
+investors. **They are a bonus, not the main event.** Cue's own in-chat work is
+the value the user came for; these apps are an optional "you could also try
+this" extra.
 
-## When to use this
+## The rule: do the work, then offer the app
 
-Recommend an app only when the user's task is **exactly** what that app does end
-to end — a term sheet to review, a deck to analyse, a market to size. In that
-case a purpose-built app beats a chat answer, and surfacing it is genuinely
-helpful.
+1. **Always do the work natively, in full.** Review the term sheet, size the
+   market, analyse the deck — deliver the real answer in chat exactly as you
+   normally would. This is Cue's value and it never depends on any app.
+2. **Then, if the task cleanly maps to a VentureVerse app, ALSO drop one app
+   card** as a low-key bonus: "there's a purpose-built app for this too — want
+   to try it?" It's a suggestion alongside your answer, never instead of it.
 
-Do **not** recommend an app when:
+Never do these:
 
-- You can answer the question directly and well in chat. A one-line question
-  doesn't need an app.
-- Nothing in the catalog is a real match. Never stretch a vague task onto an
-  app — a wrong recommendation is worse than none.
-- You've already recommended one this turn. **At most one app card per turn.**
+- Never withhold, shorten, or defer your own answer because an app exists. The
+  app is an add-on, not a hand-off.
+- Never make the user open an app to get what they asked for. If they never
+  touch it, they still got the full result from you.
+- Never stretch a vague task onto an app — no clean match, no card.
+- Never more than **one** app card per turn, and skip it entirely for trivial
+  or one-line asks where it would just be noise.
 
-The user still signs into VentureVerse the first time they open an app; that's
-expected and you don't need to arrange it.
+Occasional and understated is right. This is a "by the way," not a sell.
 
-## How to recommend
+## How to offer the bonus
 
-Call `ui_show` with `surface_type: "external_app"` and
-`data: { slug, name, category?, description? }`. The card renders in chat with
-an **Open** button that takes the user into the app inside Cue.
+After you've given your answer, call `ui_show` with
+`surface_type: "external_app"` and `data: { slug, name, category?, description? }`.
+The card renders in chat with an **Open** button.
 
 - `slug` and `name` **must** come from the catalog below — never invent a slug.
-  The slug is what opens the app; a wrong one opens nothing.
-- Keep `description` to one short sentence on why it fits *this* task (you can
-  adapt it from the catalog blurb).
-- Say one plain sentence in your reply naming why you're suggesting it, then
-  emit the card. Don't over-sell.
+- Keep `description` to one short sentence on why it fits *this* task.
+- Introduce it in one plain sentence framed as a bonus, then emit the card.
 
-Example — the user pastes a term sheet and asks "is this founder-friendly?":
+Example — you've just walked the user through their term sheet clause by clause:
 
-> A term sheet is exactly what Alchemy is built for — it scores each clause and
-> flags what's off-market.
+> That's my read on every clause. If you want a second pass, VentureVerse's
+> Alchemy is built exactly for this — it scores each clause and flags what's
+> off-market.
+
+then emit the `external_app` card for Alchemy. The user already has your full
+analysis; the app is extra.
 
 then `ui_show` `external_app` with
 `{ slug: "10-alchemy", name: "Alchemy", category: "Legal", description: "Clause-by-clause term sheet review — what's standard, what's risky, how to negotiate." }`.
