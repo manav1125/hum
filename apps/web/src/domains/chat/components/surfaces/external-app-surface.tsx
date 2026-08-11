@@ -2,6 +2,10 @@ import { ArrowRight } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
+import { useQuery } from "@tanstack/react-query";
+
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { ventureverseappsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { Surface } from "@/domains/chat/types/types";
 import { routes } from "@/utils/routes";
 
@@ -48,8 +52,31 @@ function AppIcon({ data }: { data: ExternalAppSurfaceData }) {
 
 export function ExternalAppSurface({ surface }: { surface: Surface }) {
   const navigate = useNavigate();
-  const data = surface.data as unknown as ExternalAppSurfaceData;
-  if (!data?.slug || !data?.name) return null;
+  const raw = surface.data as unknown as ExternalAppSurfaceData;
+  const assistantId = useActiveAssistantId();
+
+  // The model emits { slug, name } and rarely the icon. Resolve the icon (and
+  // fill any missing category/description) from the daemon catalog by slug, so
+  // the card always shows the real app icon without the model needing to know
+  // icon URLs. Same catalog the gallery and embed page use — usually cached.
+  const catalogQuery = useQuery({
+    ...ventureverseappsGetOptions({
+      path: { assistant_id: assistantId ?? "" },
+    }),
+    enabled: assistantId !== null && Boolean(raw?.slug),
+    staleTime: 5 * 60_000,
+  });
+
+  if (!raw?.slug || !raw?.name) return null;
+
+  const fromCatalog = catalogQuery.data?.apps.find((a) => a.slug === raw.slug);
+  const data: ExternalAppSurfaceData = {
+    slug: raw.slug,
+    name: raw.name || fromCatalog?.name || raw.slug,
+    category: raw.category ?? fromCatalog?.category,
+    description: raw.description ?? fromCatalog?.description,
+    iconUrl: raw.iconUrl ?? fromCatalog?.iconUrl,
+  };
 
   const open = () => void navigate(routes.ventureverseApps.app(data.slug));
 
