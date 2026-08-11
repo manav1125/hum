@@ -9,7 +9,6 @@ import { PageShell } from "@/components/page-shell";
 import { ventureverseappsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import { isElectron } from "@/runtime/is-electron";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
-import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { routes } from "@/utils/routes";
 
 /**
@@ -17,13 +16,19 @@ import { routes } from "@/utils/routes";
  *
  * Two rendering paths, chosen at runtime:
  *
- * 1. **Desktop inline view** (Electron + `vvView` bridge + the
- *    `ventureverse-inline-embed` client flag): the app runs first-party in a
- *    native WebContentsView composited into this page's app area (see
- *    apps/macos/src/main/ventureverse-view.ts). VentureVerse is top-level
- *    there, so its SSO handshake completes and the app runs — visually
- *    embedded in Cue, no VentureVerse-side change. This is the real inline
- *    experience.
+ * 1. **Desktop inline view** (Electron + `vvView` bridge present): the app runs
+ *    first-party in a native WebContentsView composited into this page's app
+ *    area (see apps/macos/src/main/ventureverse-view.ts). VentureVerse is
+ *    top-level there, so its SSO handshake completes and the app runs —
+ *    visually embedded in Cue, no VentureVerse-side change. This is the real
+ *    inline experience.
+ *
+ *    Deliberately NOT gated on the `ventureverse-inline-embed` client flag any
+ *    more: the bridge only exists in desktop builds that shipped it, so its
+ *    presence already IS the gate. Gating additionally on a runtime-fetched
+ *    flag added a silent failure mode — a stale/undelivered flag value left the
+ *    embed inert and fell back to the launch screen even though everything
+ *    needed to embed was present.
  *
  * 2. **Launch screen** (web, or any desktop build without the bridge/flag):
  *    a cross-origin iframe can't carry VentureVerse's SSO handshake, so we
@@ -33,8 +38,6 @@ import { routes } from "@/utils/routes";
 export function VentureverseAppEmbedPage() {
   const hasHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
   const enabled = useAssistantFeatureFlagStore.use.ventureverseApps();
-  const inlineEmbed =
-    useClientFeatureFlagStore.use.ventureverseInlineEmbed();
   const assistantId = useActiveAssistantId();
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
@@ -52,10 +55,11 @@ export function VentureverseAppEmbedPage() {
 
   const app = appsQuery.data?.apps.find((a) => a.slug === slug);
 
-  // The native view runs the app first-party inside Cue. Only when everything
-  // that makes it work is present; otherwise fall back to the launch screen.
+  // The native view runs the app first-party inside Cue, whenever the desktop
+  // bridge that makes it work is present. The bridge only ships in desktop
+  // builds, so its presence is the gate — no runtime flag to go stale.
   const useNativeView =
-    inlineEmbed && isElectron() && typeof window.vellum?.vvView !== "undefined";
+    isElectron() && typeof window.vellum?.vvView !== "undefined";
 
   return (
     <PageShell className="max-md:px-0 max-md:py-0 md:px-0 md:py-0">
