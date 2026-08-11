@@ -234,6 +234,10 @@ describe("Invariant 2: no generic plaintext secret read API", () => {
       "plugin-api/index.ts", // public @vellumai/plugin-api surface re-exports getSecureKeyAsync to dynamically-imported workspace plugins via the boot-time shim (compiled-binary plugin loading)
       "inbound/platform-callback-registration.ts", // managed credential lookup for platform base URL, assistant ID, and API key
       "tts/providers/elevenlabs-provider.ts", // ElevenLabs TTS API key lookup
+      "tools/a2a/send.ts", // outbound A2A bearer token lookup (single a2a-peer credential, sent as Authorization header to the configured peer)
+      "providers/tooling-credentials.ts", // shared tooling-provider token resolver (Replicate/Apify; store-then-env via getProviderKeyAsync)
+      "live-voice/live-voice-credential-preflight.ts", // live-voice readiness preflight — existence-only check of TTS secrets (returns ready/not-ready, never the value)
+      "gemini-live/gemini-live-client.ts", // realtime voice Gemini API key lookup (gemini credential, openrouter fallback)
       "tts/providers/deepgram-provider.ts", // Deepgram TTS API key lookup
       "tts/providers/xai-provider.ts", // xAI TTS API key lookup
       "credential-health/credential-health-service.ts", // credential health check reads access tokens for liveness pings
