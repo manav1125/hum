@@ -1,5 +1,6 @@
 import {
   Blocks,
+  Bot,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -8,9 +9,11 @@ import {
   LayoutList,
   MessagesSquare,
   Pin,
+  Plug,
   Rocket,
   Search,
   Settings2,
+  Sparkles,
   SquarePen,
   Target,
   Users,
@@ -231,10 +234,16 @@ const PRIMARY_ICON: Record<PrimaryNavKey, typeof Target> = {
   work: LayoutList,
 };
 
-const SIDEBAR_ICON: Record<"people" | "library" | "apps", typeof Target> = {
+const SIDEBAR_ICON: Record<
+  "people" | "library" | "apps" | "connectors" | "skills" | "agents",
+  typeof Target
+> = {
   people: Users,
   library: LayoutGrid,
   apps: Blocks,
+  connectors: Plug,
+  skills: Sparkles,
+  agents: Bot,
 };
 
 /*

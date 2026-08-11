@@ -126,7 +126,13 @@ export const PRIMARY_NAV: readonly PrimaryDestination[] = [
     to: routes.assistant,
     match: matchTalk,
   },
-  { key: "hq", label: "HQ", phoneLabel: "Today", to: routes.hq, match: matchHq },
+  {
+    key: "hq",
+    label: "HQ",
+    phoneLabel: "Today",
+    to: routes.hq,
+    match: matchHq,
+  },
   { key: "work", label: "Work", to: routes.projects, match: matchWork },
 ] as const;
 
@@ -215,32 +221,38 @@ export function readWorkView(search: string | URLSearchParams): WorkView {
 // --- The accumulating destinations ------------------------------------------
 
 /**
- * The two rows between the dividers — Tier 2, and the ONLY survivors of what
- * v15 called "the CUE group".
+ * The rows between the dividers — Tier 2, the accumulating and the
+ * product-surface destinations.
  *
  * v15 put six rows here (Agents · Skills · Rhythms · Memory · Library ·
  * Watching) and v20 laid them out as a two-column grid to fit. Design
  * overturned both: a grid *"reads as a keypad, breaks vertical scanning, and
- * truncates labels"* — it shipped with "Watching" rendered as "Wat…" — and
- * four of the six were configuration, not destinations.
- *
- * The admission test is no longer "does it explain the product" (which admits
- * everything) but one you can check against the database:
+ * truncates labels"* — it shipped with "Watching" rendered as "Wat…" — and it
+ * cut the set to two with an admission test you can check against the database:
  *
  *   **Does the data accumulate on its own?**  → a sidebar row.
  *   **Do you only go there to change something?** → a leaf inside Your Cue.
  *
- * People and Library pass; Agents, Skills, Rhythms/Schedules and Watching do
- * not, and they now live in {@link ../../domains/intelligence/your-cue-model}.
- * That test is a property of the surface rather than a matter of taste, which
- * is why it should not drift the way "does it demo well" did.
+ * People and Library pass that test cleanly; Apps was the first row the owner
+ * added over it (2026-08-10, flag-gated dark).
+ *
+ * **Owner decision (2026-08-11): Connectors, Skills and Agents rejoin, under
+ * Apps.** They do not pass the accumulation test — they are where you go to
+ * configure and inspect — but the owner overruled it deliberately, the way he
+ * overruled the People gate: *"these are key places we want the user to
+ * navigate to to understand the breadth of our product."* Discoverability of
+ * what Cue can do beat the purity of "only what accumulates," and that is his
+ * call. Because they now own a top-level row, they are **removed from
+ * {@link YOUR_CUE_LEAF_PATHS}** so the Your Cue door no longer lights on their
+ * URLs — one lit destination per place, not two. Their pages still render
+ * inside the Your Cue shell (`IntelligenceLayout`); only the rail ownership
+ * moved. Rhythms/Schedules, Memory and Watching stay leaves inside Your Cue.
  *
  * **One column, same left margin as HQ and Work.** Rendering is the rail's
- * job, but the shape of this array is what makes a single column the only
- * natural rendering: two entries have nothing to pair off into.
+ * job; the shape of this array is what makes a single column the natural one.
  */
 export interface SidebarDestination {
-  key: "people" | "library" | "apps";
+  key: "people" | "library" | "apps" | "connectors" | "skills" | "agents";
   label: string;
   to: string;
   /**
@@ -311,6 +323,38 @@ export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
       p === routes.ventureverseApps.root ||
       p.startsWith(`${routes.ventureverseApps.root}/`),
   },
+  {
+    /**
+     * The integrations surface (Composio connectors + their detail pages).
+     * Owner-promoted from a Your Cue leaf — see the block above. Lights on the
+     * list and on any `connectors/:slug` detail.
+     */
+    key: "connectors",
+    label: "Connectors",
+    to: routes.connectors,
+    match: (p) =>
+      p === routes.connectors || p.startsWith(`${routes.connectors}/`),
+  },
+  {
+    /** The skills catalog — what Cue can do. Owner-promoted (block above). */
+    key: "skills",
+    label: "Skills",
+    to: routes.skills,
+    match: (p) => p === routes.skills || p.startsWith(`${routes.skills}/`),
+  },
+  {
+    /**
+     * The agents surface — "Your company, staffed by agents" (the org/roster
+     * at `/assistant/hq/agents`, NOT the bare `/assistant/agents` which
+     * redirects to HQ). Owner-promoted (block above). `matchHq` explicitly
+     * excludes `/hq/agents`, so this row is the only nav element that lights
+     * there.
+     */
+    key: "agents",
+    label: "Agents",
+    to: routes.hqAgents,
+    match: (p) => p === routes.hqAgents || p.startsWith(`${routes.hqAgents}/`),
+  },
 ] as const;
 
 // --- The door ---------------------------------------------------------------
@@ -348,11 +392,12 @@ export const YOUR_CUE_DOOR = {
  */
 const YOUR_CUE_LEAF_PATHS: readonly string[] = [
   routes.identity,
-  routes.hqAgents,
-  routes.skills,
+  // Agents (routes.hqAgents), Skills (routes.skills) and Connectors
+  // (routes.connectors) were promoted to their own Tier-2 rail rows on
+  // 2026-08-11 (see SIDEBAR_DESTINATIONS) and deliberately do NOT light the
+  // door any more — the promoted row owns their active state.
   routes.plugins,
   routes.marketplace,
-  routes.connectors,
   routes.channels,
   routes.agentNetwork,
   routes.contacts.root,

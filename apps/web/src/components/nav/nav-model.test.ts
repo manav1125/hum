@@ -66,9 +66,9 @@ describe("the two platforms agree", () => {
     // mark's label is `Cue`; the rail keeps `HQ` and `Talk to Cue`, which are
     // the words a wide row has space for. One declaration either way — the
     // tab bar used to carry an inline ternary nobody could read from here.
-    expect(MOBILE_TAB_ORDER.map((k) => tabLabel(primaryDestination(k)))).toEqual(
-      ["Today", "Cue", "Work"],
-    );
+    expect(
+      MOBILE_TAB_ORDER.map((k) => tabLabel(primaryDestination(k))),
+    ).toEqual(["Today", "Cue", "Work"]);
   });
 });
 
@@ -169,25 +169,33 @@ describe("Work's views are views, not destinations", () => {
 });
 
 describe("the sidebar's Tier-2 rows are one column", () => {
-  // The bug: v20 laid these out as a two-column grid to fit six rows in, and
-  // the live app rendered "Watching" as "Wat…". Design's ruling — a grid reads
-  // as a keypad, breaks vertical scanning, truncates labels — is enforced here
-  // structurally rather than in CSS: a third row had to argue for itself, and
-  // Apps did — an owner decision (2026-08-10), the People-ungating precedent.
-  // Apps is flag-gated dark, so the RENDERED rail is still the two rows design
-  // signed off on until `ventureverse-apps` flips on.
-  test("exactly three rows survive — People, Library, and gated Apps", () => {
+  // The bug: v20 laid these out as a two-column grid and the live app rendered
+  // "Watching" as "Wat…". Design's ruling — a grid reads as a keypad, breaks
+  // vertical scanning, truncates labels — is enforced here structurally rather
+  // than in CSS. The SET has grown twice by owner decision over the original
+  // accumulation test: Apps (2026-08-10), then Connectors/Skills/Agents
+  // (2026-08-11, "key places to understand the breadth of the product"). Apps
+  // is flag-gated dark; the other three are ungated product-surface rows.
+  test("the six rows, in order — People, Library, Apps, Connectors, Skills, Agents", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
       "people",
       "library",
       "apps",
+      "connectors",
+      "skills",
+      "agents",
     ]);
   });
 
-  test("only Apps is flag-gated — the ungated pair stays ungated", () => {
-    expect(
-      SIDEBAR_DESTINATIONS.map((d) => d.flag ?? null),
-    ).toEqual([null, null, "ventureverseApps"]);
+  test("only Apps is flag-gated — every other row is ungated", () => {
+    expect(SIDEBAR_DESTINATIONS.map((d) => d.flag ?? null)).toEqual([
+      null,
+      null,
+      "ventureverseApps",
+      null,
+      null,
+      null,
+    ]);
   });
 
   test("every row lands on an assistant route", () => {
@@ -198,6 +206,9 @@ describe("the sidebar's Tier-2 rows are one column", () => {
       routes.people,
       routes.library.root,
       routes.ventureverseApps.root,
+      routes.connectors,
+      routes.skills,
+      routes.hqAgents,
     ]);
   });
 
@@ -233,12 +244,15 @@ describe("People is ungated — the owner overruled design", () => {
   });
 
   test("People sits beside Library, People first, per the final brief", () => {
-    // The brief's block is `👤 People / ▦ Library`; the gated Apps row
-    // (owner decision 2026-08-10) joins BELOW the pair, never between them.
+    // The brief's block is `👤 People / ▦ Library`; the owner-added rows (Apps,
+    // then Connectors/Skills/Agents) join BELOW the pair, never between them.
     expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
       "people",
       "library",
       "apps",
+      "connectors",
+      "skills",
+      "agents",
     ]);
   });
 
@@ -263,12 +277,9 @@ describe("Your Cue is the one door", () => {
 
   test.each([
     routes.identity,
-    routes.skills,
     routes.memory,
     routes.guardrails,
-    routes.hqAgents,
     routes.workspace,
-    routes.connectors,
     routes.channels,
     routes.agentNetwork,
     routes.cueLive,
@@ -292,6 +303,11 @@ describe("Your Cue is the one door", () => {
     "/assistant/people",
     "/assistant/library",
     "/assistant/conversations/abc",
+    // Promoted to Tier-2 rail rows (2026-08-11) — their own row lights, not the
+    // door. See SIDEBAR_DESTINATIONS / YOUR_CUE_LEAF_PATHS.
+    routes.connectors,
+    routes.skills,
+    routes.hqAgents,
   ])("%s does NOT light the door", (pathname) => {
     expect(YOUR_CUE_DOOR.match(pathname)).toBe(false);
   });
@@ -346,4 +362,3 @@ instead.\n${hits.join("\n")}`,
     ).toEqual([]);
   });
 });
-

@@ -274,14 +274,32 @@ describe("one column, five rows, a door", () => {
     expect(screen.getByText("Your Cue")).toBeDefined();
   });
 
-  test("the four rows that became Your Cue leaves are gone from the rail", () => {
-    // Each is still routable and each is a leaf inside Your Cue; none of them
-    // is a rail row any more. "You go there to change something" is a leaf;
-    // "the data accumulates on its own" is a rail row.
+  test("the rows that stayed Your Cue leaves are gone from the rail", () => {
+    // Rhythms, Memory and Watching are still leaves inside Your Cue — you go
+    // there to change something. Agents and Skills were promoted back to rail
+    // rows by owner decision (2026-08-11) and are asserted present below.
     renderRail();
-    for (const gone of ["Agents", "Skills", "Rhythms", "Memory", "Watching"]) {
+    for (const gone of ["Rhythms", "Memory", "Watching"]) {
       expect(screen.queryByText(gone)).toBeNull();
     }
+  });
+
+  test("Connectors, Skills and Agents are rail rows again (owner decision 2026-08-11)", () => {
+    // "Key places we want the user to navigate to to understand the breadth of
+    // our product" — promoted from Your Cue leaves to Tier-2 rows.
+    renderRail();
+    for (const row of ["Connectors", "Skills", "Agents"]) {
+      expect(screen.getByText(row)).toBeDefined();
+    }
+  });
+
+  test("CLICK-THROUGH: Agents lands on the roster, not the /agents→HQ redirect", () => {
+    // The row targets `routes.hqAgents` (the org/roster), NOT the bare
+    // `/assistant/agents` which redirects to HQ — a nav row that bounced to HQ
+    // would be broken.
+    const at = renderRailWithLocation();
+    fireEvent.click(screen.getByText("Agents"));
+    expect(at()).toBe(routes.hqAgents);
   });
 
   test("the rows earlier rounds displaced are still gone", () => {
