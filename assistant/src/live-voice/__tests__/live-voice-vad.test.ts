@@ -193,6 +193,8 @@ function createHarness(options: {
   frontDoor?: Partial<LiveVoiceFrontDoorConfig>;
   /** Make resolveTranscriber throw this many times before succeeding. */
   failResolveTimes?: number;
+  /** Config-level (daemon `liveVoice.vad`) barge-in guard override. */
+  vadConfigBargeInMs?: number;
 }) {
   const sequencer = createLiveVoiceServerFrameSequencer();
   const frames: LiveVoiceServerFrame[] = [];
@@ -264,11 +266,17 @@ function createHarness(options: {
   );
   const streamTtsAudio = options.streamTtsAudio ?? defaultStreamTtsAudio;
 
-  const liveVoiceConfig: LiveVoiceConfig | undefined = options.frontDoor
-    ? LiveVoiceConfigSchema.parse({
-        frontDoor: { enabled: true, ...options.frontDoor },
-      })
-    : undefined;
+  const liveVoiceConfig: LiveVoiceConfig | undefined =
+    options.frontDoor || options.vadConfigBargeInMs !== undefined
+      ? LiveVoiceConfigSchema.parse({
+          ...(options.frontDoor
+            ? { frontDoor: { enabled: true, ...options.frontDoor } }
+            : {}),
+          ...(options.vadConfigBargeInMs !== undefined
+            ? { vad: { bargeInMinSpeechMs: options.vadConfigBargeInMs } }
+            : {}),
+        })
+      : undefined;
 
   let turnNumber = 0;
   const session = new LiveVoiceSession(context, {
@@ -1562,5 +1570,28 @@ describe("barge-in re-arm race", () => {
     await waitFor(() => h.transcribers[1]!.started);
     await sendAudio(h.session, LOUD_CHUNK, 2);
     await waitFor(() => h.transcribers[1]!.audio.length > 0);
+  });
+});
+
+describe("echo-safe clients vs the config barge-in stopgap", () => {
+  test("echoSafePlayback gets the schema-default guard even when config raises it", async () => {
+    const h = createHarness({
+      startFrame: makeStartFrame({
+        turnDetection: "server_vad",
+        echoSafePlayback: true,
+      } as Partial<LiveVoiceClientStartFrame>),
+      vadConfigBargeInMs: 15000,
+    });
+    await h.session.start();
+    expect(h.session.effectiveBargeInMinSpeechMs).toBe(250);
+  });
+
+  test("a client without the flag keeps the config stopgap", async () => {
+    const h = createHarness({
+      startFrame: makeStartFrame({ turnDetection: "server_vad" }),
+      vadConfigBargeInMs: 15000,
+    });
+    await h.session.start();
+    expect(h.session.effectiveBargeInMinSpeechMs).toBe(15000);
   });
 });

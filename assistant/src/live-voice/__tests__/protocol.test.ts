@@ -619,3 +619,33 @@ describe("server VAD frames sequence like any other server frame", () => {
     });
   });
 });
+
+describe("start frame echoSafePlayback capability flag", () => {
+  test("echoSafePlayback: true is parsed onto the frame", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({
+        type: "start",
+        audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+        echoSafePlayback: true,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok && result.frame.type === "start") {
+      expect(result.frame.echoSafePlayback).toBe(true);
+    }
+  });
+
+  test("non-boolean / absent echoSafePlayback is dropped, not propagated", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({
+        type: "start",
+        audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+        echoSafePlayback: "yes",
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok && result.frame.type === "start") {
+      expect(result.frame.echoSafePlayback).toBeUndefined();
+    }
+  });
+});

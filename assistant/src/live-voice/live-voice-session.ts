@@ -384,6 +384,14 @@ const LIVE_VOICE_FULL_DUPLEX_IDLE_TIMEOUT_MS = 120_000;
 const SERVER_VAD_PRE_ROLL_MAX_CHUNKS = 25;
 
 /**
+ * Schema-default barge-in guard (mirrors `liveVoice.vad.bargeInMinSpeechMs`'s
+ * schema default). Used directly for echo-safe clients so a deployed config
+ * that raises the guard as an echo stopgap never penalizes clients whose
+ * playback cannot echo.
+ */
+const DEFAULT_BARGE_IN_MIN_SPEECH_MS = 250;
+
+/**
  * Re-arm transcriber connect attempts and the backoff between them. A fresh
  * streaming-STT connect is a network operation that fails transiently; one
  * blip must not end an otherwise healthy call.
@@ -1056,7 +1064,15 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     this.bargeInMinSpeechMs =
       this.context.startFrame.bargeInMinSpeechMs ??
       this.options.bargeInMinSpeechMs ??
-      vad.bargeInMinSpeechMs;
+      // An echo-safe client (media-element playback covered by browser echo
+      // cancellation, declared via `echoSafePlayback`) cannot loop the reply
+      // back through its mic, so it gets the schema-default guard even when
+      // the deployed config raises `vad.bargeInMinSpeechMs` as an echo
+      // stopgap for older clients — that stopgap is scoped to the clients
+      // that need it.
+      (this.context.startFrame.echoSafePlayback === true
+        ? DEFAULT_BARGE_IN_MIN_SPEECH_MS
+        : vad.bargeInMinSpeechMs);
     this.silenceThresholdMs =
       this.context.startFrame.silenceThresholdMs ??
       this.options.turnDetectorConfig?.silenceThresholdMs ??

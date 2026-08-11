@@ -165,6 +165,12 @@ export interface LiveVoiceConnectArgs {
    * daemon actually runs — callers must fall back when the echo is missing.
    */
   turnDetection?: LiveVoiceTurnDetectionMode;
+  /**
+   * Capability flag: this client's TTS playback is echo-cancellable (see
+   * `LiveVoiceAudioPlayer.echoSafe`), so the daemon may run interruption at
+   * normal sensitivity for this session instead of its echo-safe stopgaps.
+   */
+  echoSafePlayback?: boolean;
 }
 
 /** Factory so tests can inject a mock WebSocket. Defaults to the global. */
@@ -195,6 +201,7 @@ export class LiveVoiceChannelClient {
   private engine: "cascade" | "gemini-live" = "cascade";
   private persona: string | undefined;
   private turnDetection: LiveVoiceTurnDetectionMode | undefined;
+  private echoSafePlayback = false;
 
   private readonly listeners: {
     [E in LiveVoiceClientEventName]: Set<LiveVoiceClientEventHandler<E>>;
@@ -262,6 +269,7 @@ export class LiveVoiceChannelClient {
     engine,
     persona,
     turnDetection,
+    echoSafePlayback,
   }: LiveVoiceConnectArgs): Promise<void> {
     if (this.state !== "idle") return;
     this.state = "connecting";
@@ -270,6 +278,7 @@ export class LiveVoiceChannelClient {
     this.engine = engine === "gemini-live" ? "gemini-live" : "cascade";
     this.persona = persona;
     this.turnDetection = turnDetection;
+    this.echoSafePlayback = echoSafePlayback === true;
 
     let url: string;
     try {
@@ -400,6 +409,9 @@ export class LiveVoiceChannelClient {
       ...(this.turnDetection === "server_vad"
         ? { turnDetection: "server_vad" as const }
         : {}),
+      // Capability flag: playback on this client is echo-cancellable, so the
+      // daemon can run interruption at normal sensitivity for this session.
+      ...(this.echoSafePlayback ? { echoSafePlayback: true } : {}),
     };
     this.trySend(JSON.stringify(startFrame));
   }

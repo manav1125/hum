@@ -100,6 +100,12 @@ export interface AudioContextLike {
   ): AudioBuffer;
   createBufferSource(): AudioBufferSourceNode;
   /**
+   * Optional (feature-detected): a `MediaStreamAudioDestinationNode` factory.
+   * When present, playback is routed through it into an `<audio>` element —
+   * see {@link LiveVoiceAudioPlayer.echoSafe}.
+   */
+  createMediaStreamDestination?(): AudioNode & { stream: MediaStream };
+  /**
    * Decode an encoded container (wav/mp3/opus) into an `AudioBuffer`, deriving
    * sample rate and channel layout from the container header.
    */
@@ -141,6 +147,32 @@ export function decodePcm16Base64(dataBase64: string): Float32Array {
 export class LiveVoiceAudioPlayer {
   private readonly createContext: AudioContextFactory;
   private context: AudioContextLike | null = null;
+
+  /**
+   * Node all decoded buffers connect to. Either a
+   * `MediaStreamAudioDestinationNode` feeding {@link outputElement} (the
+   * echo-safe path) or the context's direct `destination` (fallback).
+   */
+  private outputNode: AudioNode | null = null;
+
+  /**
+   * Hidden `<audio>` element that renders the media-stream output. Chromium's
+   * acoustic echo canceller only references audio played through media
+   * elements — WebAudio's direct `destination` path is invisible to it, so a
+   * reply played that way loops back through the mic as un-cancelled echo
+   * (crbug 687574). Routing playback through this element is what lets
+   * `getUserMedia({ echoCancellation: true })` actually subtract the
+   * assistant's own voice from the capture.
+   */
+  private outputElement: HTMLAudioElement | null = null;
+
+  /**
+   * True when playback is routed through the media-element path above, i.e.
+   * the assistant's audio is covered by browser echo cancellation. Consumers
+   * advertise this to the daemon (`echoSafePlayback` on the start frame) so it
+   * can run interruption at normal sensitivity instead of echo-safe stopgaps.
+   */
+  private echoSafeRouting = false;
 
   /** Sources currently scheduled (playing or pending). */
   private activeSources = new Set<AudioBufferSourceNode>();
@@ -189,6 +221,14 @@ export class LiveVoiceAudioPlayer {
   /** Whether any audio is scheduled, playing, or still decoding. */
   get isPlaying(): boolean {
     return this.playingState || this.pendingContainerDecodes > 0;
+  }
+
+  /**
+   * Whether playback is echo-cancellable by the browser (media-element
+   * routing). Meaningful once the context exists — call {@link prewarm} first.
+   */
+  get echoSafe(): boolean {
+    return this.echoSafeRouting;
   }
 
   /**
@@ -297,11 +337,11 @@ export class LiveVoiceAudioPlayer {
     });
   }
 
-  /** Connect a decoded buffer to the destination and start it gaplessly. */
+  /** Connect a decoded buffer to the output node and start it gaplessly. */
   private scheduleBuffer(context: AudioContextLike, buffer: AudioBuffer): void {
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.connect(context.destination);
+    source.connect(this.outputNode ?? context.destination);
 
     // Chain start time from the running playhead. Never schedule in the past:
     // if the queue drained the playhead may lag behind currentTime.
@@ -376,13 +416,60 @@ export class LiveVoiceAudioPlayer {
     this.stop();
     const context = this.context;
     this.context = null;
+    this.outputNode = null;
+    this.echoSafeRouting = false;
+    const element = this.outputElement;
+    this.outputElement = null;
+    if (element) {
+      element.pause();
+      element.srcObject = null;
+      element.remove();
+    }
     if (context) await context.close();
+  }
+
+  /**
+   * Prefer the echo-safe media-element output path; fall back to the direct
+   * destination when the environment lacks the pieces (tests, exotic
+   * browsers). Any failure downgrades silently to the fallback — playback
+   * must never break because echo routing couldn't be established.
+   */
+  private setupOutputRouting(context: AudioContextLike): void {
+    this.outputNode = null;
+    this.echoSafeRouting = false;
+    try {
+      if (
+        typeof context.createMediaStreamDestination !== "function" ||
+        typeof Audio === "undefined"
+      ) {
+        return;
+      }
+      const destination = context.createMediaStreamDestination();
+      const element = new Audio();
+      element.srcObject = destination.stream;
+      element.autoplay = true;
+      // Muted media elements are excluded from the AEC reference; playback
+      // volume is full either way.
+      element.muted = false;
+      void element.play()?.catch(() => {
+        // Autoplay veto: the element will start on the next user gesture; the
+        // routing itself stays valid.
+      });
+      this.outputNode = destination;
+      this.outputElement = element;
+      this.echoSafeRouting = true;
+    } catch {
+      this.outputNode = null;
+      this.outputElement = null;
+      this.echoSafeRouting = false;
+    }
   }
 
   private ensureContext(): AudioContextLike {
     if (!this.context) {
       this.context = this.createContext();
       this.playheadTime = 0;
+      this.setupOutputRouting(this.context);
     }
     // A context created outside the user-gesture window starts "suspended";
     // scheduled buffers then never sound AND their source nodes never fire

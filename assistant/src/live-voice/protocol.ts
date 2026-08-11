@@ -168,6 +168,16 @@ export interface LiveVoiceClientStartFrame {
    * [{@link MIN_BARGE_IN_MIN_SPEECH_MS}, {@link MAX_BARGE_IN_MIN_SPEECH_MS}].
    */
   readonly bargeInMinSpeechMs?: number;
+  /**
+   * Capability flag: the client's TTS playback is covered by browser echo
+   * cancellation (media-element routing), so the assistant's own voice does
+   * not loop back through the mic. Sessions that declare it may run
+   * interruption at normal sensitivity instead of the echo-safe stopgaps
+   * (the realtime engine's half-duplex mic gate; the cascade's raised
+   * barge-in guard, which such clients override via `bargeInMinSpeechMs`).
+   * Absent (older clients) keeps the stopgaps.
+   */
+  readonly echoSafePlayback?: boolean;
 }
 
 export interface LiveVoiceClientAudioFrame {
@@ -872,6 +882,7 @@ function validateStartFrame(
       ...(typeof value.bargeInMinSpeechMs === "number"
         ? { bargeInMinSpeechMs: value.bargeInMinSpeechMs }
         : {}),
+      ...(value.echoSafePlayback === true ? { echoSafePlayback: true } : {}),
       audio: audioConfig.frame,
     },
   };

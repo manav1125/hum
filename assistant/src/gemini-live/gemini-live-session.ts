@@ -363,6 +363,11 @@ export class GeminiLiveSession implements LiveVoiceSession {
    * the cascade engine currently runs.
    */
   private gateEcho(chunk: Uint8Array): Uint8Array {
+    // A client whose playback is echo-cancellable (media-element routing,
+    // declared via the start frame's `echoSafePlayback` capability flag)
+    // never loops the reply back through its mic — pass its audio through
+    // untouched so the user can interrupt mid-reply at full sensitivity.
+    if (this.context.startFrame.echoSafePlayback === true) return chunk;
     if (Date.now() < this.playbackTailUntilMs + ECHO_GATE_MARGIN_MS) {
       return SILENCE_CHUNKS.get(chunk.length) ?? new Uint8Array(chunk.length);
     }

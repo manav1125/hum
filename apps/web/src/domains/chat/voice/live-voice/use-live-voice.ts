@@ -782,6 +782,11 @@ export function useLiveVoice(
         engine,
         persona,
         ...(handsFree ? { turnDetection: "server_vad" as const } : {}),
+        // `prewarm()` already ran (inside the mic-tap gesture), so the player
+        // knows whether its playback is routed through the echo-cancellable
+        // media-element path. Advertising it lets the daemon run interruption
+        // at normal sensitivity for this session.
+        ...(player.echoSafe ? { echoSafePlayback: true } : {}),
       });
     },
     [teardown, attemptReconnect],

@@ -75,7 +75,7 @@ const { createGeminiLiveSession } = await import("../gemini-live-session.js");
 
 type Frame = { type: string; [key: string]: unknown };
 
-async function startSession() {
+async function startSession(startOverrides: Record<string, unknown> = {}) {
   const frames: Frame[] = [];
   const session = createGeminiLiveSession({
     sessionId: "s1",
@@ -83,7 +83,8 @@ async function startSession() {
       type: "start",
       audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
       conversationId: "conv-1",
-    },
+      ...startOverrides,
+    } as never,
     sendFrame: async (payload) => {
       frames.push(payload as Frame);
       return { ...(payload as Frame), seq: frames.length } as never;
@@ -184,5 +185,26 @@ describe("gemini-live echo gate", () => {
 
     expect(forwardedAudio).toHaveLength(1);
     expect(isSilent(forwardedAudio[0]!)).toBe(false);
+  });
+});
+
+describe("gemini-live echo gate: echo-safe clients", () => {
+  const loudMic = () => {
+    const b = Buffer.alloc(320);
+    for (let i = 0; i < b.length; i += 2) b.writeInt16LE(8000, i);
+    return b;
+  };
+
+  test("an echoSafePlayback client's mic passes through even during playback", async () => {
+    const { session } = await startSession({ echoSafePlayback: true });
+
+    captured.onAudio?.(Buffer.alloc(2 * 24000 * 2)); // 2s of assistant audio
+    session.handleClientFrame({
+      type: "audio",
+      dataBase64: loudMic().toString("base64"),
+    });
+
+    expect(forwardedAudio).toHaveLength(1);
+    expect(forwardedAudio[0]!.every((byte) => byte === 0)).toBe(false);
   });
 });

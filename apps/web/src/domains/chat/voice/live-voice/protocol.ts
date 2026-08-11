@@ -111,6 +111,16 @@ export interface LiveVoiceClientStartFrame {
    * daemon use its configured default.
    */
   readonly bargeInMinSpeechMs?: number;
+  /**
+   * Capability flag: this client's TTS playback is covered by browser echo
+   * cancellation (media-element routing — see `tts-playback.ts`), so the
+   * assistant's own voice does not loop back through the mic. The daemon uses
+   * it to run interruption at normal sensitivity for this session instead of
+   * its echo-safe stopgaps (mic gating on the realtime engine, a very high
+   * barge-in guard on the cascade). Mirrors the runtime contract in
+   * `assistant/src/live-voice/protocol.ts`.
+   */
+  readonly echoSafePlayback?: boolean;
 }
 
 /**
