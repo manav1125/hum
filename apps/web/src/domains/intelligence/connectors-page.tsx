@@ -13,7 +13,11 @@ import {
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ConnectorappsGetResponses } from "@/generated/daemon/types.gen";
 import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
-import { healthStatus, relativeAge } from "@/lib/connector-health";
+import {
+  healthStatus,
+  relativeAge,
+  unknownStatusNote,
+} from "@/lib/connector-health";
 import { Mv3ConnectionsPage } from "@/mobile-v3/you/connections-page";
 import { TelegramSetupSheet } from "@/domains/intelligence/telegram-setup-sheet";
 import { connectorsAvailable } from "@/runtime/connectors";
@@ -194,6 +198,17 @@ function ConnectorRow({
             <span style={{ color: C.amberText }}>
               {" "}
               · {connector.health.lastError}
+            </span>
+          ) : null}
+          {/* HONESTY: an evidence-less connected app says WHY it has no
+              verdict — "not actively checked" when no liveness probe exists
+              (the daemon schema's instruction), "not verified recently" when
+              a check exists but produced nothing fresh. Five of ten connected
+              rows used to render NO status at all, which read as a bug. */}
+          {status === "unknown" ? (
+            <span style={{ color: C.t3 }}>
+              {" "}
+              · connected, {unknownStatusNote(connector.health)}
             </span>
           ) : null}
         </div>

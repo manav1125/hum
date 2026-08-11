@@ -4,6 +4,7 @@ import { RiskLevel } from "../../permissions/types.js";
 import { toProviderSafeToolName } from "../provider-tool-name.js";
 import { schemaDefinesProperty } from "../schema-transforms.js";
 import type { Tool, ToolContext, ToolExecutionResult } from "../types.js";
+import { recordComposioToolOutcome } from "./composio-tool-health.js";
 
 const riskMap: Record<string, RiskLevel> = {
   low: RiskLevel.Low,
@@ -71,12 +72,27 @@ export function createMcpTool(
           forwardInput,
           context.signal,
         );
+        // Passive connector-health signal: a REAL tool execution is the best
+        // evidence there is about a connection. An auth-shaped failure here
+        // must immediately downgrade a stored "ok" (never throws, see module).
+        recordComposioToolOutcome({
+          serverId,
+          input: forwardInput,
+          content: result.content,
+          isError: result.isError,
+        });
         return {
           content: result.content,
           isError: result.isError,
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        recordComposioToolOutcome({
+          serverId,
+          input,
+          content: message,
+          isError: true,
+        });
         return {
           content: `MCP tool execution failed: ${message}`,
           isError: true,

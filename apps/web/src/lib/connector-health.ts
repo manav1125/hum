@@ -24,6 +24,13 @@ export interface ConnectorHealthLike {
   lastErrorAt?: string;
   lastError?: string;
   checkedAt?: string;
+  /**
+   * Whether a liveness probe exists for this toolkit at all (daemon field).
+   * False means nothing here actively checks the app — the daemon schema's
+   * instruction is to render "not actively checked" rather than a blank.
+   * Absent on older daemons.
+   */
+  activelyChecked?: boolean;
 }
 
 /** Status with the missing-health (old daemon) fallback. */
@@ -52,8 +59,25 @@ export function relativeAge(
 }
 
 /**
+ * The honest note for a connected app with NO verdict ("unknown"). Two
+ * different facts hide behind that status, and the copy names which one:
+ *  · `activelyChecked: false` — nothing here checks this app at all (no
+ *    liveness probe exists), so say "not actively checked" per the daemon
+ *    schema's instruction rather than showing a blank;
+ *  · otherwise — a check exists but produced no fresh evidence either way.
+ */
+export function unknownStatusNote(
+  health: ConnectorHealthLike | undefined,
+): string {
+  return health?.activelyChecked === false
+    ? "not actively checked"
+    : "not verified recently";
+}
+
+/**
  * The one-line status for a connected row/tile. "working ✓" only ever
- * renders alongside a real success timestamp.
+ * renders alongside a real success timestamp; an evidence-less connector
+ * says WHY it has no verdict instead of rendering nothing.
  */
 export function connectionStatusLine(
   health: ConnectorHealthLike | undefined,
@@ -64,6 +88,11 @@ export function connectionStatusLine(
   if (status === "ok" && health?.lastSuccessAt) {
     const age = relativeAge(health.lastSuccessAt, now);
     return age ? `Linked · working ✓ ${age}` : "Linked · working ✓";
+  }
+  // No health object at all = an older daemon that cannot say why — keep the
+  // plain honest "Linked" rather than inventing a reason.
+  if (health?.status === "unknown") {
+    return `Linked · ${unknownStatusNote(health)}`;
   }
   return "Linked";
 }
@@ -81,9 +110,7 @@ export function attentionCount(
 export function hasUnknownConnections(
   apps: ReadonlyArray<{ connected: boolean; health?: ConnectorHealthLike }>,
 ): boolean {
-  return apps.some(
-    (a) => a.connected && healthStatus(a.health) === "unknown",
-  );
+  return apps.some((a) => a.connected && healthStatus(a.health) === "unknown");
 }
 
 /** The You-root / Connections-header meta: "8 linked · 2 need attention". */

@@ -15,6 +15,7 @@ import {
   hasUnknownConnections,
   healthStatus,
   relativeAge,
+  unknownStatusNote,
 } from "./connector-health";
 
 const NOW = Date.parse("2026-07-21T12:00:00Z");
@@ -30,10 +31,38 @@ describe("healthStatus", () => {
   });
 });
 
+describe("unknownStatusNote", () => {
+  it("says 'not actively checked' when no liveness probe exists", () => {
+    // The daemon schema's instruction for activelyChecked=false: render the
+    // honesty copy, never a blank cell.
+    expect(
+      unknownStatusNote({ status: "unknown", activelyChecked: false }),
+    ).toBe("not actively checked");
+  });
+  it("says 'not verified recently' when a check exists but told nothing", () => {
+    expect(
+      unknownStatusNote({ status: "unknown", activelyChecked: true }),
+    ).toBe("not verified recently");
+    expect(unknownStatusNote(undefined)).toBe("not verified recently");
+  });
+});
+
 describe("connectionStatusLine", () => {
-  it("unknown renders the honest plain Linked", () => {
+  it("a missing health object (old daemon) renders the plain Linked", () => {
     expect(connectionStatusLine(undefined, NOW)).toBe("Linked");
-    expect(connectionStatusLine({ status: "unknown" }, NOW)).toBe("Linked");
+  });
+
+  it("unknown says why there is no verdict instead of rendering nothing", () => {
+    expect(
+      connectionStatusLine({ status: "unknown", activelyChecked: false }, NOW),
+    ).toBe("Linked · not actively checked");
+    expect(
+      connectionStatusLine({ status: "unknown", activelyChecked: true }, NOW),
+    ).toBe("Linked · not verified recently");
+    // A daemon that predates activelyChecked still gets an honest reason.
+    expect(connectionStatusLine({ status: "unknown" }, NOW)).toBe(
+      "Linked · not verified recently",
+    );
   });
 
   it("attention renders Needs attention", () => {
@@ -47,10 +76,7 @@ describe("connectionStatusLine", () => {
 
   it("ok renders working ✓ with the real success age", () => {
     expect(
-      connectionStatusLine(
-        { status: "ok", lastSuccessAt: hoursAgo(2) },
-        NOW,
-      ),
+      connectionStatusLine({ status: "ok", lastSuccessAt: hoursAgo(2) }, NOW),
     ).toBe("Linked · working ✓ 2h ago");
   });
 
