@@ -131,10 +131,9 @@ export function VentureverseAppsPage() {
         </span>
       </div>
       <p className="mb-4 shrink-0 text-body-small-lighter text-[var(--content-secondary)]">
-        Founder tools that run right here — legal analysis, deck review,
-        market sizing, pricing, and more. First time in an app, sign in with
-        your VentureVerse email &amp; password (Google sign-in opens in a new
-        tab).
+        Founder tools from VentureVerse — legal analysis, deck review, market
+        sizing, pricing, and more. Apps open in their own window on
+        ventureverse.com, where you’re signed in.
       </p>
 
       <div className="mb-5 flex shrink-0 items-center gap-2 rounded-lg border border-[var(--border-base)] bg-[var(--surface-base)] px-3 py-2">
