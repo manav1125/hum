@@ -18,9 +18,9 @@ const ClarifyConfigSchema = z
       .number({ error: "conversations.clarify.timeoutMs must be a number" })
       .int("conversations.clarify.timeoutMs must be an integer")
       .positive("conversations.clarify.timeoutMs must be positive")
-      .default(8_000)
+      .default(2_500)
       .describe(
-        "Hard deadline on the pre-check (provider resolution + the flash call). On timeout the turn proceeds unclarified (fail-open). Tighter than the work-item assessor's because this precedes an interactive reply, not a minutes-long task run.",
+        "Hard deadline on the pre-check (provider resolution + the flash call). On timeout the turn proceeds unclarified (fail-open). Tighter than the work-item assessor's because this precedes an interactive reply, not a minutes-long task run — the pre-check overlaps context assembly, so anything it needs beyond assembly's ~0.3-1s is a direct stall on the user's reply. A flash tier that cannot verdict in 2.5s effectively disables the feature (fail-open) rather than taxing every consequential-looking turn.",
       ),
     minConfidence: z
       .number({ error: "conversations.clarify.minConfidence must be a number" })
@@ -31,7 +31,9 @@ const ClarifyConfigSchema = z
         "Minimum model confidence required to actually ask a clarifying question. Below it the turn runs unclarified — over-asking in chat is more annoying than in a task queue, so the bar is biased toward executing.",
       ),
   })
-  .describe("Pre-run clarification of under-specified, consequential chat turns");
+  .describe(
+    "Pre-run clarification of under-specified, consequential chat turns",
+  );
 
 export const ConversationsConfigSchema = z
   .object({

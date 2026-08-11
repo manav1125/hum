@@ -126,7 +126,10 @@ import type {
 } from "./message-protocol.js";
 import type { TrustContext } from "./trust-context.js";
 import { TURN_IN_FLIGHT_METADATA_KEY } from "./turn-recovery-markers.js";
-import { takeTurnStageTimings } from "./turn-stage-timings.js";
+import {
+  recordTurnStageTiming,
+  takeTurnStageTimings,
+} from "./turn-stage-timings.js";
 
 const log = getLogger("conversation-agent-loop");
 
@@ -901,6 +904,36 @@ export async function runAgentLoopImpl(
       modelProfileKey,
       isNonInteractive,
     };
+    // Chat clarify pre-check — the chat-side sibling of the work-item pre-run
+    // assessment. For an INTERACTIVE user turn whose message is consequential
+    // AND under-specified ("book the flights"), steer the agent to ask ONE
+    // question first via the existing `ask_question` tool, rather than
+    // inferring the trip/dates/recipient and running for minutes on a guess.
+    // Gated by a cheap heuristic + config so simple/cheap turns pay nothing,
+    // and fully fail-open: any miss runs the turn exactly as before. Skipped
+    // for non-interactive turns (background/scheduled/subagent) where there is
+    // no one present to answer a question.
+    //
+    // DISPATCHED HERE, before context assembly, and awaited after it: the
+    // pre-check only needs the raw user text, so its flash call runs
+    // concurrently with memory retrieval / runtime injection instead of
+    // serializing after them. Measured on prod (2026-08-11): the serialized
+    // form added a silent 3.9-4.8s to every turn whose text tripped the
+    // heuristic — the single largest pre-reply stall in the chat path.
+    const clarifyStartedAtMs = performance.now();
+    const clarifyPromise: Promise<Awaited<
+      ReturnType<typeof assessChatClarify>
+    > | null> =
+      options?.isUserMessage && isInteractiveResolved
+        ? assessChatClarify(content).catch((err: unknown) => {
+            rlog.debug(
+              { err: String(err) },
+              "chat clarify pre-check threw (running unclarified)",
+            );
+            return null;
+          })
+        : Promise.resolve(null);
+
     const contextAssemblyStartedAtMs = performance.now();
     const finalUserPromptCtx = await runHook(
       HOOKS.USER_PROMPT_SUBMIT,
@@ -911,18 +944,24 @@ export async function runAgentLoopImpl(
     );
     let runMessages = finalUserPromptCtx.latestMessages;
 
-    // Chat clarify pre-check — the chat-side sibling of the work-item pre-run
-    // assessment. For an INTERACTIVE user turn whose message is consequential
-    // AND under-specified ("book the flights"), steer the agent to ask ONE
-    // question first via the existing `ask_question` tool, rather than
-    // inferring the trip/dates/recipient and running for minutes on a guess.
-    // Gated by a cheap heuristic + config so simple/cheap turns pay nothing,
-    // and fully fail-open: any miss runs the turn exactly as before. Skipped
-    // for non-interactive turns (background/scheduled/subagent) where there is
-    // no one present to answer a question.
     if (options?.isUserMessage && isInteractiveResolved) {
       try {
-        const clarify = await assessChatClarify(content);
+        const clarifyWaitStartedAtMs = performance.now();
+        const clarify = await clarifyPromise;
+        // Two stage timings so turn_timing attributes this correctly:
+        // clarifyMs is the pre-check's own wall clock (overlapped with
+        // context assembly), clarifyWaitMs is what the turn actually
+        // stalled on it after assembly finished.
+        recordTurnStageTiming(
+          reqId,
+          "clarifyMs",
+          performance.now() - clarifyStartedAtMs,
+        );
+        recordTurnStageTiming(
+          reqId,
+          "clarifyWaitMs",
+          performance.now() - clarifyWaitStartedAtMs,
+        );
         if (clarify) {
           runMessages = appendClarifyDirective(runMessages, clarify.questions);
           rlog.info(
