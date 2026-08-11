@@ -235,6 +235,27 @@ describe("findDisplayTurnEndIndex", () => {
     ];
     expect(findDisplayTurnEndIndex(messages, 1)).toBe(6);
   });
+
+  test("stops before a system-card row — the card is not part of the turn", () => {
+    const messages = [
+      makeMsg("user", "hi"),
+      makeMsg("assistant", "reply"),
+      makeMsg("assistant", "Conversation summarized", {
+        metadata: JSON.stringify({ systemCard: "summarize" }),
+      }),
+    ];
+    expect(findDisplayTurnEndIndex(messages, 1)).toBe(1);
+  });
+
+  test("a system-card row is a single-row display turn", () => {
+    const messages = [
+      makeMsg("assistant", "Conversation summarized", {
+        metadata: JSON.stringify({ systemCard: "summarize" }),
+      }),
+      makeMsg("assistant", "next turn"),
+    ];
+    expect(findDisplayTurnEndIndex(messages, 0)).toBe(0);
+  });
 });
 
 describe("mergeToolResultsIntoAssistantMessages", () => {
@@ -356,5 +377,91 @@ describe("mergeConsecutiveAssistantMessages", () => {
     expect(meta.interrupted).toBe(true);
     expect(meta.interruptedAt).toBe(222);
     expect(meta.sentAt).toBe(111);
+  });
+
+  test("a system-card row directly after an assistant reply survives as its own row", () => {
+    // The summarize-up-to card is persisted with NO intervening user row
+    // (the action is a management route, not a send). Folding it into the
+    // previous reply drops the `systemCard` marker and concatenates the
+    // card text onto the reply — the raw-text-glued-to-the-bubble bug.
+    const reply = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "…dangerous coastlines." }]),
+      { id: "reply" },
+    );
+    const card = makeMsg(
+      "assistant",
+      JSON.stringify([
+        {
+          type: "text",
+          text: "Summarization skipped\nNothing to summarize before this message",
+        },
+      ]),
+      { id: "card", metadata: JSON.stringify({ systemCard: "summarize" }) },
+    );
+    const { messages: result, mergedIdMap } = mergeConsecutiveAssistantMessages(
+      [makeMsg("user", "hi"), reply, card],
+    );
+    expect(result).toHaveLength(3);
+    expect(result[1].id).toBe("reply");
+    expect(result[2].id).toBe("card");
+    expect(
+      JSON.parse(result[2].metadata!) as Record<string, unknown>,
+    ).toMatchObject({ systemCard: "summarize" });
+    expect(mergedIdMap.size).toBe(0);
+  });
+
+  test("a later assistant row does not merge into a preceding system card", () => {
+    const card = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "Conversation summarized" }]),
+      { id: "card", metadata: JSON.stringify({ systemCard: "summarize" }) },
+    );
+    const reply = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "next turn" }]),
+      { id: "next" },
+    );
+    const { messages: result } = mergeConsecutiveAssistantMessages([
+      card,
+      reply,
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe("card");
+    expect(result[1].id).toBe("next");
+  });
+
+  test("assistant runs on both sides of a system card still merge internally", () => {
+    const a1 = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "a1" }]),
+      { id: "a1" },
+    );
+    const a2 = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "a2" }]),
+      { id: "a2" },
+    );
+    const card = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "Conversation summarized" }]),
+      { id: "card", metadata: JSON.stringify({ systemCard: "summarize" }) },
+    );
+    const b1 = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "b1" }]),
+      { id: "b1" },
+    );
+    const b2 = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "b2" }]),
+      { id: "b2" },
+    );
+    const { messages: result, mergedIdMap } = mergeConsecutiveAssistantMessages(
+      [a1, a2, card, b1, b2],
+    );
+    expect(result.map((m) => m.id)).toEqual(["a1", "card", "b1"]);
+    expect(mergedIdMap.get("a1")).toEqual(["a2"]);
+    expect(mergedIdMap.get("b1")).toEqual(["b2"]);
   });
 });

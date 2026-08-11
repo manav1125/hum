@@ -280,3 +280,44 @@ describe("voice-turn marker", () => {
     expect(mapRuntimeToDisplayMessage(m).voiceTurn).toBeUndefined();
   });
 });
+
+describe("system-card marker", () => {
+  test("carries the wire systemCard marker onto the display row", () => {
+    // A summarize-up-to skip card refetched from history: the marked row
+    // must map to `systemCard` so the transcript renders it through
+    // `SystemCardRow` instead of a plain assistant bubble.
+    const m = makeMessage({
+      id: "msg-card",
+      role: "assistant",
+      ...wireTextBody(
+        "Summarization skipped\nNothing to summarize before this message",
+      ),
+      systemCard: "summarize",
+    });
+
+    const display = mapRuntimeToDisplayMessage(m);
+    expect(display.systemCard).toBe("summarize");
+    expect(display.role).toBe("assistant");
+  });
+
+  test("carries the marker for a happy-path summary result card", () => {
+    const m = makeMessage({
+      id: "msg-card-ok",
+      role: "assistant",
+      ...wireTextBody("Conversation summarized\n12 messages condensed"),
+      systemCard: "summarize",
+    });
+
+    expect(mapRuntimeToDisplayMessage(m).systemCard).toBe("summarize");
+  });
+
+  test("omits systemCard for ordinary assistant rows", () => {
+    const m = makeMessage({
+      id: "msg-plain",
+      role: "assistant",
+      ...wireTextBody("A normal reply"),
+    });
+
+    expect(mapRuntimeToDisplayMessage(m).systemCard).toBeUndefined();
+  });
+});

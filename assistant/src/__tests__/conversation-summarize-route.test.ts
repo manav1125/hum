@@ -287,11 +287,16 @@ describe("POST /v1/conversations/summarize", () => {
     expect(ctx.messages).toHaveLength(1);
 
     // The card is announced exactly like the /compact card: the full text as
-    // one delta, then message_complete with the persisted assistant id.
+    // one delta, then message_complete with the persisted assistant id. The
+    // delta must carry the persisted row id AND the systemCard marker —
+    // without them the web client folds the card text into the previous
+    // assistant bubble instead of opening its own system-card row.
     const delta = broadcastEvents.find(
       (e) => e.type === "assistant_text_delta",
     );
     expect(String(delta?.text)).toContain("Conversation summarized");
+    expect(delta?.messageId).toBe("persisted-assistant-id");
+    expect(delta?.systemCard).toBe("summarize");
     const complete = broadcastEvents.find((e) => e.type === "message_complete");
     expect(complete?.messageId).toBe("persisted-assistant-id");
 
@@ -395,6 +400,16 @@ describe("POST /v1/conversations/summarize", () => {
     expect(broadcastEvents.some((e) => e.type === "conversation_error")).toBe(
       false,
     );
+    // The skip card streams as its own message: the delta is stamped with
+    // the persisted row id and the systemCard marker so the client opens a
+    // fresh system-card row instead of appending the text onto the previous
+    // assistant reply.
+    const skipDelta = broadcastEvents.find(
+      (e) => e.type === "assistant_text_delta",
+    );
+    expect(String(skipDelta?.text)).toContain("Summarization skipped");
+    expect(skipDelta?.messageId).toBe("persisted-assistant-id");
+    expect(skipDelta?.systemCard).toBe("summarize");
     expect(broadcastEvents.some((e) => e.type === "message_complete")).toBe(
       true,
     );

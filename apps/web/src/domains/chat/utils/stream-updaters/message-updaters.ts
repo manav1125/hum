@@ -32,6 +32,7 @@ export function createStreamingBubble(
   prev: DisplayMessage[],
   text: string,
   messageId?: string,
+  systemCard?: string,
 ): DisplayMessage[] {
   return [
     ...prev,
@@ -42,6 +43,7 @@ export function createStreamingBubble(
       textSegments: [text],
       contentOrder: [{ type: "text", id: "0" }],
       contentBlocks: [{ type: "text", text }],
+      ...(systemCard ? { systemCard } : {}),
       timestamp: Date.now(),
     },
   ];
@@ -176,25 +178,33 @@ function appendThinkingSegmentIntoRow(
  *
  * Falls back to tail-based decisioning when `messageId` is absent, for
  * pre-B2 daemons not pinned by the B4 floor bump.
+ *
+ * **System-card deltas** (`systemCard` set — the daemon-authored
+ * summarize/compact/clean result cards) are standalone messages, never a
+ * continuation of the current turn: when no row owns the id yet, a marked
+ * delta always opens its own system-card row instead of folding into the
+ * assistant tail (which would concatenate the card text onto the previous
+ * reply's bubble).
  */
 export function appendTextDelta(
   prev: DisplayMessage[],
   text: string,
   messageId?: string,
+  systemCard?: string,
 ): DisplayMessage[] {
   if (messageId) {
     const idx = findAssistantRowIndexByMessageId(prev, messageId);
     if (idx >= 0) {
       return appendTextSegmentIntoRow(prev, idx, text, messageId);
     }
-    if (tailIsAssistant(prev)) {
+    if (!systemCard && tailIsAssistant(prev)) {
       return appendTextSegmentIntoRow(prev, prev.length - 1, text, messageId);
     }
-    return createStreamingBubble(prev, text, messageId);
+    return createStreamingBubble(prev, text, messageId, systemCard);
   }
 
-  if (!tailIsAssistant(prev)) {
-    return createStreamingBubble(prev, text, messageId);
+  if (systemCard || !tailIsAssistant(prev)) {
+    return createStreamingBubble(prev, text, messageId, systemCard);
   }
   return appendTextSegmentIntoRow(prev, prev.length - 1, text, undefined);
 }

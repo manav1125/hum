@@ -62,10 +62,21 @@ export async function persistCannedAssistantCard(opts: {
     { metadata },
   );
   conversation.getMessages().push(assistantMsg);
+  // Stamp the persisted row id and the system-card marker on the delta.
+  // Without the id the client has no row to key on, and without the marker
+  // it treats the delta as a continuation of the current turn and folds the
+  // card text into the previous assistant bubble (the tail-fold branch of
+  // `appendTextDelta`) — the card must open its own row.
+  const systemCard =
+    typeof metadata.systemCard === "string" && metadata.systemCard.length > 0
+      ? metadata.systemCard
+      : undefined;
   broadcastMessage({
     type: "assistant_text_delta",
     text,
     conversationId,
+    messageId: persistedAssistant.id,
+    ...(systemCard ? { systemCard } : {}),
   });
   emitCannedMessageComplete(
     broadcastMessage,

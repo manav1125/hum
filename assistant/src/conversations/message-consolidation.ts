@@ -91,6 +91,24 @@ export function isToolResultOnlyUserMessage(msg: MessageRow): boolean {
   return sawToolResult;
 }
 
+/**
+ * True when an assistant row's metadata carries the `systemCard` marker —
+ * a daemon-authored result card (/compact, /clean, summarize-up-to) that
+ * bypassed the agent loop. Such rows are standalone display turns: they
+ * must never be folded into an adjacent assistant run (in either
+ * direction), or the marker is dropped and the card text concatenates
+ * onto the previous reply.
+ */
+export function isSystemCardMessage(msg: MessageRow): boolean {
+  if (msg.role !== "assistant" || !msg.metadata) return false;
+  try {
+    const meta = JSON.parse(msg.metadata);
+    return typeof meta.systemCard === "string" && meta.systemCard.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 // ── Display-turn boundary lookup ────────────────────────────────────
 
 /**
@@ -119,12 +137,16 @@ export function findDisplayTurnEndIndex(
 ): number {
   if (startIdx < 0 || startIdx >= messages.length) return startIdx;
   if (messages[startIdx]?.role !== "assistant") return startIdx;
+  // System cards are single-row display turns — see the merge boundary in
+  // `mergeConsecutiveAssistantMessages`.
+  if (isSystemCardMessage(messages[startIdx]!)) return startIdx;
 
   let endIdx = startIdx;
   while (endIdx + 1 < messages.length) {
     const next = messages[endIdx + 1];
     if (!next) break;
     if (next.role === "assistant") {
+      if (isSystemCardMessage(next)) break;
       endIdx += 1;
       continue;
     }
@@ -375,10 +397,17 @@ export function mergeConsecutiveAssistantMessages(messages: MessageRow[]): {
 
   for (const msg of messages) {
     const lastIdx = result.length - 1;
+    // System-card rows are merge boundaries in both directions: a card is
+    // never folded into the preceding assistant run (that would drop its
+    // `systemCard` marker and concatenate the card text onto the previous
+    // reply — the summarize-up-to card has no intervening user row), and a
+    // later assistant row is never folded into a card.
     const isConsecutiveAssistant =
       msg.role === "assistant" &&
       lastIdx >= 0 &&
-      result[lastIdx].role === "assistant";
+      result[lastIdx].role === "assistant" &&
+      !isSystemCardMessage(msg) &&
+      !isSystemCardMessage(result[lastIdx]);
 
     if (!isConsecutiveAssistant) {
       result.push(msg);

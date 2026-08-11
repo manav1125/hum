@@ -23,6 +23,15 @@ export const AssistantTextDeltaEventSchema = z.object({
   text: z.string(),
   messageId: z.string().optional(),
   conversationId: z.string().optional(),
+  /**
+   * Daemon-authored system-card marker (`"summarize"`, `"compact"`,
+   * `"clean"`), mirroring `ConversationMessage.systemCard`. Present only
+   * on canned result-card deltas, which are standalone messages — never a
+   * continuation of the previous assistant turn. Clients must open a new
+   * system-card row for a marked delta instead of folding the text into
+   * the current assistant tail.
+   */
+  systemCard: z.string().optional(),
 });
 
 export type AssistantTextDeltaEvent = z.infer<

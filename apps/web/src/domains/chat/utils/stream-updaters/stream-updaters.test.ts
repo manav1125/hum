@@ -258,6 +258,68 @@ describe("appendTextDelta", () => {
       { type: "text", text: "Hello" },
     ]);
   });
+
+  it("opens its own system-card row for a systemCard delta even when the tail is an assistant reply", () => {
+    // The summarize-up-to skip card arrives as a single delta right after a
+    // finished assistant reply (no user row in between — the action is a
+    // management route, not a send). Without the marker the delta folds
+    // into the tail bubble: "…dangerous coastlines.Summarization skipped".
+    const priorReply = makeAssistantMsg({
+      id: "reply-1",
+      ...seg("…dangerous coastlines."),
+    });
+    const result = appendTextDelta(
+      [userMsg, priorReply],
+      "Summarization skipped\nNothing to summarize before this message",
+      "card-1",
+      "summarize",
+    );
+
+    expect(result).toHaveLength(3);
+    // Prior reply untouched.
+    expect(text(result[1]!)).toBe("…dangerous coastlines.");
+    // Card is its own assistant row, marked so it renders as a system card.
+    const card = result[2]!;
+    expect(card.id).toBe("card-1");
+    expect(card.role).toBe("assistant");
+    expect(card.systemCard).toBe("summarize");
+    expect(text(card)).toBe(
+      "Summarization skipped\nNothing to summarize before this message",
+    );
+  });
+
+  it("appends into the row that already owns the id for a systemCard delta (reconcile race)", () => {
+    const reconciled = makeAssistantMsg({
+      id: "card-1",
+      textSegments: [],
+      contentOrder: [],
+      contentBlocks: [],
+      systemCard: "summarize",
+    });
+    const result = appendTextDelta(
+      [userMsg, reconciled],
+      "Conversation summarized",
+      "card-1",
+      "summarize",
+    );
+    expect(result).toHaveLength(2);
+    expect(text(result[1]!)).toBe("Conversation summarized");
+    expect(result[1]!.systemCard).toBe("summarize");
+  });
+
+  it("opens a marked system-card row when the tail is a user message", () => {
+    // The /compact and /clean cards follow the echoed slash-command user
+    // row — the fresh-bubble branch must stamp the marker too.
+    const result = appendTextDelta(
+      [userMsg],
+      "Conversation compacted",
+      "card-2",
+      "compact",
+    );
+    expect(result).toHaveLength(2);
+    expect(result[1]!.id).toBe("card-2");
+    expect(result[1]!.systemCard).toBe("compact");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -133,7 +133,12 @@ export function handleAssistantTextDelta(
   }
 
   ctx.setMessages((prev) => {
-    const next = appendTextDelta(prev, event.text, event.messageId);
+    const next = appendTextDelta(
+      prev,
+      event.text,
+      event.messageId,
+      event.systemCard,
+    );
     const tail = next[next.length - 1];
     // Stamp the current-assistant ref to the assistant tail. Subagent
     // handlers read this to attribute nested notifications to the right
