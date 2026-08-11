@@ -300,6 +300,14 @@
       "defaultEnabled": false
     },
     {
+      "id": "ventureverse-inline-embed",
+      "scope": "client",
+      "key": "ventureverse-inline-embed",
+      "label": "VentureVerse inline embed (desktop)",
+      "description": "On the desktop app, run a VentureVerse app inside the Cue window via a native WebContentsView (VentureVerse loads first-party so its SSO handshake completes) instead of opening it in a new browser tab. No effect on web or on desktop builds without the vvView bridge, which fall back to the launch screen. Default off until device-verified.",
+      "defaultEnabled": false
+    },
+    {
       "id": "external-plugins",
       "scope": "assistant",
       "key": "external-plugins",

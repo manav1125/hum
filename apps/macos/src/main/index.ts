@@ -24,6 +24,7 @@ import { resolveAllowedOrigin } from "./app-origin";
 import { writeCliLocator } from "./cli-installer";
 import { provisionCliForWrapper } from "./cli-path-installer";
 import { installConnectorsIpc } from "./connectors";
+import { installVentureverseViewIpc } from "./ventureverse-view";
 import { installCsp } from "./csp";
 import { installCueLiveIpc } from "./cue-live-ipc";
 import { getVoiceConfig } from "./cue-voice-keys";
@@ -541,6 +542,7 @@ app
     installCueLive();
     installCueLiveIpc();
     installConnectorsIpc();
+    installVentureverseViewIpc();
     app.on("before-quit", disposeCueLive);
     installPermissionsService();
     installAbout();

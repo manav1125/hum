@@ -618,6 +618,29 @@ const bridge: VellumBridge = {
     open: (conversationId: string): Promise<void> =>
       ipcRenderer.invoke("vellum:popout:open", conversationId) as Promise<void>,
   },
+  /**
+   * Embedded VentureVerse app view (desktop inline embedding). The SPA's app
+   * page drives a native WebContentsView composited into the Cue window: open
+   * it at a rectangle, keep it aligned as the layout resizes, tear it down on
+   * navigate-away. See main/ventureverse-view.ts for why this is a top-level
+   * view and not an iframe.
+   */
+  vvView: {
+    open: (
+      url: string,
+      bounds: { x: number; y: number; width: number; height: number },
+    ): Promise<void> =>
+      ipcRenderer.invoke("vellum:vvView:open", url, bounds) as Promise<void>,
+    setBounds: (bounds: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }): Promise<void> =>
+      ipcRenderer.invoke("vellum:vvView:setBounds", bounds) as Promise<void>,
+    close: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:vvView:close") as Promise<void>,
+  },
   update: {
     getState: (): Promise<UpdateState> =>
       ipcRenderer.invoke("vellum:update:getState") as Promise<UpdateState>,

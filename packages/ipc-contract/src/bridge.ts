@@ -312,6 +312,25 @@ export interface VellumBridge {
   popout: {
     open(conversationId: string): Promise<void>;
   };
+  /**
+   * Embedded VentureVerse app view (desktop inline embedding). The SPA's app
+   * page drives a native WebContentsView composited into the Cue window so a
+   * VentureVerse app runs first-party (its SSO handshake completes) while
+   * visually embedded. See apps/macos/src/main/ventureverse-view.ts.
+   */
+  vvView: {
+    open(
+      url: string,
+      bounds: { x: number; y: number; width: number; height: number },
+    ): Promise<void>;
+    setBounds(bounds: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }): Promise<void>;
+    close(): Promise<void>;
+  };
   update: {
     getState(): Promise<UpdateState>;
     check(): Promise<void>;

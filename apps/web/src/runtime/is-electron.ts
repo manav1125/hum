@@ -316,6 +316,25 @@ declare global {
       popout?: {
         open(conversationId: string): Promise<void>;
       };
+      /**
+       * Embedded VentureVerse app view (desktop inline embedding). Drives a
+       * native WebContentsView composited into the Cue window so a
+       * VentureVerse app runs first-party (SSO works) while visually embedded.
+       * Absent on web and on older desktop builds — callers must feature-check.
+       */
+      vvView?: {
+        open(
+          url: string,
+          bounds: { x: number; y: number; width: number; height: number },
+        ): Promise<void>;
+        setBounds(bounds: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        }): Promise<void>;
+        close(): Promise<void>;
+      };
       bundleConfirm?: {
         getData(): Promise<BundleScanData | null>;
         respond(accepted: boolean): void;
