@@ -2,6 +2,7 @@ import { connect, type Socket } from "node:net";
 
 import { refreshOverridesFromGateway } from "../config/assistant-feature-flags.js";
 import { SYNC_TAGS } from "../daemon/message-types/sync.js";
+import { refreshSkillCapabilityMemories } from "../daemon/skill-memory-refresh.js";
 import { publishSyncInvalidation } from "../runtime/sync/sync-publisher.js";
 import { getLogger } from "../util/logger.js";
 import { resolveIpcSocketPath } from "./socket-path.js";
@@ -29,9 +30,16 @@ function handleData(chunk: Buffer): void {
       const msg = JSON.parse(trimmed) as { event?: string };
       if (msg.event === "feature_flags_changed") {
         log.info("Received feature_flags_changed event — refreshing overrides");
-        refreshOverridesFromGateway().catch((err) => {
-          log.warn({ err }, "Failed to refresh feature flag overrides");
-        });
+        refreshOverridesFromGateway()
+          .then(() => {
+            // A flag flip can enable a previously-gated skill; re-seed skill
+            // capability memories so it lands in the retrieval index (and a
+            // disabled one is pruned) without waiting for a restart.
+            refreshSkillCapabilityMemories();
+          })
+          .catch((err) => {
+            log.warn({ err }, "Failed to refresh feature flag overrides");
+          });
         // Fan out to every connected web client so React Query caches
         // for `/v1/feature-flags/client-flag-values/` and
         // `/v1/assistants/:id/feature-flags` invalidate immediately

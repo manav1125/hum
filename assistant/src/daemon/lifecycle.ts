@@ -417,9 +417,17 @@ export async function runDaemon(): Promise<void> {
     // so a slow or unreachable gateway doesn't delay daemon startup (the
     // IPC call has a 3s connect + 5s call timeout that would otherwise
     // stall the critical path).
-    void initFeatureFlagOverrides().catch((err) =>
-      log.warn({ err }, "Background feature flag init failed"),
-    );
+    void initFeatureFlagOverrides()
+      .then(() => {
+        // Re-seed skill capability memories now that the gateway's flag
+        // overrides are loaded. The startup seed (memory-v2-startup) fires in
+        // parallel with this init and can win the race, in which case a
+        // flag-gated skill (default-off) reads as off and is dropped from the
+        // retrieval index — so the router can never surface it. Re-seeding here
+        // indexes flag-enabled skills once the true flag state is known. Idempotent.
+        refreshSkillCapabilityMemories();
+      })
+      .catch((err) => log.warn({ err }, "Background feature flag init failed"));
 
     startGatewayFlagListener();
 
