@@ -191,6 +191,8 @@ function createHarness(options: {
    * the rest). Absent = disabled, i.e. V-1a boundary behavior.
    */
   frontDoor?: Partial<LiveVoiceFrontDoorConfig>;
+  /** Make resolveTranscriber throw this many times before succeeding. */
+  failResolveTimes?: number;
 }) {
   const sequencer = createLiveVoiceServerFrameSequencer();
   const frames: LiveVoiceServerFrame[] = [];
@@ -206,7 +208,15 @@ function createHarness(options: {
   };
 
   const transcribers: ControllableTranscriber[] = [];
+  let resolveFailuresLeft = options.failResolveTimes ?? 0;
+  const failNextResolves = (n: number) => {
+    resolveFailuresLeft = n;
+  };
   const resolveTranscriber = mock(async () => {
+    if (resolveFailuresLeft > 0) {
+      resolveFailuresLeft--;
+      throw new Error("Deepgram realtime connect timeout");
+    }
     const transcriber = new ControllableTranscriber();
     transcribers.push(transcriber);
     return transcriber;
@@ -282,6 +292,7 @@ function createHarness(options: {
   });
 
   return {
+    failNextResolves,
     session,
     frames,
     transcribers,
@@ -299,8 +310,9 @@ function frameTypes(frames: LiveVoiceServerFrame[]): string[] {
 async function waitFor(
   predicate: () => boolean,
   message = "Timed out waiting for live voice VAD test condition",
+  attempts = 120,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -1445,3 +1457,67 @@ describe("unified front-door endpointing", () => {
     expect(countType(h.frames, "utterance_end")).toBe(1);
   });
 });
+
+describe("transcriber re-arm retry", () => {
+  test("a transient connect failure during re-arm retries instead of ending the call", async () => {
+    const h = createHarness({
+      scripts: [{ responseText: "Reply.", assistantMessageId: "assistant-1" }],
+      // The SESSION-START transcriber resolves fine; the first RE-ARM (after
+      // the turn) fails once — like a Deepgram connect timeout mid-call —
+      // and must be retried, not surfaced as a terminal failure.
+      failResolveTimes: 0,
+    });
+    await h.session.start();
+    await sendAudio(h.session, LOUD_CHUNK, 2);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => h.transcribers[0]!.stopped);
+    // Arm exactly one failure for the post-turn re-arm.
+    h.failNextResolves(1);
+    h.transcribers[0]!.finishUtterance("first utterance");
+    await waitFor(() => frameTypes(h.frames).includes("tts_done"));
+    // Despite the failed first attempt, the retry produced a fresh transcriber
+    // and the session never emitted a terminal restart error. The first
+    // retry backoff is 750ms, so give this wait a wider budget than default.
+    await waitFor(
+      () => h.transcribers.length === 2,
+      "Timed out waiting for the re-arm retry to produce a fresh transcriber",
+      600,
+    );
+    expect(restartErrorFrames(h.frames)).toHaveLength(0);
+  });
+
+  test("exhausting every re-arm attempt still fails honestly", async () => {
+    const h = createHarness({
+      scripts: [{ responseText: "Reply.", assistantMessageId: "assistant-1" }],
+    });
+    await h.session.start();
+    await sendAudio(h.session, LOUD_CHUNK, 2);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => h.transcribers[0]!.stopped);
+    // Arm more failures than the retry budget: every attempt fails.
+    h.failNextResolves(10);
+    h.transcribers[0]!.finishUtterance("first utterance");
+    // 3 attempts with 750ms + 2000ms backoffs between them — wide budget.
+    await waitFor(
+      () => restartErrorFrames(h.frames).length > 0,
+      "Timed out waiting for the exhausted re-arm to surface its error",
+      1200,
+    );
+    expect(h.transcribers).toHaveLength(1);
+    expect(restartErrorFrames(h.frames)[0]).toContain(
+      "Deepgram realtime connect timeout",
+    );
+  });
+});
+
+/** Messages of `error` frames reporting a failed transcriber restart. */
+function restartErrorFrames(frames: LiveVoiceServerFrame[]): string[] {
+  return frames
+    .filter(
+      (frame): frame is LiveVoiceServerFrame & { message: string } =>
+        frame.type === "error" &&
+        typeof (frame as { message?: unknown }).message === "string",
+    )
+    .map((frame) => frame.message)
+    .filter((message) => message.includes("could not be restarted"));
+}

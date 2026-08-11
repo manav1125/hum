@@ -383,6 +383,18 @@ const LIVE_VOICE_FULL_DUPLEX_IDLE_TIMEOUT_MS = 120_000;
  */
 const SERVER_VAD_PRE_ROLL_MAX_CHUNKS = 25;
 
+/**
+ * Re-arm transcriber connect attempts and the backoff between them. A fresh
+ * streaming-STT connect is a network operation that fails transiently; one
+ * blip must not end an otherwise healthy call.
+ */
+const TRANSCRIBER_REARM_ATTEMPTS = 3;
+const TRANSCRIBER_REARM_BACKOFF_MS: readonly number[] = [750, 2000];
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export type LiveVoiceStreamingTranscriberResolver = (
   options: ResolveStreamingTranscriberOptions,
 ) => Promise<StreamingTranscriber | null>;
@@ -1770,40 +1782,55 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     this.heldSpeculativeContent = null;
     this.clearEndpointExtensionTimer();
 
-    let transcriber: StreamingTranscriber | null;
-    try {
-      transcriber = await this.resolveTranscriber({
-        sampleRate: this.context.startFrame.audio.sampleRate,
-      });
-    } catch (err) {
-      if (this.isClosed) return;
-      await this.failStartupSoft(
-        `Live voice transcription could not be restarted: ${errorMessage(err)}`,
-      );
-      return;
+    // A fresh transcriber connect can fail transiently (observed live: a
+    // single Deepgram realtime connect timeout ended a healthy 4½-minute
+    // call). One network blip must not kill the session: retry the
+    // resolve+start pair with a short backoff and only fail the session
+    // once the attempts are exhausted.
+    let transcriber: StreamingTranscriber | null = null;
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < TRANSCRIBER_REARM_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        await sleepMs(TRANSCRIBER_REARM_BACKOFF_MS[attempt - 1] ?? 2000);
+        if (this.isTerminal) return;
+      }
+      try {
+        transcriber = await this.resolveTranscriber({
+          sampleRate: this.context.startFrame.audio.sampleRate,
+        });
+      } catch (err) {
+        lastErr = err;
+        transcriber = null;
+        continue;
+      }
+      if (this.isTerminal) {
+        stopTranscriberBestEffort(transcriber);
+        return;
+      }
+      if (!transcriber) break; // unavailable is a configuration state, not transient
+      try {
+        this.transcriber = transcriber;
+        await transcriber.start((event) => {
+          void this.handleTranscriberEvent(event);
+        });
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        stopTranscriberBestEffort(transcriber);
+        this.transcriber = null;
+        transcriber = null;
+      }
     }
 
-    if (this.isTerminal) {
-      stopTranscriberBestEffort(transcriber);
-      return;
-    }
-
-    if (!transcriber) {
+    if (this.isClosed) return;
+    if (!transcriber && lastErr === null) {
       await this.failStartupSoft(unavailableTranscriberMessage());
       return;
     }
-
-    try {
-      this.transcriber = transcriber;
-      await transcriber.start((event) => {
-        void this.handleTranscriberEvent(event);
-      });
-    } catch (err) {
-      stopTranscriberBestEffort(transcriber);
-      this.transcriber = null;
-      if (this.isClosed) return;
+    if (!transcriber || lastErr !== null) {
       await this.failStartupSoft(
-        `Live voice transcription could not be restarted: ${errorMessage(err)}`,
+        `Live voice transcription could not be restarted: ${errorMessage(lastErr)}`,
       );
       return;
     }
