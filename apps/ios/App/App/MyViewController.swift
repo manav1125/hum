@@ -56,6 +56,7 @@ class MyViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(NativeAuthPlugin())
         bridge?.registerPluginInstance(NativeBiometricPlugin())
         bridge?.registerPluginInstance(CueNativePlugin())
+        bridge?.registerPluginInstance(VentureverseViewPlugin())
         installNotificationTapRouting()
         installCueNativeAliasUserScript()
         installInputZoomPreventionUserScript()

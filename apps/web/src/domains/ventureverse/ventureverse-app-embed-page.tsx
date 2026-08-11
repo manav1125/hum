@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { PageShell } from "@/components/page-shell";
 import { ventureverseappsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
-import { isElectron } from "@/runtime/is-electron";
+import { getVvView, hasVvView } from "@/runtime/vv-view";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { routes } from "@/utils/routes";
 
@@ -55,11 +55,12 @@ export function VentureverseAppEmbedPage() {
 
   const app = appsQuery.data?.apps.find((a) => a.slug === slug);
 
-  // The native view runs the app first-party inside Cue, whenever the desktop
-  // bridge that makes it work is present. The bridge only ships in desktop
-  // builds, so its presence is the gate — no runtime flag to go stale.
-  const useNativeView =
-    isElectron() && typeof window.vellum?.vvView !== "undefined";
+  // The native view runs the app first-party inside Cue wherever a native shell
+  // provides the capability: a WebContentsView on Electron desktop, a WKWebView
+  // overlay on Capacitor iOS. The native driver only exists in builds that
+  // shipped it, so its presence is the gate — no runtime flag to go stale. On
+  // the web there is none and we fall back to the launch screen.
+  const useNativeView = hasVvView();
 
   return (
     <PageShell className="max-md:px-0 max-md:py-0 md:px-0 md:py-0">
@@ -125,17 +126,18 @@ export function VentureverseAppEmbedPage() {
 }
 
 /**
- * Anchors a native WebContentsView to the app area: opens it on mount, keeps
- * its bounds aligned as the layout resizes, tears it down on unmount. The div
- * itself is just the bounds anchor — the native view is painted over it by the
- * compositor, so a faint loading state sits behind it until it loads.
+ * Anchors the native inline view (Electron WebContentsView / iOS WKWebView
+ * overlay) to the app area: opens it on mount, keeps its bounds aligned as the
+ * layout resizes or scrolls, tears it down on unmount. The div itself is just
+ * the bounds anchor — the native view is painted over it by the compositor, so
+ * a faint loading state sits behind it until it loads.
  */
 function NativeAppView({ launchUrl }: { launchUrl: string }) {
   const anchorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const el = anchorRef.current;
-    const vv = window.vellum?.vvView;
+    const vv = getVvView();
     if (!el || !vv) return;
 
     const rectBounds = () => {
