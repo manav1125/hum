@@ -660,6 +660,8 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private state: LiveVoiceSessionState = "initializing";
   private transcriber: StreamingTranscriber | null = null;
+  /** Single-flight guard for {@link beginNextListeningTurn}. */
+  private rearmInFlight: Promise<void> | null = null;
   private readonly finalTranscriptSegments: string[] = [];
   private outboundFrames: Promise<void> = Promise.resolve();
   private pttReleased = false;
@@ -1762,7 +1764,43 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
    * - Any transcriber resolved after a concurrent close is stopped immediately.
    */
   private async beginNextListeningTurn(): Promise<void> {
+    // SINGLE-FLIGHT. Several paths re-arm listening — barge-in, the client
+    // `interrupt` frame, TTS completion, endTurnWithoutAnswer, and the
+    // idle-speech re-arm — and a barge-in makes two of them fire for the SAME
+    // exchange (the barge-in handler, plus the cancelled turn's completion
+    // continuation). Unguarded, both resolved a transcriber (observed live:
+    // two Deepgram sessions opened 2ms apart); the loser became an orphan
+    // that timed out 30s later and its close event scrambled the session
+    // state machine — the "call goes deaf after a barge-in" failure class.
+    if (this.rearmInFlight) return this.rearmInFlight;
+    const run = this.beginNextListeningTurnInner().finally(() => {
+      this.rearmInFlight = null;
+    });
+    this.rearmInFlight = run;
+    return run;
+  }
+
+  private async beginNextListeningTurnInner(): Promise<void> {
     if (this.isClosed || this.state === "failed") return;
+
+    // Already armed and listening with no turn in flight: a second re-arm
+    // would replace a healthy live transcriber with a fresh connect for no
+    // benefit. (Sequential double re-arm — e.g. TTS completion right after a
+    // barge-in re-arm has finished.)
+    if (
+      this.state === "active" &&
+      this.transcriber &&
+      !this.activeAssistantTurn
+    )
+      return;
+
+    // Never leave a previous transcriber running while arming a new one —
+    // an orphaned realtime session keeps emitting events (idle timeout,
+    // close) into this session's handler against the wrong turn.
+    if (this.transcriber) {
+      stopTranscriberBestEffort(this.transcriber);
+      this.transcriber = null;
+    }
 
     // Reset per-turn bookkeeping so the next exchange gets a fresh turnId and
     // clean metrics/transcript/audio buffers (no cross-turn attribution).

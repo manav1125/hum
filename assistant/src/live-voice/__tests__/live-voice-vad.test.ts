@@ -1521,3 +1521,46 @@ function restartErrorFrames(frames: LiveVoiceServerFrame[]): string[] {
     .map((frame) => frame.message)
     .filter((message) => message.includes("could not be restarted"));
 }
+
+describe("barge-in re-arm race", () => {
+  test("a barge-in arms exactly one fresh transcriber and the room keeps hearing", async () => {
+    let callbacks: VoiceTurnCallbacks | undefined;
+    const abort = mock();
+    const startVoiceTurn: LiveVoiceTurnStarter = mock(
+      async (turnOptions: VoiceTurnOptions) => {
+        callbacks ??= turnOptions.callbacks;
+        return { turnId: "bridge-turn", abort };
+      },
+    );
+    const h = createHarness({
+      startVoiceTurn,
+      bargeInMinSpeechMs: 60,
+      silenceThresholdMs: 5_000,
+    });
+    await h.session.start();
+    await sendAudio(h.session, LOUD_CHUNK);
+    await h.session.handleClientFrame({ type: "ptt_release" });
+    await waitFor(() => h.transcribers[0]!.stopped);
+    h.transcribers[0]!.finishUtterance("what's the weather");
+    await waitFor(() => h.frames.some((f) => f.type === "thinking"));
+    callbacks?.assistant_text_delta?.(makeTextDelta("It is sunny today."));
+    await waitFor(() => h.frames.some((f) => f.type === "tts_audio"));
+
+    // Sustained speech past the guard triggers the barge-in — the barge-in
+    // handler re-arms, AND the cancelled turn's completion continuation
+    // fires its own re-arm. Only one fresh transcriber may result.
+    await sendAudio(h.session, pcm(8_000, 160), 10);
+    await waitFor(() => h.frames.some((f) => f.type === "turn_cancelled"));
+    callbacks?.message_complete?.(makeMessageComplete("assistant-1"));
+    await flushAsyncCallbacks();
+    await flushAsyncCallbacks();
+
+    expect(h.transcribers).toHaveLength(2);
+
+    // The room still hears: the fresh transcriber takes audio and a final
+    // starts the next turn (deaf-room regression check).
+    await waitFor(() => h.transcribers[1]!.started);
+    await sendAudio(h.session, LOUD_CHUNK, 2);
+    await waitFor(() => h.transcribers[1]!.audio.length > 0);
+  });
+});
