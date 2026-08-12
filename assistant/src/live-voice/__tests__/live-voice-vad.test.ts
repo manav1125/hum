@@ -111,8 +111,12 @@ class ControllableTranscriber implements StreamingTranscriber {
   }
 
   /** Emit a final transcript then close — the sequence that starts a turn. */
-  finishUtterance(text: string): void {
-    this.emit({ type: "final", text });
+  finishUtterance(text: string, languages?: readonly string[]): void {
+    this.emit({
+      type: "final",
+      text,
+      ...(languages ? { languages } : {}),
+    });
     this.emit({ type: "closed" });
   }
 }
@@ -257,9 +261,13 @@ function createHarness(options: {
   const startVoiceTurn = options.startVoiceTurn ?? scriptedStartVoiceTurn;
 
   const ttsTexts: string[] = [];
+  // Full option objects per synthesis call, so tests can assert on the
+  // language hint alongside the text.
+  const ttsRequests: LiveVoiceTtsOptions[] = [];
   const defaultStreamTtsAudio: LiveVoiceTtsStreamer = mock(
     async (opts: LiveVoiceTtsOptions) => {
       ttsTexts.push(opts.text);
+      ttsRequests.push(opts);
       opts.onAudioChunk(makeTtsChunk(`audio:${opts.text}`));
       return makeTtsResult(opts.text);
     },
@@ -307,6 +315,7 @@ function createHarness(options: {
     turnCalls,
     pendingTurns,
     ttsTexts,
+    ttsRequests,
     turnStartCount: () => startCount,
   };
 }
@@ -1593,5 +1602,116 @@ describe("echo-safe clients vs the config barge-in stopgap", () => {
     });
     await h.session.start();
     expect(h.session.effectiveBargeInMinSpeechMs).toBe(15000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Detected-language threading (multilinguality port)
+// ---------------------------------------------------------------------------
+
+describe("detected-language threading", () => {
+  test("finals carrying languages feed the tally; the dominant language reaches the prompt and TTS", async () => {
+    const h = createHarness({});
+    await h.session.start();
+
+    await sendAudio(h.session, LOUD_CHUNK, 3);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => frameTypes(h.frames).includes("utterance_end"));
+    await waitFor(() => h.transcribers[0]!.stopped);
+
+    // Three tagged finals: hi outvotes en (only the dominant entry of each
+    // final's ranked list votes).
+    const transcriber = h.transcribers[0]!;
+    transcriber.emit({
+      type: "final",
+      text: "मुझे कल का शेड्यूल बताओ",
+      languages: ["hi"],
+    });
+    transcriber.emit({ type: "final", text: "please", languages: ["en"] });
+    transcriber.emit({ type: "final", text: "जल्दी", languages: ["hi", "en"] });
+    transcriber.emit({ type: "closed" });
+
+    await waitFor(() => h.turnStartCount() === 1);
+    // The dispatched turn resolved "hi" once at dispatch: the control prompt
+    // carries the detected-language note...
+    expect(h.turnCalls[0]!.voiceControlPrompt).toContain(
+      'language with code "hi"',
+    );
+    // ...and the reply's TTS synthesis carries the same language hint.
+    await waitFor(() => h.ttsRequests.length > 0);
+    expect(h.ttsRequests[0]!.language).toBe("hi");
+  });
+
+  test("a partial's tags cover a turn whose finals carried none", async () => {
+    const h = createHarness({});
+    await h.session.start();
+
+    await sendAudio(h.session, LOUD_CHUNK, 3);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => frameTypes(h.frames).includes("utterance_end"));
+    await waitFor(() => h.transcribers[0]!.stopped);
+
+    const transcriber = h.transcribers[0]!;
+    transcriber.emit({ type: "partial", text: "hola", languages: ["es"] });
+    // Tag-less final: the tally stays empty, so the partial's detection wins.
+    transcriber.finishUtterance("hola, ¿qué tal?");
+
+    await waitFor(() => h.turnStartCount() === 1);
+    expect(h.turnCalls[0]!.voiceControlPrompt).toContain(
+      'language with code "es"',
+    );
+    await waitFor(() => h.ttsRequests.length > 0);
+    expect(h.ttsRequests[0]!.language).toBe("es");
+  });
+
+  test("untagged utterances leave the turn language-neutral (no note, no hint)", async () => {
+    const h = createHarness({});
+    await h.session.start();
+
+    await sendAudio(h.session, LOUD_CHUNK, 3);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => frameTypes(h.frames).includes("utterance_end"));
+    await waitFor(() => h.transcribers[0]!.stopped);
+
+    h.transcribers[0]!.finishUtterance("what is on my calendar");
+
+    await waitFor(() => h.turnStartCount() === 1);
+    expect(h.turnCalls[0]!.voiceControlPrompt).not.toContain(
+      "language with code",
+    );
+    await waitFor(() => h.ttsRequests.length > 0);
+    expect(h.ttsRequests[0]!.language).toBeUndefined();
+  });
+
+  test("the language tally resets between utterances", async () => {
+    const h = createHarness({
+      scripts: [
+        { responseText: "First reply.", assistantMessageId: "assistant-1" },
+        { responseText: "Second reply.", assistantMessageId: "assistant-2" },
+      ],
+    });
+    await h.session.start();
+
+    // First exchange: Hindi.
+    await sendAudio(h.session, LOUD_CHUNK, 3);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => frameTypes(h.frames).includes("utterance_end"));
+    await waitFor(() => h.transcribers[0]!.stopped);
+    h.transcribers[0]!.finishUtterance("नमस्ते", ["hi"]);
+    await waitFor(() => h.turnStartCount() === 1);
+    await waitFor(() => countType(h.frames, "tts_done") === 1);
+
+    // Second exchange: no tags — the previous turn's Hindi must not leak.
+    await waitFor(() => h.transcribers.length === 2);
+    await sendAudio(h.session, LOUD_CHUNK, 3);
+    await sendAudio(h.session, SILENT_CHUNK);
+    await waitFor(() => countType(h.frames, "utterance_end") === 2);
+    await waitFor(() => h.transcribers[1]!.stopped);
+    h.transcribers[1]!.finishUtterance("and tomorrow?");
+    await waitFor(() => h.turnStartCount() === 2);
+
+    expect(h.turnCalls[1]!.voiceControlPrompt).not.toContain(
+      "language with code",
+    );
   });
 });

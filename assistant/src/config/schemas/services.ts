@@ -140,11 +140,15 @@ export const ServicesSchema = z.object({
   "web-search": WebSearchServiceSchema.default(
     WebSearchServiceSchema.parse({}),
   ),
-  stt: SttServiceSchema.default({
-    mode: "your-own" as const,
-    provider: "deepgram" as const,
-    providers: {},
-  }),
+  // Parse the default THROUGH the schema (like every sibling) so field-level
+  // defaults inside SttServiceSchema apply to it. A literal object default
+  // bypasses the schema entirely: when `services.stt` is absent, zod hands
+  // the literal back verbatim, so any field the literal omits (e.g.
+  // `language`) is undefined at runtime despite the inferred type saying
+  // otherwise.
+  stt: SttServiceSchema.default(
+    SttServiceSchema.parse({ provider: "deepgram", providers: {} }),
+  ),
   tts: TtsServiceSchema.default(TtsServiceSchema.parse({})),
   "google-oauth": GoogleOAuthServiceSchema.default(
     GoogleOAuthServiceSchema.parse({}),

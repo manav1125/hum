@@ -351,6 +351,95 @@ describe("ElevenLabs TTS provider adapter", () => {
     expect(body.model_id).toBe("eleven_turbo_v2_5");
   });
 
+  // -- Language enforcement (language_code gate) ---------------------------
+
+  function mockFetchCapturingBody(): () => Record<string, unknown> {
+    const audioPayload = new Uint8Array([0x49, 0x44, 0x33]);
+    let capturedBody = "";
+    globalThis.fetch = mock(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body as string;
+        return new Response(audioPayload, { status: 200 });
+      },
+    ) as unknown as typeof globalThis.fetch;
+    return () => JSON.parse(capturedBody) as Record<string, unknown>;
+  }
+
+  test("sends language_code when the effective model supports enforcement", async () => {
+    mockElevenLabsConfig.voiceModelId = "eleven_flash_v2_5";
+    const body = mockFetchCapturingBody();
+
+    const provider = createElevenLabsProvider();
+    await provider.synthesize(makeRequest({ language: "hi" }));
+
+    expect(body().model_id).toBe("eleven_flash_v2_5");
+    expect(body().language_code).toBe("hi");
+  });
+
+  test("maps the tl subtag to the fil code the v2.5 roster spells Filipino with", async () => {
+    mockElevenLabsConfig.voiceModelId = "eleven_turbo_v2_5";
+    const body = mockFetchCapturingBody();
+
+    const provider = createElevenLabsProvider();
+    await provider.synthesize(makeRequest({ language: "tl" }));
+
+    expect(body().language_code).toBe("fil");
+  });
+
+  test("omits language_code for a language the v2.5 models do not support", async () => {
+    mockElevenLabsConfig.voiceModelId = "eleven_flash_v2_5";
+    const body = mockFetchCapturingBody();
+
+    const provider = createElevenLabsProvider();
+    await provider.synthesize(makeRequest({ language: "he" }));
+
+    expect("language_code" in body()).toBe(false);
+  });
+
+  test("omits language_code when the effective model does not support enforcement", async () => {
+    // Default config: eleven_multilingual_v2, which rejects the field.
+    const body = mockFetchCapturingBody();
+
+    const provider = createElevenLabsProvider();
+    await provider.synthesize(makeRequest({ language: "hi" }));
+
+    expect(body().model_id).toBe("eleven_multilingual_v2");
+    expect("language_code" in body()).toBe(false);
+  });
+
+  test("omits language_code when no language is requested", async () => {
+    mockElevenLabsConfig.voiceModelId = "eleven_flash_v2_5";
+    const body = mockFetchCapturingBody();
+
+    const provider = createElevenLabsProvider();
+    await provider.synthesize(makeRequest());
+
+    expect("language_code" in body()).toBe(false);
+  });
+
+  test("synthesizeStream applies the same language gate", async () => {
+    mockElevenLabsConfig.voiceModelId = "eleven_flash_v2_5";
+    let capturedBody = "";
+    globalThis.fetch = mock(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body as string;
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([0x01, 0x02]));
+            controller.close();
+          },
+        });
+        return new Response(stream, { status: 200 });
+      },
+    ) as unknown as typeof globalThis.fetch;
+
+    const provider = createElevenLabsProvider();
+    await provider.synthesizeStream!(makeRequest({ language: "ja" }), () => {});
+
+    const body = JSON.parse(capturedBody) as Record<string, unknown>;
+    expect(body.language_code).toBe("ja");
+  });
+
   // -- Content type / format -----------------------------------------------
 
   test("returns audio/mpeg content type for mp3 format", async () => {

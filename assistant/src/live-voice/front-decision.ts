@@ -62,6 +62,8 @@ export interface VoiceProgressTextInput {
   turnElapsedMs: number;
   /** 1-based ordinal of this update within the turn, to vary phrasing. */
   updateIndex: number;
+  /** Detected language of the user's speech, when the session knows it. */
+  languageHint?: string;
 }
 
 export interface VoiceFrontDecider {
@@ -222,7 +224,36 @@ function buildProgressPrompt(input: VoiceProgressTextInput): string {
   parts.push(
     `This is spoken update #${input.updateIndex} this turn — vary the phrasing from earlier updates.`,
   );
+  if (input.languageHint) {
+    parts.push(`User's language: ${input.languageHint}`);
+  }
   return parts.join("\n");
+}
+
+const LATIN_SCRIPT_MAX_CODE_POINT = 0x024f;
+const NON_LATIN_MAX_CHARS_MULTIPLIER = 1.5;
+
+/**
+ * The effective character cap for a generated spoken phrase. The base caps
+ * below are calibrated for Latin-script text; scripts with denser
+ * information per character (CJK) or longer per-character UTF-16 footprints
+ * (Devanagari clusters) hit them on sentences that are not actually long,
+ * so any non-Latin letter in the candidate raises the cap by 1.5x rather
+ * than rejecting a normal-length sentence.
+ */
+export function effectiveSpokenTextMaxChars(
+  baseMaxChars: number,
+  text: string,
+): number {
+  for (const char of text) {
+    if (
+      /\p{L}/u.test(char) &&
+      (char.codePointAt(0) ?? 0) > LATIN_SCRIPT_MAX_CODE_POINT
+    ) {
+      return Math.ceil(baseMaxChars * NON_LATIN_MAX_CHARS_MULTIPLIER);
+    }
+  }
+  return baseMaxChars;
 }
 
 /**
@@ -376,7 +407,10 @@ export function createVoiceFrontDecider(options: {
           return null;
         }
         const trimmed = ack.trim();
-        if (trimmed.length === 0 || trimmed.length > ACK_MAX_CHARS) {
+        if (
+          trimmed.length === 0 ||
+          trimmed.length > effectiveSpokenTextMaxChars(ACK_MAX_CHARS, trimmed)
+        ) {
           return null;
         }
         return trimmed;
@@ -422,7 +456,11 @@ export function createVoiceFrontDecider(options: {
           return null;
         }
         const trimmed = update.trim();
-        if (trimmed.length === 0 || trimmed.length > PROGRESS_MAX_CHARS) {
+        if (
+          trimmed.length === 0 ||
+          trimmed.length >
+            effectiveSpokenTextMaxChars(PROGRESS_MAX_CHARS, trimmed)
+        ) {
           return null;
         }
         return trimmed;

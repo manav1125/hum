@@ -122,6 +122,7 @@ mock.module("../xai-realtime.js", () => ({
 // ---------------------------------------------------------------------------
 
 const {
+  effectiveSttLanguage,
   resolveBatchTranscriber,
   resolveConversationStreamingSttCapability,
   resolveStreamingTranscriber,
@@ -879,5 +880,98 @@ describe("resolveStreamingTranscriber diarize preference", () => {
 
     expect(transcriber).toBeNull();
     expect(xaiCtorCalls).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — effectiveSttLanguage + language threading
+// ---------------------------------------------------------------------------
+
+describe("effectiveSttLanguage", () => {
+  test("fills the unset case only where unset would mean English", () => {
+    // Deepgram decodes language-less audio as English, so leaving it unset
+    // is a silent pin rather than a neutral state.
+    expect(effectiveSttLanguage("deepgram", undefined)).toBe("multi");
+    // Everyone else detects natively from the audio (or is not yet wired
+    // for a language); filling in a ten-language roster would narrow what
+    // they can already do.
+    expect(effectiveSttLanguage("xai", undefined)).toBeUndefined();
+    expect(effectiveSttLanguage("google-gemini", undefined)).toBeUndefined();
+    expect(effectiveSttLanguage("openai-whisper", undefined)).toBeUndefined();
+  });
+
+  test("a configured language always wins, including English", () => {
+    // The default decides what happens when nobody has chosen, nothing more.
+    expect(effectiveSttLanguage("deepgram", "ta")).toBe("ta");
+    expect(effectiveSttLanguage("deepgram", "en")).toBe("en");
+    expect(effectiveSttLanguage("deepgram", "multi")).toBe("multi");
+    expect(effectiveSttLanguage("xai", "hi")).toBe("hi");
+  });
+});
+
+describe("resolveStreamingTranscriber language threading", () => {
+  beforeEach(() => {
+    mockConfig = buildConfig({});
+    mockProviderKeys = {};
+    deepgramCtorCalls.length = 0;
+    geminiCtorCalls.length = 0;
+  });
+
+  test("an unset config language reaches Deepgram as nova-3 code-switching", async () => {
+    mockProviderKeys["deepgram"] = "dg-key";
+    mockConfig = buildConfig({ provider: "deepgram" });
+
+    await resolveStreamingTranscriber();
+
+    expect(deepgramCtorCalls).toHaveLength(1);
+    const options = deepgramCtorCalls[0]!.options as Record<string, unknown>;
+    expect(options.language).toBe("multi");
+    expect(options.model).toBe("nova-3");
+  });
+
+  test("a configured language pins nova-3 with that language", async () => {
+    mockProviderKeys["deepgram"] = "dg-key";
+    const config = buildConfig({ provider: "deepgram" }) as {
+      services: { stt: Record<string, unknown> };
+    };
+    config.services.stt.language = "hi";
+    mockConfig = config;
+
+    await resolveStreamingTranscriber();
+
+    expect(deepgramCtorCalls).toHaveLength(1);
+    const options = deepgramCtorCalls[0]!.options as Record<string, unknown>;
+    expect(options.language).toBe("hi");
+    expect(options.model).toBe("nova-3");
+  });
+
+  test("a per-session language override beats the config", async () => {
+    mockProviderKeys["deepgram"] = "dg-key";
+    const config = buildConfig({ provider: "deepgram" }) as {
+      services: { stt: Record<string, unknown> };
+    };
+    config.services.stt.language = "hi";
+    mockConfig = config;
+
+    await resolveStreamingTranscriber({ language: "ja" });
+
+    expect(deepgramCtorCalls).toHaveLength(1);
+    const options = deepgramCtorCalls[0]!.options as Record<string, unknown>;
+    expect(options.language).toBe("ja");
+  });
+
+  test("Gemini never receives a language option (native detection)", async () => {
+    mockProviderKeys["gemini"] = "gemini-key";
+    const config = buildConfig({ provider: "google-gemini" }) as {
+      services: { stt: Record<string, unknown> };
+    };
+    config.services.stt.language = "hi";
+    mockConfig = config;
+
+    await resolveStreamingTranscriber();
+
+    expect(geminiCtorCalls).toHaveLength(1);
+    const options = geminiCtorCalls[0]!.options as Record<string, unknown>;
+    expect(options).not.toHaveProperty("language");
   });
 });

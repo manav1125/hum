@@ -17,6 +17,61 @@ import {
 const log = getLogger("stt-resolver");
 
 // ---------------------------------------------------------------------------
+// Default spoken language
+// ---------------------------------------------------------------------------
+
+/**
+ * Providers that decode language-less audio as English rather than detecting
+ * the spoken language. For these, an unset `services.stt.language` is not a
+ * neutral state: it is a silent English pin that returns non-English speech
+ * as English-sounding nonsense.
+ *
+ * On this fork that is just Deepgram (there is no managed "vellum" relay
+ * provider here). Providers absent from this set need no default: Gemini and
+ * Whisper detect natively from the audio when no language is sent, and the
+ * resolver does not forward a language to xAI.
+ */
+const MULTILINGUAL_DEFAULT_PROVIDERS: ReadonlySet<SttProviderId> = new Set([
+  "deepgram",
+] as SttProviderId[]);
+
+/**
+ * The language an unset config resolves to on the providers above: nova-3's
+ * code-switching mode, which follows a speaker between the ten languages of
+ * Deepgram's multi roster (`DEEPGRAM_MULTI_LANGUAGE_CODES` in `deepgram.ts`)
+ * without being told which one they are speaking. Chosen over an English pin
+ * because the failure it replaces is silent: a Hindi speaker under the
+ * English default gets fluent-looking garbage rather than an error, and has
+ * no way to tell recognition is misconfigured from the transcript alone.
+ *
+ * It is a default, not a ceiling. Speakers of the other languages on the
+ * monolingual roster still pick theirs explicitly, and that pick continues to
+ * win here. This only decides what happens when nobody has chosen.
+ */
+const DEFAULT_MULTILINGUAL_CODE = "multi";
+
+/**
+ * The spoken language to transcribe with, given what config holds and which
+ * provider will receive it. Configured values always win; the default only
+ * fills the unset case, and only where unset would otherwise mean English.
+ *
+ * Applied inside the resolvers rather than at the config layer so config
+ * keeps recording what the user chose (or that they chose nothing). Settings
+ * surfaces read that distinction to show which rows are defaults.
+ */
+export function effectiveSttLanguage(
+  providerId: SttProviderId,
+  configured: string | undefined,
+): string | undefined {
+  if (configured) {
+    return configured;
+  }
+  return MULTILINGUAL_DEFAULT_PROVIDERS.has(providerId)
+    ? DEFAULT_MULTILINGUAL_CODE
+    : undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Batch transcriber resolver (existing public API — unchanged contract)
 // ---------------------------------------------------------------------------
 
@@ -34,8 +89,14 @@ const log = getLogger("stt-resolver");
  * - No credentials are configured for the resolved provider.
  */
 export async function resolveBatchTranscriber(): Promise<BatchTranscriber | null> {
-  const config = getConfig();
-  const provider = config.services.stt.provider;
+  // Snapshot the stt config once, before any await, so a concurrent config
+  // change cannot pair one setting's old value with another's new value.
+  const stt = getConfig().services.stt;
+  const provider = stt.provider;
+  const language = effectiveSttLanguage(
+    provider as SttProviderId,
+    stt.language,
+  );
 
   // Look up credential provider via the catalog.
   const credentialProviderName = getCredentialProvider(
@@ -51,7 +112,11 @@ export async function resolveBatchTranscriber(): Promise<BatchTranscriber | null
   }
 
   const apiKey = await getProviderKeyAsync(credentialProviderName);
-  return createDaemonBatchTranscriber(apiKey, provider as SttProviderId);
+  return createDaemonBatchTranscriber(
+    apiKey,
+    provider as SttProviderId,
+    language,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +325,18 @@ export interface ResolveStreamingTranscriberOptions {
    * See {@link DiarizePreference} for semantics.
    */
   diarize?: DiarizePreference;
+  /**
+   * Spoken language to transcribe, forwarded to adapters that accept one.
+   * Defaults to `services.stt.language`; pass explicitly to override the
+   * config for a single session.
+   *
+   * Leaving both unset does not reach the adapters as "no language": on
+   * Deepgram, where that would mean English rather than detection,
+   * {@link effectiveSttLanguage} fills in code-switching first. See
+   * {@link CreateStreamingTranscriberOptions.language} for how each adapter
+   * treats what it finally receives.
+   */
+  language?: string;
 }
 
 /**
@@ -281,8 +358,21 @@ export interface ResolveStreamingTranscriberOptions {
 export async function resolveStreamingTranscriber(
   options: ResolveStreamingTranscriberOptions = {},
 ): Promise<StreamingTranscriber | null> {
-  const config = getConfig();
-  const provider = config.services.stt.provider;
+  // Snapshot the stt config once, before any await, so a concurrent config
+  // change cannot pair one setting's old value with another's new value
+  // (e.g. the old provider with the new language).
+  const stt = getConfig().services.stt;
+  const provider = stt.provider;
+  // Config-level language applies to every streaming caller (live voice,
+  // dictation) unless one overrides it for a single session, so the setting
+  // lands in one place rather than at each call site. An unset config falls
+  // to the provider's default (see `effectiveSttLanguage`), which is where a
+  // caller passing no language gets multilingual rather than a silent
+  // English pin.
+  const language = effectiveSttLanguage(
+    provider as SttProviderId,
+    options.language ?? stt.language,
+  );
   const diarizePreference: DiarizePreference = options.diarize ?? "off";
 
   // Look up credential provider via the catalog.
@@ -323,6 +413,7 @@ export async function resolveStreamingTranscriber(
   return createStreamingTranscriber(apiKey, provider as SttProviderId, {
     sampleRate: options.sampleRate,
     diarize: enableDiarization,
+    ...(language ? { language } : {}),
   });
 }
 
@@ -338,6 +429,22 @@ interface CreateStreamingTranscriberOptions {
    * support.
    */
   diarize?: boolean;
+  /**
+   * Spoken language, forwarded to the adapters that accept one — currently
+   * Deepgram only.
+   *
+   * Gemini and Whisper take no language option (both auto-detect natively
+   * from the audio), so this is silently ignored for them, matching how
+   * `diarize` is ignored by adapters without diarization. It is not yet
+   * forwarded to xAI either (see the catalog's `languageSelection` note).
+   *
+   * Unset is NOT auto-detect on Deepgram: omitting the param makes Deepgram
+   * decode as English, so non-English speech comes back as English-sounding
+   * nonsense rather than failing loudly. Any configured language pins
+   * nova-3 (see `deepgramLanguageOptions`); `"multi"` selects nova-3's
+   * code-switching mode.
+   */
+  language?: string;
 }
 
 /**
@@ -358,8 +465,13 @@ async function createStreamingTranscriber(
     case "deepgram": {
       const { DeepgramRealtimeTranscriber } =
         await import("./deepgram-realtime.js");
+      // Lazy like the adapter import above: pulling the batch adapter module
+      // in at top level would defeat the lazy module graph this factory
+      // documents.
+      const { deepgramLanguageOptions } = await import("./deepgram.js");
       return new DeepgramRealtimeTranscriber(apiKey, {
         sampleRate: options.sampleRate,
+        ...deepgramLanguageOptions(options.language),
         ...(options.diarize ? { diarize: true } : {}),
       });
     }

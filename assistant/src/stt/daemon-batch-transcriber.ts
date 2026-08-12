@@ -73,17 +73,26 @@ class DeepgramBatchTranscriber implements BatchTranscriber {
   readonly boundaryId = "daemon-batch" as const;
 
   private readonly apiKey: string;
+  private readonly language: string | undefined;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, language?: string) {
     this.apiKey = apiKey;
+    this.language = language;
   }
 
   async transcribe(
     request: SttTranscribeRequest,
   ): Promise<SttTranscribeResult> {
-    const { DeepgramProvider } =
+    const { DeepgramProvider, deepgramLanguageOptions } =
       await import("../providers/speech-to-text/deepgram.js");
-    const provider = new DeepgramProvider(this.apiKey);
+    // The language pins nova-3 alongside it (deepgramLanguageOptions):
+    // "multi" selects the code-switching mode; unset keeps the adapter's
+    // default model with no language param (which Deepgram decodes as
+    // English).
+    const provider = new DeepgramProvider(
+      this.apiKey,
+      deepgramLanguageOptions(this.language),
+    );
 
     return provider.transcribe(request.audio, request.mimeType, request.signal);
   }
@@ -202,10 +211,16 @@ export function normalizeSttError(err: unknown): SttError {
  *
  * Returns `null` when `apiKey` is falsy, signalling to the caller that
  * batch transcription is unavailable.
+ *
+ * `language` is the spoken language to transcribe (already resolved by
+ * `effectiveSttLanguage` in the resolver). Only Deepgram consumes it —
+ * Whisper, Gemini, and xAI auto-detect natively from the audio, so the
+ * hint is silently ignored for them, matching the streaming resolver.
  */
 export function createDaemonBatchTranscriber(
   apiKey: string | null | undefined,
   providerId: SttProviderId,
+  language?: string,
 ): BatchTranscriber | null {
   if (!apiKey) return null;
 
@@ -213,7 +228,7 @@ export function createDaemonBatchTranscriber(
     case "openai-whisper":
       return new WhisperBatchTranscriber(apiKey);
     case "deepgram":
-      return new DeepgramBatchTranscriber(apiKey);
+      return new DeepgramBatchTranscriber(apiKey, language);
     case "google-gemini":
       return new GoogleGeminiBatchTranscriber(apiKey);
     case "xai":

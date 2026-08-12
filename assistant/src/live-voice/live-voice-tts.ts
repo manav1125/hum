@@ -1,3 +1,4 @@
+import { resolveLanguageVoiceOverride } from "../tts/language-voices.js";
 import { getTtsProvider } from "../tts/provider-registry.js";
 import { resolveTtsConfig } from "../tts/tts-config-resolver.js";
 import type {
@@ -28,6 +29,13 @@ export interface LiveVoiceTtsOptions {
   useCase?: TtsUseCase;
   outputFormat?: TtsSynthesisRequest["outputFormat"];
   sampleRate?: number;
+  /**
+   * The turn's spoken language as a lowercase base subtag, when known.
+   * Selects the provider's configured per-language voice (`languageVoices`)
+   * unless an explicit `voiceId` was requested, and rides the synthesis
+   * request as a language-enforcement hint for providers that accept one.
+   */
+  language?: string;
   config?: LiveVoiceTtsConfig;
   onAudioChunk: (chunk: LiveVoiceTtsAudioChunk) => void;
 }
@@ -75,6 +83,16 @@ export async function streamLiveVoiceTtsAudio(
 ): Promise<LiveVoiceTtsResult> {
   const { provider, providerId, providerConfig } =
     await resolveLiveVoiceStreamingTtsProvider(options.config);
+  // An explicit request voice wins outright; otherwise a language-known
+  // turn may select the provider's configured per-language voice. The cast
+  // recovers the schema-typed map that resolveTtsConfig's generic
+  // provider-block lookup erases.
+  const voiceId =
+    options.voiceId ??
+    resolveLanguageVoiceOverride(
+      providerConfig.languageVoices as Record<string, string> | undefined,
+      options.language,
+    );
   const requestedSampleRate = resolveSampleRate(
     options.sampleRate,
     providerConfig,
@@ -127,9 +145,12 @@ export async function streamLiveVoiceTtsAudio(
       {
         text: options.text,
         useCase: options.useCase ?? "phone-call",
-        voiceId: options.voiceId,
+        voiceId,
         signal: options.signal,
         outputFormat: options.outputFormat,
+        // Providers without a language parameter (Fish Audio) ignore this
+        // silently — see TtsSynthesisRequest.language.
+        language: options.language,
       },
       (audioChunk) => {
         if (canStreamChunks) {

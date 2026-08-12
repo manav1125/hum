@@ -21,10 +21,21 @@ mock.module("../../providers/speech-to-text/openai-whisper.js", () => ({
 
 let mockDeepgramTranscribeResult: { text: string } = { text: "" };
 let mockDeepgramTranscribeError: Error | null = null;
+const deepgramCtorOptions: unknown[] = [];
+
+// Spread the real module so non-mocked exports (deepgramLanguageOptions,
+// the roster constants) survive — an exhaustive factory would delete them
+// process-globally (see assistant/CLAUDE.md).
+const realDeepgramModule = {
+  ...(await import("../../providers/speech-to-text/deepgram.js")),
+};
 
 mock.module("../../providers/speech-to-text/deepgram.js", () => ({
+  ...realDeepgramModule,
   DeepgramProvider: class MockDeepgramProvider {
-    constructor(_apiKey: string) {}
+    constructor(_apiKey: string, options?: unknown) {
+      deepgramCtorOptions.push(options);
+    }
     async transcribe(_audio: Buffer, _mimeType: string, _signal?: AbortSignal) {
       if (mockDeepgramTranscribeError) throw mockDeepgramTranscribeError;
       return mockDeepgramTranscribeResult;
@@ -214,6 +225,41 @@ describe("createDaemonBatchTranscriber", () => {
     });
 
     expect(result).toEqual({ text: "Hello from Deepgram" });
+  });
+
+  test("threads the language into the Deepgram provider as nova-3 options", async () => {
+    mockDeepgramTranscribeResult = { text: "नमस्ते" };
+    deepgramCtorOptions.length = 0;
+
+    const transcriber = createDaemonBatchTranscriber(
+      "dg-test-key",
+      "deepgram",
+      "multi",
+    );
+    await transcriber!.transcribe({
+      audio: Buffer.from("fake-audio"),
+      mimeType: "audio/ogg",
+    });
+
+    expect(deepgramCtorOptions).toHaveLength(1);
+    expect(deepgramCtorOptions[0]).toEqual({
+      model: "nova-3",
+      language: "multi",
+    });
+  });
+
+  test("an unset language leaves the Deepgram provider on its defaults", async () => {
+    mockDeepgramTranscribeResult = { text: "hello" };
+    deepgramCtorOptions.length = 0;
+
+    const transcriber = createDaemonBatchTranscriber("dg-test-key", "deepgram");
+    await transcriber!.transcribe({
+      audio: Buffer.from("fake-audio"),
+      mimeType: "audio/ogg",
+    });
+
+    expect(deepgramCtorOptions).toHaveLength(1);
+    expect(deepgramCtorOptions[0]).toEqual({});
   });
 
   // -------------------------------------------------------------------------

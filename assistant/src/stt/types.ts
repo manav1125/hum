@@ -251,6 +251,14 @@ export interface SttStreamServerPartialEvent {
    * provider does not surface confidence on interim chunks.
    */
   readonly confidence?: number;
+  /**
+   * Detected languages for this chunk as normalized lowercase base
+   * subtags in dominance order (most dominant first). Emitted only by
+   * code-switching models (Deepgram nova-3 with `language=multi`);
+   * omitted entirely when the provider carries no language metadata, so
+   * absence stays distinguishable from a detected language.
+   */
+  readonly languages?: readonly string[];
 }
 
 /**
@@ -267,6 +275,14 @@ export interface SttStreamServerFinalEvent {
    * provider does not surface confidence on this chunk.
    */
   readonly confidence?: number;
+  /**
+   * Detected languages for this committed segment as normalized lowercase
+   * base subtags in dominance order (most dominant first). Emitted only
+   * by code-switching models (Deepgram nova-3 with `language=multi`);
+   * omitted entirely when the provider carries no language metadata, so
+   * absence stays distinguishable from a detected language.
+   */
+  readonly languages?: readonly string[];
 }
 
 /** An error occurred during streaming transcription. */

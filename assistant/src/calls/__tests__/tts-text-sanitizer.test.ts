@@ -67,6 +67,28 @@ describe("sanitizeForTts", () => {
       expect(sanitizeForTts("5 * 3 = 15")).toBe("5 * 3 = 15");
     });
 
+    test("preserves multiple arithmetic asterisks in one sentence", () => {
+      expect(sanitizeForTts("5 * 3 is 15 and 4 * 2 is 8")).toBe(
+        "5 * 3 is 15 and 4 * 2 is 8",
+      );
+    });
+
+    test("strips italic whose content contains internal spaces", () => {
+      expect(sanitizeForTts("Hello *wide world* there")).toBe(
+        "Hello wide world there",
+      );
+    });
+
+    test("does not treat whitespace-padded asterisks as italic", () => {
+      expect(sanitizeForTts("Some * italic. still* done.")).toBe(
+        "Some * italic. still* done.",
+      );
+    });
+
+    test("does not treat whitespace-padded underscores as italic", () => {
+      expect(sanitizeForTts("a _ b and c_ d")).toBe("a _ b and c_ d");
+    });
+
     test("preserves identifiers with underscores", () => {
       expect(sanitizeForTts("The my_var variable")).toBe("The my_var variable");
     });
@@ -75,6 +97,19 @@ describe("sanitizeForTts", () => {
       expect(sanitizeForTts("use some_function_name here")).toBe(
         "use some_function_name here",
       );
+    });
+
+    test("strips italic with accented content", () => {
+      expect(sanitizeForTts("Hello *café* there")).toBe("Hello café there");
+    });
+
+    test("strips underscore italic with CJK content", () => {
+      expect(sanitizeForTts("値は _変数_ です")).toBe("値は 変数 です");
+    });
+
+    test("does not strip a span whose marker touches a non-ASCII word char", () => {
+      expect(sanitizeForTts("*強調*です")).toBe("*強調*です");
+      expect(sanitizeForTts("café*note* x")).toBe("café*note* x");
     });
   });
 

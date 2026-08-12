@@ -16,6 +16,7 @@ import type {
   SttProviderId,
   TelephonySttMode,
 } from "../../stt/types.js";
+import { baseLanguageSubtag } from "../../util/language-subtag.js";
 
 // ---------------------------------------------------------------------------
 // Telephony routing metadata
@@ -168,6 +169,20 @@ interface SttProviderEntry {
    */
   readonly telephonyRouting: TelephonyRouting;
 
+  /**
+   * How the provider treats `services.stt.language`:
+   *
+   * - `"manual"` — the daemon forwards the configured language to the
+   *   provider, so a persisted pin actually changes what is transcribed
+   *   (and settings surfaces should show a language picker).
+   * - `"auto"` — the setting is a no-op for this provider, either because
+   *   it detects the language natively or because the daemon does not
+   *   forward a language to its adapter; a picker would be a no-op, so
+   *   clients must hide it and {@link pinnedListeningLanguage} ignores
+   *   the pin.
+   */
+  readonly languageSelection: "manual" | "auto";
+
   /** Guide for obtaining API credentials from this provider. */
   readonly credentialsGuide?: SttCredentialsGuide;
 }
@@ -213,6 +228,7 @@ const CATALOG: ReadonlyMap<SttProviderId, SttProviderEntry> = new Map<
           defaultSpeechModel: "nova-3",
         },
       },
+      languageSelection: "manual",
       credentialsGuide: {
         description:
           "Sign in to the Deepgram console, navigate to API Keys, and create a new key.",
@@ -246,6 +262,9 @@ const CATALOG: ReadonlyMap<SttProviderId, SttProviderEntry> = new Map<
           defaultSpeechModel: undefined,
         },
       },
+      // Gemini detects the language natively from the audio; its adapter
+      // takes no language option.
+      languageSelection: "auto",
       credentialsGuide: {
         description:
           "Visit Google AI Studio, sign in with your Google account, and create an API key.",
@@ -274,6 +293,9 @@ const CATALOG: ReadonlyMap<SttProviderId, SttProviderEntry> = new Map<
       telephonyRouting: {
         strategyKind: "media-stream-custom",
       },
+      // Whisper detects the language natively from the audio; its adapter
+      // takes no language option.
+      languageSelection: "auto",
       credentialsGuide: {
         description:
           "Log in to the OpenAI platform, go to API Keys, and generate a new secret key.",
@@ -302,6 +324,11 @@ const CATALOG: ReadonlyMap<SttProviderId, SttProviderEntry> = new Map<
       telephonyRouting: {
         strategyKind: "media-stream-custom",
       },
+      // The xAI adapters accept a language option, but the resolver does
+      // not thread `services.stt.language` into them (only Deepgram is
+      // wired), so a persisted pin does not change what xAI transcribes.
+      // Flip to "manual" only once the resolver forwards the language.
+      languageSelection: "auto",
       credentialsGuide: {
         description:
           "Sign in to the xAI console, navigate to API Keys, and create a new key.",
@@ -333,6 +360,42 @@ export function getProviderEntry(
  */
 export function listProviderEntries(): readonly SttProviderEntry[] {
   return [...CATALOG.values()];
+}
+
+/**
+ * A base-subtag regex over the pinned listening language. The pin is
+ * free-form workspace config, and it flows into prompt interpolation and
+ * per-language table lookups, so only a plausible ISO 639 base subtag
+ * passes; anything else (junk strings, prototype keys like "constructor")
+ * resolves as no pin.
+ */
+const PINNED_LANGUAGE_SUBTAG_REGEX = /^[a-z]{2,3}$/;
+
+/**
+ * The configured `services.stt.language` pin as the caller's listening
+ * language, or undefined when the pin carries no signal.
+ *
+ * A persisted pin only counts when the provider honors manual language
+ * selection: auto-detecting providers (gemini, whisper) ignore the setting
+ * entirely, so treating it as the caller's language would force every
+ * turn into a stale pin. "multi" and blank mean auto-detect (no pin), and
+ * the value must normalize to a plausible base subtag. Owned here (next to
+ * the catalog's `languageSelection` field) so every consumer shares one
+ * gate.
+ */
+export function pinnedListeningLanguage(
+  provider: string,
+  configuredLanguage: string | undefined,
+): string | undefined {
+  const providerHonorsLanguagePin =
+    getProviderEntry(provider as SttProviderId)?.languageSelection === "manual";
+  if (!providerHonorsLanguagePin || configuredLanguage?.trim() === "multi") {
+    return undefined;
+  }
+  const base = baseLanguageSubtag(configuredLanguage);
+  return base !== undefined && PINNED_LANGUAGE_SUBTAG_REGEX.test(base)
+    ? base
+    : undefined;
 }
 
 /**

@@ -77,6 +77,16 @@ export interface TtsSynthesisRequest {
   signal?: AbortSignal;
 
   /**
+   * Optional hint for the language the text is written in, as a lowercase
+   * base subtag (e.g. "hi", "ja"). Sourced from live voice's per-turn
+   * detected language. Providers that accept a language-enforcement
+   * parameter (ElevenLabs v2.5 models' `language_code`) forward it when
+   * their roster covers the code; providers without any language parameter
+   * (Fish Audio) silently ignore it — a hint, never a contract.
+   */
+  language?: string;
+
+  /**
    * Optional hint requesting a specific output encoding from the provider.
    *
    * - `"pcm"` — Request raw PCM output (e.g. 16-bit signed LE). The

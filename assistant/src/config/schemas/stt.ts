@@ -51,10 +51,38 @@ export const SttServiceSchema = z
         error: `services.stt.provider must be one of: ${VALID_STT_PROVIDERS.join(", ")}`,
       })
       .describe("Active STT provider used for speech-to-text transcription"),
+    /**
+     * Spoken-language selection, forwarded to providers whose adapters accept
+     * a language (Deepgram; see `effectiveSttLanguage` in
+     * `providers/speech-to-text/resolve.ts`).
+     *
+     * `"multi"` selects Deepgram's nova-3 code-switching mode, which follows
+     * a speaker moving between languages inside a single utterance (e.g.
+     * Hinglish). Any other value pins a base language code (or a regional
+     * variant like "en-US") for the session. Providers that auto-detect
+     * natively and take no language option (Gemini, Whisper) ignore this
+     * field.
+     *
+     * Defaults to `"multi"` rather than staying unset so there is no state
+     * where "what language is this assistant listening for" has to be
+     * inferred. No workspace migration seeds this field: this fork never
+     * shipped a `language` key, so every existing config simply has it
+     * absent and the schema default materializes `"multi"` on the next
+     * parse — identical behavior to what `effectiveSttLanguage` resolves
+     * for an unset value.
+     */
+    language: z
+      .string({ error: "services.stt.language must be a string" })
+      .trim()
+      .min(1, { error: "services.stt.language must not be empty" })
+      .default("multi")
+      .describe(
+        "BCP-47 language code (e.g. 'en-US', 'hi') or 'multi' for code-switching across languages. Defaults to 'multi'; providers that detect natively ignore it",
+      ),
     providers: SttProvidersSchema.default({}),
   })
   .describe(
-    "Speech-to-text service configuration -- provider selection and per-provider settings",
+    "Speech-to-text service configuration -- provider selection, spoken language, and per-provider settings",
   );
 
 export type SttService = z.infer<typeof SttServiceSchema>;

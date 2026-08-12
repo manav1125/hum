@@ -71,6 +71,14 @@ const FORMAT_CONTENT_TYPE: Record<string, string> = {
   pcm: "audio/pcm",
 };
 
+// NOTE on `TtsSynthesisRequest.language`: the Fish Audio TTS API has no
+// language parameter at all — the model infers the language from the text
+// (and the reference voice). The request-level hint is therefore dropped
+// silently here, exactly as the `language` field's contract allows; voice
+// selection per language is the caller's job (there is deliberately no
+// `languageVoices` map for fish-audio since a reference clone is already
+// voice+language-specific).
+
 /**
  * Resolve the effective reference ID.
  *

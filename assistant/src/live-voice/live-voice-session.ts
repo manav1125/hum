@@ -69,6 +69,10 @@ const LIVE_VOICE_CONTROL_PROMPT = [
   "You are on a screen the user can see. When you produce results the user would want to LOOK at — a list of options, search results, a comparison, a table, an image — show them as a visual card using the `ui_show` tool (surfaceType `list`, `table`, or `card`), then give a short one- or two-sentence spoken summary. The card is seen, not spoken, so your spoken reply must NOT read the items one by one — summarize it (e.g. 'Here are five late-night spots in Berawa — the top one's Luigi's Hot Pizza') and let the card carry the detail.",
   "Do NOT offload viewable results to the Review lane just because this is a voice conversation. The Review lane is for background work you'll finish later, not for results you already have right now — when you have the result, show it as a card and summarize it aloud.",
   "Your SPOKEN reply is read aloud by a text-to-speech engine: write plain conversational text ONLY — no markdown, asterisks, headings, bullet points, code blocks, links, or emojis in what you say. This applies to your spoken words, not to the visual card, which may be a structured list or table.",
+  // Multilinguality: the STT layer follows the caller across languages
+  // (nova-3 code-switching); the reply must follow them too, or a Hindi
+  // question gets an English answer read aloud.
+  "Reply in the language the caller is speaking; if they switch languages, switch with them.",
 ].join(" ");
 
 /**
@@ -92,16 +96,15 @@ const LIVE_VOICE_CONTROL_PROMPT = [
 const LIVE_VOICE_SCREEN_REVEAL_TEACHING =
   "The call renders as a full-screen overlay covering the app. Whenever you show a card or put something on screen, announce it aloud first in a short sentence (for example: Here's the pricing table), and speak as if you are showing it to them right now — the overlay minimizes by itself as soon as you finish speaking, so the user is looking at what you made without doing anything. Never say you cannot show it, that this is a voice call, or that they should check it later. Never emit bracketed markers of any kind.";
 
-/**
- * The FIXED spoken phrase for a turn that parks on a mid-call approval
- * (design v37 §W2, binding copy — Cue register, chosen over upstream's
- * wording). Fixed rather than generative on purpose: a sensitive moment is
- * the wrong place for generative variety, and this is a statement about the
- * system's state that has to be true every time. Enqueued through
- * {@link LiveVoiceSession.enqueueFillerPhrase}, so it is audio-only by
- * construction — never an `assistant_text_delta`, never persisted.
- */
-const VOICE_APPROVAL_PENDING_PHRASE = "That one needs your okay — take a look.";
+// The FIXED spoken phrase for a turn that parks on a mid-call approval lives
+// in progress-phrases.ts (`approvalPendingPhraseFor`, design v37 §W2 binding
+// copy — Cue register, chosen over upstream's wording) alongside its
+// per-language spellings. Fixed rather than generative on purpose: a
+// sensitive moment is the wrong place for generative variety, and this is a
+// statement about the system's state that has to be true every time.
+// Enqueued through {@link LiveVoiceSession.enqueueFillerPhrase}, so it is
+// audio-only by construction — never an `assistant_text_delta`, never
+// persisted.
 
 /**
  * The one line of trust language the approval card renders (design v37 §W2).
@@ -141,15 +144,22 @@ const LIVE_VOICE_PREACTIVATED_SKILLS = [
 ];
 import {
   listProviderIds,
+  pinnedListeningLanguage,
   supportsBoundary,
 } from "../providers/speech-to-text/provider-catalog.js";
 import type { ResolveStreamingTranscriberOptions } from "../providers/speech-to-text/resolve.js";
+import {
+  dominantLanguageTag,
+  voteDominantLanguage,
+} from "../stt/language-metadata.js";
 import { detectPcm16SpeechActivity } from "../stt/speech-energy.js";
 import type {
   StreamingTranscriber,
+  SttProviderId,
   SttStreamServerEvent,
 } from "../stt/types.js";
 import { extractSpeakableSegments } from "../tts/speakable-segments.js";
+import { hasLocalizedEntry } from "../util/language-subtag.js";
 import { pickAckPhrase } from "./ack-phrases.js";
 import {
   createVoiceFrontDecider,
@@ -182,7 +192,12 @@ import type {
   LiveVoiceTtsOptions,
   LiveVoiceTtsResult,
 } from "./live-voice-tts.js";
-import { pickProgressPhrase } from "./progress-phrases.js";
+import {
+  APPROVAL_PENDING_PHRASE_BY_LANGUAGE,
+  approvalPendingPhraseFor,
+  pickProgressPhrase,
+  PROGRESS_FALLBACK_PHRASES_BY_LANGUAGE,
+} from "./progress-phrases.js";
 import {
   type LiveVoiceApprovalPendingServerFrame,
   type LiveVoiceApprovalResolvedServerFrame,
@@ -297,6 +312,11 @@ const TTS_MAX_OPEN_SYNTHESIS_JOBS = 2;
 
 interface TtsSegmentJob {
   readonly text: string;
+  // Per-segment language-hint override, preferred over the turn's language.
+  // Set on fixed phrases whose localized table lacks the turn's language:
+  // the English fallback text carries "en" so an enforcing provider never
+  // renders English words as ar/ko/ta. Undefined means the turn language.
+  readonly language: string | undefined;
   // The provider stream was started (the job holds an open-job slot).
   started: boolean;
   // Emission finished; the slot is free for the next queued segment.
@@ -496,6 +516,15 @@ export interface LiveVoiceSessionOptions {
 interface ActiveAssistantTurn {
   token: symbol;
   turnId: string;
+  /**
+   * The caller's spoken language for this turn as a lowercase base subtag
+   * (see turnLanguageFor): the dominant STT-detected language, else a
+   * monolingual services.stt.language pin. Undefined when unknown, which
+   * disables every language-aware path (prompt note, TTS hint, localized
+   * fallbacks). Re-resolved when a speculative turn commits, since finals
+   * can land between dispatch and verdict.
+   */
+  language: string | undefined;
   abortController: AbortController;
   handle: VoiceTurnHandle | null;
   /** Final transcript of the utterance this turn answers (filler prompts). */
@@ -788,6 +817,22 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private pendingInterruptedRequest: string | null = null;
   /** Latest non-final STT partial trailing the finals (speculative content). */
   private latestPartialText: string | null = null;
+  /**
+   * Count per detected-language base subtag (see voteDominantLanguage)
+   * across the current utterance's final transcript events. Resolves the
+   * turn's spoken language (see turnLanguageFor); empty when the provider
+   * tags nothing. Reset with the rest of the per-utterance state on re-arm.
+   */
+  private readonly languageTally = new Map<string, number>();
+  /**
+   * Detected languages of the most recent partial that carried any, already
+   * normalized, dominance order. Speculative turns dispatch from partials
+   * before the first tagged final lands, so turnLanguageFor falls back to
+   * this when the final tally is still empty. Not cleared by tag-less
+   * partials: the tally outranks it once finals arrive, and a revising
+   * partial without tags must not wipe an earlier partial's detection.
+   */
+  private latestPartialLanguages: readonly string[] | null = null;
   /**
    * Consecutive front-door "hold" extensions the current utterance has
    * consumed, bounded by `liveVoice.frontDoor.endpointMaxExtensions`.
@@ -1668,6 +1713,13 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     switch (event.type) {
       case "partial":
         this.latestPartialText = event.text;
+        // The event contract (stt/types.ts) guarantees the tags arrive as
+        // normalized base subtags in dominance order, so they are stored
+        // as-is. Partials revise each other, so this overwrites rather than
+        // tallies, and a tag-less partial keeps the previous value.
+        if (event.languages && event.languages.length > 0) {
+          this.latestPartialLanguages = event.languages;
+        }
         this.markFirstPartial();
         await this.sendFrame({ type: "stt_partial", text: event.text });
         return;
@@ -1675,6 +1727,11 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         const transcript = event.text.trim();
         if (transcript.length > 0) {
           this.finalTranscriptSegments.push(transcript);
+          // Tally only finals that committed transcript: empty silence
+          // frames can still carry container-level language tags describing
+          // no emitted words, and counting those would let silence outvote
+          // real speech.
+          voteDominantLanguage(this.languageTally, event.languages);
         }
         // The final commits (and supersedes) whatever partial was trailing.
         this.latestPartialText = null;
@@ -1832,6 +1889,10 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     // Front-door per-utterance state: a fresh utterance gets its full hold
     // budget and a clean partial trail.
     this.latestPartialText = null;
+    // Language detection is per-utterance: the next exchange's language is
+    // resolved from its own speech, not the previous turn's.
+    this.languageTally.clear();
+    this.latestPartialLanguages = null;
     this.endpointExtensionCount = 0;
     this.heldSpeculativeContent = null;
     this.clearEndpointExtensionTimer();
@@ -2082,6 +2143,11 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     // the thinking frame and timers still apply.
     const alreadyReleased = this.pttReleased;
     turn.speculativePending = false;
+    // Fill the language only when dispatch had none: the model request was
+    // already issued with the dispatch language, so overwriting here would
+    // hint TTS (and any voice override) in a different language than the
+    // reply is being generated in.
+    turn.language ??= this.turnLanguageFor();
     if (turn.verdictDeadlineTimer !== null) {
       clearTimeout(turn.verdictDeadlineTimer);
       turn.verdictDeadlineTimer = null;
@@ -2248,9 +2314,59 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   }
 
   /**
+   * The caller's spoken language for a turn on the current utterance, as a
+   * lowercase base subtag: the dominant tallied STT-detected language
+   * (most final-event counts, ties by first appearance), else the latest
+   * tagged partial's dominant language (speculative turns dispatch from
+   * partials), else a monolingual `services.stt.language` pin (a pinned
+   * language IS the spoken language), else undefined ("multi" with no tags,
+   * non-tagging providers, silence).
+   */
+  private turnLanguageFor(): string | undefined {
+    const dominant = dominantLanguageTag(this.languageTally);
+    if (dominant !== undefined) {
+      return dominant;
+    }
+    // No tagged final yet (speculative turns dispatch from partials): the
+    // latest tagged partial is the best detection available and outranks a
+    // static pin for the same reason the tally does.
+    const partialDominant = this.latestPartialLanguages?.[0];
+    if (partialDominant !== undefined) {
+      return partialDominant;
+    }
+    // A persisted pin only counts when the provider that transcribed honors
+    // manual language selection (the shared pinnedListeningLanguage gate).
+    // The live transcriber's providerId is preferred when one is still
+    // attached; our resolver never silently swaps providers, so the
+    // configured provider is an equivalent last resort once the transcriber
+    // reference has been dropped (state "transcriber_closed" at dispatch).
+    const { language: configured, provider: sttProvider } =
+      getConfig().services.stt;
+    const dialedProvider =
+      this.transcriber?.providerId ?? (sttProvider as SttProviderId);
+    return pinnedListeningLanguage(dialedProvider, configured);
+  }
+
+  // The TTS hint override for a fixed phrase picked from a localized table:
+  // "en" when the turn has a language the table does not cover (the picker
+  // fell back to English text, which must not be synthesized under an
+  // ar/ko/ta hint), undefined otherwise (the segment rides the turn's
+  // language, or no hint at all when the language is unknown).
+  private fixedPhraseLanguage(
+    turn: ActiveAssistantTurn,
+    table: Readonly<Record<string, unknown>>,
+  ): string | undefined {
+    return turn.language !== undefined &&
+      !hasLocalizedEntry(table, turn.language)
+      ? "en"
+      : undefined;
+  }
+
+  /**
    * The per-turn control prompt: the session's persona-composed base, plus
-   * the barge-in merge note when this turn follows an interruption. Reaches
-   * the model only; never renders as a transcript bubble.
+   * the detected-language note when the turn's spoken language is known,
+   * plus the barge-in merge note when this turn follows an interruption.
+   * Reaches the model only; never renders as a transcript bubble.
    */
   private buildTurnControlPrompt(
     turn: ActiveAssistantTurn,
@@ -2264,6 +2380,9 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     // leading verdict token.
     if (opts?.frontDoor !== true) {
       prompt = `${prompt} ${LIVE_VOICE_SCREEN_REVEAL_TEACHING}`;
+    }
+    if (turn.language !== undefined) {
+      prompt = `${prompt}\n\nThe caller has been speaking the language with code "${turn.language}" this turn. Reply in that language unless they clearly switch to another.`;
     }
     if (turn.interruptedRequest) {
       prompt = `${prompt}\n\n${buildInterruptionMergeNote(turn.interruptedRequest)}`;
@@ -2299,6 +2418,10 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     const newTurn: ActiveAssistantTurn = {
       token,
       turnId,
+      // Resolved once at dispatch: the model request, TTS hints, and
+      // localized fallbacks must all agree on one language for the turn.
+      // commitSpeculativeTurn refills it (??=) when dispatch had none.
+      language: this.turnLanguageFor(),
       abortController,
       handle: null,
       utteranceText: content,
@@ -3090,7 +3213,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private enqueueTtsSegment(
     token: symbol,
     segment: string,
-    options: { countsAsFirstSegment?: boolean } = {},
+    options: { countsAsFirstSegment?: boolean; language?: string } = {},
   ): void {
     const activeTurn = this.activeAssistantTurn;
     if (activeTurn?.token !== token || !this.streamTtsAudio) return;
@@ -3102,6 +3225,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     }
     const job: TtsSegmentJob = {
       text: segment,
+      language: options.language,
       started: false,
       settled: false,
       emitting: false,
@@ -3141,10 +3265,14 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       const job = activeTurn.ttsJobs.find((candidate) => !candidate.started);
       if (!job) return;
       job.started = true;
+      // The segment's own language override (fixed English fallback text)
+      // wins over the turn's language.
+      const language = job.language ?? activeTurn.language;
       let synthesis: Promise<void>;
       try {
         synthesis = streamTtsAudio({
           text: job.text,
+          ...(language !== undefined ? { language } : {}),
           signal: activeTurn.abortController.signal,
           outputFormat: "pcm",
           sampleRate: this.context.startFrame.audio.sampleRate,
@@ -3370,6 +3498,11 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     activeTurn.ackFired = true;
 
     let ackText: string | null = null;
+    // Static ack phrases are fixed English copy, so they carry an explicit
+    // "en" TTS hint on a non-English turn (see fixedPhraseLanguage's
+    // rationale); a decider-generated ack is phrased from the caller's own
+    // transcript and rides the turn's language.
+    let ackLanguage: string | undefined;
     if (front.llmAckText && this.frontDecider) {
       // While the generation is pending the ack has not yet stamped
       // `lastFloorHolderAtMs`; narration reads this flag and stands down so
@@ -3390,6 +3523,12 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     if (!ackText) {
       ackText = pickAckPhrase(kind, this.ackCounter);
       this.ackCounter += 1;
+      // The static rotation is English-only canned copy: label it "en" so
+      // an enforcing TTS provider never renders English words under a
+      // non-English turn hint.
+      if (activeTurn.language !== undefined && activeTurn.language !== "en") {
+        ackLanguage = "en";
+      }
     }
 
     // The ack-text step may have awaited: re-verify the turn is still silent
@@ -3400,7 +3539,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       return;
     }
 
-    if (!this.enqueueFillerPhrase(activeTurn, ackText)) {
+    if (!this.enqueueFillerPhrase(activeTurn, ackText, ackLanguage)) {
       activeTurn.ackFired = false;
       return;
     }
@@ -3720,6 +3859,9 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
               : null,
             turnElapsedMs: now - turn.launchedAtMs,
             updateIndex: progress.updatesSpoken + 1,
+            ...(turn.language !== undefined
+              ? { languageHint: turn.language }
+              : {}),
           },
           turn.abortController.signal,
         )
@@ -3741,11 +3883,18 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         return;
       }
       let raw = generated;
+      // Generated text is in the turn's language; only the static fallback
+      // comes from a localized table and may need the "en" override.
+      let fillerLanguage: string | undefined;
       if (raw === null) {
         if (trigger !== "idle") return;
-        raw = pickProgressPhrase(this.progressPhraseCounter++);
+        raw = pickProgressPhrase(this.progressPhraseCounter++, turn.language);
+        fillerLanguage = this.fixedPhraseLanguage(
+          turn,
+          PROGRESS_FALLBACK_PHRASES_BY_LANGUAGE,
+        );
       }
-      if (!this.enqueueFillerPhrase(turn, raw)) return;
+      if (!this.enqueueFillerPhrase(turn, raw, fillerLanguage)) return;
       progress.opsSinceNarration = 0;
       progress.narratedEpoch = stateEpochAtLaunch;
       progress.updatesSpoken += 1;
@@ -3764,11 +3913,16 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
    * transcript text. Returns whether a phrase actually enqueued; per-kind
    * metric marks and bookkeeping are the caller's.
    */
-  private enqueueFillerPhrase(turn: ActiveAssistantTurn, raw: string): boolean {
+  private enqueueFillerPhrase(
+    turn: ActiveAssistantTurn,
+    raw: string,
+    language?: string,
+  ): boolean {
     const phrase = sanitizeForTts(raw).trim();
     if (phrase.length === 0) return false;
     this.enqueueTtsSegment(turn.token, phrase, {
       countsAsFirstSegment: false,
+      ...(language !== undefined ? { language } : {}),
     });
     // A spoken filler holds the floor, so narration's minGapMs spaces from it.
     turn.progress.lastFloorHolderAtMs = Date.now();
@@ -3820,7 +3974,14 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       () => !this.isClosed,
     );
     if (firstOfWait && this.streamTtsAudio) {
-      this.enqueueFillerPhrase(turn, VOICE_APPROVAL_PENDING_PHRASE);
+      // Spoken in the turn's language like every other filler phrase; the
+      // English fallback text carries the "en" override when the table
+      // lacks the turn's language.
+      this.enqueueFillerPhrase(
+        turn,
+        approvalPendingPhraseFor(turn.language),
+        this.fixedPhraseLanguage(turn, APPROVAL_PENDING_PHRASE_BY_LANGUAGE),
+      );
     }
     const timeoutMs =
       this.options.approvalPresentationTimeoutMs ??
