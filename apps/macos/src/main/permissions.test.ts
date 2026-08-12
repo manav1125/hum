@@ -60,25 +60,40 @@ describe("permission policy", () => {
     ).toBe(true);
   });
 
-  test("denies camera and mixed media requests", () => {
+  test("allows video media requests from the app renderer (voice-room camera)", () => {
     expect(
       shouldGrantPermissionRequest("media", {
         mediaTypes: ["video"],
         securityOrigin: "app://vellum.ai",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldGrantPermissionRequest("media", {
         mediaTypes: ["audio", "video"],
         securityOrigin: "app://vellum.ai",
       }),
+    ).toBe(true);
+  });
+
+  test("denies non-capture media types even from the app renderer", () => {
+    expect(
+      shouldGrantPermissionRequest("media", {
+        mediaTypes: [],
+        securityOrigin: "app://vellum.ai",
+      }),
     ).toBe(false);
   });
 
-  test("denies audio requests from untrusted origins", () => {
+  test("denies audio and video requests from untrusted origins", () => {
     expect(
       shouldGrantPermissionRequest("media", {
         mediaTypes: ["audio"],
+        securityOrigin: "https://example.com",
+      }),
+    ).toBe(false);
+    expect(
+      shouldGrantPermissionRequest("media", {
+        mediaTypes: ["video"],
         securityOrigin: "https://example.com",
       }),
     ).toBe(false);
@@ -119,9 +134,17 @@ describe("permission policy", () => {
     ).toBe(true);
   });
 
-  test("denies video permission checks", () => {
+  test("allows matching video permission checks (must agree with the request handler)", () => {
     expect(
       shouldGrantPermissionCheck("media", "app://vellum.ai", {
+        mediaType: "video",
+      }),
+    ).toBe(true);
+  });
+
+  test("denies video permission checks from untrusted origins", () => {
+    expect(
+      shouldGrantPermissionCheck("media", "https://example.com", {
         mediaType: "video",
       }),
     ).toBe(false);

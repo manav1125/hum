@@ -23,18 +23,23 @@ const isTrustedRendererOrigin = (
   origin: string | URL | null | undefined,
 ): boolean => isAllowedOrigin(origin, resolveAllowedOrigin());
 
-const isAudioOnlyMediaRequest = (
+const isCaptureMediaRequest = (
   details: Pick<MediaAccessPermissionRequest, "mediaTypes">,
 ): boolean => {
   const mediaTypes = details.mediaTypes ?? [];
-  return mediaTypes.length > 0 && mediaTypes.every((type) => type === "audio");
+  return (
+    mediaTypes.length > 0 &&
+    mediaTypes.every((type) => type === "audio" || type === "video")
+  );
 };
 
 /**
- * Permission requests are denied by default. Voice input needs audio capture
- * and clipboard write is needed for copy-to-clipboard buttons, but the
- * renderer should not gain camera, notification, or arbitrary web-platform
- * permissions through the shared default session.
+ * Permission requests are denied by default. Voice input needs audio capture,
+ * the voice room's mid-call camera needs video capture (the viewfinder's
+ * video-only `getUserMedia` — see apps/web voice-camera.ts), and clipboard
+ * write is needed for copy-to-clipboard buttons; but the renderer should not
+ * gain notification or arbitrary web-platform permissions through the shared
+ * default session, and no capture is ever granted to an untrusted origin.
  */
 export const shouldGrantPermissionRequest = (
   permission: PermissionRequestName,
@@ -49,14 +54,17 @@ export const shouldGrantPermissionRequest = (
 
   return (
     permission === "media" &&
-    isAudioOnlyMediaRequest(details) &&
+    isCaptureMediaRequest(details) &&
     isTrustedRendererOrigin(origin)
   );
 };
 
 /**
  * Chromium often performs a permission check before issuing the request. Keep
- * this in sync with the request handler so `getUserMedia({ audio: true })` and
+ * this in sync with the request handler — the two MUST agree, or
+ * `getUserMedia({ video: … })` passes the check and then dies on the request
+ * (or vice versa) with a bare NotAllowedError the renderer cannot explain —
+ * so `getUserMedia({ audio: true })`, the camera's video-only request, and
  * `navigator.clipboard.writeText()` can proceed while unrelated permission
  * checks still fail closed.
  */
@@ -77,7 +85,11 @@ export const shouldGrantPermissionCheck = (
     return isTrusted;
   }
 
-  return permission === "media" && details.mediaType === "audio" && isTrusted;
+  return (
+    permission === "media" &&
+    (details.mediaType === "audio" || details.mediaType === "video") &&
+    isTrusted
+  );
 };
 
 export const denyAllPermissions = (targetSession: Session): void => {
