@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import {
+  MOBILE_DRAWER_DESTINATION_KEYS,
   MOBILE_TAB_ORDER,
   PRIMARY_NAV,
   SIDEBAR_DESTINATIONS,
@@ -26,6 +27,7 @@ import {
   type PrimaryNavKey,
   type WorkView,
 } from "./nav-model";
+import { YOUR_CUE_LEAVES } from "./your-cue-model";
 import { routes } from "@/utils/routes";
 
 describe("the two platforms agree", () => {
@@ -360,5 +362,68 @@ describe("CUE_NAV is gone, and stays gone", () => {
 (configuration leaves) or \`SIDEBAR_DESTINATIONS\` (what accumulates)
 instead.\n${hits.join("\n")}`,
     ).toEqual([]);
+  });
+});
+
+/**
+ * Every rail row needs a door on a phone.
+ *
+ * The rail is desktop-only — `chat-layout` renders `AssistantSideMenu` in the
+ * `!isMobile` branch and `Mv3ChatsIndex` in the mobile one — so a row added to
+ * `SIDEBAR_DESTINATIONS` reaches a phone only if something else carries it.
+ * `apps` was added to the rail with no leaf behind it and was consequently
+ * unreachable on mobile: the owner installed a TestFlight build containing the
+ * native overlay that renders an embedded app, and had no way to open one.
+ *
+ * This is the second unreachable destination on this branch — see
+ * `your-cue-reachable.test.tsx`, which drives the real chrome for Your Cue's
+ * door. That one proves a specific door works; this one proves no row is
+ * *missing* a door, which is the failure that keeps recurring.
+ */
+describe("every rail row is reachable on a phone", () => {
+  /**
+   * Rows whose phone door is something other than the drawer, and what it is.
+   * Anything not listed here and not in the drawer list is unreachable — the
+   * table has to be maintained deliberately, which is the point.
+   */
+  const DOOR_ELSEWHERE: Record<string, string> = {
+    talk: "primary mobile tab (◉)",
+    hq: "primary mobile tab (HQ)",
+    people: "a mobile surface in its own right",
+    library: "a mobile surface in its own right",
+    connectors: "Your Cue leaf, reached via the avatar",
+    skills: "Your Cue leaf, reached via the avatar",
+    agents: "Your Cue leaf, reached via the avatar",
+  };
+
+  test("a row with no door elsewhere must be carried by the drawer", () => {
+    const unreachable = SIDEBAR_DESTINATIONS.map((d) => d.key)
+      .filter((key) => !(key in DOOR_ELSEWHERE))
+      .filter((key) => !MOBILE_DRAWER_DESTINATION_KEYS.includes(key));
+    expect(
+      unreachable,
+      `These rail rows have no way to be opened on a phone. Either add the key
+to \`MOBILE_DRAWER_DESTINATION_KEYS\` and render it in \`Mv3ChatsIndex\`, or
+give it a Your Cue leaf and record that in \`DOOR_ELSEWHERE\`.
+Unreachable: ${unreachable.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  test("the rows claimed as Your Cue leaves really are leaves", () => {
+    // Without this the table above could claim a door that does not exist —
+    // which is exactly how `apps` came to be believed reachable.
+    const leafKeys = new Set(YOUR_CUE_LEAVES.map((l) => l.key));
+    for (const key of ["connectors", "skills", "agents"]) {
+      expect(leafKeys.has(key), `${key} is not a Your Cue leaf`).toBe(true);
+    }
+  });
+
+  test("MUTATION CHECK: apps is NOT a Your Cue leaf", () => {
+    // If it ever becomes one, the drawer row is a second path to one
+    // destination — the duplication this nav round exists to remove — and
+    // should be deleted rather than left as a convenience.
+    const leafKeys = new Set(YOUR_CUE_LEAVES.map((l) => l.key));
+    expect(leafKeys.has("apps")).toBe(false);
+    expect(MOBILE_DRAWER_DESTINATION_KEYS).toContain("apps");
   });
 });

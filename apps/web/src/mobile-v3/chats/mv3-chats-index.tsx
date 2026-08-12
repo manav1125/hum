@@ -29,11 +29,13 @@
  * empty state that means something else. See `chats-search.ts`.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, X } from "lucide-react";
+import { LayoutGrid, Plus, Search, X } from "lucide-react";
 
 import { workitemsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
+import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import {
   useBookmarkStore,
   type BookmarkSummary,
@@ -41,6 +43,7 @@ import {
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import type { Conversation } from "@/types/conversation-types";
 import { haptic } from "@/utils/haptics";
+import { routes } from "@/utils/routes";
 
 import { AuroraBackdrop } from "../aurora-backdrop";
 import { GlassCard } from "../glass-card";
@@ -399,7 +402,40 @@ export function Mv3ChatsIndex({
   onLoadMore,
 }: Mv3ChatsIndexProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
+
+  // Apps is the ONLY `SIDEBAR_DESTINATIONS` row with no other door on a phone.
+  // Connectors, Skills and Agents were promoted to the rail from Your Cue but
+  // kept their leaves, so the avatar → "All of Your Cue" still reaches them;
+  // Apps was added straight to the rail (owner decision, 2026-08-10), and
+  // `chat-layout` renders the rail only when `!isMobile`. The surface was
+  // therefore unreachable on mobile entirely — the iOS overlay could render an
+  // embedded app that nothing could navigate to.
+  //
+  // `MOBILE_DRAWER_DESTINATION_KEYS` is the declared version of that fact;
+  // nav-model's suite asserts this drawer covers every rail row without another
+  // phone door, so adding a rail row without a door fails there rather than on
+  // someone's phone.
+  //
+  // Gated on the same `ventureverse-apps` flag as the desktop row and the page
+  // itself, which redirects to HQ when the flag is off. An ungated row here
+  // would be a door onto a bounce.
+  //
+  // `hasHydrated` is part of the gate, not belt-and-braces: the store types
+  // flags as Record<string, boolean>, so an unknown key reads as falsy and the
+  // row would otherwise appear the moment the first real /feature-flags
+  // response lands — a flash-and-yank on every drawer open. The desktop row
+  // takes the same pair for the same reason.
+  const flagsHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
+  const ventureverseAppsOn =
+    useAssistantFeatureFlagStore.use.ventureverseApps();
+  const appsEnabled = flagsHydrated && ventureverseAppsOn;
+  const openApps = () => {
+    haptic.light();
+    onClose?.();
+    void navigate(routes.ventureverseApps.root);
+  };
   const [loadMore, setLoadMore] = useState<{
     busy: boolean;
     exhausted: boolean;
@@ -664,6 +700,52 @@ export function Mv3ChatsIndex({
           </div>
         ) : null}
       </div>
+
+      {/* Apps — the destination row (see `appsEnabled` above). Hidden while
+          searching, like the Bookmarked filter: the field searches CHATS, and a
+          destination sitting above the results would read as a match. */}
+      {appsEnabled && !searching ? (
+        <div
+          style={{
+            padding: "0 16px 10px",
+            flexShrink: 0,
+            position: "relative",
+            zIndex: 2,
+          }}
+        >
+          <GlassCard
+            radius={18}
+            padding="13px 15px"
+            role="button"
+            aria-label="Open Apps"
+            tabIndex={0}
+            onClick={openApps}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openApps();
+              }
+            }}
+            style={{ cursor: "pointer", minHeight: 44 }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                minWidth: 0,
+              }}
+            >
+              <LayoutGrid
+                size={16}
+                aria-hidden
+                style={{ flexShrink: 0, color: "var(--mv3-muted)" }}
+              />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Apps</span>
+            </div>
+          </GlassCard>
+        </div>
+      ) : null}
 
       {/* "Bookmarked" filter at the top of the ☰ index (v37 ruling 3). */}
       {bookmarksEnabled && !searching ? (

@@ -357,6 +357,28 @@ export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
   },
 ] as const;
 
+/**
+ * Which `SIDEBAR_DESTINATIONS` rows the MOBILE conversation drawer carries.
+ *
+ * The rail (`AssistantSideMenu`) renders only when `!isMobile` — `chat-layout`
+ * swaps in `Mv3ChatsIndex` on a phone. So a row added to the rail has no phone
+ * door unless something else provides one, and most of these rows do have one:
+ * People, Library and HQ are primary mobile surfaces, and Connectors, Skills
+ * and Agents kept their Your Cue leaves when they were promoted to the rail.
+ *
+ * `apps` did not. It was added straight to the rail (owner decision,
+ * 2026-08-10) with no leaf behind it, which left the VentureVerse catalog —
+ * and the native iOS overlay built to display it — unreachable on a phone
+ * entirely. This list is the drawer's half of that fix.
+ *
+ * It is exported so `nav-model.test.ts` can assert the invariant rather than
+ * trust a comment: **every sidebar destination must have a phone door.** That
+ * property has now failed twice on this branch (see
+ * `your-cue-reachable.test.tsx`), and a rule nobody can run is a rule that
+ * fails a third time.
+ */
+export const MOBILE_DRAWER_DESTINATION_KEYS: readonly string[] = ["apps"];
+
 // --- The door ---------------------------------------------------------------
 
 /**
