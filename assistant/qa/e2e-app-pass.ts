@@ -79,8 +79,55 @@ const DESKTOP: Surface[] = [
   { name: 'Settings privacy', path: '/assistant/settings/privacy' },
 ];
 
+/** The slice of a CDP command reply this script reads. Only `Runtime.evaluate`
+ *  returns a payload we inspect; the rest are enable/override calls whose
+ *  result is discarded. */
+interface CdpReply {
+  result?: { value?: unknown };
+}
+
+/** One entry from `/json/list` — the debugger targets the app exposes. */
+interface CdpTarget {
+  type: string;
+  webSocketDebuggerUrl: string;
+}
+
+/** A console argument as CDP serialises it: primitives carry `value`, objects
+ *  and errors only ever carry `description`. */
+interface CdpConsoleArg {
+  value?: unknown;
+  description?: string;
+}
+
+/** What the in-page probe returns, parsed. Mirrors the object literal the
+ *  evaluated expression stringifies below — keep the two in step. */
+interface Probe {
+  url: string;
+  nodes: number;
+  chars: number;
+  scrollW: number;
+  clientW: number;
+  widestRight: number;
+  widestTag: string;
+  deadEnds: string[];
+  blank: boolean;
+  head: string;
+}
+
+/** A probe plus the surface it came from and what the page complained about
+ *  while it rendered. */
+interface SurfaceResult extends Probe {
+  surface: string;
+  consoleErrors: string[];
+  failedRequests: string[];
+}
+
 let msgId = 0;
-function rpc(ws: WebSocket, method: string, params: unknown = {}): Promise<any> {
+function rpc(
+  ws: WebSocket,
+  method: string,
+  params: unknown = {},
+): Promise<CdpReply> {
   const id = ++msgId;
   return new Promise((resolve) => {
     const onMsg = (ev: MessageEvent) => {
@@ -95,15 +142,15 @@ function rpc(ws: WebSocket, method: string, params: unknown = {}): Promise<any> 
   });
 }
 
-const evaluate = (ws: WebSocket, expression: string) =>
+const evaluate = (ws: WebSocket, expression: string): Promise<string> =>
   rpc(ws, "Runtime.evaluate", {
     expression,
     returnByValue: true,
     awaitPromise: true,
-  }).then((r) => r?.result?.value);
+  }).then((r) => String(r?.result?.value ?? ""));
 
-const targets = await (await fetch(`${CDP}/json/list`)).json();
-const page = targets.find((t: any) => t.type === "page");
+const targets = (await (await fetch(`${CDP}/json/list`)).json()) as CdpTarget[];
+const page = targets.find((t) => t.type === "page");
 if (!page) throw new Error("no page target — is Cue running with --remote-debugging-port=9222?");
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
@@ -121,8 +168,8 @@ ws.addEventListener("message", (ev) => {
     consoleErrors.push(String(m.params.entry.text).slice(0, 180));
   }
   if (m.method === "Runtime.consoleAPICalled" && m.params?.type === "error") {
-    const txt = (m.params.args ?? [])
-      .map((a: any) => a.value ?? a.description ?? "")
+    const txt = ((m.params.args ?? []) as CdpConsoleArg[])
+      .map((a) => String(a.value ?? a.description ?? ""))
       .join(" ");
     if (txt.trim()) consoleErrors.push(txt.slice(0, 180));
   }
@@ -150,7 +197,7 @@ const surfaces = only.length
   ? DESKTOP.filter((s) => only.some((o) => s.name.toLowerCase().includes(o.toLowerCase())))
   : DESKTOP;
 
-const results: any[] = [];
+const results: SurfaceResult[] = [];
 for (const s of surfaces) {
   consoleErrors = [];
   failedRequests = [];
@@ -198,7 +245,7 @@ for (const s of surfaces) {
        });
      })()`,
   );
-  const p = JSON.parse(probe);
+  const p = JSON.parse(probe) as Probe;
   results.push({ surface: s.name, ...p, consoleErrors: [...new Set(consoleErrors)], failedRequests: [...new Set(failedRequests)] });
   const flag =
     p.blank ? "BLANK" :

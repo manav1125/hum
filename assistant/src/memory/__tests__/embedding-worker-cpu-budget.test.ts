@@ -10,6 +10,7 @@
  * cannot be silently frozen into a cached worker script).
  */
 
+import { getPriority } from "node:os";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
@@ -103,8 +104,7 @@ describe("worker deprioritisation", () => {
     const proc = Bun.spawn({ cmd: ["sleep", "5"], stdout: "ignore" });
     try {
       deprioritizeWorker(proc.pid);
-      const os = require("node:os") as typeof import("node:os");
-      expect(os.getPriority(proc.pid)).toBe(10);
+      expect(getPriority(proc.pid)).toBe(10);
     } finally {
       proc.kill();
     }
