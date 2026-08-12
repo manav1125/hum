@@ -13,11 +13,14 @@
  *  · **Speaking** — a steady ring, a teal waveform, and "tap anywhere to
  *    interrupt" — which really does interrupt.
  *
- * **Exactly three controls: mute · end · collapse.** Nothing else is on this
- * screen. The engine toggle that used to live on a call surface is now Your
- * Cue → Preferences → Voice (`utils/voice-engine.ts`), because nobody
- * changes engines mid-sentence; a long-press on the call timer is the
- * engineering back door, and it too only takes effect on the NEXT call.
+ * **The controls: mute · end · collapse — plus the camera, when the session
+ * can actually take a photo.** The camera button appears only when the ready
+ * frame advertised the `attach_image` capability and the device has a camera;
+ * opening it swaps the mark for a live viewfinder with a shutter (see
+ * `use-voice-room-camera.ts`). The engine toggle that used to live on a call
+ * surface is now Your Cue → Preferences → Voice (`utils/voice-engine.ts`),
+ * because nobody changes engines mid-sentence; a long-press on the call timer
+ * is the engineering back door, and it too only takes effect on the NEXT call.
  *
  * ## Why there is no transcript here
  * v35: "Live captions of the current sentence only — the full transcript
@@ -52,14 +55,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { ChevronDown, MicOff, X } from "lucide-react";
+import { Camera, ChevronDown, MicOff, SwitchCamera, X } from "lucide-react";
 
 import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router";
 import type { Surface } from "@/domains/chat/types/types";
-import type {
-  LiveVoiceCard,
-  LiveVoiceSessionState,
+import {
+  useLiveVoiceStore,
+  type LiveVoiceCard,
+  type LiveVoiceSessionState,
 } from "@/domains/chat/voice/live-voice/live-voice-store";
+import { useVoiceRoomCamera } from "@/domains/chat/voice/use-voice-room-camera";
+import { isVoiceCameraSupported } from "@/domains/chat/voice/voice-camera";
 import { thinkingLabel } from "@/domains/chat/voice/live-voice/tool-activity-words";
 import {
   readVoiceEngine,
@@ -252,6 +258,24 @@ export function VoiceFullScreen({
   // nobody changes engines mid-sentence.
   const [engineOpen, setEngineOpen] = useState(false);
 
+  // ── The camera (a mode of the room, not a destination). Offered only when
+  // the device has one AND the session's ready frame advertised the
+  // `attach_image` capability — a daemon that predates the frame rejects it
+  // with a session-fatal `unknown_type`, so a photo that silently never
+  // arrives (or hangs up the call) is worse than no camera control at all.
+  // The room owning the viewfinder is what lets it stay open across a run of
+  // photos; collapsing the room or ending the call unmounts this component,
+  // which releases the camera without anything having to remember to.
+  const sessionAssistantId = useLiveVoiceStore.use.sessionAssistantId();
+  const attachImageSupported = useLiveVoiceStore.use.attachImageSupported();
+  const viewfinderRef = useRef<HTMLVideoElement | null>(null);
+  const roomCamera = useVoiceRoomCamera(sessionAssistantId, viewfinderRef);
+  const cameraSupported =
+    attachImageSupported &&
+    sessionAssistantId !== null &&
+    isVoiceCameraSupported();
+  const cameraOpen = roomCamera.camera.open;
+
   const glow =
     call === "thinking"
       ? "radial-gradient(42% 28% at 50% 42%, rgba(127,119,221,.24), transparent 66%)"
@@ -291,6 +315,46 @@ export function VoiceFullScreen({
           pointerEvents: "none",
         }}
       />
+
+      {/* The viewfinder, when the camera is open.
+
+          Full-bleed over the mark rather than beside it: the room is one
+          surface at a time, and a camera squeezed into a corner would be too
+          small to aim. The mark keeps rendering underneath, so closing the
+          camera reveals it already in the right state.
+
+          `object-cover` because the video track's aspect ratio is the
+          camera's, not the room's, and letterboxing a viewfinder makes it
+          read as a photo already taken. The front camera is mirrored,
+          matching every other selfie viewfinder; the rear one is not, because
+          it shows the world and a mirrored world is unusable for aiming.
+
+          Muted + playsInline + autoPlay is the combination WebKit requires to
+          play an inline stream without a user gesture per frame; aria-hidden
+          because a live feed has nothing to announce and the controls below
+          carry the accessible names. pointerEvents none so "tap anywhere to
+          interrupt" keeps working straight through the feed. */}
+      {cameraOpen ? (
+        <video
+          ref={viewfinderRef}
+          data-testid="voice-room-viewfinder"
+          aria-hidden
+          autoPlay
+          muted
+          playsInline
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 3,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            pointerEvents: "none",
+            transform:
+              roomCamera.camera.facing === "user" ? "scaleX(-1)" : undefined,
+          }}
+        />
+      ) : null}
 
       {/* HEADER — what this call is bound to, and how long it has run. */}
       <div
@@ -404,7 +468,191 @@ export function VoiceFullScreen({
         </div>
       ) : null}
 
-      {/* THE THREE CONTROLS. mute · end · collapse. Nothing else. */}
+      {/* The shutter, and the camera's own failures.
+
+          A row of its own, above the session controls. The shutter is the big
+          target because it is the one thing the user does repeatedly while
+          holding a device at arm's length pointed at something; the session
+          controls below stay their usual size, so the thing you press often
+          never sits flush against the thing that hangs up.
+
+          The row also carries the camera's failures, and so it renders when
+          there is a failure to report even though the viewfinder never came
+          up: a denied permission is precisely that case, and nesting the
+          message inside the open state left the camera button appearing to do
+          nothing at all.
+
+          The shutter does not close the camera. Taking a photo is a step in a
+          conversation ("what's this?" … "and this one?"), not the end of one. */}
+      {cameraOpen || roomCamera.errorMessage ? (
+        <div
+          data-testid="voice-room-camera-controls"
+          style={{
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 10,
+            padding: "0 24px 12px",
+            position: "relative",
+            zIndex: 6,
+          }}
+        >
+          {roomCamera.errorMessage ? (
+            <p
+              role="status"
+              style={{
+                margin: 0,
+                borderRadius: 999,
+                background: CONTROL_BG,
+                border: CONTROL_BORDER,
+                padding: "4px 12px",
+                fontSize: 12,
+                color: TEXT,
+              }}
+            >
+              {roomCamera.errorMessage}
+            </p>
+          ) : null}
+
+          {/* The receipt strip: the press's only confirmation. Dimmed while
+              in flight, struck when it failed, plain when the daemon has it. */}
+          {roomCamera.photos.length > 0 ? (
+            <ul
+              aria-hidden
+              data-testid="voice-room-photo-strip"
+              style={{
+                listStyle: "none",
+                margin: 0,
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                alignSelf: "flex-start",
+                paddingLeft: 12,
+              }}
+            >
+              {roomCamera.photos.map((photo) => (
+                <li key={photo.id} style={{ position: "relative" }}>
+                  <img
+                    src={photo.previewUrl}
+                    alt=""
+                    data-testid="voice-room-photo"
+                    data-status={photo.status}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 10,
+                      border: CONTROL_BORDER,
+                      objectFit: "cover",
+                      opacity:
+                        photo.status === "sending"
+                          ? 0.5
+                          : photo.status === "failed"
+                            ? 0.35
+                            : 1,
+                      filter:
+                        photo.status === "failed" ? "grayscale(1)" : undefined,
+                      transition: "opacity 160ms ease",
+                    }}
+                  />
+                  {photo.status === "failed" ? (
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <X size={20} aria-hidden color={END_FILL} strokeWidth={3} />
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {/* The shutter is centred on the room, with flip parked off to the
+              side rather than sharing a row: a two-item row would put the
+              shutter off-centre, and the shutter is the target the user
+              reaches for without looking. */}
+          {cameraOpen ? (
+            <div
+              style={{
+                position: "relative",
+                display: "flex",
+                width: "100%",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  haptic.light();
+                  void roomCamera.shutter();
+                }}
+                disabled={roomCamera.sending}
+                aria-label="Take a photo"
+                data-testid="voice-room-shutter"
+                style={{
+                  width: 62,
+                  height: 62,
+                  borderRadius: "50%",
+                  border: `4px solid ${TEXT}`,
+                  background: "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  opacity: roomCamera.sending ? 0.6 : 1,
+                  padding: 0,
+                }}
+              >
+                {/* The inner disc shrinks while the photo uploads: the
+                    shutter's own press animation doubling as the progress
+                    signal, so nothing else appears over the viewfinder. */}
+                <span
+                  style={{
+                    borderRadius: "50%",
+                    background: TEXT,
+                    width: roomCamera.sending ? 22 : 42,
+                    height: roomCamera.sending ? 22 : 42,
+                    transition: "width 160ms ease, height 160ms ease",
+                  }}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void roomCamera.camera.flipCamera()}
+                aria-label="Flip camera"
+                data-testid="voice-room-flip"
+                style={{
+                  position: "absolute",
+                  right: 24,
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  background: CONTROL_BG,
+                  border: CONTROL_BORDER,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <SwitchCamera size={18} aria-hidden color={SOFT} />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* THE CONTROLS. mute · end · collapse, plus the camera when the
+          session can actually take a photo (ready advertised attach_image). */}
       <div
         style={{
           flexShrink: 0,
@@ -435,6 +683,29 @@ export function VoiceFullScreen({
               strokeWidth={muted ? 2.4 : 1.8}
             />
           </CallControl>
+
+          {cameraSupported ? (
+            <CallControl
+              label="camera"
+              ariaLabel={cameraOpen ? "Close camera" : "Open camera"}
+              ariaPressed={cameraOpen}
+              disabled={!active}
+              onClick={() => {
+                // open() runs inside this tap, so the tap itself is what
+                // raises the OS camera-permission alert — nothing dismissible
+                // sits between the two.
+                if (cameraOpen) roomCamera.close();
+                else void roomCamera.open();
+              }}
+            >
+              <Camera
+                size={18}
+                aria-hidden
+                color={cameraOpen ? TEXT : SOFT}
+                strokeWidth={cameraOpen ? 2.4 : 1.8}
+              />
+            </CallControl>
+          ) : null}
 
           <CallControl
             label="end"

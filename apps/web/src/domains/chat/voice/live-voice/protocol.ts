@@ -134,6 +134,23 @@ export interface LiveVoiceClientUpdateConfigFrame {
   readonly bargeInMinSpeechMs?: number;
 }
 
+/**
+ * A photo the user took mid-call, by the id its upload already returned (the
+ * composer's own `uploadChatAttachment` path). The daemon persists it into
+ * the conversation as its own user message immediately and RUNS NO TURN, so
+ * whatever the user says next — before or after the shutter — is answered by
+ * a model whose history already has the image. Mirrors the runtime contract
+ * in `assistant/src/live-voice/protocol.ts`.
+ *
+ * MUST NOT be sent unless the session's `ready` frame advertised
+ * `attachImage`: an older daemon rejects the frame with a session-fatal
+ * `unknown_type`, which would both lose the photo and kill the call.
+ */
+export interface LiveVoiceClientAttachImageFrame {
+  readonly type: "attach_image";
+  readonly attachmentId: string;
+}
+
 export interface LiveVoiceClientPttReleaseFrame {
   readonly type: "ptt_release";
 }
@@ -151,7 +168,8 @@ export type LiveVoiceClientFrame =
   | LiveVoiceClientPttReleaseFrame
   | LiveVoiceClientInterruptFrame
   | LiveVoiceClientEndFrame
-  | LiveVoiceClientUpdateConfigFrame;
+  | LiveVoiceClientUpdateConfigFrame
+  | LiveVoiceClientAttachImageFrame;
 
 // ---------------------------------------------------------------------------
 // Server frames (text/JSON; every frame carries `seq`)
@@ -196,6 +214,15 @@ export interface LiveVoiceReadyServerFrame extends LiveVoiceServerFrameBase {
    * "manual" — hands-free callers must fall back accordingly.
    */
   readonly turnDetection?: LiveVoiceTurnDetectionMode;
+  /**
+   * Capability advertise: this daemon accepts the `attach_image` client
+   * frame (mid-call camera photos). The camera UI renders ONLY when this
+   * arrived — an older daemon answers the frame with a session-fatal
+   * `unknown_type`, so sending it ungated would lose the photo AND kill the
+   * call. Absent (older daemons) means "no camera". Mirrors the runtime
+   * contract in `assistant/src/live-voice/protocol.ts`.
+   */
+  readonly attachImage?: boolean;
 }
 
 export interface LiveVoiceBusyServerFrame extends LiveVoiceServerFrameBase {
@@ -427,6 +454,14 @@ export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
    * down mid-sentence by a hiccup the server had already absorbed.
    */
   readonly fatal?: boolean;
+  /**
+   * The client frame this error is about (e.g. `"attach_image"`), when it
+   * concerns one. What lets a failed photo be filed with the shutter that
+   * took it — retracting the thumbnail already shown — instead of with the
+   * transient transcriber/TTS blips that share `fatal: false`. Absent on
+   * errors that are not about a specific frame.
+   */
+  readonly frameType?: string;
 }
 
 export type LiveVoiceServerFrame =

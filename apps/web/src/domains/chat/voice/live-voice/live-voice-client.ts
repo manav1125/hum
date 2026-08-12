@@ -69,6 +69,19 @@ export interface LiveVoiceClientError {
 }
 
 /**
+ * Why a mid-call photo the transport had already accepted was refused by the
+ * daemon:
+ * - `unsupported`: the daemon predates the `attach_image` frame entirely
+ *   (should be unreachable — the camera is gated on the ready frame's
+ *   `attachImage` advertise — but reported honestly if it happens).
+ * - `failed`: the daemon knows the frame but could not store the photo.
+ */
+export interface LiveVoiceAttachImageRejected {
+  readonly reason: "unsupported" | "failed";
+  readonly message: string;
+}
+
+/**
  * Typed event payloads. Names map 1:1 to the server frame types (camelCased),
  * plus `closed` for transport teardown. Frame `seq` is preserved so consumers
  * can order or dedupe.
@@ -125,6 +138,14 @@ export interface LiveVoiceClientEventMap {
    * frame — see the note there.
    */
   toolActivity: LiveVoiceToolActivityServerFrame;
+  /**
+   * A photo was accepted by the transport but refused by the daemon, so it
+   * will never reach the conversation. Distinct from `attachImage` returning
+   * false, which is the socket declining to send at all: this one fails
+   * after the client believed it had succeeded, and is the only signal the
+   * room gets to retract the thumbnail it already showed.
+   */
+  attachImageRejected: LiveVoiceAttachImageRejected;
   busy: LiveVoiceBusyServerFrame;
   error: LiveVoiceClientError;
   /** Fired exactly once when the transport closes (clean or otherwise). */
@@ -202,6 +223,7 @@ export class LiveVoiceChannelClient {
   private persona: string | undefined;
   private turnDetection: LiveVoiceTurnDetectionMode | undefined;
   private echoSafePlayback = false;
+  private attachImageSupported = false;
 
   private readonly listeners: {
     [E in LiveVoiceClientEventName]: Set<LiveVoiceClientEventHandler<E>>;
@@ -223,6 +245,7 @@ export class LiveVoiceChannelClient {
     approvalPending: new Set(),
     approvalResolved: new Set(),
     toolActivity: new Set(),
+    attachImageRejected: new Set(),
     busy: new Set(),
     error: new Set(),
     closed: new Set(),
@@ -328,6 +351,38 @@ export class LiveVoiceChannelClient {
     this.trySend(pcm);
   }
 
+  /**
+   * Whether the session's `ready` frame advertised the `attach_image`
+   * capability. `false` until `ready` arrives, and stays `false` against a
+   * daemon that predates the frame — the camera UI must not render then.
+   */
+  get supportsAttachImage(): boolean {
+    return this.attachImageSupported;
+  }
+
+  /**
+   * Tell the session about a photo the user just took, by the id its upload
+   * already returned. The daemon persists it into the conversation as its
+   * own user message and runs no turn.
+   *
+   * Returns whether the frame actually went out. A session that is
+   * connecting or reconnecting cannot take it, and the caller has to know:
+   * the photo was uploaded and the shutter has already animated, so a silent
+   * false start would leave the user believing the assistant can see
+   * something it cannot.
+   *
+   * Refuses to send when the daemon never advertised `attachImage` on
+   * `ready`: an old daemon rejects the frame with an unattributed
+   * `unknown_type`, which this client treats as session-fatal — losing a
+   * photo must never also hang up the call.
+   */
+  attachImage(attachmentId: string): boolean {
+    if (this.state !== "active" || !this.attachImageSupported) {
+      return false;
+    }
+    return this.trySend(JSON.stringify({ type: "attach_image", attachmentId }));
+  }
+
   /** Mark the current push-to-talk segment as released. */
   pttRelease(): void {
     this.sendControlFrame("ptt_release");
@@ -429,6 +484,9 @@ export class LiveVoiceChannelClient {
         if (this.state !== "connecting") return;
         this.clearConnectTimeout();
         this.state = "active";
+        // The daemon's capability advertise, tracked here so `attachImage`
+        // can refuse to send against a daemon that would fatally reject it.
+        this.attachImageSupported = frame.attachImage === true;
         this.emit("ready", frame);
         return;
       case "busy":
@@ -489,6 +547,20 @@ export class LiveVoiceChannelClient {
         this.emit("toolActivity", frame);
         return;
       case "error":
+        // `frameType` names what the error is about, which is what keeps a
+        // failed photo out of the buckets it would otherwise land in: a
+        // daemon that could not store the photo answers with a non-fatal
+        // error, which would otherwise be filed with the transient
+        // transcriber/TTS blips that share `fatal: false` — leaving the user
+        // believing the assistant can see something it never received.
+        if ("frameType" in frame && frame.frameType === "attach_image") {
+          console.warn(`live-voice: photo not attached: ${frame.message}`);
+          this.emit("attachImageRejected", {
+            reason: frame.code === "unknown_type" ? "unsupported" : "failed",
+            message: frame.message,
+          });
+          return;
+        }
         if (frame.fatal === false) {
           // The daemon absorbed this one and kept the session running (e.g. a
           // transcriber's transient poll error). Surface it, keep the socket.
@@ -530,12 +602,17 @@ export class LiveVoiceChannelClient {
    * Calling `send()` on a CONNECTING (or CLOSING/CLOSED) WebSocket throws
    * `InvalidStateError` in browsers, so guarding on `readyState` keeps a
    * quick-cancel during connect (and any late send) from throwing.
+   *
+   * Returns whether the write actually happened, for the callers that must
+   * not fail silently (`attachImage`: the shutter already animated).
    */
-  private trySend(data: string | ArrayBuffer): void {
+  private trySend(data: string | ArrayBuffer): boolean {
     const ws = this.ws;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(data);
+      return true;
     }
+    return false;
   }
 
   private fail(

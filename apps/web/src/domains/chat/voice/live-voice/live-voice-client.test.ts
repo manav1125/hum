@@ -845,3 +845,102 @@ describe("server VAD protocol", () => {
     expect(closed).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// attach_image (mid-call camera photos)
+// ---------------------------------------------------------------------------
+
+describe("attachImage", () => {
+  async function readyClient(ready: Record<string, unknown>) {
+    const client = makeClient();
+    const ws = await connectAndGetSocket(client);
+    ws.open();
+    ws.sent = []; // drop the start frame
+    ws.receive({
+      type: "ready",
+      seq: 1,
+      sessionId: "sess-1",
+      conversationId: "conv-1",
+      ...ready,
+    });
+    return { client, ws };
+  }
+
+  test("sends the frame when the ready frame advertised the capability", async () => {
+    const { client, ws } = await readyClient({ attachImage: true });
+
+    expect(client.supportsAttachImage).toBe(true);
+    expect(client.attachImage("att-1")).toBe(true);
+    expect(ws.sentJson).toEqual([
+      { type: "attach_image", attachmentId: "att-1" },
+    ]);
+  });
+
+  test("refuses to send when the daemon never advertised it", async () => {
+    const { client, ws } = await readyClient({});
+
+    expect(client.supportsAttachImage).toBe(false);
+    expect(client.attachImage("att-1")).toBe(false);
+    expect(ws.sentJson).toEqual([]);
+  });
+
+  test("returns false before ready (nothing silently queued)", async () => {
+    const client = makeClient();
+    const ws = await connectAndGetSocket(client);
+    ws.open();
+    ws.sent = [];
+
+    expect(client.attachImage("att-1")).toBe(false);
+    expect(ws.sentJson).toEqual([]);
+  });
+
+  test("an attach_image-attributed error emits attachImageRejected, not error", async () => {
+    const { client, ws } = await readyClient({ attachImage: true });
+    const rejections: Array<{ reason: string; message: string }> = [];
+    const errors: unknown[] = [];
+    let closedCount = 0;
+    client.on("attachImageRejected", (r) => rejections.push(r));
+    client.on("error", (e) => errors.push(e));
+    client.on("closed", () => closedCount++);
+
+    ws.receive({
+      type: "error",
+      seq: 2,
+      code: "invalid_frame",
+      message: "Could not attach that photo to the conversation.",
+      frameType: "attach_image",
+      fatal: false,
+    });
+
+    expect(rejections).toEqual([
+      {
+        reason: "failed",
+        message: "Could not attach that photo to the conversation.",
+      },
+    ]);
+    // The session survives: no error surfaced, no teardown.
+    expect(errors).toHaveLength(0);
+    expect(closedCount).toBe(0);
+    expect(ws.closed).toBe(false);
+  });
+
+  test("an unknown_type rejection maps to reason unsupported", async () => {
+    const { client, ws } = await readyClient({ attachImage: true });
+    const rejections: Array<{ reason: string }> = [];
+    client.on("attachImageRejected", (r) => rejections.push(r));
+
+    ws.receive({
+      type: "error",
+      seq: 2,
+      code: "unknown_type",
+      message: "Unknown live voice client frame type: attach_image",
+      frameType: "attach_image",
+    });
+
+    expect(rejections).toEqual([
+      expect.objectContaining({ reason: "unsupported" }),
+    ]);
+    // Even a fatal-less attach_image error must NOT tear the call down.
+    expect(ws.closed).toBe(false);
+  });
+});

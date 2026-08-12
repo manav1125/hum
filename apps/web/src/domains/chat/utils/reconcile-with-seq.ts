@@ -130,9 +130,10 @@ export function reconcileMessagesWithSeq(
 
   // Stability mirrors the merge's own branch decision above. A stale snapshot
   // (`streamAhead`, `S < L`) kept the live local rows and adopted only their
-  // server identity, so the merge cannot have changed any row's content — the
-  // only differences are structural (rows added, dropped, folded, or
-  // re-identified), which the row-id sequence captures with an O(n) walk
+  // server identity plus newly hydrated attachments, so the merge cannot have
+  // changed any row's text — the differences are structural (rows added,
+  // dropped, folded, re-identified, or a row whose attachments hydrated),
+  // which the row-id + attachment-id sequence captures with an O(n) walk
   // instead of a deep content compare. This is the streaming hot path, where
   // debounced snapshots routinely lag the stream.
   if (streamAhead) {
@@ -150,10 +151,13 @@ export function reconcileMessagesWithSeq(
 
 /**
  * Whether two transcripts carry the same rows in the same order, compared by
- * the server-assigned row id. The seq-path structural-stability signal: on a
- * stale snapshot (`S < L`) the merge keeps local content, so an identical id
- * sequence means the merge was a no-op and the original reference can be
- * returned for caller-side reference-equality stability.
+ * the server-assigned row id and the rows' attachment ids. The seq-path
+ * structural-stability signal: on a stale snapshot (`S < L`) the merge keeps
+ * local text, so an identical id sequence with identical attachment ids means
+ * the merge was a no-op and the original reference can be returned for
+ * caller-side reference-equality stability. Attachment ids are part of the
+ * identity because `adoptServerIdentity` hydrates newly arrived attachments
+ * onto kept local rows — a change ids alone would not see.
  */
 function sameIdentitySequence(
   a: DisplayMessage[],
@@ -162,19 +166,69 @@ function sameIdentitySequence(
   if (a.length !== b.length) {
     return false;
   }
-  return a.every((row, i) => row.id === b[i]?.id);
+  return a.every((row, i) => {
+    const other = b[i];
+    if (row.id !== other?.id) {
+      return false;
+    }
+    const rowAtts = row.attachments ?? [];
+    const otherAtts = other.attachments ?? [];
+    return (
+      rowAtts.length === otherAtts.length &&
+      rowAtts.every((att, j) => att.id === otherAtts[j]?.id)
+    );
+  });
+}
+
+/**
+ * Whether the server row carries attachment ids the local row lacks — a row
+ * whose media hydrated server-side after the local copy rendered. The
+ * live-voice camera is the canonical case: a mid-call photo's
+ * `user_message_echo` is text-only, and the snapshot that follows is the
+ * first carrier of the attachment; without this check a stale-seq snapshot
+ * would keep the text-only echo forever. Port of upstream 639f7bc1cb's
+ * `serverHasNewAttachments`.
+ */
+function serverHasNewAttachments(
+  serverMessage: DisplayMessage,
+  localMessage: DisplayMessage,
+): boolean {
+  if (!serverMessage.attachments?.length) {
+    return false;
+  }
+  const localAttachmentIds = new Set(
+    localMessage.attachments?.map((attachment) => attachment.id),
+  );
+  return serverMessage.attachments.some(
+    (attachment) => !localAttachmentIds.has(attachment.id),
+  );
 }
 
 /**
  * Keep a live local row but stamp the server-assigned identity onto it: adopt
- * the server `id`, fold the previous local id into `mergedMessageIds`, and
- * only borrow the server timestamp when the row has none yet.
+ * the server `id`, fold the previous local id into `mergedMessageIds`, only
+ * borrow the server timestamp when the row has none yet, and hydrate
+ * attachments the server has that the local row does not (unless the local
+ * row holds real client-side blob previews, which always win — see
+ * `preserveClientAttachments`).
  */
 function adoptServerIdentity(
   localMsg: DisplayMessage,
   server: DisplayMessage,
 ): DisplayMessage {
   const next: DisplayMessage = { ...localMsg, id: server.id };
+
+  // A stale-by-seq snapshot can still be the FIRST carrier of a row's
+  // attachments (a live-voice photo: the echo is text-only, the snapshot has
+  // the image). Text stays local — the stream owns it — but attachments the
+  // local row never had are new content, not a regression, so adopt them.
+  const hasRealLocalAtts =
+    !!localMsg.attachments &&
+    localMsg.attachments.length > 0 &&
+    !localMsg.attachments.every((a) => a.id.startsWith("rehydrated:"));
+  if (!hasRealLocalAtts && serverHasNewAttachments(server, localMsg)) {
+    next.attachments = server.attachments;
+  }
 
   const merged = new Set([
     ...(localMsg.mergedMessageIds ?? []),

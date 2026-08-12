@@ -217,6 +217,39 @@ export interface LiveVoiceState {
   roomMinimizeSeq: number;
   /** The mid-call approval currently featured, or `null`. */
   pendingApproval: LiveVoicePendingApproval | null;
+  /**
+   * Assistant the active session was started for, `null` when idle. What the
+   * room's camera uploads photos against (`uploadChatAttachment` needs an
+   * assistant id, and the room is a controller-less projection that must not
+   * be handed one through props from three different owners).
+   */
+  sessionAssistantId: string | null;
+  /**
+   * Whether the session's `ready` frame advertised the `attach_image`
+   * capability. The camera UI renders ONLY when this is true: an older
+   * daemon answers the frame with a session-fatal `unknown_type`, so a
+   * camera shown against one would lose the photo AND kill the call.
+   */
+  attachImageSupported: boolean;
+  /**
+   * Bumped each time the daemon refuses a photo the transport had already
+   * accepted. A counter rather than a flag or a payload because the room's
+   * only use is "another one just failed": consecutive rejections must each
+   * register, and there is nothing about a rejection worth carrying beyond
+   * the fact of it.
+   */
+  photoRejectedSeq: number;
+  /** Why the last photo was refused, for the room's wording. */
+  photoRejectedReason: "unsupported" | "failed" | null;
+  /**
+   * The active session's `attachImage` control, registered by the owning
+   * controller (`useLiveVoice`) once the session is ready — or `null` when no
+   * session can take a photo. Returns whether the frame actually went out
+   * (false during a reconnect gap), which the camera must surface rather
+   * than treat as sent. A store-registered delegate, like the voice-call
+   * ladder's `controls`, because the room is a controller-less projection.
+   */
+  attachImage: ((attachmentId: string) => boolean) | null;
 }
 
 export interface LiveVoiceActions {
@@ -266,6 +299,16 @@ export interface LiveVoiceActions {
    * after" deferral, turn cancellation) it clears whatever is featured.
    */
   clearPendingApproval: (requestId?: string) => void;
+  /** Record which assistant the active session serves (cleared by reset). */
+  setSessionAssistantId: (assistantId: string | null) => void;
+  /** Record the ready frame's `attachImage` capability advertise. */
+  setAttachImageSupported: (supported: boolean) => void;
+  /** Record that the daemon refused a photo. See {@link LiveVoiceState.photoRejectedSeq}. */
+  notePhotoRejected: (reason: "unsupported" | "failed") => void;
+  /** Register (or clear) the active session's attach-image control. */
+  setAttachImageDelegate: (
+    attachImage: ((attachmentId: string) => boolean) | null,
+  ) => void;
   /** Reset every field back to the idle defaults. */
   reset: () => void;
 }
@@ -293,6 +336,11 @@ const INITIAL_STATE: LiveVoiceState = {
   activityTool: null,
   roomMinimizeSeq: 0,
   pendingApproval: null,
+  sessionAssistantId: null,
+  attachImageSupported: false,
+  photoRejectedSeq: 0,
+  photoRejectedReason: null,
+  attachImage: null,
 };
 
 /**
@@ -428,7 +476,27 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
         ? {}
         : { pendingApproval: null },
     ),
+  setSessionAssistantId: (sessionAssistantId) => set({ sessionAssistantId }),
+  setAttachImageSupported: (attachImageSupported) =>
+    set({ attachImageSupported }),
+  notePhotoRejected: (reason) =>
+    set((s) => ({
+      photoRejectedSeq: s.photoRejectedSeq + 1,
+      photoRejectedReason: reason,
+    })),
+  setAttachImageDelegate: (attachImage) => set({ attachImage }),
   reset: () => set({ ...INITIAL_STATE }),
 }));
 
 export const useLiveVoiceStore = createSelectors(useLiveVoiceStoreBase);
+
+/**
+ * Hand the active session a photo the user took mid-call, by attachment id.
+ * Returns whether it reached the session: false when no session exists or the
+ * transport is mid-reconnect, which the caller must surface (the shutter has
+ * already fired) rather than treat as sent. Module-level so the camera hook
+ * needs no session prop plumbing.
+ */
+export function attachLiveVoiceImage(attachmentId: string): boolean {
+  return useLiveVoiceStore.getState().attachImage?.(attachmentId) ?? false;
+}

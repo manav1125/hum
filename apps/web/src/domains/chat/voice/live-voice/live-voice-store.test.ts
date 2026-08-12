@@ -141,3 +141,58 @@ describe("W2 · minimize seq and pending approval (v37)", () => {
     expect(s().pendingApproval).toBeNull();
   });
 });
+
+describe("mid-call camera state", () => {
+  test("photo rejections bump the seq and carry the latest reason", () => {
+    const s = () => useLiveVoiceStore.getState();
+    expect(s().photoRejectedSeq).toBe(0);
+    expect(s().photoRejectedReason).toBeNull();
+
+    s().notePhotoRejected("failed");
+    expect(s().photoRejectedSeq).toBe(1);
+    expect(s().photoRejectedReason).toBe("failed");
+
+    // Consecutive rejections must each register (the strip retracts one
+    // thumbnail per bump).
+    s().notePhotoRejected("unsupported");
+    expect(s().photoRejectedSeq).toBe(2);
+    expect(s().photoRejectedReason).toBe("unsupported");
+  });
+
+  test("attachLiveVoiceImage routes through the registered delegate", async () => {
+    const { attachLiveVoiceImage } = await import(
+      "@/domains/chat/voice/live-voice/live-voice-store"
+    );
+    const sent: string[] = [];
+
+    // No session: false, never a silent drop.
+    expect(attachLiveVoiceImage("att-1")).toBe(false);
+
+    useLiveVoiceStore.getState().setAttachImageDelegate((id) => {
+      sent.push(id);
+      return true;
+    });
+    expect(attachLiveVoiceImage("att-2")).toBe(true);
+    expect(sent).toEqual(["att-2"]);
+
+    // A delegate reporting a reconnect gap propagates its false.
+    useLiveVoiceStore.getState().setAttachImageDelegate(() => false);
+    expect(attachLiveVoiceImage("att-3")).toBe(false);
+  });
+
+  test("reset clears the camera capability, delegate, and session assistant", () => {
+    const s = () => useLiveVoiceStore.getState();
+    s().setSessionAssistantId("assistant-1");
+    s().setAttachImageSupported(true);
+    s().setAttachImageDelegate(() => true);
+    s().notePhotoRejected("failed");
+
+    s().reset();
+
+    expect(s().sessionAssistantId).toBeNull();
+    expect(s().attachImageSupported).toBe(false);
+    expect(s().attachImage).toBeNull();
+    expect(s().photoRejectedSeq).toBe(0);
+    expect(s().photoRejectedReason).toBeNull();
+  });
+});

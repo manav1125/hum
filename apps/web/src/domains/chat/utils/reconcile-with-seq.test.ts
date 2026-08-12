@@ -715,3 +715,141 @@ describe("reconcileMessagesWithSeq", () => {
     expect(result).toBe(local);
   });
 });
+
+describe("attachment hydration on stale snapshots (live-voice photos)", () => {
+  /**
+   * A mid-call camera photo persists as a user row whose `user_message_echo`
+   * is TEXT-ONLY; the `/messages` snapshot that follows is the first carrier
+   * of the attachment. During a live call the stream is routinely ahead
+   * (L > S), and the stale-snapshot branch used to keep the local text-only
+   * row wholesale — so the photo never appeared until the call went quiet.
+   * Port of upstream 639f7bc1cb's serverHasNewAttachments.
+   */
+  test("a stale snapshot still hydrates attachments the local row lacks", () => {
+    const local = [
+      makeRow({
+        id: "u1",
+        role: "user",
+        ...textBody("here's a photo:"),
+        timestamp: 1000,
+      }),
+    ];
+    const server = [
+      makeRow({
+        id: "u1",
+        role: "user",
+        ...textBody("here's a photo:"),
+        timestamp: 1000,
+        attachments: [
+          {
+            id: "att-1",
+            filename: "photo-1.jpg",
+            mimeType: "image/jpeg",
+            sizeBytes: 12,
+            previewUrl: null,
+          },
+        ],
+      }),
+    ];
+
+    const result = reconcileMessagesWithSeq(local, server, {
+      serverSeq: 5,
+      localSeq: 10,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.attachments?.map((a) => a.id)).toEqual(["att-1"]);
+    // The stream still owns the text.
+    expect(messageText(result[0])).toBe("here's a photo:");
+    // And the merge reports the change (a same-id walk must not discard it).
+    expect(result).not.toBe(local);
+  });
+
+  test("local blob previews are never clobbered by snapshot metadata", () => {
+    const local = [
+      makeRow({
+        id: "u1",
+        role: "user",
+        ...textBody("look at this"),
+        timestamp: 1000,
+        attachments: [
+          {
+            id: "local-blob",
+            filename: "photo.jpg",
+            mimeType: "image/jpeg",
+            sizeBytes: 12,
+            previewUrl: "blob:preview",
+          },
+        ],
+      }),
+    ];
+    const server = [
+      makeRow({
+        id: "u1",
+        role: "user",
+        ...textBody("look at this"),
+        timestamp: 1000,
+        attachments: [
+          {
+            id: "att-9",
+            filename: "photo.jpg",
+            mimeType: "image/jpeg",
+            sizeBytes: 12,
+            previewUrl: null,
+          },
+        ],
+      }),
+    ];
+
+    const result = reconcileMessagesWithSeq(local, server, {
+      serverSeq: 5,
+      localSeq: 10,
+    });
+
+    expect(result[0]!.attachments?.map((a) => a.id)).toEqual(["local-blob"]);
+  });
+
+  test("identical attachments stay reference-stable on the stale path", () => {
+    const local = [
+      makeRow({
+        id: "u1",
+        role: "user",
+        ...textBody("here's a photo:"),
+        timestamp: 1000,
+        attachments: [
+          {
+            id: "att-1",
+            filename: "photo-1.jpg",
+            mimeType: "image/jpeg",
+            sizeBytes: 12,
+            previewUrl: null,
+          },
+        ],
+      }),
+    ];
+    const server = [
+      makeRow({
+        id: "u1",
+        role: "user",
+        ...textBody("here's a photo:"),
+        timestamp: 1000,
+        attachments: [
+          {
+            id: "att-1",
+            filename: "photo-1.jpg",
+            mimeType: "image/jpeg",
+            sizeBytes: 12,
+            previewUrl: null,
+          },
+        ],
+      }),
+    ];
+
+    const result = reconcileMessagesWithSeq(local, server, {
+      serverSeq: 5,
+      localSeq: 10,
+    });
+
+    expect(result).toBe(local);
+  });
+});

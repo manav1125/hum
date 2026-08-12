@@ -212,6 +212,14 @@ export interface UseLiveVoiceResult {
    * remove, so the caller only draws the invitation while `speaking`.
    */
   interrupt: () => void;
+  /**
+   * Hand the active session a photo the user took mid-call, by the id its
+   * upload already returned. Returns whether it actually reached the daemon
+   * (false while connecting/reconnecting, or when the daemon never
+   * advertised `attachImage` on `ready`) — the caller must surface a false,
+   * because the shutter has already fired.
+   */
+  attachImage: (attachmentId: string) => boolean;
 }
 
 /** Injectable factories so tests can supply mock primitives. */
@@ -520,6 +528,9 @@ export function useLiveVoice(
       // Consumers that render inside a chat thread need to know whether the
       // daemon is also streaming this session's turns into that thread.
       store.setEngine(engine);
+      // The room's camera uploads photos against this assistant; recorded on
+      // the store because the room is a controller-less projection.
+      store.setSessionAssistantId(assistantId);
       const client = (
         opts.createClient ?? (() => new LiveVoiceChannelClient())
       )();
@@ -585,7 +596,26 @@ export function useLiveVoice(
           }
           // A healthy connection clears the reconnect budget.
           reconnectAttemptsRef.current = 0;
+          // The camera renders ONLY when the daemon advertised it can take
+          // the frame — an older daemon rejects `attach_image` with a
+          // session-fatal `unknown_type`, so the gate is what makes a photo
+          // unable to hang up the call. The delegate is how the room (a
+          // controller-less projection) reaches this session's socket.
+          const s2 = useLiveVoiceStore.getState();
+          s2.setAttachImageSupported(frame.attachImage === true);
+          s2.setAttachImageDelegate(
+            frame.attachImage === true
+              ? (attachmentId: string) =>
+                  live() ? client.attachImage(attachmentId) : false
+              : null,
+          );
           void startCapture(session, teardown, mutedRef.current);
+        }),
+        client.on("attachImageRejected", (rejected) => {
+          if (!live()) return;
+          // The daemon refused a photo the socket already accepted — the
+          // strip must retract the thumbnail it showed on the shutter press.
+          useLiveVoiceStore.getState().notePhotoRejected(rejected.reason);
         }),
         client.on("speechStarted", () => {
           if (!live() || !session.handsFree) return;
@@ -798,6 +828,10 @@ export function useLiveVoice(
     interruptIfSpeaking(session, teardown);
   }, [teardown]);
 
+  const attachImage = useCallback((attachmentId: string): boolean => {
+    return sessionRef.current?.client.attachImage(attachmentId) ?? false;
+  }, []);
+
   // The reconnect path re-enters `start()` via this ref (start references
   // attemptReconnect, which can't reference start directly).
   useEffect(() => {
@@ -822,6 +856,7 @@ export function useLiveVoice(
     stop,
     setMuted,
     interrupt,
+    attachImage,
   };
 }
 

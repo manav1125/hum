@@ -177,3 +177,45 @@ describe("parseServerFrame", () => {
     });
   });
 });
+
+describe("attach_image additions (mid-call camera photos)", () => {
+  test("a ready frame advertising attachImage round-trips", () => {
+    const parsed = parseServerFrame(
+      JSON.stringify({
+        type: "ready",
+        seq: 1,
+        sessionId: "s1",
+        conversationId: "c1",
+        attachImage: true,
+      }),
+    );
+    expect(parsed).toEqual({
+      type: "ready",
+      seq: 1,
+      sessionId: "s1",
+      conversationId: "c1",
+      attachImage: true,
+    });
+  });
+
+  test("an error frame's frameType attribution round-trips", () => {
+    const parsed = parseServerFrame(
+      JSON.stringify({
+        type: "error",
+        seq: 2,
+        code: "invalid_frame",
+        message: "Could not attach that photo to the conversation.",
+        frameType: "attach_image",
+        fatal: false,
+      }),
+    );
+    expect(parsed).toEqual({
+      type: "error",
+      seq: 2,
+      code: "invalid_frame",
+      message: "Could not attach that photo to the conversation.",
+      frameType: "attach_image",
+      fatal: false,
+    });
+  });
+});
