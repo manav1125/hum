@@ -427,6 +427,32 @@
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
+      "id": "linear",
+      "name": "linear",
+      "description": "Work the user's Linear board — create, update, and comment on issues with ID resolution, mandatory dedupe before filing, and per-user attribution",
+      "metadata": {
+        "icon": "assets/icon.svg",
+        "emoji": "🔷",
+        "vellum": {
+          "category": "development",
+          "display-name": "Linear",
+          "user-invocable": "true",
+          "activation-hints": [
+            "file this in linear",
+            "create a linear issue",
+            "update the linear board",
+            "sync my backlog to linear",
+            "When the user wants to create, update, search, or comment on Linear issues"
+          ],
+          "avoid-when": [
+            "When the user is connecting Linear or creating a Linear agent app for the first time (use linear-app-setup or vellum-oauth-integrations instead)"
+          ]
+        }
+      },
+      "compatibility": "Designed for Cue personal assistants",
+      "updatedAt": "2026-08-12T00:00:00.000Z"
+    },
+    {
       "id": "linear-app-setup",
       "name": "linear-app-setup",
       "description": "Create and configure a Linear agent app so the assistant can manage issues, projects, and workflows under its own identity",
