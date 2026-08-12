@@ -27897,6 +27897,113 @@ paths:
               required:
                 - transcript
               additionalProperties: false
+  /v1/memory-graph:
+    get:
+      operationId: memorygraph_get
+      summary: Get the memory graph
+      description:
+        Return the assistant's memory as a backend-agnostic graph of nodes (concepts, skills, capabilities) and
+        edges (authored links and learned associations). Returns supported=false when the active backend exposes no
+        graph.
+      tags:
+        - memory
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  backend:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  supported:
+                    type: boolean
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        label:
+                          type: string
+                        summary:
+                          type: string
+                        kind:
+                          type: string
+                        weight:
+                          type: number
+                        updatedAtMs:
+                          type: number
+                      required:
+                        - id
+                        - label
+                      additionalProperties: false
+                  edges:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        target:
+                          type: string
+                        kind:
+                          type: string
+                        weight:
+                          type: number
+                        description:
+                          type: string
+                        directed:
+                          type: boolean
+                      required:
+                        - source
+                        - target
+                      additionalProperties: false
+                  truncated:
+                    type: boolean
+                required:
+                  - backend
+                  - supported
+                  - nodes
+                  - edges
+                additionalProperties: false
+  /v1/memory-graph-node:
+    get:
+      operationId: memorygraphnode_get
+      summary: Get a memory graph node's content
+      description:
+        "Return the rendered markdown content of a single concept node by id, for the graph's node-detail view.
+        `found: false` when the node has no readable page."
+      tags:
+        - memory
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  found:
+                    type: boolean
+                  title:
+                    type: string
+                  content:
+                    type: string
+                required:
+                  - found
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Node id from the graph payload (the concept-page slug).
   /v1/memory-items:
     get:
       operationId: memoryitems_get
@@ -28196,6 +28303,89 @@ paths:
               required:
                 - pages
               additionalProperties: false
+  /v1/memory/remember:
+    post:
+      operationId: memory_remember_post
+      summary: Create a memory by remembering a fact
+      description:
+        Append a user-authored fact to the memory buffer via handleRemember. The fact surfaces in the memory graph
+        immediately as a pending node (its id is returned so clients can navigate to it), and a consolidation run is
+        nudged (coalesced against active jobs) so it files into concept pages promptly.
+      tags:
+        - memory
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                  pendingNodeId:
+                    description:
+                      Graph node id (`buffer:<hash>`) of the pending entry this create appended, for fly-to-node navigation.
+                      Absent when the buffer can't be re-read.
+                    type: string
+                required:
+                  - message
+                  - success
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+              required:
+                - content
+              additionalProperties: false
+  /v1/memory/stats:
+    get:
+      operationId: memory_stats_get
+      summary: Get lightweight memory stats
+      description:
+        "Return a cheap count of concept pages from the cached memory page index, for glanceable surfaces like the
+        identity Memory card. Counts concept pages only and never builds the memory-concept graph. Also reports
+        graph_supported: whether the memory-concept graph is available for this assistant (memory enabled and the v2
+        concept-page engine live), so callers can gate the graph entry point without building the graph, plus tier: the
+        coarse memory tier explaining why the graph is unavailable (off = the user's Memory opt-out, v1 = the legacy PKB
+        engine)."
+      tags:
+        - memory
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  concepts:
+                    type: number
+                    description: Number of concept pages in memory
+                  graph_supported:
+                    type: boolean
+                    description: Whether the memory-concept graph is available (memory enabled and the v2 concept-page engine live)
+                  tier:
+                    type: string
+                    enum:
+                      - off
+                      - v1
+                      - v2
+                      - v3
+                    description: Coarse memory tier for this assistant; graph_supported is exactly tier === 'v2' in this fork
+                required:
+                  - concepts
+                  - graph_supported
+                  - tier
+                additionalProperties: false
   /v1/memory/v2/backfill:
     post:
       operationId: memory_v2_backfill_post
