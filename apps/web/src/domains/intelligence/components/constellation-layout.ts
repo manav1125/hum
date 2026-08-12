@@ -181,6 +181,20 @@ export interface TreeNode {
   radius: number;
 }
 
+/**
+ * Minimal positioned-node contract shared with the concept-graph layout
+ * (`components/concept-graph/types.ts`): anything with a 2D position and a
+ * radius. `TreeNode` satisfies it structurally; the concept graph's 3D layout
+ * nodes extend it with a depth axis. Mirrors upstream's constellation-layout
+ * export so ported graph code keeps a single substrate.
+ */
+export interface PositionedNode {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+}
+
 export interface EdgeLine {
   id: string;
   fromId: string;
