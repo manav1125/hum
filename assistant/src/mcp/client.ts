@@ -181,6 +181,9 @@ export class McpClient {
       name: tool.name,
       description: tool.description ?? "",
       inputSchema: normalizeInputSchema(tool.inputSchema, tool.name),
+      // MCP ToolAnnotations, self-reported by the server — hints, not
+      // guarantees; consumers may only refine behavior conservatively.
+      annotations: tool.annotations,
     }));
   }
 

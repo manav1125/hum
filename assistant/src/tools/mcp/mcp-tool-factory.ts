@@ -24,6 +24,31 @@ export interface McpToolMetadata {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** MCP ToolAnnotations, self-reported by the server (hints, not truth). */
+  annotations?: { readOnlyHint?: boolean } & Record<string, unknown>;
+}
+
+/**
+ * Resolve the risk level a tool carries.
+ *
+ * `readOnlyHint` is self-reported by the server, so it only refines risk
+ * DOWNWARD and only for servers the user already configured below the
+ * high-trust ceiling. Servers left at the default "high" are unaffected,
+ * and the hint never raises risk above the server default. (Port of
+ * upstream f19059f77d.)
+ */
+function resolveRiskLevel(
+  metadata: McpToolMetadata,
+  serverConfig: McpServerConfig,
+): RiskLevel {
+  const serverRisk = riskMap[serverConfig.defaultRiskLevel] ?? RiskLevel.High;
+  if (
+    metadata.annotations?.readOnlyHint === true &&
+    serverRisk !== RiskLevel.High
+  ) {
+    return RiskLevel.Low;
+  }
+  return serverRisk;
 }
 
 /**
@@ -37,7 +62,7 @@ export function createMcpTool(
   manager: McpServerManager,
 ): Tool {
   const namespacedName = mcpToolName(serverId, metadata.name);
-  const riskLevel = riskMap[serverConfig.defaultRiskLevel] ?? RiskLevel.High;
+  const riskLevel = resolveRiskLevel(metadata, serverConfig);
   const serverDefinesActivity = schemaDefinesProperty(
     metadata.inputSchema,
     "activity",
