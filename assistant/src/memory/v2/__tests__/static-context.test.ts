@@ -33,13 +33,19 @@ mock.module("../../../util/logger.js", () => ({
 
 let configMemoryV2Enabled = true;
 let configMemoryEnabled = true;
+// Mirrors the `memory.v2.consolidation_max_buffer_lines` schema default; the
+// Buffer-cap tests move it.
+let configMaxBufferLines: number | null = 100;
 
 mock.module("../../../config/loader.js", () => ({
   getConfig: () => ({}),
   loadConfig: () => ({
     memory: {
       enabled: configMemoryEnabled,
-      v2: { enabled: configMemoryV2Enabled },
+      v2: {
+        enabled: configMemoryV2Enabled,
+        consolidation_max_buffer_lines: configMaxBufferLines,
+      },
     },
   }),
   loadRawConfig: () => ({}),
@@ -76,6 +82,7 @@ describe("readMemoryV2StaticContent", () => {
     mkdirSync(TEST_DIR, { recursive: true });
     configMemoryV2Enabled = true;
     configMemoryEnabled = true;
+    configMaxBufferLines = 100;
   });
 
   afterEach(() => {
@@ -243,6 +250,177 @@ describe("readMemoryV2StaticContent", () => {
       expect(text).not.toContain("From your other chats");
       expect(text).not.toContain("cid:");
     });
+  });
+});
+
+describe("readMemoryV2StaticContent Buffer cap", () => {
+  /** `n` timestamped buffer entries, oldest first, in `remember()`'s shape. */
+  function bufferEntries(n: number): string {
+    return Array.from(
+      { length: n },
+      (_, i) => `- [Jan 1, 9:00 AM] entry-${i}`,
+    ).join("\n");
+  }
+
+  beforeEach(() => {
+    mkdirSync(TEST_DIR, { recursive: true });
+    configMemoryV2Enabled = true;
+    configMemoryEnabled = true;
+    configMaxBufferLines = 10;
+  });
+
+  afterEach(() => {
+    cleanupMemoryDir();
+  });
+
+  test("passes a buffer at or under the cap through byte-identically", () => {
+    const buffer = bufferEntries(10);
+    writeMemoryFile("buffer.md", buffer);
+
+    expect(readMemoryV2StaticContent()).toBe(`## Buffer\n\n${buffer}`);
+  });
+
+  test("keeps the newest entries and drops the oldest when over the cap", () => {
+    writeMemoryFile("buffer.md", bufferEntries(30));
+
+    const text = readMemoryV2StaticContent()!;
+    expect(text).toContain(
+      "(Older entries trimmed. Read memory/buffer.md for the full backlog.)",
+    );
+    // The cap counts non-empty lines, matching the scheduler's
+    // `countBufferLines`, so exactly the newest 10 entries survive.
+    const kept = text
+      .split("\n")
+      .filter((line) => line.startsWith("- ["))
+      .map((line) => line.slice(line.lastIndexOf(" ") + 1));
+    expect(kept).toEqual(
+      Array.from({ length: 10 }, (_, i) => `entry-${i + 20}`),
+    );
+  });
+
+  test("never opens mid-entry when the cap lands inside a multiline fact", () => {
+    // The 5-line fact straddles the cap: counting back 10 non-empty lines
+    // lands on one of its continuation lines. Injecting from there would show
+    // orphan bullets with no timestamp and no opening clause.
+    const multiline = [
+      "- [Jan 1, 9:00 AM] the straddling fact",
+      "  - [ ] a checklist item inside the fact",
+      "  continuation prose",
+      "  - another bullet",
+      "  closing line",
+    ].join("\n");
+    writeMemoryFile(
+      "buffer.md",
+      `${bufferEntries(20)}\n${multiline}\n${bufferEntries(8)}`,
+    );
+
+    const text = readMemoryV2StaticContent()!;
+    const body = text.slice(text.indexOf("buffer.md for the full backlog.)\n"));
+    const firstLine = body.split("\n")[1]!;
+    expect(firstLine).toMatch(/^- \[Jan 1, 9:00 AM\]/);
+    // The partial entry is dropped whole: none of its continuation lines
+    // survive on their own.
+    expect(text).not.toContain("continuation prose");
+    expect(text).not.toContain("the straddling fact");
+  });
+
+  test("keeps a multiline entry intact when it sits fully inside the cap", () => {
+    const multiline = [
+      "- [Jan 1, 9:00 AM] a fact with a body",
+      "  second line of the same fact",
+    ].join("\n");
+    writeMemoryFile("buffer.md", `${bufferEntries(20)}\n${multiline}`);
+
+    const text = readMemoryV2StaticContent()!;
+    expect(text).toContain("a fact with a body");
+    expect(text).toContain("second line of the same fact");
+  });
+
+  test("keeps the newest entry attributable when it alone exceeds the cap", () => {
+    // Not even one whole entry fits: keep its opening line (timestamp +
+    // first clause), an elision marker, then the tail the cap allows.
+    const bigBody = Array.from({ length: 15 }, (_, i) => `  body-${i}`);
+    writeMemoryFile(
+      "buffer.md",
+      ["- [Jan 1, 9:00 AM] oversized fact", ...bigBody].join("\n"),
+    );
+
+    const text = readMemoryV2StaticContent()!;
+    expect(text).toContain("- [Jan 1, 9:00 AM] oversized fact");
+    expect(text).toContain(
+      "(This entry's body was trimmed. Read memory/buffer.md for the rest of it.)",
+    );
+    expect(text).toContain("body-14");
+    expect(text).not.toContain("body-1\n");
+  });
+
+  test("falls back to the line cut for a buffer with no timestamped entries", () => {
+    // A hand-written buffer that never went through `remember()` has no entry
+    // structure to preserve, so the line-based cut stands rather than dropping
+    // everything.
+    const handWritten = Array.from(
+      { length: 30 },
+      (_, i) => `just a line ${i}`,
+    ).join("\n");
+    writeMemoryFile("buffer.md", handWritten);
+
+    const text = readMemoryV2StaticContent()!;
+    expect(text).toContain("just a line 29");
+    expect(text).not.toContain("just a line 0\n");
+  });
+
+  test("leaves the buffer unbounded when the size trigger is disabled", () => {
+    configMaxBufferLines = null;
+    const buffer = bufferEntries(30);
+    writeMemoryFile("buffer.md", buffer);
+
+    expect(readMemoryV2StaticContent()).toBe(`## Buffer\n\n${buffer}`);
+  });
+
+  test("caps before partitioning: a capped-out other-chat entry is simply gone", () => {
+    // The cap bounds context; the origin framing organizes what survives.
+    const entries = [
+      `- [Jan 1, 9:00 AM] old other-chat fact <!--cid:conv-other-->`,
+      ...Array.from(
+        { length: 10 },
+        (_, i) => `- [Jan 1, 9:01 AM] fresh-${i} <!--cid:conv-current-->`,
+      ),
+    ].join("\n");
+    writeMemoryFile("buffer.md", entries);
+
+    const text = readMemoryV2StaticContent({
+      currentConversationId: "conv-current",
+    })!;
+    expect(text).not.toContain("old other-chat fact");
+    expect(text).not.toContain("From your other chats");
+    expect(text).toContain("fresh-9");
+    expect(text).not.toContain("cid:");
+  });
+
+  test("partitions whole multiline entries by their opening-line origin", () => {
+    configMaxBufferLines = 100;
+    writeMemoryFile(
+      "buffer.md",
+      [
+        "- [Jan 1, 9:00 AM] mine opening <!--cid:conv-current-->",
+        "  mine body line",
+        "- [Jan 1, 9:01 AM] theirs opening <!--cid:conv-other-->",
+        "  theirs body line",
+      ].join("\n"),
+    );
+
+    const text = readMemoryV2StaticContent({
+      currentConversationId: "conv-current",
+    })!;
+    const headingIdx = text.indexOf("From your other chats");
+    expect(headingIdx).toBeGreaterThan(-1);
+    // The whole entry moves with its opening line — the body must not detach.
+    expect(text.indexOf("mine body line")).toBeLessThan(headingIdx);
+    expect(text.indexOf("theirs opening")).toBeGreaterThan(headingIdx);
+    expect(text.indexOf("theirs body line")).toBeGreaterThan(
+      text.indexOf("theirs opening"),
+    );
+    expect(text).not.toContain("cid:");
   });
 });
 

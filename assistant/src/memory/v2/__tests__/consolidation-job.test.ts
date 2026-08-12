@@ -419,6 +419,35 @@ describe("memoryV2ConsolidateJob — chunked cutoff (consolidation_max_entries_p
     expect(outcome.deferredEntries).toBe(0);
     expect(outcome.cutoff).not.toBe("Apr 27, 9:01 AM");
   });
+
+  test("an indented entry-shaped body line neither counts toward the cap nor becomes the cutoff", async () => {
+    // The nested writer indents a fact's body, so a body line that IS
+    // entry-shaped sits off column 0. The shared matcher must not read it as
+    // an entry: doing so would inflate the per-run budget and could hand the
+    // agent a cutoff drawn from the middle of a fact — a timestamp the user
+    // never filed anything at.
+    writeFileSync(
+      bufferPath(),
+      [
+        "- [Apr 27, 9:00 AM] Alice's plan:",
+        "  - [Apr 27, 9:30 AM] a step inside the fact",
+        "- [Apr 27, 9:01 AM] Bob takes his coffee black.",
+        "- [Apr 27, 9:02 AM] Carol loves jazz.",
+      ].join("\n") + "\n",
+    );
+
+    const outcome = await memoryV2ConsolidateJob(
+      makeJob(),
+      configWithMaxEntries(2),
+    );
+
+    expect(outcome.kind).toBe("invoked");
+    if (outcome.kind !== "invoked") throw new Error("unreachable");
+    // Three real entries, cap 2 → the third entry's timestamp is the cutoff;
+    // the nested body's 9:30 timestamp must never be it.
+    expect(outcome.cutoff).toBe("Apr 27, 9:02 AM");
+    expect(outcome.deferredEntries).toBe(1);
+  });
 });
 
 describe("memoryV2ConsolidateJob — v2 disabled", () => {

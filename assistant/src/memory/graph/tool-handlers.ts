@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { AssistantConfig } from "../../config/types.js";
 import { getLogger } from "../../util/logger.js";
 import { getWorkspaceDir } from "../../util/platform.js";
+import { formatRememberEntry } from "../buffer-format.js";
 import { enqueuePkbIndexJob } from "../jobs/embed-pkb-file.js";
 import { PKB_WORKSPACE_SCOPE } from "../pkb/types.js";
 
@@ -75,87 +76,16 @@ export function handleRemember(
   return { success: true, message: "Saved to knowledge base." };
 }
 
-/**
- * Format `now` as a buffer-entry timestamp (`Mon D, h:mm AM/PM`). Exported so
- * the memory v2 consolidation job can present its cutoff in the same shape
- * the buffer entries use, making the agent's "timestamp ≥ cutoff" comparison
- * unambiguous at minute precision.
- */
-export function formatBufferTimestamp(now: Date): string {
-  const month = now.toLocaleString("en-US", { month: "short" });
-  const day = now.getDate();
-  const hours = now.getHours();
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  const ampm = hours >= 12 ? "PM" : "AM";
-  const displayHour = hours % 12 || 12;
-  return `${month} ${day}, ${displayHour}:${minutes} ${ampm}`;
-}
-
-/**
- * Trailing HTML-comment marker that stamps a buffer entry with the
- * conversation it originated in, e.g. `<!--cid:abc123-->`. Kept as an HTML
- * comment so the entry stays human-readable and renders invisibly in any
- * markdown view, while the static-context injector can split entries by
- * origin (current chat vs. "your other chats").
- *
- * Backward-compatible: entries written before this change (and sweep-job
- * entries, which span many conversations and carry no single origin) simply
- * omit the marker. {@link parseBufferEntryOrigin} treats a missing marker as
- * "no known origin".
- */
-const CID_MARKER_RE = /\s*<!--\s*cid:([^\s>]+)\s*-->\s*$/;
-
-/**
- * Build a timestamped bullet entry for `buffer.md` / `archive/<date>.md`.
- *
- * Format mirrors the long-standing v1 PKB layout so v2 buffers stay
- * human-readable and downstream consumers (sweep, consolidation) can parse
- * the same shape regardless of which path produced the entry.
- *
- * When `conversationId` is supplied, a trailing `<!--cid:...-->` marker is
- * appended so the injector can frame entries from other conversations as
- * background recall. Callers with no single source conversation (e.g. the
- * cross-conversation sweep job) omit it — those entries stay untagged and
- * parse exactly as pre-marker entries did.
- *
- * Exported so memory v2 sweep / extractor jobs format their auto-remembered
- * entries identically to user-facing `remember()` calls.
- */
-export function formatRememberEntry(
-  content: string,
-  now: Date,
-  conversationId?: string,
-): string {
-  const marker =
-    conversationId && conversationId.trim().length > 0
-      ? ` <!--cid:${conversationId.trim()}-->`
-      : "";
-  return `- [${formatBufferTimestamp(now)}] ${content}${marker}\n`;
-}
-
-/**
- * Split a single buffer-entry line into its origin conversation id (if the
- * line carries a `<!--cid:...-->` marker) and the line with that marker
- * stripped for display.
- *
- * Backward-compatible: a line with no marker returns `{ conversationId:
- * undefined, display: <line unchanged> }`, so old/untagged entries are
- * treated as having no known origin.
- *
- * Exported for the static-context injector, which partitions the buffer into
- * current-conversation vs. other-conversation entries.
- */
-export function parseBufferEntryOrigin(line: string): {
-  conversationId: string | undefined;
-  display: string;
-} {
-  const match = line.match(CID_MARKER_RE);
-  if (!match) return { conversationId: undefined, display: line };
-  return {
-    conversationId: match[1],
-    display: line.replace(CID_MARKER_RE, ""),
-  };
-}
+// The buffer entry FORMAT (timestamp shape, entry matcher, origin marker,
+// body nesting) is owned by `../buffer-format.ts` — one writer, one matcher,
+// so a fact's content can never imitate the entry delimiter. Re-exported here
+// because this module historically owned the helpers and existing consumers
+// (sweep job, consolidation, static-context, pending-buffer) import from it.
+export {
+  formatBufferTimestamp,
+  formatRememberEntry,
+  parseBufferEntryOrigin,
+} from "../buffer-format.js";
 
 /**
  * Append `entry` to `<rootDir>/buffer.md` and `<rootDir>/archive/<today>.md`,
