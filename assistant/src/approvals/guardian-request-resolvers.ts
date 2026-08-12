@@ -30,7 +30,7 @@ import type { ApprovalAction } from "../runtime/channel-approval-types.js";
 import { createOutboundSession } from "../runtime/channel-verification-service.js";
 import { deliverChannelReply } from "../runtime/gateway-client.js";
 import * as pendingInteractions from "../runtime/pending-interactions.js";
-import { TC_GRANT_WAIT_MAX_MS } from "../tools/tool-approval-handler.js";
+import { resolveInlineGrantWaitMs } from "../tools/tool-approval-handler.js";
 import { getLogger } from "../util/logger.js";
 
 const log = getLogger("guardian-request-resolvers");
@@ -846,7 +846,10 @@ const toolGrantRequestResolver: GuardianRequestResolver = {
     // can outlive the actual waiter if the daemon crashes or restarts during
     // the wait. To avoid permanently suppressing the retry notification, we
     // treat the marker as stale if the encoded start timestamp is older than
-    // the maximum wait budget plus a 30s buffer.
+    // the maximum wait budget plus a 30s buffer. The budget is read from the
+    // same resolver the waiter itself uses, so a config change moves both
+    // together; sizing this off a constant would let it fall below the real
+    // wait and declare a live waiter dead.
     const INLINE_WAIT_STALENESS_BUFFER_MS = 30_000;
     const freshRequest = getCanonicalGuardianRequest(request.id);
     const followupState = freshRequest?.followupState ?? "";
@@ -864,7 +867,7 @@ const toolGrantRequestResolver: GuardianRequestResolver = {
         ? Date.now() - waitStartMs
         : Infinity; // Treat unparseable timestamps as stale for safety.
       const stalenessThresholdMs =
-        TC_GRANT_WAIT_MAX_MS + INLINE_WAIT_STALENESS_BUFFER_MS;
+        resolveInlineGrantWaitMs() + INLINE_WAIT_STALENESS_BUFFER_MS;
       if (markerAgeMs > stalenessThresholdMs) {
         log.warn(
           {

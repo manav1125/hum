@@ -88,6 +88,29 @@ mock.module("../runtime/gateway-client.js", () => ({
   },
 }));
 
+// Config-loader passthrough with a single overridable knob: the inline grant
+// wait resolves its budget from `timeouts.permissionTimeoutSec`, and the
+// budget test needs to shrink it without touching the real workspace config.
+const actualConfigLoader = await import("../config/loader.js");
+// Bind the real function NOW: after mock.module the namespace's `getConfig`
+// resolves to the mock, and calling it from inside the mock would recurse.
+const realGetConfig = actualConfigLoader.getConfig;
+let permissionTimeoutSecOverride: number | undefined;
+mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
+  getConfig: () => {
+    const cfg = realGetConfig();
+    if (permissionTimeoutSecOverride === undefined) return cfg;
+    return {
+      ...cfg,
+      timeouts: {
+        ...cfg.timeouts,
+        permissionTimeoutSec: permissionTimeoutSecOverride,
+      },
+    };
+  },
+}));
+
 import { applyCanonicalGuardianDecision } from "../approvals/guardian-decision-primitive.js";
 import type { ActorContext } from "../approvals/guardian-request-resolvers.js";
 import {
@@ -104,12 +127,13 @@ import { getSqlite } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { scopedApprovalGrants } from "../memory/schema.js";
 import {
+  TC_GRANT_WAIT_MAX_MS,
   ToolApprovalHandler,
   waitForInlineGrant,
 } from "../tools/tool-approval-handler.js";
 import type { ToolContext, ToolLifecycleEvent } from "../tools/types.js";
 
-/** Short wait config for tests — avoids blocking test suite on the 60s default. */
+/** Short wait config for tests: keeps escalation cases off the real budget. */
 const TEST_INLINE_WAIT_CONFIG = { maxWaitMs: 100, intervalMs: 20 };
 
 initializeDb();
@@ -513,6 +537,50 @@ describe("inline wait-and-resume", () => {
     expect(elapsed).toBeGreaterThanOrEqual(80);
     expect(elapsed).toBeLessThan(500);
   });
+
+  test("waitForInlineGrant spends timeouts.permissionTimeoutSec when no explicit budget is given", async () => {
+    // The guardian's escalation window must track the configured approval
+    // budget rather than a compiled-in constant, so an operator changing
+    // permissionTimeoutSec actually moves the window a guardian has to
+    // answer in. Omitting maxWaitMs is what production does.
+    permissionTimeoutSecOverride = 0.15;
+    try {
+      const req = createCanonicalGuardianRequest({
+        kind: "tool_grant_request",
+        sourceType: "channel",
+        sourceChannel: "telegram",
+        conversationId: "conv-1",
+        requesterExternalUserId: "requester-1",
+        guardianExternalUserId: "guardian-1",
+        guardianPrincipalId: "test-principal-id",
+        toolName: "bash",
+        inputDigest: "sha256:configbudget",
+        expiresAt: Date.now() + 60_000,
+      });
+
+      const start = Date.now();
+      const result = await waitForInlineGrant(
+        req.id,
+        {
+          toolName: "bash",
+          inputDigest: "sha256:configbudget",
+          consumingRequestId: "consume-config-budget",
+        },
+        { intervalMs: 20 },
+      );
+      const elapsed = Date.now() - start;
+
+      // Timeout DENIES — the polarity is fail-closed regardless of budget.
+      expect(result.outcome).toBe("timeout");
+      // Bounded well under TC_GRANT_WAIT_MAX_MS: a regression that ignores
+      // config and falls back to the constant blows this ceiling by ~400x.
+      expect(elapsed).toBeGreaterThanOrEqual(120);
+      expect(elapsed).toBeLessThan(3_000);
+      expect(elapsed).toBeLessThan(TC_GRANT_WAIT_MAX_MS);
+    } finally {
+      permissionTimeoutSecOverride = undefined;
+    }
+  }, 10_000);
 
   test("waitForInlineGrant returns aborted when signal fires during wait", async () => {
     const req = createCanonicalGuardianRequest({

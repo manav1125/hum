@@ -26,7 +26,7 @@ export const TimeoutConfigSchema = z
       .positive("timeouts.permissionTimeoutSec must be a positive number")
       .default(3600)
       .describe(
-        "How long to wait for user permission approval before timing out (seconds). Default 1h so an approval survives the user navigating between threads or stepping away, rather than auto-denying after a few minutes and stranding a late Allow.",
+        "How long to wait for a human to approve a tool call before timing out (seconds). Spent by both approval paths: the interactive permission prompt, and the inline wait when a contact's sensitive tool call is escalated to the guardian. Default 1h so an approval survives the user navigating between threads or stepping away, rather than auto-denying after a few minutes and stranding a late Allow.",
       ),
     toolExecutionTimeoutSec: z
       .number({ error: "timeouts.toolExecutionTimeoutSec must be a number" })
