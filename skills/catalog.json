@@ -129,6 +129,29 @@
       "updatedAt": "2026-06-03T03:10:07.000Z"
     },
     {
+      "id": "daily-briefing",
+      "name": "daily-briefing",
+      "description": "Proactive daily briefing that fires on a recurring schedule, pulls recent memory and workspace context, composes a structured summary (action items, progress, radar, next steps), and delivers it to your channels — as a notification/DM, or posted into a Slack channel as a threaded Block Kit digest. Enable with a time like \"set up my daily briefing at 9am\". Disable, reschedule, or check status at any time.",
+      "metadata": {
+        "emoji": "📋",
+        "vellum": {
+          "category": "productivity",
+          "display-name": "Daily Briefing",
+          "user-invocable": "true",
+          "activation-hints": [
+            "User asks to set up, schedule, pause, resume, or re-time a recurring daily briefing or morning digest",
+            "User asks for a daily digest posted into a Slack channel",
+            "User asks when their next briefing is or what time it fires"
+          ],
+          "avoid-when": [
+            "User wants one briefing right now rather than a recurring schedule — use start-the-day instead"
+          ]
+        }
+      },
+      "compatibility": "Designed for Cue personal assistants",
+      "updatedAt": "2026-08-12T00:00:00.000Z"
+    },
+    {
       "id": "deploy-fullstack-vercel",
       "name": "deploy-fullstack-vercel",
       "description": "Build and deploy a full-stack app (React frontend + Python/FastAPI backend) or a Cue app to Vercel as a serverless demo with seeded data",
@@ -836,17 +859,27 @@
     {
       "id": "start-the-day",
       "name": "start-the-day",
-      "description": "Get a personalized daily briefing with weather, news, and actionable insights",
+      "description": "An on-demand personal daily briefing — weather, headlines, the shape of your day, and one thing worth your attention — in a sharp executive-assistant voice. The general-purpose morning brief; richer work or admin digests compose it as their general layer.",
       "metadata": {
         "icon": "assets/icon.svg",
         "emoji": "🌅",
         "vellum": {
           "category": "productivity",
-          "display-name": "Start the Day"
+          "display-name": "Start the Day",
+          "user-invocable": "true",
+          "activation-hints": [
+            "User asks to start their day, for a morning briefing, or a daily briefing/recap",
+            "User asks what's going on today or what they should know this morning",
+            "User wants weather, headlines, and a quick personal rundown"
+          ],
+          "avoid-when": [
+            "User wants a detailed work/admin digest — deep inbox triage, follow-up tracking, or meeting-by-meeting prep — rather than a general briefing",
+            "User wants to set up recurring or automated briefings rather than one right now"
+          ]
         }
       },
       "compatibility": "Designed for Cue personal assistants",
-      "updatedAt": "2026-06-03T03:10:07.000Z"
+      "updatedAt": "2026-08-12T00:00:00.000Z"
     },
     {
       "id": "stripe-app-setup",
