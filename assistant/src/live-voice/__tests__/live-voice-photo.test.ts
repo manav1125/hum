@@ -44,9 +44,8 @@ interface FakeConversation {
 }
 
 let conversation: FakeConversation;
-const conversationStoreActual = await import(
-  "../../daemon/conversation-store.js"
-);
+const conversationStoreActual =
+  await import("../../daemon/conversation-store.js");
 mock.module("../../daemon/conversation-store.js", () => ({
   ...conversationStoreActual,
   getOrCreateConversation: async () => conversation,
@@ -180,7 +179,10 @@ describe("persistLiveVoicePhoto", () => {
 
     await persistLiveVoicePhoto("conv-1", "att-1");
 
-    expect(processingDuringPersist).toBe(true);
+    // Widen at the read: TS narrows the closed-over `let` to its `null`
+    // initializer at this point (the assignment happens inside the
+    // persistImpl closure), which fails `toBe(true)` at the type level.
+    expect(processingDuringPersist as boolean | null).toBe(true);
     expect(conversation.processing).toBe(false);
   });
 
