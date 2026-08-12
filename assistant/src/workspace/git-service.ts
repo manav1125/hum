@@ -942,6 +942,31 @@ export class WorkspaceGitService {
    * mid-walk with `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`, and every commit fails
    * forever while still paying the full tree walk on each turn and heartbeat.
    */
+  /**
+   * Insert the no-helper flags into any patch-rendering git read.
+   *
+   * `git show`/`git diff`/`git log` honour repository-controlled helpers by
+   * default: a `.gitattributes` entry selects a diff driver, and a
+   * `diff.<driver>.textconv` or `diff.<driver>.command` setting names a
+   * program git then EXECUTES while rendering the patch. Workspace files and
+   * git metadata are model-writable, so without these flags merely viewing a
+   * diff would run whatever the workspace asked for, inside the daemon
+   * (upstream ATL-1238 / 479d81cdc3). Applied centrally in `execGit` so a
+   * future call site cannot quietly omit them.
+   */
+  private guardDiffHelperExecution(args: string[]): string[] {
+    const subcommand = args[0];
+    if (
+      subcommand === "diff" ||
+      subcommand === "show" ||
+      subcommand === "log" ||
+      subcommand === "format-patch"
+    ) {
+      return [subcommand, "--no-textconv", "--no-ext-diff", ...args.slice(1)];
+    }
+    return args;
+  }
+
   private async execGit(
     args: string[],
     options?: { signal?: AbortSignal },
@@ -950,8 +975,9 @@ export class WorkspaceGitService {
     const timeoutMs = config.workspaceGit?.interactiveGitTimeoutMs ?? 10_000;
     const maxBuffer =
       config.workspaceGit?.maxOutputBytes ?? DEFAULT_GIT_MAX_OUTPUT_BYTES;
+    const guardedArgs = this.guardDiffHelperExecution(args);
     try {
-      const { stdout, stderr } = await execFileAsync("git", args, {
+      const { stdout, stderr } = await execFileAsync("git", guardedArgs, {
         cwd: this.workspaceDir,
         encoding: "utf-8",
         timeout: timeoutMs,

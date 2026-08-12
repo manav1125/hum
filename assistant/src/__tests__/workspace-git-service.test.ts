@@ -832,8 +832,11 @@ describe("WorkspaceGitService", () => {
       execFileSync("git", ["config", "user.email", "assistant@vellum.ai"], {
         cwd: testDir,
       });
+      // Mirrors WORKSPACE_GITIGNORE_RULES in git-service.ts. When the
+      // canonical rule list grows, this fixture must grow with it or the
+      // idempotency assertion fails on the appended entries.
       const gitignoreContent =
-        "# Runtime state - excluded from git tracking\ndata/db/\ndata/qdrant/\nlogs/\n*.log\n*.sock\n*.pid\n*.sqlite\n*.sqlite-journal\n*.sqlite-wal\n*.sqlite-shm\n*.db\n*.db-journal\n*.db-wal\n*.db-shm\nvellum.pid\nsession-token\n";
+        "# Runtime state - excluded from git tracking\ndata/db/\ndata/qdrant/\nlogs/\n*.log\n*.sock\n*.pid\n*.sqlite\n*.sqlite-journal\n*.sqlite-wal\n*.sqlite-shm\n*.db\n*.db-journal\n*.db-wal\n*.db-shm\nvellum.pid\nsession-token\nembedding-models/\nconversations/\nmedia/\ndata/attachments/\ndata/media/\nbrowser-profile/\ngateway-security/\ngateway-security-v2/\ncompiler-tools/\npackage-cache/\nmarketplace-cache/\n*.pcm\n";
       writeFileSync(join(testDir, ".gitignore"), gitignoreContent);
       writeFileSync(join(testDir, "file.txt"), "content");
       execFileSync("git", ["add", "-A"], { cwd: testDir });
@@ -1382,5 +1385,53 @@ describe("WorkspaceGitService", () => {
       expect(result.committed).toBe(true);
       expect(existsSync(markerPath)).toBe(false);
     });
+  });
+});
+
+describe("diff-helper execution guard (ATL-1238 class)", () => {
+  let guardDir: string;
+
+  beforeEach(() => {
+    guardDir = join(
+      tmpdir(),
+      `vellum-test-guard-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(guardDir, { recursive: true });
+    _resetGitServiceRegistry();
+  });
+
+  afterEach(() => {
+    rmSync(guardDir, { recursive: true, force: true });
+  });
+
+  test("a repository-controlled textconv driver is never executed by diff reads", async () => {
+    const service = getWorkspaceGitService(guardDir);
+    // Seed a repo whose .gitattributes selects a diff driver and whose config
+    // names a program for it — both writable through ordinary workspace
+    // paths. Rendering a patch must not hand control to that program.
+    writeFileSync(join(guardDir, "note.md"), "# Note\n");
+    writeFileSync(join(guardDir, ".gitattributes"), "*.md diff=evil\n");
+    await service.commitChanges("initial");
+    writeFileSync(join(guardDir, "note.md"), "# Note\n\nEdited.\n");
+    await service.commitChanges("edit");
+
+    const sentinel = join(guardDir, "textconv-executed");
+    execFileSync(
+      "git",
+      ["config", "diff.evil.textconv", `sh -c "touch ${sentinel}; cat"`],
+      { cwd: guardDir },
+    );
+
+    const { stdout } = await service.runReadOnlyGit([
+      "log",
+      "-p",
+      "--",
+      "note.md",
+    ]);
+
+    // The driver stays unrun...
+    expect(existsSync(sentinel)).toBe(false);
+    // ...and the diff still renders, so the hardening did not cost the read.
+    expect(stdout).toContain("Edited.");
   });
 });
