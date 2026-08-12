@@ -31,6 +31,9 @@ let captured: import("../gemini-live-client.js").GeminiLiveClientCallbacks;
 /** Mic audio the session actually forwarded to Gemini (post echo gate). */
 const forwardedAudio: Uint8Array[] = [];
 
+/** Still images the session forwarded to Gemini (mid-call camera photos). */
+const forwardedImages: Array<{ dataBase64: string; mimeType?: string }> = [];
+
 class FakeGeminiLiveClient {
   constructor(options: { callbacks: typeof captured }) {
     captured = options.callbacks;
@@ -38,6 +41,9 @@ class FakeGeminiLiveClient {
   async connect(): Promise<void> {}
   sendAudio(chunk: Uint8Array): void {
     forwardedAudio.push(chunk);
+  }
+  sendImage(dataBase64: string, mimeType?: string): void {
+    forwardedImages.push({ dataBase64, mimeType });
   }
   sendAudioStreamEnd(): void {}
   sendToolResponse(): void {}
@@ -71,6 +77,46 @@ mock.module("../../live-voice/synthesize-live-voice-session.js", () => ({
   synthesizeLiveVoiceSession: async () => ({ newTaskTitles: [] }),
 }));
 
+// attach_image seams: the persist and the attachment hydration.
+let photoCalls: Array<{ conversationId: string; attachmentId: string }> = [];
+let photoResult: { ok: boolean; messageId?: string } = {
+  ok: true,
+  messageId: "msg-1",
+};
+const photoActual = await import("../../live-voice/live-voice-photo.js");
+mock.module("../../live-voice/live-voice-photo.js", () => ({
+  ...photoActual,
+  persistLiveVoicePhoto: async (
+    conversationId: string,
+    attachmentId: string,
+  ) => {
+    photoCalls.push({ conversationId, attachmentId });
+    return photoResult;
+  },
+}));
+
+const attachmentsActual = await import("../../memory/attachments-store.js");
+mock.module("../../memory/attachments-store.js", () => ({
+  ...attachmentsActual,
+  getAttachmentsByIds: (ids: string[]) =>
+    ids.flatMap((id) =>
+      id === "att-42"
+        ? [
+            {
+              id,
+              originalFilename: "photo-1.jpg",
+              mimeType: "image/jpeg",
+              sizeBytes: 5,
+              kind: "image",
+              thumbnailBase64: null,
+              dataBase64: "aGVsbG8=",
+              createdAt: 0,
+            },
+          ]
+        : [],
+    ),
+}));
+
 const { createGeminiLiveSession } = await import("../gemini-live-session.js");
 
 type Frame = { type: string; [key: string]: unknown };
@@ -98,6 +144,9 @@ async function startSession(startOverrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   captured = undefined as unknown as typeof captured;
   forwardedAudio.length = 0;
+  forwardedImages.length = 0;
+  photoCalls = [];
+  photoResult = { ok: true, messageId: "msg-1" };
 });
 
 describe("gemini-live turn boundary", () => {
@@ -206,5 +255,97 @@ describe("gemini-live echo gate: echo-safe clients", () => {
 
     expect(forwardedAudio).toHaveLength(1);
     expect(forwardedAudio[0]!.every((byte) => byte === 0)).toBe(false);
+  });
+});
+
+describe("gemini-live attach_image (mid-call camera photos)", () => {
+  async function waitFor(
+    predicate: () => boolean,
+    attempts = 100,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (predicate()) return;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    if (!predicate()) {
+      throw new Error("Timed out waiting for attach_image condition");
+    }
+  }
+
+  test("the ready frame advertises the attachImage capability", async () => {
+    const frames: Frame[] = [];
+    const session = createGeminiLiveSession({
+      sessionId: "s-ready",
+      startFrame: {
+        type: "start",
+        audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+        conversationId: "conv-ready",
+      } as never,
+      sendFrame: async (payload) => {
+        frames.push(payload as Frame);
+        return { ...(payload as Frame), seq: frames.length } as never;
+      },
+    });
+    await session.start();
+
+    expect(frames[0]).toMatchObject({ type: "ready", attachImage: true });
+    session.close("client_end");
+  });
+
+  test("attach_image forwards the image to Gemini AND persists it", async () => {
+    const { session, frames } = await startSession();
+
+    session.handleClientFrame({
+      type: "attach_image",
+      attachmentId: "att-42",
+    });
+    await waitFor(() => photoCalls.length === 1);
+
+    // Leg 1: the live model sees the photo now (realtime video channel).
+    expect(forwardedImages).toEqual([
+      { dataBase64: "aGVsbG8=", mimeType: "image/jpeg" },
+    ]);
+    // Leg 2: the transcript gets the durable row (no turn, no frames).
+    expect(photoCalls).toEqual([
+      { conversationId: "conv-1", attachmentId: "att-42" },
+    ]);
+    expect(frames).toHaveLength(0);
+  });
+
+  test("an unhydratable attachment still persists, forwarding nothing", async () => {
+    const { session } = await startSession();
+
+    session.handleClientFrame({
+      type: "attach_image",
+      attachmentId: "att-unknown",
+    });
+    await waitFor(() => photoCalls.length === 1);
+
+    expect(forwardedImages).toHaveLength(0);
+    expect(photoCalls).toEqual([
+      { conversationId: "conv-1", attachmentId: "att-unknown" },
+    ]);
+  });
+
+  test("a failed persist answers with a non-fatal attach_image error", async () => {
+    photoResult = { ok: false };
+    const { session, frames } = await startSession();
+
+    session.handleClientFrame({
+      type: "attach_image",
+      attachmentId: "att-42",
+    });
+    await waitFor(() =>
+      frames.some(
+        (frame) =>
+          frame.type === "error" && frame.frameType === "attach_image",
+      ),
+    );
+
+    expect(frames.find((frame) => frame.type === "error")).toMatchObject({
+      type: "error",
+      frameType: "attach_image",
+      fatal: false,
+    });
   });
 });

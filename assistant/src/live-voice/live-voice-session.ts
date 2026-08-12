@@ -198,9 +198,11 @@ import {
   pickProgressPhrase,
   PROGRESS_FALLBACK_PHRASES_BY_LANGUAGE,
 } from "./progress-phrases.js";
+import { persistLiveVoicePhoto } from "./live-voice-photo.js";
 import {
   type LiveVoiceApprovalPendingServerFrame,
   type LiveVoiceApprovalResolvedServerFrame,
+  type LiveVoiceClientAttachImageFrame,
   type LiveVoiceClientFrame,
   type LiveVoiceClientUpdateConfigFrame,
   type LiveVoiceMinimizeRoomServerFrame,
@@ -1054,6 +1056,11 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         // detect a daemon that ignored its requested turnDetection and fall
         // back to client-side VAD. Additive-optional: old clients ignore it.
         turnDetection: this.turnDetection,
+        // Capability advertise: this daemon accepts `attach_image` (mid-call
+        // camera photos). The client renders its camera only on this flag —
+        // an older daemon rejects the frame with a session-fatal
+        // `unknown_type`, so silence here keeps the camera hidden.
+        attachImage: true,
       });
     } catch (err) {
       if (err instanceof LiveVoiceSessionStartupError) {
@@ -1092,7 +1099,42 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       case "update_config":
         this.applyConfigUpdate(frame);
         return;
+      case "attach_image":
+        this.persistPhoto(frame);
+        return;
     }
+  }
+
+  /**
+   * Persist a photo taken mid-call into the conversation, running no turn.
+   *
+   * Fire-and-forget on purpose: the persist waits out any in-flight turn, and
+   * the socket must keep pumping audio meanwhile. The client already showed a
+   * thumbnail from the local frame, so nothing on screen is waiting on this.
+   *
+   * The photo becomes its own user message rather than riding the next spoken
+   * turn, which is what makes shutter-then-speak and speak-then-shutter
+   * behave the same: either way the model's history has the image by the time
+   * it answers. See `live-voice-photo.ts` for the full reasoning.
+   */
+  private persistPhoto(frame: LiveVoiceClientAttachImageFrame): void {
+    void persistLiveVoicePhoto(this.conversationId, frame.attachmentId).then(
+      (result) => {
+        if (!result.ok && !this.isClosed) {
+          void this.sendFrame({
+            type: "error",
+            code: LiveVoiceProtocolErrorCode.InvalidFrame,
+            message: "Could not attach that photo to the conversation.",
+            // Names the photo as the casualty so the client can retract the
+            // thumbnail it already showed, rather than filing this with the
+            // transient transcriber and TTS blips that share `fatal: false`.
+            frameType: "attach_image",
+            // The session is fine; only this photo failed.
+            fatal: false,
+          });
+        }
+      },
+    );
   }
 
   /**

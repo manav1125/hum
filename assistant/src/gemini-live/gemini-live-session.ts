@@ -24,11 +24,13 @@ import type {
   LiveVoiceSessionFactoryContext,
 } from "../live-voice/live-voice-session-manager.js";
 import { LiveVoiceSessionStartupError } from "../live-voice/live-voice-session-manager.js";
+import { persistLiveVoicePhoto } from "../live-voice/live-voice-photo.js";
 import {
   ensureLiveVoiceThread,
   finalizeLiveVoiceThread,
   persistLiveVoiceTurn,
 } from "../live-voice/live-voice-thread.js";
+import { getAttachmentsByIds } from "../memory/attachments-store.js";
 import { synthesizeLiveVoiceSession } from "../live-voice/synthesize-live-voice-session.js";
 import { resolveVoicePersona } from "../live-voice/voice-personas.js";
 import type { AssistantEvent } from "../runtime/assistant-event.js";
@@ -327,6 +329,10 @@ export class GeminiLiveSession implements LiveVoiceSession {
       type: "ready",
       sessionId: this.context.sessionId,
       conversationId: this.conversationId,
+      // Capability advertise: this engine accepts `attach_image` (mid-call
+      // camera photos) — same convention as the cascade's ready frame. The
+      // client renders its camera only when this flag arrived.
+      attachImage: true,
     });
     log.info(
       { sessionId: this.context.sessionId, model: resolveGeminiLiveModel() },
@@ -334,7 +340,11 @@ export class GeminiLiveSession implements LiveVoiceSession {
     );
   }
 
-  handleClientFrame(frame: { type: string; dataBase64?: string }): void {
+  handleClientFrame(frame: {
+    type: string;
+    dataBase64?: string;
+    attachmentId?: string;
+  }): void {
     if (!this.client) return;
     switch (frame.type) {
       case "audio":
@@ -352,8 +362,63 @@ export class GeminiLiveSession implements LiveVoiceSession {
         // Handled server-side via incoming audio; nothing to forward.
         this.currentTurnId = null;
         break;
+      case "attach_image":
+        if (frame.attachmentId) this.attachImage(frame.attachmentId);
+        break;
       // "end" → the manager calls close().
     }
+  }
+
+  /**
+   * A photo taken mid-call. Two legs, both required:
+   *
+   * 1. **Show the model now** — hydrate the uploaded bytes and push them onto
+   *    the live session's realtime video channel, so "what's this?" spoken a
+   *    breath later is answered about the picture. Unlike the cascade, this
+   *    engine's model never re-reads conversation history mid-call, so the
+   *    persisted row alone would be invisible to it until the next call.
+   * 2. **Persist it** — the same `persistLiveVoicePhoto` the cascade uses, so
+   *    the photo lands in the transcript as its own user message (no turn)
+   *    and survives the call.
+   *
+   * Fire-and-forget; a failure to store sends the same non-fatal
+   * `attach_image` error frame the cascade sends, so the client's photo strip
+   * can retract the thumbnail.
+   */
+  private attachImage(attachmentId: string): void {
+    try {
+      const [attachment] = getAttachmentsByIds([attachmentId], {
+        hydrateFileData: true,
+      });
+      if (attachment?.dataBase64) {
+        this.client?.sendImage(attachment.dataBase64, attachment.mimeType);
+      } else {
+        log.warn(
+          { attachmentId },
+          "gemini-live attach_image: attachment did not hydrate; persisting only",
+        );
+      }
+    } catch (err) {
+      log.warn(
+        { err, attachmentId },
+        "gemini-live attach_image: failed to forward image to the live session",
+      );
+    }
+
+    void persistLiveVoicePhoto(this.conversationId, attachmentId).then(
+      (result) => {
+        if (!result.ok && !this.closed) {
+          void this.context.sendFrame({
+            type: "error",
+            code: "invalid_frame",
+            message: "Could not attach that photo to the conversation.",
+            frameType: "attach_image",
+            // The session is fine; only this photo failed.
+            fatal: false,
+          });
+        }
+      },
+    );
   }
 
   handleBinaryAudio(chunk: Uint8Array): void {

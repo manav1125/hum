@@ -755,6 +755,24 @@ export class GeminiLiveClient {
     });
   }
 
+  /**
+   * Send one still image into the live session (a mid-call camera photo).
+   * Mirrors {@link sendAudio}: Gemini Live takes stills on the realtime
+   * `video` input channel, one frame at a time. During a reconnect gap the
+   * send drops silently, same as audio — the caller's persist path is what
+   * makes the photo durable, this is only what lets the model see it now.
+   */
+  sendImage(dataBase64: string, mimeType = "image/jpeg"): void {
+    this.send({
+      realtimeInput: {
+        video: {
+          data: dataBase64,
+          mimeType,
+        },
+      },
+    });
+  }
+
   /** Signal end-of-input so server VAD closes the turn promptly. */
   sendAudioStreamEnd(): void {
     this.send({ realtimeInput: { audioStreamEnd: true } });
