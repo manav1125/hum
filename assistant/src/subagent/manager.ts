@@ -307,8 +307,14 @@ export class SubagentManager {
     // permissions must still be scoped to the actor that spawned them. Without
     // this, tool execution falls back to `unknown` trust and guardian-owned
     // desktop turns get denied as unverified.
-    if (parentConversation?.trustContext) {
-      conversation.setTrustContext({ ...parentConversation.trustContext });
+    // Inherit the parent's *turn* trust ahead of its conversation-level slot:
+    // the slot holds whichever actor sent most recently, so a spawn during
+    // one actor's turn would otherwise run under another's privileges.
+    const parentTurnTrust =
+      parentConversation?.currentTurnTrustContext ??
+      parentConversation?.trustContext;
+    if (parentTurnTrust) {
+      conversation.setTrustContext({ ...parentTurnTrust });
     }
     const parentAuthContext = parentConversation?.getAuthContext();
     if (parentAuthContext) {

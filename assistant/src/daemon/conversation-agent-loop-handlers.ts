@@ -104,6 +104,7 @@ import type {
   WebSearchMetadata,
   WebSearchResultItem,
 } from "./message-types/web-activity.js";
+import { turnOrRestingTrust } from "./trust-context.js";
 import { TURN_IN_FLIGHT_METADATA_KEY } from "./turn-recovery-markers.js";
 
 const log = getLogger("agent-loop-handlers");
@@ -754,7 +755,7 @@ function buildAssistantChannelMetadata(
   deps: EventHandlerDeps,
 ): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
-    ...provenanceFromTrustContext(deps.ctx.trustContext),
+    ...provenanceFromTrustContext(turnOrRestingTrust(deps.ctx)),
     userMessageChannel: deps.turnChannelContext.userMessageChannel,
     assistantMessageChannel: deps.turnChannelContext.assistantMessageChannel,
     userMessageInterface: deps.turnInterfaceContext.userMessageInterface,
@@ -764,7 +765,12 @@ function buildAssistantChannelMetadata(
   };
 
   if (deps.turnChannelContext.assistantMessageChannel === "slack") {
-    const channelId = deps.ctx.trustContext?.requesterChatId;
+    // The whole envelope resolves from one turn-local snapshot: the actor the
+    // provenance above names is the actor whose channel the row routes to.
+    // Reading the live slot here instead would let a concurrent inbound
+    // repoint the reply mid-turn, and could stamp one actor's class beside
+    // another actor's routing identity.
+    const channelId = turnOrRestingTrust(deps.ctx)?.requesterChatId;
     if (channelId) {
       const threadTs = getThreadTs(deps.ctx.conversationId);
       const timestampTimezone = resolveAssistantReplyTimestampTimezone(
@@ -1135,7 +1141,7 @@ function buildToolResultMetadata(
   deps: EventHandlerDeps,
 ): Record<string, unknown> {
   return {
-    ...provenanceFromTrustContext(deps.ctx.trustContext),
+    ...provenanceFromTrustContext(turnOrRestingTrust(deps.ctx)),
     userMessageChannel: deps.turnChannelContext.userMessageChannel,
     assistantMessageChannel: deps.turnChannelContext.assistantMessageChannel,
     userMessageInterface: deps.turnInterfaceContext.userMessageInterface,

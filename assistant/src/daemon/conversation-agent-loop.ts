@@ -124,7 +124,7 @@ import type {
   SurfaceType,
   UsageStats,
 } from "./message-protocol.js";
-import type { TrustContext } from "./trust-context.js";
+import { type TrustContext, turnOrRestingTrust } from "./trust-context.js";
 import { TURN_IN_FLIGHT_METADATA_KEY } from "./turn-recovery-markers.js";
 import {
   recordTurnStageTiming,
@@ -272,6 +272,14 @@ export async function runAgentLoopImpl(
      * spawns).
      */
     overrideProfile?: string;
+    /**
+     * Trust this turn runs under. Queue drains and `processMessage` pass the
+     * trust captured for the turn's own sender; without it the
+     * initialization below would reset the turn to the conversation slot,
+     * which holds whichever actor sent most recently rather than the one
+     * this turn belongs to.
+     */
+    turnTrustContext?: TrustContext;
   },
 ): Promise<void> {
   if (!ctx.abortController) {
@@ -282,9 +290,19 @@ export async function runAgentLoopImpl(
   // voice-session-bridge, regenerate, etc.) that invoke runAgentLoop directly
   // without going through processMessage/drainQueue. This ensures the system
   // prompt callback always reads a valid snapshot rather than undefined.
-  // processMessage/drainQueue set these fields before calling runAgentLoop;
-  // those existing assignments remain correct and are merely redundant here.
-  ctx.currentTurnTrustContext = ctx.trustContext;
+  //
+  // The invariant: a turn runs under the trust captured when that turn
+  // started, never under whatever the slot holds when the loop happens to
+  // open. Awaits sit between capture and this line, and the slot is writable
+  // throughout by paths that do not own the turn (channel ingress for another
+  // actor, voice hydration, the voice bridge).
+  //
+  // Callers that own a turn are expected to capture at turn start and pass
+  // `turnTrustContext`. The fallback below serves two populations: direct
+  // callers that legitimately have no turn to capture (subagent manager,
+  // voice bridge, regenerate), and callers that should pass it and do not
+  // yet. Treat a caller reaching the fallback as unverified, not as correct.
+  ctx.currentTurnTrustContext = options?.turnTrustContext ?? ctx.trustContext;
   ctx.currentTurnChannelCapabilities = ctx.channelCapabilities;
 
   const abortController = ctx.abortController;
@@ -596,7 +614,7 @@ export async function runAgentLoopImpl(
       // history rather than silently "sitting there" after reload — the SSE
       // events above are transient and lost once the client reconnects.
       const blockMeta = {
-        ...provenanceFromTrustContext(ctx.trustContext),
+        ...provenanceFromTrustContext(turnOrRestingTrust(ctx)),
         userMessageChannel: capturedTurnChannelContext.userMessageChannel,
         assistantMessageChannel:
           capturedTurnChannelContext.assistantMessageChannel,
@@ -1129,7 +1147,7 @@ export async function runAgentLoopImpl(
     // row here rather than writing a duplicate.
     if (state.pendingToolResults.size > 0) {
       const toolResultMetadata = {
-        ...provenanceFromTrustContext(ctx.trustContext),
+        ...provenanceFromTrustContext(turnOrRestingTrust(ctx)),
         userMessageChannel: capturedTurnChannelContext.userMessageChannel,
         assistantMessageChannel:
           capturedTurnChannelContext.assistantMessageChannel,
@@ -1156,7 +1174,7 @@ export async function runAgentLoopImpl(
         budgetYieldClassification.userMessage,
       );
       const yieldNoticeMetadata = {
-        ...provenanceFromTrustContext(ctx.trustContext),
+        ...provenanceFromTrustContext(turnOrRestingTrust(ctx)),
         userMessageChannel: capturedTurnChannelContext.userMessageChannel,
         assistantMessageChannel:
           capturedTurnChannelContext.assistantMessageChannel,
@@ -1269,7 +1287,7 @@ export async function runAgentLoopImpl(
         }
       }
       const errChannelMeta = {
-        ...provenanceFromTrustContext(ctx.trustContext),
+        ...provenanceFromTrustContext(turnOrRestingTrust(ctx)),
         userMessageChannel: capturedTurnChannelContext.userMessageChannel,
         assistantMessageChannel:
           capturedTurnChannelContext.assistantMessageChannel,
@@ -1584,7 +1602,7 @@ export async function runAgentLoopImpl(
         state.persistedToolUseIds.size === 0
       ) {
         const failureMeta = {
-          ...provenanceFromTrustContext(ctx.trustContext),
+          ...provenanceFromTrustContext(turnOrRestingTrust(ctx)),
           userMessageChannel: capturedTurnChannelContext.userMessageChannel,
           assistantMessageChannel:
             capturedTurnChannelContext.assistantMessageChannel,

@@ -67,6 +67,112 @@ export const FALLBACK_TURN_TRUST: TrustContext = {
 };
 
 /**
+ * Whether two trust contexts describe the same acting identity at the same
+ * privilege, for callers that may only run work under one of them (batched
+ * queue turns being the case that matters).
+ *
+ * Compares the privilege (`trustClass`), the channel a grant is scoped to
+ * (`sourceChannel`), and every field that can carry who the actor is. The
+ * identity fields are covered exhaustively rather than by picking the usual
+ * ones: an ingress that populates only `requesterIdentifier` or
+ * `requesterChatId` would otherwise leave two distinct senders comparing
+ * equal on a pair of undefineds, which is the exact case this guards.
+ *
+ * Deliberately conservative: an absent field never matches a present one, so
+ * unknown identities are treated as distinct. Answering "different" when they
+ * match only costs a batching opportunity; answering "same" when they differ
+ * runs one actor's work under another's privileges.
+ */
+export function sameTrustIdentity(
+  a: TrustContext | undefined,
+  b: TrustContext | undefined,
+): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  return (
+    a.trustClass === b.trustClass &&
+    a.sourceChannel === b.sourceChannel &&
+    a.requesterExternalUserId === b.requesterExternalUserId &&
+    a.requesterChatId === b.requesterChatId &&
+    a.requesterIdentifier === b.requesterIdentifier &&
+    a.guardianExternalUserId === b.guardianExternalUserId &&
+    a.guardianPrincipalId === b.guardianPrincipalId
+  );
+}
+
+/** The two trust fields a conversation-shaped value carries. */
+export interface TrustCarrier {
+  currentTurnTrustContext?: TrustContext;
+  trustContext?: TrustContext;
+}
+
+/**
+ * The acting turn's trust, else the owner's. Structural rather than a
+ * `Conversation` method so call sites handed a conversation-shaped context
+ * (the messaging context, `deps.ctx`, partial test doubles) need only the
+ * fields they already have.
+ *
+ * Use at sites that persist or decide INSIDE a stamped turn: the entry
+ * points (queue drains, `processMessage`, POST /messages) stamp
+ * `currentTurnTrustContext` from the message the turn belongs to, so this
+ * names the turn's actor even after the conversation slot has moved on.
+ */
+export function turnOrRestingTrust(
+  carrier: TrustCarrier | undefined,
+): TrustContext | undefined {
+  return carrier?.currentTurnTrustContext ?? carrier?.trustContext;
+}
+
+/**
+ * The owner's trust, independent of any turn. Use at sites that persist
+ * BEFORE any per-turn stamp exists (channel ingress, wake notices) or after
+ * a turn has settled (post-call notifiers): there the conversation slot was
+ * just written by the site's own resolution — or restored by cleanup — and
+ * the per-turn field may still hold a previous turn's actor, since nothing
+ * clears it at turn end. Reading the turn field at these sites would be the
+ * regression, not the fix.
+ */
+export function restingTrust(
+  carrier: Pick<TrustCarrier, "trustContext"> | undefined,
+): TrustContext | undefined {
+  return carrier?.trustContext;
+}
+
+/**
+ * Fields that can carry the acting principal of the current turn, as held on
+ * a conversation-shaped value. Structural for the same test-double reason as
+ * {@link TrustCarrier}.
+ */
+export interface TurnActorCarrier {
+  currentTurnSourceActorPrincipalId?: string;
+  currentTurnAuthContext?: { actorPrincipalId?: string };
+  authContext?: { actorPrincipalId?: string };
+}
+
+/**
+ * The principal the current turn acts as, for host-proxy routing and other
+ * same-actor comparisons. Host proxies compare this against the principal a
+ * client registered with on its SSE stream — an ACTOR principal — so it must
+ * resolve to the turn's actor, never the workspace guardian: submitting
+ * `guardianPrincipalId` would let a non-guardian turn match against the
+ * guardian's connected client. A turn with no actor identity submits
+ * nothing and fails the same-actor gate closed (`missing_source`).
+ */
+export function resolveTurnActorPrincipalId(
+  carrier: TurnActorCarrier | undefined,
+): string | undefined {
+  return (
+    carrier?.currentTurnSourceActorPrincipalId ??
+    carrier?.currentTurnAuthContext?.actorPrincipalId ??
+    carrier?.authContext?.actorPrincipalId
+  );
+}
+
+/**
  * Resolve the effective trust class for an actor.
  *
  * When HTTP auth is disabled (dev bypass), always returns `'guardian'`

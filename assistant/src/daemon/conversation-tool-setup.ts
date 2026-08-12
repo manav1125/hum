@@ -56,7 +56,11 @@ import {
 } from "./doordash-steps.js";
 import type { ServerMessage, UiSurfaceShow } from "./message-protocol.js";
 import { runPostExecutionSideEffects } from "./tool-side-effects.js";
-import { resolveTrustClass } from "./trust-context.js";
+import {
+  resolveTrustClass,
+  resolveTurnActorPrincipalId,
+  turnOrRestingTrust,
+} from "./trust-context.js";
 
 const log = getLogger("conversation-tool-setup");
 
@@ -211,6 +215,11 @@ export function createToolExecutor(
       markDoordashStepInProgress(ctx, executionInput);
     }
 
+    // Per-turn trust snapshot: prefer the snapshot captured at turn start so
+    // a queued turn (or a concurrent owner send that moves the live slot)
+    // cannot elevate the in-flight turn to guardian — or demote the owner's.
+    const turnTrust = turnOrRestingTrust(ctx);
+
     // Build the context object shared by both the skill_execute interception
     // path and the regular executor path.
     const toolContext: ToolContext = {
@@ -219,20 +228,25 @@ export function createToolExecutor(
       assistantId: ctx.assistantId,
       requestId: ctx.currentRequestId,
       taskRunId: ctx.taskRunId,
-      trustClass: resolveTrustClass(ctx.trustContext),
-      executionChannel: ctx.trustContext?.sourceChannel,
-      sourceActorPrincipalId: ctx.trustContext?.guardianPrincipalId,
+      trustClass: resolveTrustClass(turnTrust),
+      executionChannel: turnTrust?.sourceChannel,
+      // The turn's ACTOR principal, not the guardian's: host proxies compare
+      // this against the principal a client registered with on its SSE
+      // stream. Submitting the guardian principal made a contact's turn (or
+      // a guardian turn whose binding resolution degraded) fail the
+      // same-actor gate — or, worse, match the guardian's client.
+      sourceActorPrincipalId: resolveTurnActorPrincipalId(ctx),
       callSessionId: ctx.callSessionId,
       triggeredBySurfaceAction:
         ctx.surfaceActionRequestIds?.has(ctx.currentRequestId ?? "") ?? false,
       approvedViaPrompt: ctx.approvedViaPromptThisTurn || undefined,
       batchAuthorizedByTask: false,
-      requesterExternalUserId: ctx.trustContext?.requesterExternalUserId,
-      requesterChatId: ctx.trustContext?.requesterChatId,
-      requesterIdentifier: ctx.trustContext?.requesterIdentifier,
-      requesterDisplayName: ctx.trustContext?.requesterDisplayName,
+      requesterExternalUserId: turnTrust?.requesterExternalUserId,
+      requesterChatId: turnTrust?.requesterChatId,
+      requesterIdentifier: turnTrust?.requesterIdentifier,
+      requesterDisplayName: turnTrust?.requesterDisplayName,
       channelPermissionChannelId:
-        ctx.trustContext?.sourceChannel === "slack"
+        turnTrust?.sourceChannel === "slack"
           ? getBindingByConversation(ctx.conversationId)?.externalChatId
           : undefined,
       onOutput,

@@ -53,6 +53,11 @@ import type {
   UserMessageAttachment,
 } from "./message-protocol.js";
 import { buildTransportHints } from "./transport-hints.js";
+import {
+  sameTrustIdentity,
+  type TrustContext,
+  turnOrRestingTrust,
+} from "./trust-context.js";
 import { resolveVerificationSessionIntent } from "./verification-session-intent.js";
 
 const log = getLogger("conversation-process");
@@ -279,6 +284,12 @@ async function buildPassthroughBatch(
     if (candIf?.userMessageInterface !== headInterface?.userMessageInterface)
       break;
     if (candidate.sourceActorPrincipalId !== head.sourceActorPrincipalId) break;
+    // Channel senders carry no principal, so the check above leaves two
+    // different channel contacts looking identical (`undefined ===
+    // undefined`). The batch runs under a single trust context, so split on
+    // the sender's trust identity too or a tail executes with the head's
+    // privileges.
+    if (!sameTrustIdentity(candidate.trustContext, head.trustContext)) break;
     if (classifySlash(candidate.content) !== "passthrough") break;
     if (
       resolveVerificationSessionIntent(candidate.content).kind ===
@@ -507,7 +518,11 @@ async function drainSingleMessage(
 
   // Snapshot persona context at turn start so later tool turns can't pick up
   // a different actor's context if a concurrent request mutates the live fields.
-  conversation.currentTurnTrustContext = conversation.trustContext;
+  // Trust comes from the queued message, not the live slot: the slot holds
+  // whichever actor sent most recently, which is this sender only when nobody
+  // else sent while this message waited.
+  conversation.currentTurnTrustContext =
+    next.trustContext ?? conversation.trustContext;
   conversation.currentTurnChannelCapabilities =
     conversation.channelCapabilities;
 
@@ -523,7 +538,7 @@ async function drainSingleMessage(
   if (slashResult.kind === "unknown") {
     try {
       const drainProvenance = provenanceFromTrustContext(
-        conversation.trustContext,
+        turnOrRestingTrust(conversation),
       );
       const drainImageSourcePaths: Record<string, string> = {};
       for (let i = 0; i < next.attachments.length; i++) {
@@ -651,7 +666,7 @@ async function drainSingleMessage(
     let persistedCompactMessage = false;
     try {
       const drainProvenance = provenanceFromTrustContext(
-        conversation.trustContext,
+        turnOrRestingTrust(conversation),
       );
       const drainChannelMeta = {
         ...drainProvenance,
@@ -752,7 +767,7 @@ async function drainSingleMessage(
     let persistedCleanMessage = false;
     try {
       const drainProvenance = provenanceFromTrustContext(
-        conversation.trustContext,
+        turnOrRestingTrust(conversation),
       );
       const drainChannelMeta = {
         ...drainProvenance,
@@ -876,6 +891,9 @@ async function drainSingleMessage(
       metadata: { ...next.metadata, sentAt: next.sentAt },
       displayContent: next.displayContent,
       clientMessageId: next.clientMessageId,
+      // Attribute the stored row to the sender this turn runs as, not to
+      // whoever happens to occupy the conversation slot at drain time.
+      trustContext: next.trustContext,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -973,7 +991,14 @@ async function drainSingleMessage(
     isInteractive?: boolean;
     isUserMessage?: boolean;
     titleText?: string;
-  } = { isUserMessage: true };
+    turnTrustContext?: TrustContext;
+  } = {
+    isUserMessage: true,
+    // Carry the sender's trust into the run. The loop re-initializes the
+    // per-turn snapshot on entry, so without this the stamp above is undone
+    // and the turn reverts to the conversation's most recent actor.
+    turnTrustContext: conversation.currentTurnTrustContext,
+  };
   if (next.isInteractive !== undefined)
     drainLoopOptions.isInteractive = next.isInteractive;
   if (agentLoopContent !== resolvedContent)
@@ -1077,7 +1102,12 @@ async function drainBatch(
 
   // Snapshot persona context at turn start so later tool turns can't pick up
   // a different actor's context if a concurrent request mutates the live fields.
-  conversation.currentTurnTrustContext = conversation.trustContext;
+  // The head's trust governs the batch, which is sound only because
+  // `buildPassthroughBatch` refuses to coalesce messages from different
+  // actors; without that boundary this would run a tail under the head's
+  // trust.
+  conversation.currentTurnTrustContext =
+    head.trustContext ?? conversation.trustContext;
   conversation.currentTurnChannelCapabilities =
     conversation.channelCapabilities;
 
@@ -1190,6 +1220,9 @@ async function drainBatch(
         metadata: { ...qm.metadata, sentAt: qm.sentAt },
         displayContent: qm.displayContent,
         clientMessageId: qm.clientMessageId,
+        // Same attribution rule as the single-message drain. Batch members
+        // share one sender, so every row here names that sender.
+        trustContext: qm.trustContext,
       };
       if (i === 0) {
         batchPersistResult =
@@ -1380,7 +1413,13 @@ async function drainBatch(
     isInteractive?: boolean;
     isUserMessage?: boolean;
     titleText?: string;
-  } = { isUserMessage: true };
+    turnTrustContext?: TrustContext;
+  } = {
+    isUserMessage: true,
+    // Same reason as the single-message drain: the loop re-initializes the
+    // per-turn snapshot, so the head's trust has to travel with the call.
+    turnTrustContext: conversation.currentTurnTrustContext,
+  };
   // Source interactive flag from the last successfully-persisted sibling so
   // a trailing failed tail doesn't flip the agent loop's interactivity.
   const lastSuccessfulBatchEntry =
@@ -1471,7 +1510,14 @@ export async function processMessage(
   await conversation.ensureActorScopedHistory();
   // Snapshot persona context at turn start so later tool turns can't pick up
   // a different actor's context if a concurrent request mutates the live fields.
-  conversation.currentTurnTrustContext = conversation.trustContext;
+  //
+  // Held in a local as well as on the conversation: the field is writable
+  // out-of-band while this turn is in flight (wake flows stamp it and restore
+  // the prior value in a `finally`), so reading it back at the agent loop
+  // call below would reintroduce the late read this capture exists to avoid.
+  // The local is what the loop runs under.
+  const turnTrustContext = conversation.trustContext;
+  conversation.currentTurnTrustContext = turnTrustContext;
   conversation.currentTurnAuthContext = conversation.authContext;
   conversation.currentTurnSourceActorPrincipalId =
     conversation.authContext?.actorPrincipalId;
@@ -1602,7 +1648,9 @@ export async function processMessage(
   if (slashResult.kind === "unknown") {
     const pmTurnCtx = conversation.getTurnChannelContext();
     const pmInterfaceCtx = conversation.getTurnInterfaceContext();
-    const pmProvenance = provenanceFromTrustContext(conversation.trustContext);
+    const pmProvenance = provenanceFromTrustContext(
+      turnOrRestingTrust(conversation),
+    );
     const pmImageSourcePaths: Record<string, string> = {};
     for (let i = 0; i < attachments.length; i++) {
       const a = attachments[i];
@@ -1702,7 +1750,7 @@ export async function processMessage(
       const pmTurnCtx = conversation.getTurnChannelContext();
       const pmInterfaceCtx = conversation.getTurnInterfaceContext();
       const pmProvenance = provenanceFromTrustContext(
-        conversation.trustContext,
+        turnOrRestingTrust(conversation),
       );
       const pmChannelMeta = {
         ...pmProvenance,
@@ -1785,7 +1833,7 @@ export async function processMessage(
       const pmTurnCtx = conversation.getTurnChannelContext();
       const pmInterfaceCtx = conversation.getTurnInterfaceContext();
       const pmProvenance = provenanceFromTrustContext(
-        conversation.trustContext,
+        turnOrRestingTrust(conversation),
       );
       const pmChannelMeta = {
         ...pmProvenance,
@@ -1941,7 +1989,16 @@ export async function processMessage(
     titleText?: string;
     callSite?: LLMCallSite;
     overrideProfile?: string;
-  } = { isUserMessage: true };
+    turnTrustContext?: TrustContext;
+  } = {
+    isUserMessage: true,
+    // Carry the trust captured at turn start into the run. Several awaits sit
+    // between that capture and the loop opening, and both the conversation
+    // slot and the per-turn field are writable throughout that window, so
+    // reading either here would run this turn as whoever wrote last. The
+    // local captured at turn start is the only value no other writer can move.
+    turnTrustContext,
+  };
   if (isInteractive !== undefined) loopOptions.isInteractive = isInteractive;
   if (agentLoopContent !== resolvedContent)
     loopOptions.titleText = resolvedContent;

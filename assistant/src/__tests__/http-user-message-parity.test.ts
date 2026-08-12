@@ -353,6 +353,79 @@ describe("HTTP POST /v1/messages does not intercept recording intents (by design
 });
 
 // ============================================================================
+// TURN TRUST — the idle send path must carry the request's resolved trust
+// ============================================================================
+describe("HTTP POST /v1/messages turn trust", () => {
+  test("the idle send path runs its turn under the trust resolved for the request", async () => {
+    // The idle web path does not go through `processMessage`; it persists and
+    // calls `runAgentLoop` directly. Without the captured trust travelling
+    // with that call, the loop re-reads the conversation slot when it opens,
+    // and the slot is writable in between by paths that do not own this turn
+    // (channel ingress for another actor, voice hydration, the voice bridge).
+    //
+    // The defect here is at the call site, not inside the loop, so observing
+    // the options the route passes is sufficient. The re-read *inside* the
+    // loop is covered separately against a real Conversation
+    // (conversation-queue.test.ts), since a stub like this one cannot see it.
+    let capturedLoopOptions: Record<string, unknown> | undefined;
+    const runAgentLoop = mock(
+      async (
+        _content: string,
+        _messageId: string,
+        options?: Record<string, unknown>,
+      ) => {
+        capturedLoopOptions = options;
+      },
+    );
+    // Store the route's resolution so the test can observe which trust it
+    // set, then move the slot afterwards.
+    const conversation = makeConversation({
+      runAgentLoop,
+      setTrustContext(this: { trustContext: unknown }, ctx: unknown) {
+        this.trustContext = ctx;
+      },
+    });
+
+    const convSlot = conversation as unknown as {
+      trustContext?: { trustClass?: string; [key: string]: unknown };
+      persistUserMessage: () => Promise<{ id: string; deduplicated: boolean }>;
+    };
+
+    // Snapshot what the route resolved, then have another actor write the
+    // slot inside the window between resolution and the loop call
+    // (persistUserMessage is awaited there).
+    let resolvedTrust: { trustClass?: string } | undefined;
+    let slotMoved = false;
+    convSlot.persistUserMessage = async () => {
+      resolvedTrust = convSlot.trustContext;
+      convSlot.trustContext = {
+        trustClass: "trusted_contact",
+        sourceChannel: "slack",
+        requesterExternalUserId: "U-other-actor",
+      };
+      slotMoved = true;
+      return { id: "persisted-user-id", deduplicated: false };
+    };
+
+    const res = await sendMessage("run a command", conversation);
+
+    expect(res.status).toBe(202);
+    // Guard the test itself: if the injection stopped running the assertions
+    // below would pass for the wrong reason.
+    expect(slotMoved).toBe(true);
+    expect(resolvedTrust).toBeDefined();
+    expect(convSlot.trustContext?.trustClass).toBe("trusted_contact");
+
+    // The turn carries the trust this request resolved, not the moved slot.
+    const turnTrust = capturedLoopOptions?.turnTrustContext as
+      | { trustClass?: string }
+      | undefined;
+    expect(turnTrust).toBeDefined();
+    expect(turnTrust).toBe(resolvedTrust as never);
+  });
+});
+
+// ============================================================================
 // CLIENT TIMEZONE — optional HTTP metadata
 // ============================================================================
 describe("HTTP POST /v1/messages clientTimezone transport metadata", () => {

@@ -1539,6 +1539,15 @@ async function handleSendMessageImpl(
     conversation.setTrustContext({ trustClass: "guardian", sourceChannel });
   }
 
+  // The trust this request's turn runs under, captured here rather than read
+  // back at the agent loop below. Every branch above has just written it and
+  // nothing awaits in between, so this is the resolved sender. Between here
+  // and the loop the conversation slot is writable by paths that do not own
+  // this turn (channel ingress for another actor, voice hydration, the voice
+  // bridge), and the loop would otherwise re-read it and run this turn as
+  // whoever wrote last.
+  const turnTrustContext = conversation.trustContext;
+
   const isInteractive = isInteractiveInterface(sourceInterface);
   // Use the JWT-verified requester principal — not guardianPrincipalId,
   // which is the workspace owner and would let a trusted contact's web
@@ -2304,6 +2313,7 @@ async function handleSendMessageImpl(
       onEvent: broadcastMessage,
       isInteractive,
       isUserMessage: true,
+      turnTrustContext,
     })
     .catch((err) => {
       log.error(

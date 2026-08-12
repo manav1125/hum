@@ -5,6 +5,7 @@
 
 import type { InterfaceId } from "../channels/types.js";
 import type { LLMCallSite } from "../config/schemas/llm.js";
+import type { AuthContext } from "../runtime/auth/types.js";
 import type { SurfaceConversationContext } from "./conversation-surfaces.js";
 import type { TrustContext } from "./trust-context.js";
 
@@ -96,6 +97,18 @@ export interface ToolSetupContext extends SurfaceConversationContext {
   taskRunId?: string;
   /** Guardian runtime context for the conversation — trustClass is propagated into ToolContext for control-plane policy enforcement. */
   trustContext?: TrustContext;
+  /**
+   * Per-turn trust snapshot stamped at turn start by the entry points
+   * (queue drains, `processMessage`, POST /messages via `runAgentLoop`).
+   * Preferred over {@link trustContext} when building the ToolContext so a
+   * queued turn cannot execute under whichever actor moved the live slot
+   * last. See `turnOrRestingTrust`.
+   */
+  currentTurnTrustContext?: TrustContext;
+  /** JWT-verified requester principal for the in-flight turn (see `resolveTurnActorPrincipalId`). */
+  currentTurnSourceActorPrincipalId?: string;
+  /** Auth snapshot for the in-flight turn. */
+  currentTurnAuthContext?: AuthContext;
   /** Voice/call session ID, if the conversation originates from a call. Propagated into ToolContext for scoped grant consumption. */
   callSessionId?: string;
   /** The interface ID of the connected client driving the current turn (e.g. "macos", "chrome-extension"). Propagated into ToolContext for browser backend selection. */

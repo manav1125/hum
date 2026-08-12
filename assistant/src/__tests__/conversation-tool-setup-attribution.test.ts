@@ -321,3 +321,93 @@ describe("createToolExecutor attribution threading", () => {
     expect(calls[0].context.attribution).toBeNull();
   });
 });
+
+describe("createToolExecutor source-actor threading", () => {
+  test("submits the turn's actor principal, not the trust context's guardian", async () => {
+    // `ToolContext.sourceActorPrincipalId` is compared against the principal a
+    // client registered with on its SSE stream, so it has to be the turn's
+    // actor. Reading `trustContext.guardianPrincipalId` instead meant any turn
+    // whose trust resolution degraded submitted nothing, and — worse — a
+    // non-guardian turn could submit the guardian's principal and match the
+    // guardian's connected client.
+    const { executor, calls } = makeCapturingExecutor();
+    await makeToolFn(
+      executor,
+      makeCtx({
+        currentTurnSourceActorPrincipalId: "actor-1",
+        currentTurnTrustContext: {
+          sourceChannel: "vellum",
+          trustClass: "guardian",
+          guardianPrincipalId: "guardian-1",
+        },
+      }),
+    )("file_read", { path: "/tmp/a" });
+
+    expect(calls[0].context.sourceActorPrincipalId).toBe("actor-1");
+  });
+
+  test("carries the actor through even when trust resolved without a guardian principal", async () => {
+    // The regression: degraded trust resolution (unreachable gateway, binding
+    // drift) or a service-principal turn leaves `guardianPrincipalId` unset
+    // while the turn's actor is perfectly well known.
+    const { executor, calls } = makeCapturingExecutor();
+    await makeToolFn(
+      executor,
+      makeCtx({
+        currentTurnAuthContext: {
+          actorPrincipalId: "actor-1",
+        } as never,
+        currentTurnTrustContext: {
+          sourceChannel: "vellum",
+          trustClass: "unknown",
+        },
+      }),
+    )("file_read", { path: "/tmp/a" });
+
+    expect(calls[0].context.sourceActorPrincipalId).toBe("actor-1");
+  });
+
+  test("submits nothing when the turn has no actor identity at all", async () => {
+    // Fail closed: a guardian principal on the trust context must NOT stand
+    // in for a missing actor — that substitution is what let a turn match
+    // against the guardian's client.
+    const { executor, calls } = makeCapturingExecutor();
+    await makeToolFn(
+      executor,
+      makeCtx({
+        currentTurnTrustContext: {
+          sourceChannel: "vellum",
+          trustClass: "guardian",
+          guardianPrincipalId: "guardian-1",
+        },
+      }),
+    )("file_read", { path: "/tmp/a" });
+
+    expect(calls[0].context.sourceActorPrincipalId).toBeUndefined();
+  });
+
+  test("tool trust resolves from the per-turn snapshot, not the live slot", async () => {
+    // A queued turn stamps its sender's trust into the per-turn snapshot; the
+    // live slot may by then belong to whoever sent last. The ToolContext's
+    // trustClass / executionChannel / requester identity must follow the turn.
+    const { executor, calls } = makeCapturingExecutor();
+    await makeToolFn(
+      executor,
+      makeCtx({
+        trustContext: {
+          sourceChannel: "vellum",
+          trustClass: "guardian",
+        },
+        currentTurnTrustContext: {
+          sourceChannel: "telegram",
+          trustClass: "trusted_contact",
+          requesterExternalUserId: "U-contact",
+        },
+      }),
+    )("file_read", { path: "/tmp/a" });
+
+    expect(calls[0].context.trustClass).toBe("trusted_contact");
+    expect(calls[0].context.executionChannel).toBe("telegram");
+    expect(calls[0].context.requesterExternalUserId).toBe("U-contact");
+  });
+});

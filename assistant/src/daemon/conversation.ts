@@ -2282,6 +2282,21 @@ export class Conversation {
     return this.authContext;
   }
 
+  /**
+   * The actor principal that owns the current turn, for host-proxy routing.
+   * Prefers the in-flight turn's actor over the conversation's resting
+   * authContext so a /v1/messages turn (which sets only
+   * `currentTurnSourceActorPrincipalId`/`currentTurnAuthContext`) scopes
+   * correctly. Returns `undefined` when no actor identity is known.
+   */
+  getTurnActorPrincipalId(): string | undefined {
+    return (
+      this.currentTurnSourceActorPrincipalId ??
+      this.currentTurnAuthContext?.actorPrincipalId ??
+      this.authContext?.actorPrincipalId
+    );
+  }
+
   setVoiceCallControlPrompt(prompt: string | null): void {
     this.voiceCallControlPrompt = prompt ?? undefined;
   }
@@ -2412,6 +2427,13 @@ export class Conversation {
        * this value via {@link SubagentManager.spawn}.
        */
       overrideProfile?: string;
+      /**
+       * See {@link runAgentLoopImpl}: trust this turn runs under. Queue
+       * drains and `processMessage` pass the sender's trust captured at turn
+       * start so the run is not reset to the conversation's most recent
+       * actor.
+       */
+      turnTrustContext?: TrustContext;
     },
   ): Promise<void> {
     const { onEvent, ...rest } = options ?? {};
