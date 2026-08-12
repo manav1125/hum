@@ -1,3 +1,4 @@
+import type { UntrustedContentSource } from "../security/untrusted-content.js";
 import type { WatcherEvent } from "./watcher-store.js";
 
 /** A single event detected by a watcher provider. */
@@ -131,6 +132,17 @@ export interface WatcherProvider {
   displayName: string;
   /** Credential service required (e.g. 'google'). */
   requiredCredentialService: string;
+
+  /**
+   * Which `<external_content>` source label this provider's events carry when
+   * the engine fences them for the LLM. Selects the wording the model sees and
+   * the per-source budget in `security/untrusted-content.ts`.
+   *
+   * Optional: the engine falls back to `"webhook"` so a provider that forgets
+   * to declare one is still fenced. Nothing a provider returns is
+   * assistant-authored, so there is no opt-out.
+   */
+  untrustedContentSource?: UntrustedContentSource;
 
   /**
    * Intake mode this provider PINS, overriding whatever the watcher row says.

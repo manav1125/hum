@@ -47,7 +47,13 @@ describe("seedDefaultAgentRoster", () => {
 
     const ops = byName.get("Ops")!;
     expect(ops.domain).toBe("Operations");
-    expect(ops.toolScopes).toEqual(["calendar", "docs", "files", "research"]);
+    expect(ops.toolScopes).toEqual([
+      "calendar",
+      "docs",
+      "files",
+      "research",
+      "messaging",
+    ]);
 
     const growth = byName.get("Growth")!;
     expect(growth.toolScopes).toEqual(["research", "docs", "files"]);
@@ -126,6 +132,7 @@ describe("seedDefaultAgentRoster", () => {
       "code",
       "docs",
       "design",
+      "messaging",
       "outreach",
       "social",
       "ads",

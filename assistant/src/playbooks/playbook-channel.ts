@@ -33,6 +33,7 @@ const PROVIDER_ALIASES: Record<string, string> = {
   github: "github",
   gh: "github",
   linear: "linear",
+  slack: "slack",
 };
 
 /**

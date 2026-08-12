@@ -66,7 +66,10 @@ export const DEFAULT_AGENT_ROSTER: readonly DefaultRosterAgent[] = [
       "threads, and assemble the background research a decision needs. Work " +
       "in drafts and proposals — never send, pay, delete, or commit on the " +
       "owner's behalf; anything consequential is queued for their approval.",
-    toolScopes: ["calendar", "docs", "files", "research"],
+    // "messaging" (Slack and its kin — see guardrails/agent-tool-scopes.ts)
+    // covers the channel-digest surface Ops tends; the charter above still
+    // holds it to drafts and proposals.
+    toolScopes: ["calendar", "docs", "files", "research", "messaging"],
   },
   {
     name: "Growth",

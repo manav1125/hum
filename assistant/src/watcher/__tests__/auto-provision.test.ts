@@ -120,7 +120,7 @@ beforeEach(() => {
   createThrows = false;
   listThrows = false;
   configThrows = false;
-  registeredProviders = new Set(["gmail", "google-calendar"]);
+  registeredProviders = new Set(["gmail", "google-calendar", "slack"]);
   autoProvisionConfig = { enabled: true, minPollIntervalMs: 300_000 };
   resetAutoProvisionLedgerForTest();
   if (existsSync(ledgerFile())) rmSync(ledgerFile());
@@ -147,12 +147,27 @@ describe("autoProvisionWatchersForToolkits", () => {
   });
 
   test("provisions each watchable connector at its own cadence", () => {
-    autoProvisionWatchersForToolkits(["gmail", "googlecalendar"]);
+    autoProvisionWatchersForToolkits(["gmail", "googlecalendar", "slack"]);
 
     const byProvider = new Map(created.map((w) => [w.providerId, w]));
-    // 5 min for mail, 15 min for calendar — never the 60s store default.
+    // 5 min for mail and messages, 15 min for calendar — never the 60s
+    // store default.
     expect(byProvider.get("gmail")!.pollIntervalMs).toBe(300_000);
     expect(byProvider.get("google-calendar")!.pollIntervalMs).toBe(900_000);
+    expect(byProvider.get("slack")!.pollIntervalMs).toBe(300_000);
+  });
+
+  test("provisions a Slack watcher into the Came-in lane", () => {
+    const result = autoProvisionWatchersForToolkits(["slack"]);
+
+    expect(result.created).toEqual(["slack"]);
+    expect(created).toHaveLength(1);
+    const watcher = created[0]!;
+    expect(watcher.providerId).toBe("slack");
+    expect(watcher.credentialService).toBe("slack");
+    // Messages are addressed to the owner and can carry a request, so they
+    // belong in the lane the relevance gate protects — parity with Gmail.
+    expect(watcher.intakeMode).toBe("came_in");
   });
 
   test("ignores connectors with no watcher mapping", () => {
@@ -167,16 +182,20 @@ describe("autoProvisionWatchersForToolkits", () => {
   });
 
   test("refuses to create a watcher whose provider is not registered", () => {
-    // Slack is a mapped connector but has no watcher provider today. Creating
-    // one would fail every poll with "Unknown provider" and trip the circuit
+    // A mapped connector on a build without its provider (here: slack, as it
+    // was before `providers/slack.ts` existed) must be skipped. Creating one
+    // would fail every poll with "Unknown provider" and trip the circuit
     // breaker, leaving the user a broken automation they never asked for.
+    registeredProviders.delete("slack");
     const result = autoProvisionWatchersForToolkits(["slack"]);
 
     expect(created).toHaveLength(0);
     expect(result.skipped).toEqual([
       { slug: "slack", reason: 'no watcher provider registered for "slack"' },
     ]);
-    // Not ledgered — the moment a Slack provider is registered, it provisions.
+    // Not ledgered — the moment the provider is registered, it provisions.
+    // This is the live path in production: `provider-registry.ts` registers
+    // the Slack provider at import time, so the mapped slug provisions.
     registeredProviders.add("slack");
     resetAutoProvisionLedgerForTest();
     expect(autoProvisionWatchersForToolkits(["slack"]).created).toEqual([
@@ -306,6 +325,7 @@ describe("recordActiveComposioToolkits hook", () => {
     expect(created.map((w) => w.providerId).sort()).toEqual([
       "gmail",
       "google-calendar",
+      "slack",
     ]);
 
     // And the status snapshot it primarily exists to write is untouched.

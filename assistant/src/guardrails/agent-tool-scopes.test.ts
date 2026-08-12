@@ -73,6 +73,7 @@ describe("toolScopeDomains", () => {
       "docs",
       "email",
       "files",
+      "messaging",
       "outreach",
       "research",
       "social",

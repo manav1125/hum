@@ -100,6 +100,13 @@ const SCOPE_DOMAIN_SEGMENTS: Readonly<Record<string, ReadonlySet<string>>> = {
     "sequence",
     "contact",
   ]),
+  // Team-chat surfaces (Slack channels and their kin), distinct from
+  // `outreach`: reading and digesting a workspace channel is ops work, while
+  // outreach is the send-adjacent domain the default roster deliberately
+  // withholds. A send tool named e.g. `slack_send_message` maps to BOTH (via
+  // `message`), so either scope admits it — the charter, not the scope, is
+  // what keeps a drafts-only agent from sending.
+  messaging: new Set(["slack", "telegram", "whatsapp", "discord"]),
   social: new Set([
     "social",
     "tweet",

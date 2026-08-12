@@ -134,6 +134,7 @@ export const githubProvider: WatcherProvider = {
   id: "github",
   displayName: "GitHub",
   requiredCredentialService: "github",
+  untrustedContentSource: "webhook",
 
   /**
    * A GitHub watcher needs no repository and takes none.

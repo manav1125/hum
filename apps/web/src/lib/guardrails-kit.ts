@@ -181,6 +181,7 @@ export const TOOL_SCOPE_IDS = [
   "code",
   "docs",
   "design",
+  "messaging",
   "outreach",
   "social",
   "ads",

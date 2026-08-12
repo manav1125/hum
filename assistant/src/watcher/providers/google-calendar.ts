@@ -299,6 +299,7 @@ export const googleCalendarProvider: WatcherProvider = {
   id: "google-calendar",
   displayName: "Google Calendar",
   requiredCredentialService: CREDENTIAL_SERVICE,
+  untrustedContentSource: "calendar",
 
   // A meeting is something you attend, not something in your queue. The day
   // rail (`calendar/day-rail.ts`, GET /v1/calendar/day) is how the calendar

@@ -305,6 +305,7 @@ export const outlookCalendarProvider: WatcherProvider = {
   id: "outlook-calendar",
   displayName: "Outlook Calendar",
   requiredCredentialService: CREDENTIAL_SERVICE,
+  untrustedContentSource: "calendar",
 
   // Same reasoning as the Google provider: a meeting is something you attend,
   // not something in your queue, so the change stream is recorded and nothing
