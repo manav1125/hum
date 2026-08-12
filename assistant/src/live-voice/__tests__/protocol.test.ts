@@ -649,3 +649,81 @@ describe("start frame echoSafePlayback capability flag", () => {
     }
   });
 });
+
+describe("attach_image client frame (mid-call camera photos)", () => {
+  test("parses with a non-empty attachmentId", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "attach_image", attachmentId: "att-123" }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.frame).toEqual({
+        type: "attach_image",
+        attachmentId: "att-123",
+      });
+    }
+  });
+
+  test("missing attachmentId is rejected with the frame named", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "attach_image" }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("missing_required_field");
+      expect(result.error.field).toBe("attachmentId");
+      expect(result.error.frameType).toBe("attach_image");
+    }
+  });
+
+  test("empty / non-string attachmentId is rejected with the frame named", () => {
+    for (const bad of ["", 42, null, {}]) {
+      const result = parseLiveVoiceClientTextFrame(
+        JSON.stringify({ type: "attach_image", attachmentId: bad }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("invalid_field");
+        expect(result.error.frameType).toBe("attach_image");
+      }
+    }
+  });
+
+  test("ready frames can advertise the attachImage capability", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    expect(
+      sequencer.next({
+        type: "ready",
+        sessionId: "session-1",
+        conversationId: "conversation-1",
+        attachImage: true,
+      }),
+    ).toEqual({
+      type: "ready",
+      sessionId: "session-1",
+      conversationId: "conversation-1",
+      attachImage: true,
+      seq: 1,
+    });
+  });
+
+  test("error frames carry the frameType attribution", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    expect(
+      sequencer.next({
+        type: "error",
+        code: "invalid_frame",
+        message: "Could not attach that photo to the conversation.",
+        frameType: "attach_image",
+        fatal: false,
+      }),
+    ).toEqual({
+      type: "error",
+      code: "invalid_frame",
+      message: "Could not attach that photo to the conversation.",
+      frameType: "attach_image",
+      fatal: false,
+      seq: 1,
+    });
+  });
+});

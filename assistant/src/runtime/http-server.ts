@@ -1026,13 +1026,17 @@ export class RuntimeHttpServer {
 
   private sendLiveVoiceError(
     ws: ServerWebSocket<LiveVoiceWebSocketData>,
-    error: Pick<LiveVoiceProtocolError, "code" | "message">,
+    error: Pick<LiveVoiceProtocolError, "code" | "message" | "frameType">,
   ): void {
     this.sendLiveVoiceFrame(ws, {
       type: "error",
       seq: ws.data.lastSeq + 1,
       code: error.code,
       message: error.message,
+      // Names the client frame the error is about (e.g. "attach_image"), so
+      // the client can attribute the failure to the thing it sent instead of
+      // to the session. Parse errors carry it on the protocol error already.
+      ...(error.frameType ? { frameType: error.frameType } : {}),
     });
   }
 

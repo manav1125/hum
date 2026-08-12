@@ -7,6 +7,7 @@ const LIVE_VOICE_CLIENT_FRAME_TYPES = [
   "interrupt",
   "end",
   "update_config",
+  "attach_image",
 ] as const;
 
 type LiveVoiceClientFrameType = (typeof LIVE_VOICE_CLIENT_FRAME_TYPES)[number];
@@ -210,13 +211,33 @@ export interface LiveVoiceClientUpdateConfigFrame {
   readonly bargeInMinSpeechMs?: number;
 }
 
+/**
+ * A photo the user took mid-call, by the id its upload already returned
+ * (the ordinary `POST /v1/assistants/:id/attachments` path). The daemon
+ * persists it into the conversation as its own user message the moment it
+ * arrives and RUNS NO TURN, so whatever the user says next — before or after
+ * the shutter — is answered by a model whose history already has the image.
+ * See `live-voice-photo.ts` (ported from upstream 48a63d28d7 / 639f7bc1cb).
+ *
+ * Clients MUST NOT send this unless the session's `ready` frame advertised
+ * `attachImage` (our capability-advertise convention): an older daemon
+ * rejects the frame with `unknown_type`, which the web client treats as
+ * session-fatal, so an ungated frame would both lose the photo and kill the
+ * call.
+ */
+export interface LiveVoiceClientAttachImageFrame {
+  readonly type: "attach_image";
+  readonly attachmentId: string;
+}
+
 export type LiveVoiceClientFrame =
   | LiveVoiceClientStartFrame
   | LiveVoiceClientAudioFrame
   | LiveVoiceClientPttReleaseFrame
   | LiveVoiceClientInterruptFrame
   | LiveVoiceClientEndFrame
-  | LiveVoiceClientUpdateConfigFrame;
+  | LiveVoiceClientUpdateConfigFrame
+  | LiveVoiceClientAttachImageFrame;
 
 interface LiveVoiceBinaryAudioFrame {
   readonly type: "binary_audio";
@@ -239,6 +260,16 @@ export interface LiveVoiceReadyServerFrame extends LiveVoiceServerFrameBase {
    * their own client-side VAD accordingly.
    */
   readonly turnDetection?: LiveVoiceTurnDetectionMode;
+  /**
+   * Capability advertise: this daemon accepts the `attach_image` client
+   * frame (mid-call camera photos). Our version-less convention — the same
+   * shape as `turnDetection` above, in the opposite direction: the client
+   * only ever shows the camera when the ready frame carried this, because a
+   * daemon that predates the frame answers it with an `unknown_type` error
+   * the shipped web client treats as session-fatal. Absent (older daemons)
+   * means "no camera".
+   */
+  readonly attachImage?: true;
 }
 
 export interface LiveVoiceBusyServerFrame extends LiveVoiceServerFrameBase {
@@ -516,6 +547,14 @@ export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
    * keep exactly their current behaviour.
    */
   readonly fatal?: boolean;
+  /**
+   * The client frame this error is about (e.g. `"attach_image"`), when the
+   * error concerns one. What lets a client file a failed photo with the
+   * shutter that took it — retracting the thumbnail it already showed —
+   * instead of with the transient transcriber/TTS blips that share
+   * `fatal: false`. Absent on errors that are not about a specific frame.
+   */
+  readonly frameType?: string;
 }
 
 export type LiveVoiceServerFrame =
@@ -646,7 +685,36 @@ export function validateLiveVoiceClientFrame(
       return { ok: true, frame: { type: "end" } };
     case "update_config":
       return validateUpdateConfigFrame(value);
+    case "attach_image":
+      return validateAttachImageFrame(value);
   }
+}
+
+function validateAttachImageFrame(
+  value: Record<string, unknown>,
+): LiveVoiceParseResult<LiveVoiceClientAttachImageFrame> {
+  if (!("attachmentId" in value)) {
+    return protocolError(
+      "missing_required_field",
+      "attach_image frame is missing required field attachmentId",
+      "attachmentId",
+      "attach_image",
+    );
+  }
+
+  if (!isNonEmptyString(value.attachmentId)) {
+    return protocolError(
+      "invalid_field",
+      "attach_image frame field attachmentId must be a non-empty string",
+      "attachmentId",
+      "attach_image",
+    );
+  }
+
+  return {
+    ok: true,
+    frame: { type: "attach_image", attachmentId: value.attachmentId },
+  };
 }
 
 function validateUpdateConfigFrame(
