@@ -61,11 +61,34 @@ assistant skills add vercel-labs/skills@find-skills
 
 Once installed, the skill appears in the workspace skills directory and can be loaded with `skill_load` like any other skill.
 
+## Presenting capabilities: use the skill_recommendations card
+
+When the user asks what you can do for them ("What can you do?", "How can you help me?"), do not answer with a prose list. Emit a `ui_show` card with `surface_type: "card"` and `template: "skill_recommendations"`, picking the 3-5 skills most relevant to THIS user (strongest first), each with one ready-to-send Try-me `prompt` written in the user's voice:
+
+```
+ui_show surface_type=card data={
+  title: "What I can do for you",
+  body: "<one-line prose fallback>",
+  template: "skill_recommendations",
+  templateData: {
+    skills: [
+      { id: "inbox-management", title: "Inbox management", iconKey: "inbox",
+        description: "Keep your inbox at zero without you reading the noise.",
+        prompt: "Declutter my inbox",
+        capabilities: ["Archive noise", "Surface threads that need you"],
+        requirements: [{ label: "Gmail", status: "ready" }] }
+    ]
+  }
+}
+```
+
+Compose the rows yourself from the bundled skills list and what you know about the user (their connectors, their routines). Say one sentence alongside the card; the card carries the list. See the `ui_show` tool description for the full templateData shape.
+
 ## Typical flow
 
 1. **User asks about capabilities** - "Can you order food?" or "What can you do?"
    - Check the bundled skills list in the system prompt
-   - Present relevant skills to the user
+   - Present the most relevant skills as a `skill_recommendations` card (see above)
    - Load any that match with `skill_load`
 
 2. **User wants a capability not covered by bundled skills** - "Can you do X?"

@@ -17,6 +17,20 @@ const WeatherForecastDisplay = lazy(() =>
   ),
 );
 
+// Same deferral rationale as the weather card: each template renderer is
+// only needed when a card surface advertises that template.
+const SkillRecommendationsDisplay = lazy(() =>
+  import(
+    "@/domains/chat/components/surfaces/skill-recommendations-display"
+  ).then((m) => ({ default: m.SkillRecommendationsDisplay })),
+);
+
+const ChannelShowcaseDisplay = lazy(() =>
+  import("@/domains/chat/components/surfaces/channel-showcase-display").then(
+    (m) => ({ default: m.ChannelShowcaseDisplay }),
+  ),
+);
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -235,6 +249,10 @@ function TaskStepList({
 export function CardSurface({ surface, onAction }: CardSurfaceProps) {
   const data = surface.data as unknown as CardSurfaceData;
   const isWeather = data.template === "weather_forecast" && data.templateData;
+  const isSkillRecommendations =
+    data.template === "skill_recommendations" && !!data.templateData;
+  const isChannelShowcase =
+    data.template === "channel_showcase" && !!data.templateData;
   const isTaskProgress =
     data.template === "task_progress" &&
     !!data.templateData &&
@@ -292,6 +310,20 @@ export function CardSurface({ surface, onAction }: CardSurfaceProps) {
         {isWeather ? (
           <LazyBoundary fallback={bodyMarkdown} errorFallback={bodyMarkdown}>
             <WeatherForecastDisplay
+              templateData={data.templateData!}
+              fallback={bodyMarkdown}
+            />
+          </LazyBoundary>
+        ) : isSkillRecommendations ? (
+          <LazyBoundary fallback={bodyMarkdown} errorFallback={bodyMarkdown}>
+            <SkillRecommendationsDisplay
+              templateData={data.templateData!}
+              fallback={bodyMarkdown}
+            />
+          </LazyBoundary>
+        ) : isChannelShowcase ? (
+          <LazyBoundary fallback={bodyMarkdown} errorFallback={bodyMarkdown}>
+            <ChannelShowcaseDisplay
               templateData={data.templateData!}
               fallback={bodyMarkdown}
             />

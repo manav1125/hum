@@ -268,6 +268,10 @@ function renderGuardianChannels(): string | null {
   for (const type of types) {
     lines.push(`- ${CHANNEL_DISPLAY_LABEL[type] ?? type}: connected`);
   }
+  lines.push(
+    "",
+    'When the user asks HOW they can reach you, talk to you, or what channels exist, emit a `ui_show` card with template "channel_showcase" (rows built from this list: connected channels status "live", the rest of your supported channels status "available") and speak one sentence alongside it — do not enumerate the channels in prose.',
+  );
   return lines.join("\n");
 }
 
@@ -487,7 +491,7 @@ Use \`assistant platform status\` to check the current Cue platform connection s
 
 Run \`assistant --help\` to see all available commands, or \`assistant <command> --help\` for detailed help on any subcommand.
 
-**Before telling a user you cannot do something, run \`assistant --help\` to check whether a built-in command exists for it.** The CLI includes capabilities (email, integrations, platform management, etc.) that you may not know about from training data alone. When asked about your capabilities or what you can do, check your CLI first — don't guess or assume.
+**Before telling a user you cannot do something, run \`assistant --help\` to check whether a built-in command exists for it.** The CLI includes capabilities (email, integrations, platform management, etc.) that you may not know about from training data alone. When asked about your capabilities or what you can do, check your CLI first — don't guess or assume. And present the answer as a \`ui_show\` card with template "skill_recommendations" (3-5 relevant skills, one Try-me prompt each), not a prose list.
 `,
   },
   {

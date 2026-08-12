@@ -81,6 +81,41 @@ describe("ui_show surface types", () => {
     expect(INTERACTIVE_SURFACE_TYPES).not.toContain("adjacent_offer");
   });
 
+  test("every card template the client renders is documented for the model", () => {
+    // Card templates ride inside surface_type "card", so the enum test above
+    // cannot catch a template that exists only client-side. The web client's
+    // CardSurface dispatches on these template names
+    // (apps/web/src/domains/chat/components/surfaces/card-surface.tsx); each
+    // one must be named — with a templateData shape — in the tool description,
+    // or the model can never emit it and the renderer ships inert.
+    const description = uiShowTool.description;
+    for (const template of [
+      "weather_forecast",
+      "task_progress",
+      "skill_recommendations",
+      "channel_showcase",
+    ]) {
+      expect(description).toContain(template);
+    }
+    // Shape docs, not just a name-drop: each new template documents its
+    // templateData contract inline.
+    expect(description).toContain('card template "skill_recommendations"');
+    expect(description).toContain('card template "channel_showcase"');
+  });
+
+  test("the recommendation cards are non-blocking by contract", () => {
+    // Both cards are display-first: their buttons submit prompts client-side,
+    // so the model must not attach actions and park the turn awaiting a click.
+    const description = uiShowTool.description;
+    const cardTemplateDocs = description
+      .split("\n")
+      .filter((line) => line.startsWith('- card template "'));
+    expect(cardTemplateDocs).toHaveLength(2);
+    for (const line of cardTemplateDocs) {
+      expect(line).toContain("Non-blocking");
+    }
+  });
+
   test("the artefact contract names the approval behaviour, not a soft verb", () => {
     // The client classifies the verb from the label, so a hedged label ("Share
     // this?") silently loses the gate. The description has to tell the model to

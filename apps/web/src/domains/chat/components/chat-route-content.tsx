@@ -50,6 +50,10 @@ import {
   selectUploadingCount,
   selectUploadedIds,
 } from "@/domains/chat/composer-store";
+import {
+  SURFACE_PROMPT_SUBMIT_EVENT,
+  readSurfacePromptSubmit,
+} from "@/domains/chat/components/surfaces/surface-prompt-submit";
 import { ChatBody } from "@/domains/chat/components/chat-body";
 import { ChatRuleEditorModal } from "@/domains/chat/components/chat-rule-editor-modal";
 import { ComposerNotices } from "@/domains/chat/components/composer-notices";
@@ -758,6 +762,23 @@ export function ChatMainPanel({
     },
     [setInput, submitMessage],
   );
+
+  // Surface-card prompt bridge: template cards deep in the transcript
+  // (skill_recommendations "Let's do it", channel_showcase "Set up") submit
+  // their Try-me prompt as a real user message via a window event — the same
+  // submit path as the starter chips above, so the sent text is user-visible.
+  // See `components/surfaces/surface-prompt-submit.ts`.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const prompt = readSurfacePromptSubmit(event);
+      if (!prompt) return;
+      setInput(prompt);
+      void submitMessage(prompt);
+    };
+    window.addEventListener(SURFACE_PROMPT_SUBMIT_EVENT, handler);
+    return () =>
+      window.removeEventListener(SURFACE_PROMPT_SUBMIT_EVENT, handler);
+  }, [setInput, submitMessage]);
 
   // -------------------------------------------------------------------------
   // Rule editor bridge (viewer-store seq → rule editor open)
