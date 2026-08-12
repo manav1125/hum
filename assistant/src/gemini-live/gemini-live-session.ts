@@ -94,6 +94,21 @@ function clipDeepTaskSummary(summary: string): string {
  * about actions, brief and TTS-clean. Gemini Live speaks the audio itself, so
  * this shapes tone and tool discipline.
  */
+/**
+ * The system-instruction line governing spoken language. Mirrors the
+ * listening-language setting both engines share (`services.stt.language`):
+ * multilingual (the default) tells the model to follow the caller across
+ * language switches; a pinned recognition language states it plainly so a
+ * short or unclear first utterance is not misdetected as another language.
+ */
+function languageLine(): string {
+  const pinned = resolveGeminiLiveLanguage();
+  if (!pinned) {
+    return "Reply in the language the caller is speaking; if they switch languages mid-conversation, switch with them without missing a beat.";
+  }
+  return `The caller speaks the language with code "${pinned}". Understand their speech as that language and reply in it, even if a word is unclear.`;
+}
+
 function buildSystemInstruction(
   timezone?: string,
   opts?: { personaFragment?: string; briefing?: string },
@@ -117,7 +132,7 @@ function buildSystemInstruction(
     "Never claim you have done something unless you actually called the tool for it and it succeeded. If a tool fails, say so in one short sentence and offer a next step. If a tool says it needs approval or isn't permitted, tell them briefly that this one needs their okay in the app — never pretend it happened and never work around it.",
     "When you add a to-do, say simply that you saved it to their task list — do NOT invent specific screen names like 'My Day' or claim it's in a particular place you can't verify. When run_deep_task finishes, its result appears in their Review area; only mention Review for run_deep_task work, never for a plain reminder.",
     "Do not spell things out letter by letter or read punctuation, tool names, or code aloud. Just speak like a helpful person.",
-    "The user speaks English. Always understand their speech as English and reply in English, even if a word is unclear.",
+    languageLine(),
   ].join(" ");
   // Append the session-start context briefing (who the user is + their current
   // work) so the speech-native model opens the conversation already knowing

@@ -43,6 +43,7 @@
  * be answering questions nobody asked.
  */
 
+import { getConfig } from "../config/loader.js";
 import { credentialKey } from "../security/credential-key.js";
 import { getSecureKeyAsync } from "../security/secure-keys.js";
 import { getLogger } from "../util/logger.js";
@@ -79,9 +80,48 @@ export function resolveGeminiLiveModel(): string {
  * wrong (e.g. transcribe English as Japanese), derailing the whole turn.
  * Override with `CUE_GEMINI_LIVE_LANGUAGE`.
  */
-export function resolveGeminiLiveLanguage(): string {
-  return process.env.CUE_GEMINI_LIVE_LANGUAGE?.trim() || "en-US";
+export function resolveGeminiLiveLanguage(): string | undefined {
+  const fromEnv = process.env.CUE_GEMINI_LIVE_LANGUAGE?.trim();
+  if (fromEnv) return fromEnv;
+  // Both voice engines read the same listening-language setting. "multi" (the
+  // schema default) means multilingual: return undefined so the setup frame
+  // OMITS `speechConfig.languageCode` — Gemini Live auto-detects language per
+  // utterance when the pin is absent, which is what lets the caller switch
+  // languages mid-conversation. A concrete base code pins recognition; map it
+  // to the regional BCP-47 tag Gemini expects.
+  // Read tolerantly: an stt block without the `language` field means the
+  // multilingual default, same as an explicit "multi".
+  const stt = getConfig().services.stt as { language?: string };
+  const configured = stt.language?.trim().toLowerCase();
+  if (!configured || configured === "multi") return undefined;
+  return GEMINI_LIVE_LANGUAGE_TAGS[configured] ?? configured;
 }
+
+/**
+ * Base language subtag → the BCP-47 regional tag Gemini Live's speechConfig
+ * expects. Codes outside this map pass through as-is (Gemini accepts many
+ * regional tags directly; an unknown value degrades to auto-detection
+ * server-side rather than failing the session).
+ */
+const GEMINI_LIVE_LANGUAGE_TAGS: Record<string, string> = {
+  en: "en-US",
+  es: "es-US",
+  fr: "fr-FR",
+  de: "de-DE",
+  hi: "hi-IN",
+  pt: "pt-BR",
+  ja: "ja-JP",
+  it: "it-IT",
+  nl: "nl-NL",
+  ru: "ru-RU",
+  ar: "ar-XA",
+  ko: "ko-KR",
+  zh: "cmn-CN",
+  id: "id-ID",
+  th: "th-TH",
+  tr: "tr-TR",
+  vi: "vi-VN",
+};
 
 /**
  * Gemini Live prebuilt voice name. Gemini Live speaks with its OWN voices (not
