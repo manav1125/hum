@@ -4,7 +4,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { ApertureAvatar } from "@vellumai/design-library/components/aperture-avatar";
-import { MEMORY_TYPES, type MemoryType } from "@vellumai/design-library";
+import {
+  MEMORY_TYPES,
+  SegmentControl,
+  type MemoryType,
+  type SegmentControlItem,
+} from "@vellumai/design-library";
 import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialog";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
@@ -24,6 +29,7 @@ import { Mv3MemoryV24Page } from "@/mobile-v3/memory/mv3-memory-page-v24";
 
 import { MemoryImportCard } from "@/components/memory-import/memory-import-card";
 
+import { ConceptGraphView } from "./components/concept-graph/concept-graph-view";
 import { useMemoryItemsQuery } from "./memories/hooks/use-memory-items-query";
 import {
   MEMORY_KIND_SCOPE,
@@ -51,6 +57,19 @@ function newDraftConversationId(): string {
 }
 
 type KindFilter = "all" | MemoryType;
+
+/**
+ * The two Memory views: the classic provenance list (memory ITEMS from the
+ * graph DB) and the concept Map (the memory-v2 concept-page graph served by
+ * `GET /memory-graph`). They read DIFFERENT data models, so the map is a
+ * sibling view beside the list — never a replacement for it.
+ */
+type MemoriesView = "list" | "map";
+
+const VIEW_ITEMS: SegmentControlItem<MemoriesView>[] = [
+  { value: "list", label: "List" },
+  { value: "map", label: "Map" },
+];
 
 /**
  * The Memory surface — a faithful translation of surfaces/Memory.dc.html
@@ -104,6 +123,7 @@ function MemoriesPageDesktop() {
   const [draft, setDraft] = useState("");
   const [pendingForget, setPendingForget] = useState<MemoryItem | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [view, setView] = useState<MemoriesView>("list");
 
   // Filter server-side: a kind chip must see ALL memories of that kind, not
   // just whichever landed on the first page (154 procedural skill-notices
@@ -242,6 +262,20 @@ function MemoriesPageDesktop() {
     void navigate(routes.conversation(draftId));
   }, [navigate]);
 
+  // Chat-from-node on the concept map: same fresh-draft seeding path as
+  // "Teach Cue", but prefilled with the node's message (e.g. "Tell me what
+  // you know about X"). A prefill, NOT an auto-send.
+  const onOpenThreadFromNode = useCallback(
+    (message: string) => {
+      usePendingDeepLinkStore.getState().setPendingComposerMessage(message);
+      useViewerStore.getState().setMainView("chat");
+      const draftId = newDraftConversationId();
+      useConversationStore.getState().setActiveConversationId(draftId);
+      void navigate(routes.conversation(draftId));
+    },
+    [navigate],
+  );
+
   const showEmpty = !isLoading && !isError && filteredItems.length === 0;
 
   return (
@@ -252,9 +286,10 @@ function MemoriesPageDesktop() {
       className={MEMORY_KIND_SCOPE}
       style={{
         display: "grid",
-        gridTemplateColumns: isMobile
-          ? "minmax(0, 1fr)"
-          : "minmax(0, 1fr) 280px",
+        gridTemplateColumns:
+          isMobile || view === "map"
+            ? "minmax(0, 1fr)"
+            : "minmax(0, 1fr) 280px",
         gridTemplateRows: isMobile ? "minmax(0, 1fr) auto" : undefined,
         minHeight: 0,
         flex: 1,
@@ -321,6 +356,16 @@ function MemoriesPageDesktop() {
               can edit or forget anything.
             </div>
           </div>
+          {/* List ⇄ Map view toggle. Two different data models behind one
+              surface: the list reads memory items, the map reads the concept
+              graph — so this switches views, it never filters one of them. */}
+          <SegmentControl<MemoriesView>
+            ariaLabel="Memory view"
+            items={VIEW_ITEMS}
+            value={view}
+            onChange={setView}
+            className="!w-auto [&>*]:!flex-none"
+          />
           <div style={{ display: "flex", gap: 18, paddingLeft: 6 }}>
             <div style={{ textAlign: "right" }}>
               <div
@@ -365,6 +410,18 @@ function MemoriesPageDesktop() {
           </div>
         </div>
 
+        {view === "map" ? (
+          // ── MAP VIEW ── the 3D concept graph ("neurons · synapses ·
+          // lobes"), filling the center column below the shared header.
+          <div style={{ flex: 1, minHeight: 0, padding: "12px 24px 22px" }}>
+            <ConceptGraphView
+              assistantId={assistantId}
+              className="h-full"
+              onOpenThread={onOpenThreadFromNode}
+            />
+          </div>
+        ) : (
+          <>
         {/* Search row */}
         <div
           style={{
@@ -599,13 +656,16 @@ function MemoriesPageDesktop() {
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* ── PROVENANCE RAIL ───────────────────────────────────────── */}
       {/* Desktop: always-visible right rail. Mobile: a full-width detail
           section stacked beneath the list, shown only once a memory is
-          selected (there's no room for a persistent empty rail). */}
-      {isMobile && (isError || !selected) ? null : (
+          selected (there's no room for a persistent empty rail). The map view
+          carries its own detail drawer, so the rail is list-only. */}
+      {view === "map" || (isMobile && (isError || !selected)) ? null : (
         <ProvenanceRail
           memory={isError ? null : selected}
           onEdit={startEdit}
