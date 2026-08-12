@@ -747,6 +747,10 @@ export function ChatLayout() {
                     closeDrawer();
                   }}
                   onClose={closeDrawer}
+                  // Only the drawer has an overlay to dismiss before leaving
+                  // for another surface. The full-page usage passes nothing —
+                  // its `onClose` is a history back, not a dismiss.
+                  onLeaveForSurface={closeDrawer}
                 />
               </aside>
             </div>

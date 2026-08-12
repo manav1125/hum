@@ -383,6 +383,18 @@ export interface Mv3ChatsIndexProps {
   onStartNewConversation: () => void;
   onClose?: () => void;
   /**
+   * Called just before navigating to another SURFACE (the Apps row). The
+   * drawer passes its close so it doesn't hang over the destination; the
+   * full-page usage passes nothing, because there is no overlay to dismiss.
+   *
+   * Deliberately NOT `onClose`. That prop means two different things by
+   * caller — `closeDrawer()` in the drawer, but `goBackWithFallback(navigate,
+   * routes.hq)` on the page — so calling it before a navigate fired a history
+   * pop that resolved AFTER the push and landed the owner back on home. Only
+   * the drawer has anything to dismiss, so only the drawer passes this.
+   */
+  onLeaveForSurface?: () => void;
+  /**
    * Fetches the next page of older conversations (the boot drain is capped at
    * 3 pages). Resolves with whether more likely remain; the row hides itself
    * when it resolves false. Omitted → no load-more affordance (drawer usage
@@ -399,6 +411,7 @@ export function Mv3ChatsIndex({
   onSelectConversation,
   onStartNewConversation,
   onClose,
+  onLeaveForSurface,
   onLoadMore,
 }: Mv3ChatsIndexProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -433,7 +446,10 @@ export function Mv3ChatsIndex({
   const appsEnabled = flagsHydrated && ventureverseAppsOn;
   const openApps = () => {
     haptic.light();
-    onClose?.();
+    // `onLeaveForSurface`, never `onClose` — see the prop's docs. The page's
+    // onClose is a history BACK, which resolved after this push and bounced
+    // the owner to home instead of opening Apps.
+    onLeaveForSurface?.();
     void navigate(routes.ventureverseApps.root);
   };
   const [loadMore, setLoadMore] = useState<{
