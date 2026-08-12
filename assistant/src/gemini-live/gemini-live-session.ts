@@ -12,27 +12,29 @@
 
 import { randomUUID } from "node:crypto";
 
+import { getConfig } from "../config/loader.js";
 import {
   projectSkillTools,
   resetSkillToolProjection,
 } from "../daemon/conversation-skill-tools.js";
 import { formatTurnTimestamp } from "../daemon/date-context.js";
 import { buildLiveBriefing } from "../live-voice/build-live-briefing.js";
+import { PlaybackEchoClassifier } from "../live-voice/echo-classifier.js";
+import { persistLiveVoicePhoto } from "../live-voice/live-voice-photo.js";
 import type {
   LiveVoiceSession,
   LiveVoiceSessionCloseReason,
   LiveVoiceSessionFactoryContext,
 } from "../live-voice/live-voice-session-manager.js";
 import { LiveVoiceSessionStartupError } from "../live-voice/live-voice-session-manager.js";
-import { persistLiveVoicePhoto } from "../live-voice/live-voice-photo.js";
 import {
   ensureLiveVoiceThread,
   finalizeLiveVoiceThread,
   persistLiveVoiceTurn,
 } from "../live-voice/live-voice-thread.js";
-import { getAttachmentsByIds } from "../memory/attachments-store.js";
 import { synthesizeLiveVoiceSession } from "../live-voice/synthesize-live-voice-session.js";
 import { resolveVoicePersona } from "../live-voice/voice-personas.js";
+import { getAttachmentsByIds } from "../memory/attachments-store.js";
 import type { AssistantEvent } from "../runtime/assistant-event.js";
 import {
   assistantEventHub,
@@ -56,11 +58,14 @@ import {
 const log = getLogger("gemini-live-session");
 
 /**
- * Post-playback margin for the echo gate: covers client buffering/network
+ * Post-playback slack for the echo window: covers client buffering/network
  * jitter between "we sent the last audio chunk" and "the speaker went quiet",
- * so trailing echo cannot open a phantom user turn.
+ * so trailing echo cannot open a phantom user turn. Fallback when the
+ * `liveVoice.vad.echoDrainSlackMs` config cannot be read.
  */
-const ECHO_GATE_MARGIN_MS = 400;
+const DEFAULT_ECHO_DRAIN_SLACK_MS = 300;
+const DEFAULT_ECHO_BARGE_IN_MARGIN = 1.5;
+const DEFAULT_ECHO_EMA_HALF_LIFE_MS = 400;
 
 /** Lazily-cached silence buffers keyed by chunk length (mic chunks are uniform). */
 const SILENCE_CHUNKS = {
@@ -155,6 +160,14 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private closed = false;
   /** Estimated client playback end (epoch ms) of assistant audio sent so far. */
   private playbackTailUntilMs = 0;
+  /**
+   * Playback-echo classifier for sessions whose client playback is NOT
+   * echo-cancelled (`echoSafePlayback` absent); null for flagged clients,
+   * whose mic audio passes through untouched. See {@link gateEcho}.
+   */
+  private readonly echoClassifier: PlaybackEchoClassifier | null;
+  /** Echo-window slack past the playback-tail estimate (config-tunable). */
+  private readonly echoDrainSlackMs: number;
   // Turn transcript accumulation, flushed to the saved thread on turnComplete.
   private pendingUserText = "";
   private pendingAssistantText = "";
@@ -196,6 +209,39 @@ export class GeminiLiveSession implements LiveVoiceSession {
     this.conversationId =
       context.startFrame.conversationId ?? context.sessionId;
     this.inputSampleRate = context.startFrame.audio.sampleRate;
+
+    // Echo classifier tuning shares the cascade's `liveVoice.vad` knobs.
+    // Config is read best-effort: a failed read keeps the in-code defaults
+    // rather than failing session construction.
+    let margin = DEFAULT_ECHO_BARGE_IN_MARGIN;
+    let emaHalfLifeMs = DEFAULT_ECHO_EMA_HALF_LIFE_MS;
+    let drainSlackMs = DEFAULT_ECHO_DRAIN_SLACK_MS;
+    try {
+      const vad = getConfig().liveVoice.vad;
+      margin = vad.echoBargeInMargin;
+      emaHalfLifeMs = vad.echoEmaHalfLifeMs;
+      drainSlackMs = vad.echoDrainSlackMs;
+    } catch (err) {
+      log.warn({ err }, "liveVoice.vad config unavailable; using defaults");
+    }
+    this.echoDrainSlackMs = drainSlackMs;
+    // An echo-safe client (media-element playback covered by browser echo
+    // cancellation, declared via the start frame's `echoSafePlayback` flag)
+    // never loops the reply back through its mic: no classifier at all —
+    // its audio passes through untouched (see gateEcho).
+    this.echoClassifier =
+      context.startFrame.echoSafePlayback === true
+        ? null
+        : new PlaybackEchoClassifier({
+            inputSampleRate: this.inputSampleRate,
+            referenceSampleRate: GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
+            margin,
+            emaHalfLifeMs,
+            // Conservative: when the classifier cannot decide (no usable
+            // reference yet), keep the old blanket silence substitution for
+            // the playback window instead of forwarding possible echo.
+            undecidedIsEcho: true,
+          });
   }
 
   async start(): Promise<void> {
@@ -349,9 +395,11 @@ export class GeminiLiveSession implements LiveVoiceSession {
     switch (frame.type) {
       case "audio":
         if (frame.dataBase64) {
-          this.client.sendAudio(
-            this.gateEcho(Buffer.from(frame.dataBase64, "base64")),
-          );
+          for (const gated of this.gateEcho(
+            Buffer.from(frame.dataBase64, "base64"),
+          )) {
+            this.client.sendAudio(gated);
+          }
         }
         break;
       case "ptt_release":
@@ -422,13 +470,19 @@ export class GeminiLiveSession implements LiveVoiceSession {
   }
 
   handleBinaryAudio(chunk: Uint8Array): void {
-    this.client?.sendAudio(this.gateEcho(chunk));
+    if (!this.client) return;
+    for (const gated of this.gateEcho(chunk)) {
+      this.client.sendAudio(gated);
+    }
   }
 
   /**
-   * Half-duplex echo gate: while the assistant's own audio is (estimated to
-   * be) playing on the client, replace mic input with equal-length silence
-   * before it reaches Gemini.
+   * Echo gate: while the assistant's own audio is (estimated to be) playing
+   * on the client, run mic input through the waveform-correlation playback
+   * echo classifier — audio that correlates with the PCM we sent (or sits at
+   * the learned echo level) is replaced with equal-length silence before it
+   * reaches Gemini; audio the classifier attributes to the user is forwarded
+   * so mid-reply barge-in works again on this engine.
    *
    * Real-device evidence (2026-08-11): echo cancellation does not cover
    * WebAudio playback in the packaged desktop app, so the reply loops back
@@ -436,22 +490,41 @@ export class GeminiLiveSession implements LiveVoiceSession {
    * interrupting the reply with its own echo on every turn. Desensitizing
    * detection (START_SENSITIVITY_LOW) traded that for the opposite failure:
    * relaxed, quieter follow-ups stopped opening turns and the session
-   * "stopped engaging" a few exchanges in. Gating removes the echo at the
-   * source instead, so detection can stay at full sensitivity. Silence (not
-   * dropped frames) keeps the input stream continuous for Gemini's VAD. The
-   * cost is no mid-reply barge-in on this engine for now — the same stopgap
-   * the cascade engine currently runs.
+   * "stopped engaging" a few exchanges in. The classifier removes the echo
+   * at the source — precisely, instead of the previous blanket half-duplex
+   * silence substitution — so detection stays at full sensitivity AND the
+   * user can interrupt. When the classifier cannot decide (no usable
+   * reference yet), the blanket silence substitution remains the fallback
+   * for the playback window. Silence (not dropped frames) keeps the input
+   * stream continuous for Gemini's VAD.
+   *
+   * May return [] while a short onset probe is being held for correlation;
+   * the held audio is released (forwarded or substituted) with a later
+   * chunk, in original order.
    */
-  private gateEcho(chunk: Uint8Array): Uint8Array {
+  private gateEcho(chunk: Uint8Array): Uint8Array[] {
     // A client whose playback is echo-cancellable (media-element routing,
     // declared via the start frame's `echoSafePlayback` capability flag)
     // never loops the reply back through its mic — pass its audio through
     // untouched so the user can interrupt mid-reply at full sensitivity.
-    if (this.context.startFrame.echoSafePlayback === true) return chunk;
-    if (Date.now() < this.playbackTailUntilMs + ECHO_GATE_MARGIN_MS) {
-      return SILENCE_CHUNKS.get(chunk.length) ?? new Uint8Array(chunk.length);
+    const classifier = this.echoClassifier;
+    if (!classifier) return [chunk];
+    if (Date.now() >= this.playbackTailUntilMs + this.echoDrainSlackMs) {
+      // Outside the echo window: nothing we sent can still be audible.
+      classifier.resetWindow();
+      return [chunk];
     }
-    return chunk;
+    const buffer = Buffer.isBuffer(chunk)
+      ? chunk
+      : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    return classifier
+      .classify(buffer)
+      .map((classified) =>
+        classified.classification === "echo"
+          ? (SILENCE_CHUNKS.get(classified.chunk.length) ??
+            new Uint8Array(classified.chunk.length))
+          : classified.chunk,
+      );
   }
 
   /**
@@ -476,6 +549,16 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private onModelAudio(pcm: Buffer): void {
     if (this.closed) return;
     this.beginTurn();
+    // Feed the echo classifier's reference with the PCM the client will play
+    // (unflagged sessions only). A reference left over from a previous,
+    // fully-drained playback burst is stale — discard it so the correlation
+    // probe only ever matches audio that can still be audible.
+    if (this.echoClassifier) {
+      if (Date.now() >= this.playbackTailUntilMs + this.echoDrainSlackMs) {
+        this.echoClassifier.resetWindow();
+      }
+      this.echoClassifier.appendReference(pcm);
+    }
     // Advance the playback-tail estimate: chunks queue on the client, so the
     // tail is cumulative from where playback currently stands (never behind
     // now). s16le mono at the output rate → duration = bytes / 2 / rate.

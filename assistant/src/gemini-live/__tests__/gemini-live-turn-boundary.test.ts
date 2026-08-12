@@ -202,35 +202,100 @@ describe("gemini-live turn boundary", () => {
 });
 
 describe("gemini-live echo gate", () => {
-  const loudMic = () => {
-    const b = Buffer.alloc(320);
-    for (let i = 0; i < b.length; i += 2) b.writeInt16LE(8000, i);
-    return b;
-  };
   const isSilent = (chunk: Uint8Array) => chunk.every((byte) => byte === 0);
 
-  test("mic audio during assistant playback reaches Gemini as silence, not echo", async () => {
+  /** PCM16LE sine tone: `sampleCount` samples at `sampleRate`. */
+  const tone = (
+    amplitude: number,
+    frequencyHz: number,
+    sampleCount: number,
+    sampleRate: number,
+  ): Buffer => {
+    const b = Buffer.alloc(sampleCount * 2);
+    for (let i = 0; i < sampleCount; i += 1) {
+      b.writeInt16LE(
+        Math.round(
+          amplitude * Math.sin((2 * Math.PI * frequencyHz * i) / sampleRate),
+        ),
+        i * 2,
+      );
+    }
+    return b;
+  };
+
+  // Model (reference) audio: 2 s of a 200 Hz tone at the 24 kHz output rate.
+  const modelTone = () => tone(4_700, 200, 2 * 24_000, 24_000);
+  // Mic echo of it: the same 200 Hz tone as heard at the 16 kHz input rate.
+  // 160 samples = 10 ms = exactly 2 periods, so concatenation is continuous.
+  const echoMicChunk = () => tone(4_700, 200, 160, 16_000);
+  // Genuine barge-in speech: louder and uncorrelated (530 Hz).
+  const speechMicChunk = () => tone(9_400, 530, 160, 16_000);
+
+  type StartedSession = Awaited<ReturnType<typeof startSession>>["session"];
+  const sendMic = (session: StartedSession, chunk: Buffer, times = 1) => {
+    for (let i = 0; i < times; i += 1) {
+      session.handleClientFrame({
+        type: "audio",
+        dataBase64: chunk.toString("base64"),
+      });
+    }
+  };
+
+  test("mic echo correlated with playback reaches Gemini as silence", async () => {
     const { session } = await startSession();
 
-    // 2 seconds of assistant audio (24kHz s16le) = playback tail ~2s out.
-    captured.onAudio?.(Buffer.alloc(2 * 24000 * 2));
-    session.handleClientFrame({
-      type: "audio",
-      dataBase64: loudMic().toString("base64"),
-    });
+    captured.onAudio?.(modelTone());
+    sendMic(session, echoMicChunk(), 10);
 
-    expect(forwardedAudio).toHaveLength(1);
-    expect(forwardedAudio[0]!.length).toBe(320);
-    expect(isSilent(forwardedAudio[0]!)).toBe(true);
+    // Every chunk was substituted (the onset probe resolved as a match and
+    // the learned level absorbed the rest); nothing of the echo got through.
+    expect(forwardedAudio).toHaveLength(10);
+    expect(forwardedAudio.every((chunk) => isSilent(chunk))).toBe(true);
+    expect(forwardedAudio.every((chunk) => chunk.length === 320)).toBe(true);
+  });
+
+  test("uncorrelated speech during playback is forwarded — barge-in works", async () => {
+    const { session } = await startSession();
+
+    captured.onAudio?.(modelTone());
+    // Held as the onset probe until 100 ms accumulates, then released as a
+    // nonmatch in original order.
+    sendMic(session, speechMicChunk(), 10);
+
+    expect(forwardedAudio).toHaveLength(10);
+    expect(forwardedAudio.every((chunk) => !isSilent(chunk))).toBe(true);
+  });
+
+  test("speech above the learned echo level interrupts after echo settled", async () => {
+    const { session } = await startSession();
+
+    captured.onAudio?.(modelTone());
+    sendMic(session, echoMicChunk(), 10);
+    forwardedAudio.length = 0;
+
+    sendMic(session, speechMicChunk(), 3);
+
+    expect(forwardedAudio).toHaveLength(3);
+    expect(forwardedAudio.every((chunk) => !isSilent(chunk))).toBe(true);
+  });
+
+  test("with no usable reference the window keeps the silence substitution", async () => {
+    const { session } = await startSession();
+
+    // A sliver of model audio (~4 ms) opens the window (drain slack) but is
+    // far too short to correlate against: the classifier cannot decide, so
+    // the conservative fallback keeps substituting silence.
+    captured.onAudio?.(tone(4_700, 200, 100, 24_000));
+    sendMic(session, speechMicChunk(), 12);
+
+    expect(forwardedAudio.length).toBeGreaterThan(0);
+    expect(forwardedAudio.every((chunk) => isSilent(chunk))).toBe(true);
   });
 
   test("mic audio with no playback in flight passes through untouched", async () => {
     const { session } = await startSession();
 
-    session.handleClientFrame({
-      type: "audio",
-      dataBase64: loudMic().toString("base64"),
-    });
+    sendMic(session, speechMicChunk());
 
     expect(forwardedAudio).toHaveLength(1);
     expect(isSilent(forwardedAudio[0]!)).toBe(false);
@@ -337,8 +402,7 @@ describe("gemini-live attach_image (mid-call camera photos)", () => {
     });
     await waitFor(() =>
       frames.some(
-        (frame) =>
-          frame.type === "error" && frame.frameType === "attach_image",
+        (frame) => frame.type === "error" && frame.frameType === "attach_image",
       ),
     );
 
