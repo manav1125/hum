@@ -35,6 +35,22 @@ export const openUrl = async (url: string): Promise<void> => {
 };
 
 /**
+ * Open an external URL WITHOUT ever navigating the current tab.
+ *
+ * Used for links relayed out of sandboxed srcdoc frames (`vellum_open_link`):
+ * on plain web, `openUrl`'s same-tab fallback would let widget markup
+ * navigate the whole SPA away, so this variant opens a new tab instead.
+ * Electron and Capacitor keep their native external-browser handling.
+ */
+export const openExternalUrl = async (url: string): Promise<void> => {
+  if (isElectron() || Capacitor.isNativePlatform()) {
+    await openUrl(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+};
+
+/**
  * Subscribe to the Capacitor Browser `browserFinished` event, which fires
  * when the user dismisses the `SFSafariViewController`. Returns an
  * unsubscribe function. No-ops in non-native contexts.

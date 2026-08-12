@@ -154,7 +154,20 @@ export function AppViewerContainer({
       : null;
 
   const srcdoc = useMemo(
-    () => injectBridge(html, appId, { fetch: true, route, deckNav: isDeck }),
+    // `links: "open"`: with the embedder's `frame-src 'self'` in force, an
+    // anchor click would try to navigate the sandboxed frame to the external
+    // URL and be refused — the interceptor opens it via the frame's own
+    // `allow-popups` token instead. Direct-open (not the chat surfaces'
+    // relay) is a deliberate trust-tier split: an installed app is a
+    // different tier from model-authored inline markup. Keep the two in step
+    // if that ever stops being true.
+    () =>
+      injectBridge(html, appId, {
+        fetch: true,
+        route,
+        deckNav: isDeck,
+        links: "open",
+      }),
     [html, appId, route, isDeck],
   );
 

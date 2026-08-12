@@ -28,6 +28,30 @@
 /** Path pattern allowed through the fetch proxy (matches desktop ATL-83 restriction). */
 export const FETCH_PROXY_PATH_RE = /^\/v1\/x\//;
 
+/**
+ * Link schemes a sandboxed frame may ask the host to open on its behalf.
+ *
+ * One definition for both sides of the relay: the in-frame interceptor
+ * interpolates it to decide what to hand over (routing) and
+ * {@link isRelayableExternalHref} applies it to what arrives (the security
+ * check). Two copies would drift into links the frame relays and the host
+ * refuses, or the reverse.
+ */
+const RELAYABLE_LINK_SCHEME_RE = /^(https?|mailto|tel):/i;
+
+/**
+ * Whether a sandboxed frame's link may be opened by the host.
+ *
+ * The host is the authority on this: a frame that relays `vellum_open_link`
+ * controls the `href` string entirely, so the in-frame scheme check is a
+ * routing decision and this one is the security check. Anything outside the
+ * allowlist (`javascript:`, `data:`, `blob:`, `file:`, custom schemes) is
+ * refused.
+ */
+export function isRelayableExternalHref(href: unknown): href is string {
+  return typeof href === "string" && RELAYABLE_LINK_SCHEME_RE.test(href.trim());
+}
+
 // ---------------------------------------------------------------------------
 // Script serialization
 // ---------------------------------------------------------------------------
@@ -103,6 +127,88 @@ export interface BridgeOptions {
    * Default: false.
    */
   deckNav?: boolean;
+  /**
+   * Intercept anchor clicks on external-scheme links inside the frame.
+   *
+   * With the embedder's `frame-src` in force (see `index.html`), a plain
+   * anchor click would try to navigate the sandboxed frame itself to the
+   * external URL and be refused — the click dies silently. The interceptor
+   * catches it and either:
+   *
+   *  - `"relay"` — posts a `vellum_open_link` message to the host, which
+   *    opens the URL after checking its scheme ({@link isRelayableExternalHref})
+   *    and requiring a user activation. Required for frames sandboxed
+   *    WITHOUT `allow-popups`, where `window.open()` is a silent no-op.
+   *  - `"open"` — calls `window.open(..., 'noopener,noreferrer')` directly.
+   *    Only meaningful for frames that keep `allow-popups` (the app viewer).
+   *    A popup is a top-level navigation that no `frame-src` constrains, so
+   *    this mode leaves the frame a direct egress channel — a deliberate
+   *    trust-tier split, not an oversight: an installed app is a different
+   *    tier from model-authored inline markup.
+   *
+   * Default: no interception.
+   */
+  links?: "relay" | "open";
+}
+
+/**
+ * Build the in-frame link interceptor `<script>`.
+ *
+ * Anchors with external schemes are intercepted so the click neither
+ * navigates the sandboxed frame (refused by the embedder's `frame-src`, so
+ * the link would just die) nor leaves through an uncontrolled path. Fragment
+ * and relative links are left to the browser: fragment navigation is in-page,
+ * and everything else is already refused by the sandbox/frame-src.
+ *
+ * @param frameId Included in `vellum_open_link` messages so the parent knows
+ *   which surface sent the request.
+ * @param options.relayExternal Relay external links to the parent as
+ *   `vellum_open_link` instead of calling `window.open()`. Required for
+ *   frames sandboxed without `allow-popups`, where `window.open()` is a
+ *   silent no-op.
+ */
+export function buildLinkInterceptorScript(
+  frameId: string,
+  options?: { relayExternal?: boolean },
+): string {
+  const externalHandler = options?.relayExternal
+    ? `window.parent.postMessage({
+              type: 'vellum_open_link',
+              frameId: ${jsonForScript(frameId)},
+              href: rawHref,
+              linkText: (el.textContent || '').trim()
+            }, '*');`
+    : `window.open(rawHref, '_blank', 'noopener,noreferrer');`;
+
+  return `<script>
+(function() {
+    document.addEventListener('click', function(e) {
+      if (e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (e.defaultPrevented) return;
+      var el = e.target;
+      while (el && el !== document.body) {
+        // Compared case-insensitively: \`tagName\` is upper-cased for HTML
+        // elements but preserves case for SVG, where an anchor reports 'a'.
+        // Widgets are frequently SVG diagrams, so an exact 'A' test leaves
+        // every link drawn inside the artwork dead.
+        if (el.tagName && String(el.tagName).toUpperCase() === 'A' && el.getAttribute('href')) {
+          // Use the raw href attribute for scheme detection. In srcdoc
+          // documents el.href resolves fragment/relative links against the
+          // embedding page URL, producing absolute http(s) URLs that would
+          // wrongly match the external-scheme test below.
+          var rawHref = el.getAttribute('href');
+          if (${RELAYABLE_LINK_SCHEME_RE.toString()}.test(rawHref)) {
+            e.preventDefault();
+            ${externalHandler}
+            return;
+          }
+        }
+        el = el.parentElement;
+      }
+    }, true);
+})();
+</script>`;
 }
 
 /**
@@ -344,8 +450,17 @@ export function injectBridge(
   frameId: string,
   options?: BridgeOptions,
 ): string {
+  const linkInterceptor =
+    options?.links !== undefined
+      ? buildLinkInterceptorScript(frameId, {
+          relayExternal: options.links === "relay",
+        })
+      : "";
   return prependScript(
-    injectScript(html, buildBridgeLogicScript(frameId, options)),
+    injectScript(
+      html,
+      buildBridgeLogicScript(frameId, options) + linkInterceptor,
+    ),
     buildStoragePolyfill(),
   );
 }

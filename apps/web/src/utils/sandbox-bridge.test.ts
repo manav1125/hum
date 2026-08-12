@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  buildLinkInterceptorScript,
   buildStoragePolyfill,
   injectBridge,
   injectScript,
+  isRelayableExternalHref,
   jsonForScript,
   preparePreviewHtml,
   prependScript,
@@ -213,6 +215,101 @@ describe("injectBridge", () => {
     const out = injectBridge(html, FRAME_ID);
     expect(out).not.toContain("vellum_fetch_request");
     expect(out).not.toContain("window.vellum.fetch");
+  });
+
+  it("omits the link interceptor by default", () => {
+    const html = "<html><body></body></html>";
+    const out = injectBridge(html, FRAME_ID);
+    expect(out).not.toContain("vellum_open_link");
+    expect(out).not.toContain("window.open(rawHref");
+  });
+
+  it("includes the relaying interceptor for links: 'relay'", () => {
+    const html = "<html><body></body></html>";
+    const out = injectBridge(html, FRAME_ID, { links: "relay" });
+    expect(out).toContain("vellum_open_link");
+    expect(out).not.toContain("window.open(rawHref");
+  });
+
+  it("includes the direct-open interceptor for links: 'open'", () => {
+    const html = "<html><body></body></html>";
+    const out = injectBridge(html, FRAME_ID, { links: "open" });
+    expect(out).toContain("window.open(rawHref");
+    expect(out).not.toContain("vellum_open_link");
+  });
+});
+
+describe("isRelayableExternalHref", () => {
+  it("accepts the schemes a link can legitimately carry", () => {
+    expect(isRelayableExternalHref("https://example.com/docs")).toBe(true);
+    expect(isRelayableExternalHref("http://example.com")).toBe(true);
+    expect(isRelayableExternalHref("mailto:user@example.com")).toBe(true);
+    expect(isRelayableExternalHref("tel:+15550100")).toBe(true);
+    expect(isRelayableExternalHref("  https://example.com  ")).toBe(true);
+    expect(isRelayableExternalHref("HTTPS://example.com")).toBe(true);
+  });
+
+  it("refuses schemes that execute or smuggle content", () => {
+    // The relaying frame controls this string outright, so the host cannot
+    // trust the in-frame scheme check that routed the message here.
+    expect(isRelayableExternalHref("javascript:alert(1)")).toBe(false);
+    expect(isRelayableExternalHref("data:text/html,<script>x</script>")).toBe(
+      false,
+    );
+    expect(isRelayableExternalHref("blob:https://example.com/abc")).toBe(false);
+    expect(isRelayableExternalHref("file:///etc/passwd")).toBe(false);
+    expect(isRelayableExternalHref("vellum://host/app")).toBe(false);
+    expect(isRelayableExternalHref("/relative/path")).toBe(false);
+    expect(isRelayableExternalHref("")).toBe(false);
+    expect(isRelayableExternalHref(undefined)).toBe(false);
+    expect(isRelayableExternalHref(42)).toBe(false);
+  });
+});
+
+describe("buildLinkInterceptorScript", () => {
+  it("produces a script tag with a click interceptor", () => {
+    const out = buildLinkInterceptorScript(FRAME_ID);
+    expect(out.startsWith("<script>")).toBe(true);
+    expect(out.trimEnd().endsWith("</script>")).toBe(true);
+    expect(out).toContain("addEventListener('click'");
+    expect(out).toContain("preventDefault");
+  });
+
+  it("opens directly with noopener,noreferrer when not relaying", () => {
+    const out = buildLinkInterceptorScript(FRAME_ID);
+    expect(out).toContain("window.open(rawHref");
+    expect(out).toContain("noopener,noreferrer");
+  });
+
+  it("relays external links to the parent when asked", () => {
+    const out = buildLinkInterceptorScript(FRAME_ID, { relayExternal: true });
+    expect(out).not.toContain("window.open(rawHref");
+    expect(out).toContain("vellum_open_link");
+    expect(out).toContain(JSON.stringify(FRAME_ID));
+  });
+
+  it("only intercepts external URL schemes", () => {
+    const out = buildLinkInterceptorScript(FRAME_ID);
+    expect(out).toContain("https?");
+    expect(out).toContain("mailto");
+    expect(out).toContain("tel");
+  });
+
+  it("matches anchors in both the HTML and SVG namespaces", () => {
+    // `tagName` is upper-cased for HTML but case-preserving for SVG, where an
+    // anchor reports 'a'. Widgets are frequently SVG diagrams, so an exact
+    // 'A' comparison leaves every link drawn inside the artwork dead.
+    const out = buildLinkInterceptorScript(FRAME_ID);
+    expect(out).toContain("toUpperCase() === 'A'");
+    expect(out).not.toContain("el.tagName === 'A'");
+  });
+
+  it("detects the scheme on the raw href attribute, not the resolved URL", () => {
+    // In srcdoc documents `el.href` resolves fragment/relative links against
+    // the embedding page URL, producing absolute http(s) URLs that would
+    // wrongly match the external-scheme test.
+    const out = buildLinkInterceptorScript(FRAME_ID);
+    expect(out).toContain("getAttribute('href')");
   });
 });
 

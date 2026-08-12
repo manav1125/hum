@@ -5,7 +5,8 @@ import { AppCard } from "@/components/app-card";
 import { clearAppHtmlCache, getCachedAppHtml } from "@/utils/app-html-cache";
 import { usePinnedAppsStore } from "@/stores/pinned-apps-store";
 import { useSandboxFetchProxy } from "@/hooks/use-sandbox-fetch-proxy";
-import { injectBridge } from "@/utils/sandbox-bridge";
+import { openExternalUrl } from "@/runtime/browser";
+import { injectBridge, isRelayableExternalHref } from "@/utils/sandbox-bridge";
 import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
 import {
   isSurfaceToolCallComplete,
@@ -116,9 +117,44 @@ export function DynamicPageSurface({
 
   const srcdoc = useMemo(
     () =>
-      injectBridge(data.html || "", surface.surfaceId, { fetch: enableFetch }),
+      injectBridge(data.html || "", surface.surfaceId, {
+        fetch: enableFetch,
+        links: "relay",
+      }),
     [data.html, surface.surfaceId, enableFetch],
   );
+
+  // The frame gets no popup tokens, so every outbound link arrives here as a
+  // `vellum_open_link` relay the host opens after checking its scheme. A
+  // popup is a top-level navigation that the embedder's `frame-src` cannot
+  // constrain, so routing links through the host is what keeps the frame's
+  // only egress under host control.
+  //
+  // That relay is a known, accepted one-click egress path, and the activation
+  // gate below does not close it: `navigator.userActivation` reports that the
+  // user clicked *somewhere* in the frame, not that they clicked a link.
+  // Treat the surface as able to exfiltrate on any click the user makes
+  // inside it, and do not add capability here on the assumption that the
+  // activation gate is a security boundary.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const msg = event.data as
+        | { type?: string; frameId?: string; href?: unknown }
+        | null
+        | undefined;
+      if (!msg || msg.type !== "vellum_open_link") return;
+      if (msg.frameId !== surface.surfaceId) return;
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      // Stops markup that phones home on load or in a loop, and nothing
+      // more: an activation says the user clicked somewhere in the frame,
+      // not that they clicked this link.
+      if (!navigator.userActivation?.isActive) return;
+      if (!isRelayableExternalHref(msg.href)) return;
+      void openExternalUrl(msg.href.trim());
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [surface.surfaceId]);
 
   useEffect(() => {
     if (!isToolCallComplete && assistantId && appId) {
@@ -230,7 +266,12 @@ export function DynamicPageSurface({
           ref={iframeRef}
           key={iframeKey}
           srcDoc={srcdoc}
-          sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+          // No popup tokens: a popup is a top-level navigation that the
+          // embedder's `frame-src` cannot constrain, so it would stay an
+          // egress channel for model-authored markup after the CSP closed
+          // self-navigation (ATL-1197). Links relay to the host instead —
+          // see the `vellum_open_link` handler above.
+          sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           title={surface.title || "Dynamic content"}
           style={{
