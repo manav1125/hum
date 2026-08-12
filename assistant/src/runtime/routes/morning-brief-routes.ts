@@ -5,7 +5,9 @@
  *
  *   1. `overnight` — work items COMPLETED since the window start: state
  *      "review" (◱ awaiting your review) vs "done" (✓ finished quietly),
- *      with project + agent attribution.
+ *      with project + agent attribution. Plus, when an inbox-management run
+ *      recorded a summary inside the window, one `kind: "inbox_cleanup"` row
+ *      carrying its archived/drafted/kept-important counts.
  *   2. `ask` — the single highest-priority item that needs the user: a
  *      pending approval first (it blocks work), else the top awaiting-review
  *      item. Null when nothing needs them ("calm day ahead").
@@ -31,6 +33,7 @@ import {
   type EventSummary,
   fetchTodaysEvents,
 } from "../../calendar/todays-events.js";
+import { readLatestInboxRunSummary } from "../../home/inbox-run-summary.js";
 import { resolveOAuthConnection } from "../../oauth/connection-resolver.js";
 import { getLogger } from "../../util/logger.js";
 import { getAgentByAssignee } from "../../work-items/agent-store.js";
@@ -53,6 +56,13 @@ const log = getLogger("morning-brief");
 /** ◱ awaiting the user's review vs ✓ finished quietly. */
 export type OvernightState = "review" | "done";
 
+/** Counts from the latest inbox-management run (kind "inbox_cleanup" rows). */
+export interface InboxCleanupCounts {
+  archived: number;
+  drafted: number;
+  keptImportant: number;
+}
+
 export interface OvernightItem {
   id: string;
   title: string;
@@ -61,7 +71,9 @@ export interface OvernightItem {
   /** Named agent attribution (registry name, falling back to the raw assignee). */
   agent?: string;
   state: OvernightState;
-  kind: "work_item";
+  kind: "work_item" | "inbox_cleanup";
+  /** Present only on kind "inbox_cleanup" rows. */
+  counts?: InboxCleanupCounts;
   /** ISO time the item reached its current terminal/review status. */
   completedAt: string;
 }
@@ -207,6 +219,28 @@ export function gatherOvernight(sinceMs: number): OvernightItem[] {
         : {}),
       state: item.status === "awaiting_review" ? "review" : "done",
       kind: "work_item",
+      completedAt: new Date(atMs).toISOString(),
+      atMs,
+    });
+  }
+
+  // The latest inbox-management run inside the window is an overnight win
+  // too — one typed row carrying its counts (store reads never throw).
+  const inboxRun = readLatestInboxRunSummary(sinceMs);
+  if (inboxRun) {
+    const atMs = Date.parse(inboxRun.ranAt);
+    out.push({
+      id: `inbox-run-${inboxRun.ranAt}`,
+      title:
+        `Inbox cleanup — ${inboxRun.archived} archived, ` +
+        `${inboxRun.drafted} drafted, ${inboxRun.keptImportant} kept as important`,
+      state: "done",
+      kind: "inbox_cleanup",
+      counts: {
+        archived: inboxRun.archived,
+        drafted: inboxRun.drafted,
+        keptImportant: inboxRun.keptImportant,
+      },
       completedAt: new Date(atMs).toISOString(),
       atMs,
     });
@@ -502,7 +536,14 @@ const overnightItemSchema = z.object({
   project: z.string().optional(),
   agent: z.string().optional(),
   state: z.enum(["review", "done"]),
-  kind: z.literal("work_item"),
+  kind: z.enum(["work_item", "inbox_cleanup"]),
+  counts: z
+    .object({
+      archived: z.number(),
+      drafted: z.number(),
+      keptImportant: z.number(),
+    })
+    .optional(),
   completedAt: z.string(),
 });
 

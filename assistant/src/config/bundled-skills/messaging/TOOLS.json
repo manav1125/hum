@@ -354,6 +354,64 @@
       },
       "executor": "tools/messaging-archive-by-sender.ts",
       "execution_target": "host"
+    },
+    {
+      "name": "messaging_mark_important",
+      "description": "Mark all messages matching a search query as important (adds the IMPORTANT label; optionally stars them too). Paginates through all results and marks in bulk, capped at 5000 messages per call. Non-destructive and reversible. Works with any email provider that supports mark-important by query.",
+      "category": "messaging",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Platform (e.g. \"gmail\"). Auto-detected if only one is connected."
+          },
+          "account": {
+            "type": "string",
+            "description": "Email address of the account to use. Required when multiple accounts are connected for the same platform. If omitted, uses the most recently connected account."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query (e.g. \"from:board@example.com in:inbox newer_than:1d\")"
+          },
+          "star": {
+            "type": "boolean",
+            "description": "Also star the matching messages (default false)"
+          }
+        },
+        "additionalProperties": false,
+        "required": ["query"]
+      },
+      "executor": "tools/messaging-mark-important.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "inbox_run_report",
+      "description": "Record the end-of-run inbox management summary (messages archived, drafts created, messages kept and marked important) so the morning brief can narrate the overnight run. Call once at the end of each inbox-management pipeline run.",
+      "category": "messaging",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "number",
+            "description": "Messages archived this run (at Stage 0, the would-archive count)"
+          },
+          "drafted": {
+            "type": "number",
+            "description": "Reply drafts created in-thread this run"
+          },
+          "kept_important": {
+            "type": "number",
+            "description": "Messages deliberately kept in the inbox and marked important this run"
+          }
+        },
+        "additionalProperties": false,
+        "required": ["archived", "drafted", "kept_important"]
+      },
+      "executor": "tools/inbox-run-report.ts",
+      "execution_target": "host"
     }
   ]
 }

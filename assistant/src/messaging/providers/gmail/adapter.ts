@@ -13,6 +13,7 @@ import type {
   Conversation,
   HistoryOptions,
   ListOptions,
+  MarkImportantResult,
   Message,
   SearchOptions,
   SearchResult,
@@ -463,5 +464,51 @@ export const gmailMessagingProvider: MessagingProvider = {
     }
 
     return { archived: allMessageIds.length, truncated };
+  },
+
+  async markImportantByQuery(
+    connection: OAuthConnection | undefined,
+    query: string,
+    options?: { star?: boolean },
+  ): Promise<MarkImportantResult> {
+    const conn = requireConnection(connection);
+    const maxMessages = 5000;
+    const batchModifyLimit = 1000;
+
+    const allMessageIds: string[] = [];
+    let pageToken: string | undefined;
+    let truncated = false;
+
+    while (allMessageIds.length < maxMessages) {
+      const listResp = await gmail.listMessages(
+        conn,
+        query,
+        Math.min(500, maxMessages - allMessageIds.length),
+        pageToken,
+      );
+      const ids = (listResp.messages ?? []).map((m) => m.id);
+      if (ids.length === 0) break;
+      allMessageIds.push(...ids);
+      pageToken = listResp.nextPageToken ?? undefined;
+      if (!pageToken) break;
+    }
+
+    if (allMessageIds.length >= maxMessages && pageToken) {
+      truncated = true;
+    }
+
+    if (allMessageIds.length === 0) {
+      return { marked: 0 };
+    }
+
+    const addLabelIds = options?.star
+      ? ["IMPORTANT", "STARRED"]
+      : ["IMPORTANT"];
+    for (let i = 0; i < allMessageIds.length; i += batchModifyLimit) {
+      const chunk = allMessageIds.slice(i, i + batchModifyLimit);
+      await gmail.batchModifyMessages(conn, chunk, { addLabelIds });
+    }
+
+    return { marked: allMessageIds.length, truncated };
   },
 };

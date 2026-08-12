@@ -84,11 +84,13 @@ import * as ingestMedia from "./bundled-skills/media-processing/tools/ingest-med
 import * as mediaStatus from "./bundled-skills/media-processing/tools/media-status.js";
 import * as queryMediaEvents from "./bundled-skills/media-processing/tools/query-media-events.js";
 // ── messaging ──────────────────────────────────────────────────────────────────
+import * as inboxRunReport from "./bundled-skills/messaging/tools/inbox-run-report.js";
 import * as messagingAnalyzeStyle from "./bundled-skills/messaging/tools/messaging-analyze-style.js";
 import * as messagingArchiveBySender from "./bundled-skills/messaging/tools/messaging-archive-by-sender.js";
 import * as messagingAuthTest from "./bundled-skills/messaging/tools/messaging-auth-test.js";
 import * as messagingDraft from "./bundled-skills/messaging/tools/messaging-draft.js";
 import * as messagingListConversations from "./bundled-skills/messaging/tools/messaging-list-conversations.js";
+import * as messagingMarkImportant from "./bundled-skills/messaging/tools/messaging-mark-important.js";
 import * as messagingMarkRead from "./bundled-skills/messaging/tools/messaging-mark-read.js";
 import * as messagingRead from "./bundled-skills/messaging/tools/messaging-read.js";
 import * as messagingSearch from "./bundled-skills/messaging/tools/messaging-search.js";
@@ -256,6 +258,8 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["messaging:tools/messaging-draft.ts", messagingDraft],
   ["messaging:tools/messaging-sender-digest.ts", messagingSenderDigest],
   ["messaging:tools/messaging-archive-by-sender.ts", messagingArchiveBySender],
+  ["messaging:tools/messaging-mark-important.ts", messagingMarkImportant],
+  ["messaging:tools/inbox-run-report.ts", inboxRunReport],
 
   // personal-page
   ["personal-page:tools/app-refresh.ts", personalPage_appRefresh],

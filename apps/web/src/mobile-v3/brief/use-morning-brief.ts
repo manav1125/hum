@@ -18,6 +18,13 @@ import { client } from "@/generated/daemon/client.gen";
 
 export type OvernightState = "review" | "done";
 
+/** Counts from the latest inbox-management run (kind "inbox_cleanup" rows). */
+export interface InboxCleanupCounts {
+  archived: number;
+  drafted: number;
+  keptImportant: number;
+}
+
 export interface OvernightItem {
   id: string;
   title: string;
@@ -25,6 +32,8 @@ export interface OvernightItem {
   agent?: string;
   state: OvernightState;
   kind: string;
+  /** Present only on kind "inbox_cleanup" rows. */
+  counts?: InboxCleanupCounts;
   completedAt: string;
 }
 
@@ -69,6 +78,19 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+function normalizeCounts(raw: unknown): InboxCleanupCounts | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const { archived, drafted, keptImportant } = o;
+  if (
+    typeof archived !== "number" ||
+    typeof drafted !== "number" ||
+    typeof keptImportant !== "number"
+  )
+    return undefined;
+  return { archived, drafted, keptImportant };
+}
+
 function normalizeOvernight(raw: unknown): OvernightItem[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((entry): OvernightItem[] => {
@@ -86,6 +108,7 @@ function normalizeOvernight(raw: unknown): OvernightItem[] {
         project: str(o.project),
         agent: str(o.agent),
         kind: str(o.kind) ?? "work_item",
+        counts: normalizeCounts(o.counts),
         completedAt: str(o.completedAt) ?? "",
       },
     ];

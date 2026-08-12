@@ -4,6 +4,9 @@
  * the single ask (approval outranks review), and the day schedule (due-today
  * work items; calendar degrades to unavailable when no connection exists).
  */
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("../../util/logger.js", () => ({
@@ -21,6 +24,7 @@ mock.module("../../oauth/connection-resolver.js", () => ({
   },
 }));
 
+import { recordInboxRunSummary } from "../../home/inbox-run-summary.js";
 import { getDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { createTask } from "../../tasks/task-store.js";
@@ -36,6 +40,7 @@ import {
   removeWorkItemFromQueue,
   updateWorkItem,
 } from "../../work-items/work-item-store.js";
+import { getDataDir } from "../../util/platform.js";
 import {
   clear as clearInteractions,
   register,
@@ -81,10 +86,17 @@ function backdate(id: string, at: number): void {
 
 const HOUR = 60 * 60 * 1000;
 
+/** The inbox-run store appends to a JSONL in the per-test temp workspace —
+ *  clear it so runs recorded by one test are invisible to the next. */
+function clearInboxRuns(): void {
+  rmSync(join(getDataDir(), "inbox-run-summaries.jsonl"), { force: true });
+}
+
 beforeEach(() => {
   clearWorkItems();
   clearAgents();
   clearInteractions();
+  clearInboxRuns();
 });
 
 afterEach(() => {
@@ -337,6 +349,42 @@ describe("morning brief endpoint", () => {
     // The done-due item still shows up as an overnight win.
     expect(brief.overnight.map((o) => o.id)).toContain(doneDue.id);
     void dueToday;
+  });
+
+  test("overnight: the latest in-window inbox run appears as one typed inbox_cleanup row", async () => {
+    // An older run and a fresh one — only the latest is narrated.
+    recordInboxRunSummary({
+      archived: 5,
+      drafted: 1,
+      keptImportant: 0,
+      ranAt: new Date(Date.now() - 6 * HOUR).toISOString(),
+    });
+    const ranAt = new Date(Date.now() - 2 * HOUR).toISOString();
+    recordInboxRunSummary({ archived: 14, drafted: 3, keptImportant: 2, ranAt });
+
+    const brief = await callBrief();
+    const rows = brief.overnight.filter((o) => o.kind === "inbox_cleanup");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      state: "done",
+      counts: { archived: 14, drafted: 3, keptImportant: 2 },
+    });
+    expect(rows[0].title).toContain("14 archived");
+    expect(Date.parse(rows[0].completedAt)).toBe(Date.parse(ranAt));
+  });
+
+  test("overnight: an inbox run older than the window is not narrated", async () => {
+    recordInboxRunSummary({
+      archived: 9,
+      drafted: 0,
+      keptImportant: 1,
+      ranAt: new Date(Date.now() - 30 * HOUR).toISOString(),
+    });
+    const brief = await callBrief();
+    expect(brief.overnight.some((o) => o.kind === "inbox_cleanup")).toBe(false);
+    // A wider explicit window pulls it back in.
+    const wide = await callBrief({ sinceHours: "48" });
+    expect(wide.overnight.some((o) => o.kind === "inbox_cleanup")).toBe(true);
   });
 
   test("parseSinceHours: defaults and clamps", () => {

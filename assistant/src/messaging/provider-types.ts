@@ -116,3 +116,9 @@ export interface ArchiveResult {
   archived: number;
   truncated?: boolean;
 }
+
+export interface MarkImportantResult {
+  marked: number;
+  /** True when pagination stopped at the operation cap but more messages matched. */
+  truncated?: boolean;
+}

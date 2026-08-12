@@ -13,6 +13,7 @@ import type {
   HistoryOptions,
   HistoryPageResult,
   ListOptions,
+  MarkImportantResult,
   Message,
   SearchOptions,
   SearchResult,
@@ -84,6 +85,12 @@ export interface MessagingProvider {
     connection: OAuthConnection | undefined,
     query: string,
   ): Promise<ArchiveResult>;
+  /** Mark messages matching a search query as important (optionally starred). */
+  markImportantByQuery?(
+    connection: OAuthConnection | undefined,
+    query: string,
+    options?: { star?: boolean },
+  ): Promise<MarkImportantResult>;
 
   /**
    * Override the default credential check used by getConnectedProviders().

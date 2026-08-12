@@ -54,7 +54,7 @@ Before anything else, explain what the user is opting into. Be direct:
 
 > "Here's what inbox management does: on a schedule you choose (e.g. every few hours on weekdays), I'll scan your inbox and take action based on a trust level you control.
 >
-> **Stage 0 (where everyone starts):** I watch but don't touch. I'll tell you what I _would_ archive, show you draft replies I wrote, and flag urgent items — but I won't move or delete anything. This lasts until you explicitly tell me to graduate.
+> **Stage 0 (the default starting point):** I watch but don't touch. I'll tell you what I _would_ archive, show you draft replies I wrote, and flag urgent items — but I won't move or delete anything. This lasts until you explicitly tell me to graduate.
 >
 > **Stage 1 (you opt in):** I silently archive obvious noise — calendar responses, no-reply senders, newsletters. Everything else is still flagged for your review.
 >
@@ -66,7 +66,12 @@ Wait for explicit confirmation before proceeding. If the user hesitates or asks 
 
 ### 1. Stage
 
-Start at **Stage 0**. Store via `gmail-prefs.ts --action set-management-config --stage 0`.
+Default to **Stage 0** (flag-only). When the user — directly or via a caller like
+`admin-copilot` setup — has made an explicit, informed choice to start higher,
+honor it: **Stage 1** (silent archive of known-safe categories only) or **Stage 2**
+(also cold outreach by judgment). Do not infer a higher stage from enthusiasm;
+require an explicit choice made after the §0 consent framing for that stage. Store
+the chosen stage via `gmail-prefs.ts --action set-management-config --stage <0|1|2>`.
 
 ### 2. Safe-list
 
@@ -167,6 +172,14 @@ If any qualify, send **one** alert:
 - **Slack not connected:** In-app notification via notification pipeline
 - If nothing qualifies: skip silently. **Never ping just to ping.**
 
+**Mark the keepers important.** When a message qualifies (any stage), also mark it
+important via `messaging_mark_important` with a query that pins exactly those
+messages (e.g. `from:<sender> subject:"<subject>" in:inbox newer_than:1d`, or
+`rfc822msgid:<message-id>` for a single message). Pass `star: true` for items with a
+hard deadline. This is non-destructive and reversible — it makes the kept-and-flagged
+decision visible in Gmail itself, and the count feeds the end-of-run summary
+(`kept important`).
+
 ### Step 4: Draft replies (all stages, if enabled)
 
 Search `in:inbox is:unread newer_than:7d`. Filter out anything caught by Steps 1-2, calendar responses, receipts, no-reply senders, one-way FYIs.
@@ -198,6 +211,21 @@ Ask: did this email **clearly expect a response**? Only flag if **2+ signals** a
 
 If yes, alert with: recipient, subject, date sent, and a ready-to-send follow-up draft.
 
+### Step 6: Record the run (all stages)
+
+At the end of **every** pipeline run — not just Stage 0 — call the `inbox_run_report`
+tool with this run's counts:
+
+- `archived`: messages archived this run (Stage 0: the would-archive count)
+- `drafted`: reply drafts created this run
+- `kept_important`: messages deliberately kept in the inbox and marked important (Step 3)
+
+This persists the summary so the **morning brief** can narrate the overnight run
+("Inbox cleanup — N archived, M drafted, K kept as important") without waking anyone.
+It is not a notification and never pings — the alert rules above are unchanged. If the
+`inbox_run_report` tool is unavailable in this conversation, note the counts in the
+run's textual summary instead; do not fail the run over it.
+
 ---
 
 ## Stage 0 Summary
@@ -227,6 +255,38 @@ User responds with:
 - "graduate me" — advances to Stage 1
 
 Capture every correction — add protected senders to safe-list immediately.
+
+The Stage-0 end-of-day summary is **in addition to** — not instead of — the
+`inbox_run_report` call in Step 6: record the counts every run, message the user
+once a day.
+
+---
+
+## Offering the Overnight Schedule (opt-in only)
+
+**Never seed an overnight schedule on your own.** A standing nightly run that takes
+inbox actions is consequential standing behavior — it must be the user's explicit
+choice, made after the §0 consent framing.
+
+When the user asks for inbox automation (e.g. "clean my inbox every night", "handle
+my email while I sleep", or accepts inbox management and asks about timing), **offer**
+the overnight schedule:
+
+> "Want me to run this overnight instead? I'd do one pass at 10pm on weekdays —
+> archive per your current trust stage, draft replies, mark the keepers important —
+> and you'd see the result as a line in your morning brief instead of pings."
+
+If — and only if — they say yes, create it via `schedule_create`:
+
+- Cron suggestion: `0 22 * * 1-5` (10pm local, weekdays) — confirm the time with the user
+- Message: `"Load the inbox-management skill and run the inbox management pipeline."`
+- Mode: `execute`
+- `reuse_conversation: true`
+- Starting stage: whatever the user has consented to on the trust ladder (§ Setup 1) —
+  never bump the stage as part of scheduling
+
+Overnight runs stay urgent-scan-only for alerts (no routine pings at night); everything
+else lands in the Step 6 run record and the morning brief.
 
 ---
 
