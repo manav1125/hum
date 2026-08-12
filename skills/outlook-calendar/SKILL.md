@@ -1,6 +1,6 @@
 ---
 name: outlook-calendar
-description: View, create, and manage Outlook Calendar events and check availability
+description: View Outlook Calendar events for any day, create and manage events, and check availability
 compatibility: "Designed for Cue personal assistants"
 metadata:
   icon: assets/icon.svg
@@ -9,6 +9,10 @@ metadata:
     category: "calendar"
     display-name: "Outlook Calendar"
     user-invocable: true
+    activation-hints:
+      - "plan my day or my week"
+      - "what does my day look like"
+      - "check my availability, find open time slots, when am I free"
 ---
 
 ## Script Reference
