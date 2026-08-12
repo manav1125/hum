@@ -21,6 +21,7 @@ import {
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 
 import { DetailCard } from "@/components/detail-card";
+import { ListeningLanguageCard } from "@/domains/settings/pages/listening-language-card";
 import {
   getLocalSetting,
   removeLocalSetting,
@@ -93,6 +94,7 @@ export function VoicePage() {
     <div className="flex flex-col gap-6">
       <SpeechServicesBanner />
       <MicrophoneCard />
+      <ListeningLanguageCard />
       <VoiceEngineCard />
       <PushToTalkCard />
       <ConversationTimeoutCard />
