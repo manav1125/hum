@@ -17,7 +17,9 @@ wired surface.
 - [Public API surface](#public-api-surface--vellumaiplugin-api)
 - [Hooks](#hooks)
 - [Tools](#tools)
+- [Schedules](#schedules)
 - [Marketplace — whitelisting external plugins](#marketplace--whitelisting-external-plugins)
+- [Auto-update — opt-in unattended upgrades](#auto-update--opt-in-unattended-upgrades)
 - [Conventions](#conventions)
 
 ---
@@ -36,10 +38,11 @@ wired surface.
 
 The external plugin loader extends the assistant by wiring these contribution surfaces.
 
-| Surface             | Directory         | Discovery                                     |
-| ------------------- | ----------------- | --------------------------------------------- |
-| Lifecycle hooks     | `hooks/<name>.ts` | filename → `plugin.hooks[<name>]`             |
-| Model-visible tools | `tools/<name>.ts` | each file's default export → `plugin.tools[]` |
+| Surface             | Directory            | Discovery                                                                    |
+| ------------------- | -------------------- | ---------------------------------------------------------------------------- |
+| Lifecycle hooks     | `hooks/<name>.ts`    | filename → `plugin.hooks[<name>]`                                            |
+| Model-visible tools | `tools/<name>.ts`    | each file's default export → `plugin.tools[]`                                |
+| Schedules           | `schedules/<name>/`  | reconciled into schedule rows at load and upgrade (see [Schedules](#schedules)) |
 
 ---
 
@@ -497,6 +500,73 @@ call time.
 
 ---
 
+## Schedules
+
+A plugin declares recurring scheduled tasks as directories under
+`schedules/`. A reconciler converges each declaration into an ordinary
+schedule row, so declared schedules run through the same engine, run
+history, and UI as user-created ones.
+
+The whole surface sits behind the `plugin-schedules` feature flag
+(default **off**, like `external-plugins`). The flag is a kill switch:
+turning it off disarms every plugin-declared schedule on the next
+reconcile pass; turning it back on re-arms them.
+
+A declaration is `schedules/<name>/`: a `config.json` plus exactly one
+entrypoint. `index.md` (the prompt body, no frontmatter) runs as an
+assistant task; `index.sh` runs as a shell script with no LLM.
+
+```
+schedules/
+└── digest/
+    ├── config.json
+    └── index.md
+```
+
+```json
+{
+  "expression": "0 9 * * *",
+  "description": "Daily digest",
+  "timezone": "America/New_York"
+}
+```
+
+Config fields: `expression` (required; cron or RRULE, auto-detected or
+pinned via `expression_syntax`), `timezone`, `description`, `max_retries`,
+`retry_backoff_ms`, `quiet`, `inference_profile`, `timeout_ms`, `enabled`
+(defaults to true). Declared schedules are recurring only; there is no
+one-shot form. When `timezone` is omitted, the schedule runs in the
+workspace owner's configured zone.
+
+Fail-closed rules. A file sitting directly under `schedules/` is not a
+declaration and is reported as an error, so a stray `<name>.md` is never
+silently ignored. Ambiguity never resolves by precedence: a directory with
+zero or multiple entrypoints, or an unsupported entrypoint (anything but
+`index.md` / `index.sh`), is an error and that schedule does not load.
+Errors are per-schedule: one bad declaration never blocks siblings. A
+declaration that breaks in an upgrade keeps its last-good `execute`
+schedule running while the error is surfaced as a notification; a broken
+`script` declaration disarms its row (the row fires `index.sh` by path —
+exactly the content that failed to validate).
+
+Lifecycle. The declaration directory is the source of truth: edits and
+upgrades update the schedule row in place (with a notification when an
+armed schedule's definition is rewritten), uninstalling or disabling the
+plugin — or turning the flag off — pauses its schedules (runs and history
+are kept), and reinstalling or re-enabling re-arms them. A schedule
+arming for the first time raises a `schedule.declared` notification: on
+unattended paths (auto-update, daemon-driven installs) that notification
+is the consent surface. Users can enable/disable a declared row from the
+ordinary schedules UI; that override survives reconciles and upgrades. A
+user who deletes a declared row keeps it deleted until the declaration's
+definition changes, which recreates the row as a new consent baseline.
+
+Reconciler bookkeeping lives in
+`<workspace>/plugins-data/plugin-schedules-state.json`; declared rows are
+attributed with `createdBy: "plugin:<name>"`.
+
+---
+
 ## Marketplace — whitelisting external plugins
 
 The catalog shown by `assistant plugins search` (and the web plugins tab) is
@@ -610,6 +680,69 @@ ever runs — it is reviewed Vellum code, version-pinned to the marketplace ref.
 The upstream repo's own lifecycle scripts are never executed. The adapter is
 restricted to a single `bun <script>` invocation pointing at a `.ts`/`.js` file
 inside the stub, run under a stripped environment and a timeout.
+
+---
+
+## Auto-update — opt-in unattended upgrades
+
+By default a plugin only ever moves when a human runs
+`assistant plugins upgrade <name>`. A workspace can opt individual plugins
+into unattended upgrades; an hourly sweep then advances each opted-in
+install to the marketplace's current pin.
+
+**What "update available" means here.** This marketplace is an index, not
+a host: every catalog entry pins a full, immutable commit SHA of an
+external repository (see the section above). An update is available for an
+installed plugin exactly when the SHA pinned in `marketplace.json` no
+longer equals the commit recorded in the install's `install-meta.json` —
+i.e. a curator reviewed a newer revision and moved the pin. Auto-update
+never tracks branches, tags, or "latest": it re-materializes the install
+at the new reviewed pin, nothing else.
+
+**Opting in** is per plugin, in
+`<workspace>/plugins-data/plugin-auto-update.json`:
+
+```json
+{
+  "version": 1,
+  "plugins": {
+    "caveman": true
+  }
+}
+```
+
+Only names listed with `true` are swept. The file deliberately lives
+outside the plugin's install directory (which upgrades re-materialize) and
+outside the plugin's own `plugins-data/<name>/` storage (which the plugin
+writes to). The sweep re-reads it each pass, so opting in or out takes
+effect within a minute, no restart needed.
+
+**Trust boundary.** Only installs whose upgrade target is a curated
+marketplace pin are ever moved unattended:
+
+- A plugin installed **directly from a GitHub URL** has no catalog entry.
+  Its only upgrade target is a mutable upstream ref, so it is excluded
+  from the sweep even when opted in — advancing it is a decision for a
+  human running `assistant plugins upgrade`.
+- A direct install **squatting on a curated name** (its recorded source
+  names a different repository or plugin root than the catalog entry
+  claiming that name) is skipped too, so the sweep never silently swaps
+  the user's chosen source for someone else's code.
+- An install with **no recorded provenance** (an older or manually-copied
+  copy) is re-pinned to the curated commit, which is how it gains
+  provenance.
+- Disabled plugins are never touched.
+
+The boundary is enforced at the execution layer, not just the filter: the
+sweep's upgrade path resolves sources exclusively through the marketplace
+catalog, so a catalog entry that disappears mid-sweep fails the upgrade
+rather than falling back to the install's recorded ref.
+
+After a successful upgrade the plugin is hot-swapped into the running
+daemon and its declared schedules are re-reconciled (raising the standard
+definition-changed / declared notifications). One plugin's failure never
+blocks the rest, and the sweep runs at most once per hour, stamped in
+`<workspace>/plugins-data/plugin-auto-update-last-run-at`.
 
 ---
 

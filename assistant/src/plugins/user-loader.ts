@@ -101,6 +101,10 @@ export async function loadUserPlugins(
     // post-loader invariant uniform: `bootstrapPlugins()` may rely on the
     // registry being final by the time `loadUserPlugins()` resolves.
     closeRegistration();
+    // Still start the platform services: the reconciler's disarm branch
+    // must run even when the plugins directory vanished wholesale, so
+    // schedules declared by since-removed plugins do not stay armed.
+    startPluginPlatformServices();
     return;
   }
 
@@ -116,6 +120,7 @@ export async function loadUserPlugins(
       "loadUserPlugins: failed to read plugins directory",
     );
     closeRegistration();
+    startPluginPlatformServices();
     return;
   }
 
@@ -161,4 +166,39 @@ export async function loadUserPlugins(
   // `loadExternalPlugin` guarantees no throw escapes the loop, so this line
   // always runs and `bootstrapPlugins()` sees a fully populated registry.
   closeRegistration();
+
+  startPluginPlatformServices();
+}
+
+/**
+ * Kick the plugin-platform background services once the plugin set is
+ * loaded: a schedule-reconcile pass (plus its periodic backstop sweep) that
+ * converges plugin-declared `schedules/` into schedule rows, and the opt-in
+ * auto-update worker. Fire-and-forget with dynamic imports — the daemon
+ * must never block startup on a subsystem, and consumers of this module
+ * outside the daemon must not pay the reconciler's import graph
+ * (schedule store, notifications) just for importing the loader.
+ */
+function startPluginPlatformServices(): void {
+  void import("../schedule/plugin-schedule-reconciler.js")
+    .then(({ reconcilePluginSchedules, startPluginScheduleReconcileSweep }) => {
+      startPluginScheduleReconcileSweep();
+      return reconcilePluginSchedules();
+    })
+    .catch((err) => {
+      log.warn(
+        { err },
+        "loadUserPlugins: plugin schedule reconcile failed to start",
+      );
+    });
+  void import("./auto-update.js")
+    .then(({ startPluginAutoUpdateWorker }) => {
+      startPluginAutoUpdateWorker();
+    })
+    .catch((err) => {
+      log.warn(
+        { err },
+        "loadUserPlugins: plugin auto-update worker failed to start",
+      );
+    });
 }
