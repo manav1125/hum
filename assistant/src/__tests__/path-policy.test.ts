@@ -14,6 +14,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import {
   hostPolicy,
   isProcessPrivatePath,
+  isSecurityDirPath,
   sandboxPolicy,
 } from "../tools/shared/filesystem/path-policy.js";
 
@@ -296,6 +297,87 @@ describe("isProcessPrivatePath", () => {
     expect(isProcessPrivatePath("/home/me/proc/self/environ")).toBe(false);
     expect(isProcessPrivatePath("/proc/notapid/environ")).toBe(false);
     expect(isProcessPrivatePath("/environ")).toBe(false);
+  });
+});
+
+// The gateway security directory holds the actor-token signing key (the root
+// of the auth system), the backup key, and gateway.sqlite (trust rules and
+// tokens). hostPolicy applies no boundary, so before this denial existed
+// `host_file_read("$GATEWAY_SECURITY_DIR/actor-token-signing-key")` was gated
+// only by a risk prompt — and by nothing at all under a temporary approval
+// grant. The layout mirrored here is the real one from prod.
+describe("security directory denial", () => {
+  const savedGateway = process.env.GATEWAY_SECURITY_DIR;
+  const savedCredential = process.env.CREDENTIAL_SECURITY_DIR;
+
+  afterEach(() => {
+    if (savedGateway === undefined) delete process.env.GATEWAY_SECURITY_DIR;
+    else process.env.GATEWAY_SECURITY_DIR = savedGateway;
+    if (savedCredential === undefined)
+      delete process.env.CREDENTIAL_SECURITY_DIR;
+    else process.env.CREDENTIAL_SECURITY_DIR = savedCredential;
+  });
+
+  test("host reads of gateway security material are denied", () => {
+    const secDir = makeTempDir();
+    process.env.GATEWAY_SECURITY_DIR = secDir;
+    for (const name of [
+      "actor-token-signing-key",
+      "gateway.sqlite",
+      "feature-flags.json",
+      "logs/gateway.log",
+    ]) {
+      const result = hostPolicy(join(secDir, name));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("denied");
+      }
+    }
+  });
+
+  test("the credential store is denied too", () => {
+    const credDir = makeTempDir();
+    process.env.CREDENTIAL_SECURITY_DIR = credDir;
+    const result = hostPolicy(join(credDir, "keys", "master.key"));
+    expect(result.ok).toBe(false);
+  });
+
+  test("a symlink into the security dir does not get around it", () => {
+    const secDir = makeTempDir();
+    const workspace = makeTempDir();
+    process.env.GATEWAY_SECURITY_DIR = secDir;
+    writeFileSync(join(secDir, "actor-token-signing-key"), "secret");
+    const link = join(workspace, "notes.txt");
+    symlinkSync(join(secDir, "actor-token-signing-key"), link);
+
+    expect(hostPolicy(link).ok).toBe(false);
+    const sandboxed = sandboxPolicy(link, workspace);
+    expect(sandboxed.ok).toBe(false);
+  });
+
+  test("the signing key is denied by basename even with no env var set", () => {
+    delete process.env.GATEWAY_SECURITY_DIR;
+    delete process.env.CREDENTIAL_SECURITY_DIR;
+    const result = hostPolicy("/somewhere/else/actor-token-signing-key");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("denied");
+    }
+  });
+
+  test("neighbouring paths outside the security dir stay readable", () => {
+    const secDir = makeTempDir();
+    process.env.GATEWAY_SECURITY_DIR = secDir;
+    // A sibling whose path merely shares the prefix string must not be caught.
+    expect(hostPolicy(secDir + "-notes/readme.md").ok).toBe(true);
+    expect(hostPolicy("/usr/local/bin/something").ok).toBe(true);
+  });
+
+  test("an unset or relative env var denies nothing by accident", () => {
+    delete process.env.GATEWAY_SECURITY_DIR;
+    expect(isSecurityDirPath("/anything/at/all")).toBe(false);
+    process.env.GATEWAY_SECURITY_DIR = "relative/not/absolute";
+    expect(isSecurityDirPath("/anything/at/all")).toBe(false);
   });
 });
 

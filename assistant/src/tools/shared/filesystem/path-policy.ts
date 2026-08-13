@@ -18,7 +18,59 @@ export type PathFailureReason = "not_absolute" | "out_of_bounds" | "denied";
  * of where they resolve. Defense-in-depth: even if a key file is accidentally
  * placed inside the workspace boundary, the assistant cannot access it.
  */
-const DENIED_BASENAMES = new Set([".backup.key", "backup.key"]);
+const DENIED_BASENAMES = new Set([
+  ".backup.key",
+  "backup.key",
+  "actor-token-signing-key",
+]);
+
+/**
+ * Environment variables naming directories whose entire contents are trust
+ * material: the gateway's security directory (actor-token signing key, backup
+ * key, the gateway SQLite database holding trust rules and tokens) and the
+ * credential-execution store (credential keys).
+ *
+ * These are denied as whole directories rather than by filename. `hostPolicy`
+ * applies no boundary at all, so before this existed `host_file_read` could
+ * open `$GATEWAY_SECURITY_DIR/actor-token-signing-key` — the key that signs
+ * actor tokens, i.e. the authentication system's root — behind nothing but a
+ * risk-based approval prompt, and behind no prompt at all while a temporary
+ * approval grant was active. The basename list could not cover it: the files
+ * are named for their role, not with a recognisable secret suffix, and
+ * `gateway.sqlite` looks like any other database.
+ *
+ * Read from the environment on each call rather than cached at module load,
+ * so a daemon that resolves these late (and tests that set them per-case) are
+ * both covered.
+ */
+const SECURITY_DIR_ENV_VARS = [
+  "GATEWAY_SECURITY_DIR",
+  "CREDENTIAL_SECURITY_DIR",
+] as const;
+
+/**
+ * Whether a path falls inside one of the configured security directories.
+ * Compares against both the literal and the symlink-resolved directory so a
+ * link into the store is caught too. Unset variables contribute nothing.
+ */
+export function isSecurityDirPath(path: string): boolean {
+  for (const envVar of SECURITY_DIR_ENV_VARS) {
+    const dir = process.env[envVar];
+    if (!dir || !isAbsolute(dir)) continue;
+    const candidates = new Set([resolve(dir)]);
+    try {
+      candidates.add(realpathSync(dir));
+    } catch {
+      // Directory does not exist on this host — the literal form still applies.
+    }
+    for (const candidate of candidates) {
+      if (path === candidate || path.startsWith(candidate + "/")) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /**
  * Anything under a per-process `/proc` directory — `/proc/<pid>/…` and the
@@ -169,6 +221,14 @@ export function sandboxPolicy(
     };
   }
 
+  if (isSecurityDirPath(resolved) || isSecurityDirPath(realResolved)) {
+    return {
+      ok: false,
+      reason: "denied",
+      error: "Access to the security directory is denied",
+    };
+  }
+
   return { ok: true, resolved };
 }
 
@@ -209,6 +269,13 @@ export function hostPolicy(rawPath: string): PathResult {
       ok: false,
       reason: "denied",
       error: "Access to process-private /proc entries is denied",
+    };
+  }
+  if (isSecurityDirPath(resolve(rawPath)) || isSecurityDirPath(realPath)) {
+    return {
+      ok: false,
+      reason: "denied",
+      error: "Access to the security directory is denied",
     };
   }
   return { ok: true, resolved: rawPath };
