@@ -81,6 +81,7 @@ import {
   MEMORY_RETROSPECTIVE_FORK_SOURCE,
   MEMORY_RETROSPECTIVE_GROUP_ID,
   MEMORY_RETROSPECTIVE_INSTRUCTION_KIND,
+  MEMORY_RETROSPECTIVE_NO_FINDINGS_TEXT,
   MEMORY_RETROSPECTIVE_SOURCE,
 } from "./memory-retrospective-constants.js";
 import { loadRetrospectiveRunMessages } from "./memory-retrospective-fork-boundary.js";
@@ -119,6 +120,7 @@ export type MemoryRetrospectiveOutcome =
   | { kind: "no_new_messages" }
   | { kind: "source_processing" }
   | { kind: "wake_failed"; reason?: string; conversationId?: string }
+  | { kind: "no_usable_output"; reason?: string; conversationId?: string }
   | {
       kind: "invoked";
       backgroundConversationId: string;
@@ -254,23 +256,49 @@ async function runLegacyRetrospective(
     );
   }
 
-  // 6. Update pointers + shared success bookkeeping.
+  // 6. Fail-closed finalization: `invoked: true` proves only that the wake
+  // went live, not that the run produced anything (the agent loop swallows
+  // provider rejections into a normal no-output return, an exhausted output
+  // budget can stop a run before any visible text or tool call, and the
+  // sidechain-timeout class aborts mid-run while still returning). Pointer
+  // advancement requires POSITIVE evidence from THIS run — a verified
+  // durable memory write, or the explicit no-findings reply with no save
+  // attempts. See {@link collectRetrospectiveRunEvidence}.
   if (wakeSucceeded) {
-    return finalizeSuccessfulRetrospective({
-      config,
-      sourceConversationId,
-      retrospectiveConversationId: backgroundConversation.id,
-      cutoffMessageId,
-      newMessageCount: newMessages.length,
-      prior,
-      priorRemembers,
-      logFields: { kind: "legacy" },
-    });
+    const runEvidence = collectRetrospectiveRunEvidence(
+      backgroundConversation.id,
+    );
+    const reviewedNoFindings =
+      runEvidence.explicitNoFindings &&
+      runEvidence.durableToolAttemptCount === 0;
+    if (runEvidence.durableToolCallCount > 0 || reviewedNoFindings) {
+      return finalizeSuccessfulRetrospective({
+        config,
+        sourceConversationId,
+        retrospectiveConversationId: backgroundConversation.id,
+        cutoffMessageId,
+        newMessageCount: newMessages.length,
+        prior,
+        priorRemembers,
+        runRemembers: runEvidence.remembers,
+        logFields: { kind: "legacy", noFindings: reviewedNoFindings },
+      });
+    }
+    log.warn(
+      {
+        sourceConversationId,
+        backgroundConversationId: backgroundConversation.id,
+        newMessageCount: newMessages.length,
+        durableToolAttempts: runEvidence.durableToolAttemptCount,
+      },
+      "memory-retrospective: run produced neither a verified durable write nor an explicit no-findings reply; leaving window retryable",
+    );
   }
 
-  // Wake failed. Bump `lastRunAt` only so the cooldown gate applies, leave
-  // `lastProcessedMessageId` alone so the next attempt re-processes the
-  // same messages. Then clean up the orphan background conversation.
+  // Wake failed or produced no usable output. Bump `lastRunAt` only so the
+  // cooldown gate applies, leave `lastProcessedMessageId` alone so the next
+  // attempt re-processes the same messages. Then clean up the orphan
+  // background conversation.
   bumpRetrospectiveLastRunAt(sourceConversationId, Date.now());
   safeDeleteRetrospectiveConversation(
     backgroundConversation.id,
@@ -284,6 +312,13 @@ async function runLegacyRetrospective(
     throw threw;
   }
 
+  if (wakeSucceeded) {
+    return {
+      kind: "no_usable_output",
+      reason: failureReason ?? "run persisted no memory-writing tool call",
+      conversationId: backgroundConversation.id,
+    };
+  }
   return {
     kind: "wake_failed",
     reason: failureReason,
@@ -508,22 +543,47 @@ async function runForkBasedRetrospective(
     );
   }
 
+  // Fail-closed finalization — same contract as the legacy path: the wake
+  // going live is not evidence the run produced anything. The evidence read
+  // is run-specific by construction (`loadRetrospectiveRunMessages` scopes
+  // fork-kind rows to the post-boundary tail), so a prior run's persisted
+  // saves can never satisfy it.
   if (wakeSucceeded) {
-    return finalizeSuccessfulRetrospective({
-      config,
-      sourceConversationId,
-      retrospectiveConversationId: forkId,
-      cutoffMessageId,
-      newMessageCount: newMessages.length,
-      prior,
-      priorRemembers,
-      logFields: { kind: "fork", windowStartTimestamp },
-    });
+    const runEvidence = collectRetrospectiveRunEvidence(forkId);
+    const reviewedNoFindings =
+      runEvidence.explicitNoFindings &&
+      runEvidence.durableToolAttemptCount === 0;
+    if (runEvidence.durableToolCallCount > 0 || reviewedNoFindings) {
+      return finalizeSuccessfulRetrospective({
+        config,
+        sourceConversationId,
+        retrospectiveConversationId: forkId,
+        cutoffMessageId,
+        newMessageCount: newMessages.length,
+        prior,
+        priorRemembers,
+        runRemembers: runEvidence.remembers,
+        logFields: {
+          kind: "fork",
+          windowStartTimestamp,
+          noFindings: reviewedNoFindings,
+        },
+      });
+    }
+    log.warn(
+      {
+        sourceConversationId,
+        forkId,
+        newMessageCount: newMessages.length,
+        durableToolAttempts: runEvidence.durableToolAttemptCount,
+      },
+      "memory-retrospective (fork): run produced neither a verified durable write nor an explicit no-findings reply; leaving window retryable",
+    );
   }
 
-  // Wake failed. Bump `lastRunAt` only so the cooldown gate applies, leave
-  // `lastProcessedMessageId` alone so the next attempt re-processes the
-  // same messages. Then clean up the orphan fork.
+  // Wake failed or produced no usable output. Bump `lastRunAt` only so the
+  // cooldown gate applies, leave `lastProcessedMessageId` alone so the next
+  // attempt re-processes the same messages. Then clean up the orphan fork.
   bumpRetrospectiveLastRunAt(sourceConversationId, Date.now());
   safeDeleteRetrospectiveConversation(forkId, FORK_DELETE_FAILURE_WARNING);
 
@@ -531,6 +591,13 @@ async function runForkBasedRetrospective(
     throw threw;
   }
 
+  if (wakeSucceeded) {
+    return {
+      kind: "no_usable_output",
+      reason: failureReason ?? "run persisted no memory-writing tool call",
+      conversationId: forkId,
+    };
+  }
   return {
     kind: "wake_failed",
     reason: failureReason,
@@ -691,11 +758,11 @@ function resolvePriorRetrospective(
 }
 
 /**
- * Success bookkeeping shared by both handlers. Extracts this run's saves
- * from its own retrospective conversation FIRST — the wake's tail (including
- * `remember` tool_use blocks) is persisted by the time
- * `wakeAgentForOpportunity` returns, and extraction must precede any
- * cleanup. `priorRemembers` (cumulative log, or the prior-conversation scan
+ * Success bookkeeping shared by both handlers. The caller's usable-output
+ * check ({@link collectRetrospectiveRunEvidence}) has already read this
+ * run's saves from its persisted tail — `runRemembers` is passed through so
+ * the evidence that gated advancement is exactly the evidence folded into
+ * the log. `priorRemembers` (cumulative log, or the prior-conversation scan
  * that seeds it) is the base so the prior's saves survive its GC below.
  */
 function finalizeSuccessfulRetrospective(args: {
@@ -706,6 +773,12 @@ function finalizeSuccessfulRetrospective(args: {
   newMessageCount: number;
   prior: PriorRetrospective | null;
   priorRemembers: string[];
+  /**
+   * The `remember` contents extracted from this run's persisted tail by the
+   * caller's usable-output check — only execution-verified saves, so a
+   * failed `remember`'s facts never suppress a retry's re-save.
+   */
+  runRemembers: string[];
   /** Per-kind extras for the success log line (e.g. `kind`, fork anchor). */
   logFields: Record<string, unknown>;
 }): MemoryRetrospectiveOutcome {
@@ -717,12 +790,10 @@ function finalizeSuccessfulRetrospective(args: {
     newMessageCount,
     prior,
     priorRemembers,
+    runRemembers,
     logFields,
   } = args;
 
-  const runRemembers = extractRetrospectiveRunRemembers(
-    retrospectiveConversationId,
-  );
   upsertRetrospectiveState({
     conversationId: sourceConversationId,
     lastProcessedMessageId: cutoffMessageId,
@@ -901,6 +972,12 @@ function collectPriorRetrospectiveRemembers(
  * `remember` calls, which must not pollute the dedup baseline) and returns
  * `null` on load failure or an undetectable fork boundary (logged, never
  * fatal) — treated here as "the run saved nothing".
+ *
+ * Deliberately unfiltered by execution success: this reads a PRIOR run for
+ * the `<already_remembered>` dedup baseline, where over-inclusion is the
+ * safe direction (worst case a fact is not re-saved) and old runs predate
+ * result-verified evidence. The CURRENT run's log append goes through
+ * {@link collectRetrospectiveRunEvidence}, which does verify execution.
  */
 function extractRetrospectiveRunRemembers(conversationId: string): string[] {
   const conv = getConversation(conversationId);
@@ -909,7 +986,152 @@ function extractRetrospectiveRunRemembers(conversationId: string): string[] {
     conv?.source ?? null,
   );
   if (runMessages == null) return [];
-  return extractRememberContents(runMessages);
+  return extractRememberContents(runMessages, null);
+}
+
+/**
+ * Tool names whose persisted `tool_use` blocks count as durable memory work
+ * for the fail-closed advancement gate. Our retrospective wakes allowlist
+ * only `remember`; upstream additionally lists `scaffold_managed_skill`,
+ * which this fork's retrospective does not expose. Kept as a set so a
+ * future allowlisted memory-writing tool joins the gate by name alone.
+ */
+const DURABLE_RETROSPECTIVE_TOOLS: ReadonlySet<string> = new Set(["remember"]);
+
+/**
+ * Durable evidence a retrospective run persisted: its `remember` contents
+ * plus a count of every memory-writing tool call on the run's own messages
+ * whose EXECUTION succeeded. A `tool_use` block alone proves only that the
+ * model asked; the durable write happens inside the executor, so a call
+ * counts (and its facts feed the remembered log) only when a matching
+ * non-error `tool_result` is persisted on the same tail. A failed or missing
+ * execution therefore leaves the window retryable, and a failed `remember`'s
+ * facts never enter the `<already_remembered>` baseline where they would
+ * suppress the retry's re-save. A load failure (`runMessages == null`)
+ * reports zero durable calls, which the advancement gate treats as "not
+ * proven usable" (fail-closed). Ported from upstream 6d3f5d2e5b.
+ */
+function collectRetrospectiveRunEvidence(conversationId: string): {
+  remembers: string[];
+  /** Memory-writing tool calls whose execution verifiably succeeded. */
+  durableToolCallCount: number;
+  /** Memory-writing tool calls the run attempted, regardless of outcome. */
+  durableToolAttemptCount: number;
+  /**
+   * The run replied with exactly the mandated no-findings sentinel text
+   * ({@link MEMORY_RETROSPECTIVE_NO_FINDINGS_TEXT}) in a persisted assistant
+   * text block. Strict whole-block equality: prose that merely mentions the
+   * phrase does not qualify, so an analysis-only reply stays unusable.
+   */
+  explicitNoFindings: boolean;
+} {
+  const conv = getConversation(conversationId);
+  const runMessages = loadRetrospectiveRunMessages(
+    conversationId,
+    conv?.source ?? null,
+  );
+  if (runMessages == null) {
+    return {
+      remembers: [],
+      durableToolCallCount: 0,
+      durableToolAttemptCount: 0,
+      explicitNoFindings: false,
+    };
+  }
+  const succeededIds = collectSuccessfulToolResultIds(runMessages);
+  return {
+    remembers: extractRememberContents(runMessages, succeededIds),
+    durableToolCallCount: countDurableToolUses(runMessages, succeededIds),
+    durableToolAttemptCount: countDurableToolUses(runMessages, null),
+    explicitNoFindings: hasExplicitNoFindingsReply(runMessages),
+  };
+}
+
+/**
+ * Whether any persisted assistant row on the run's tail carries a text block
+ * that is exactly the no-findings sentinel (after trimming). The instruction
+ * template mandates this exact reply for a reviewed-and-nothing-to-save
+ * pass, making it the positive persisted artifact that distinguishes a
+ * legitimate no-findings review from an empty or unusable response.
+ */
+function hasExplicitNoFindingsReply(messages: MessageLike[]): boolean {
+  for (const msg of messages) {
+    if (msg.role !== "assistant") continue;
+    const blocks = parseBlocks(msg.content);
+    if (!blocks) continue;
+    for (const block of blocks) {
+      if (!block || typeof block !== "object") continue;
+      const b = block as Record<string, unknown>;
+      if (
+        b.type === "text" &&
+        typeof b.text === "string" &&
+        b.text.trim() === MEMORY_RETROSPECTIVE_NO_FINDINGS_TEXT
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Ids of `tool_result` blocks on the run's user rows whose execution did not
+ * report an error. Robust to malformed content JSON the same way
+ * `extractRememberContents` is.
+ */
+function collectSuccessfulToolResultIds(messages: MessageLike[]): Set<string> {
+  const ids = new Set<string>();
+  for (const msg of messages) {
+    if (msg.role !== "user") continue;
+    const blocks = parseBlocks(msg.content);
+    if (!blocks) continue;
+    for (const block of blocks) {
+      if (!block || typeof block !== "object") continue;
+      const b = block as Record<string, unknown>;
+      // guard:allow-tool-result-only: success evidence for locally-executed
+      // durable memory tools; server-side web_search_tool_result never
+      // corresponds to a durable write and carries no is_error flag.
+      if (
+        b.type === "tool_result" &&
+        typeof b.tool_use_id === "string" &&
+        b.is_error !== true
+      ) {
+        ids.add(b.tool_use_id);
+      }
+    }
+  }
+  return ids;
+}
+
+/**
+ * Count persisted `tool_use` blocks whose `name` is in
+ * {@link DURABLE_RETROSPECTIVE_TOOLS} across the run's assistant rows.
+ * With a `succeededIds` set, only calls whose id has a matching successful
+ * `tool_result` count (verified executions); with `null`, every attempt
+ * counts regardless of outcome.
+ */
+function countDurableToolUses(
+  messages: MessageLike[],
+  succeededIds: ReadonlySet<string> | null,
+): number {
+  let count = 0;
+  for (const msg of messages) {
+    if (msg.role !== "assistant") continue;
+    const blocks = parseBlocks(msg.content);
+    if (!blocks) continue;
+    for (const block of blocks) {
+      if (!block || typeof block !== "object") continue;
+      const b = block as Record<string, unknown>;
+      if (b.type !== "tool_use") continue;
+      if (typeof b.name !== "string") continue;
+      if (!DURABLE_RETROSPECTIVE_TOOLS.has(b.name)) continue;
+      if (succeededIds !== null) {
+        if (typeof b.id !== "string" || !succeededIds.has(b.id)) continue;
+      }
+      count += 1;
+    }
+  }
+  return count;
 }
 
 interface MessageLike {
@@ -917,27 +1139,44 @@ interface MessageLike {
   content: string;
 }
 
+/** Parse a message row's content JSON into a block array, or null. */
+function parseBlocks(content: string): unknown[] | null {
+  let blocks: unknown;
+  try {
+    blocks = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  return Array.isArray(blocks) ? blocks : null;
+}
+
 /**
  * Scan an array of message rows for `tool_use` blocks where `name` is
  * `"remember"` and return the `input.content` strings in order. Robust to
  * malformed content JSON — unparseable rows are skipped, not propagated.
+ *
+ * With a `succeededIds` set, only calls whose id has a matching successful
+ * `tool_result` contribute (the current run's execution-verified log
+ * append); with `null`, every call contributes (prior-run dedup baselines,
+ * where over-inclusion is the safe direction).
  */
-function extractRememberContents(messages: MessageLike[]): string[] {
+function extractRememberContents(
+  messages: MessageLike[],
+  succeededIds: ReadonlySet<string> | null,
+): string[] {
   const contents: string[] = [];
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
-    let blocks: unknown;
-    try {
-      blocks = JSON.parse(msg.content);
-    } catch {
-      continue;
-    }
-    if (!Array.isArray(blocks)) continue;
+    const blocks = parseBlocks(msg.content);
+    if (!blocks) continue;
     for (const block of blocks) {
       if (!block || typeof block !== "object") continue;
       const b = block as Record<string, unknown>;
       if (b.type !== "tool_use") continue;
       if (b.name !== "remember") continue;
+      if (succeededIds !== null) {
+        if (typeof b.id !== "string" || !succeededIds.has(b.id)) continue;
+      }
       const input = b.input;
       if (!input || typeof input !== "object") continue;
       const content = (input as Record<string, unknown>).content;
@@ -1002,9 +1241,18 @@ Two dedup sources to skip:
 1. Anything semantically captured in <already_remembered> above (from prior retrospective passes).
 2. Anything you already called \`remember\` on inline in this slice's transcript — those appear as \`[Tool: remember] {...}\` entries above.
 
-For everything else, use the \`remember\` tool on facts, plans, decisions, preferences, names, dates, felt moments, corrections, commitments, or anything else concrete and worth carrying forward. One \`remember\` call per fact. If nothing new is worth saving, say "Nothing new to save." and stop.
+For everything else, use the \`remember\` tool on facts, plans, decisions, preferences, names, dates, felt moments, corrections, commitments, or anything else concrete and worth carrying forward. One \`remember\` call per fact. ${NO_FINDINGS_MANDATE}
 `;
 }
+
+/**
+ * The sentence mandating the exact no-findings reply. Built from
+ * {@link MEMORY_RETROSPECTIVE_NO_FINDINGS_TEXT} so the instruction and the
+ * finalizer's acceptance check can never drift apart: the finalizer
+ * recognizes a no-findings review only by this exact reply, so the mandate
+ * is part of the advancement contract, not prompt styling.
+ */
+const NO_FINDINGS_MANDATE = `If nothing new is worth saving, reply with exactly "${MEMORY_RETROSPECTIVE_NO_FINDINGS_TEXT}" and stop.`;
 
 // ---------------------------------------------------------------------------
 // Fork-based retrospective instruction
@@ -1070,6 +1318,6 @@ Two dedup sources to skip:
 1. Anything semantically captured in <already_remembered> above (from prior retrospective passes).
 2. Anything you already called \`remember\` on inline within your review window — those appear as \`tool_use\` blocks with \`name: "remember"\` in your history.
 
-For everything else in your review window, use the \`remember\` tool on facts, plans, decisions, preferences, names, dates, felt moments, corrections, commitments, or anything else concrete and worth carrying forward. One \`remember\` call per fact. If nothing new is worth saving, say "Nothing new to save." and stop.
+For everything else in your review window, use the \`remember\` tool on facts, plans, decisions, preferences, names, dates, felt moments, corrections, commitments, or anything else concrete and worth carrying forward. One \`remember\` call per fact. ${NO_FINDINGS_MANDATE}
 `;
 }

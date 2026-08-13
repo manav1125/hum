@@ -376,6 +376,57 @@ function priorRetroMessage(rememberContents: string[]) {
   };
 }
 
+// ── Run-evidence fixtures (fail-closed finalization, upstream 6d3f5d2e5b) ──
+
+/** The explicit no-findings reply the instruction mandates. */
+function noFindingsReplyMessage(createdAt = 1) {
+  return {
+    role: "assistant",
+    content: JSON.stringify([{ type: "text", text: "Nothing new to save." }]),
+    createdAt,
+    metadata: null,
+  };
+}
+
+/** An assistant `remember` tool_use row with a correlatable id. */
+function rememberToolUseMessage(
+  entries: Array<{ id: string; content: string }>,
+  createdAt = 1,
+) {
+  return {
+    role: "assistant",
+    content: JSON.stringify(
+      entries.map((e) => ({
+        type: "tool_use",
+        id: e.id,
+        name: "remember",
+        input: { content: e.content },
+      })),
+    ),
+    createdAt,
+    metadata: null,
+  };
+}
+
+/** A user row carrying `tool_result` blocks for the given tool_use ids. */
+function toolResultMessage(
+  results: Array<{ toolUseId: string; isError?: boolean }>,
+  createdAt = 2,
+) {
+  return {
+    role: "user",
+    content: JSON.stringify(
+      results.map((r) => ({
+        type: "tool_result",
+        tool_use_id: r.toolUseId,
+        ...(r.isError ? { is_error: true } : {}),
+      })),
+    ),
+    createdAt,
+    metadata: null,
+  };
+}
+
 describe("memoryRetrospectiveJob", () => {
   beforeEach(() => {
     mockState = null;
@@ -404,7 +455,15 @@ describe("memoryRetrospectiveJob", () => {
     forkCalls = [];
     addMessageCalls = [];
     conversationOverrides = {};
-    messagesByConversationId = {};
+    // Default run evidence: the fail-closed finalizer (upstream 6d3f5d2e5b)
+    // only advances state when THIS run persisted a verified durable write or
+    // the explicit no-findings reply. Tests that don't stage run output get
+    // the no-findings reply so pre-gate success assertions keep exercising
+    // the finalization path; evidence-specific tests overwrite these keys.
+    messagesByConversationId = {
+      "bg-conv-new": [noFindingsReplyMessage()],
+      "fork-conv-1": [noFindingsReplyMessage()],
+    };
     loadedConversations = {};
     mockResolvedUserSlug = "alice";
     resolveUserSlugCalls = [];
@@ -1400,18 +1459,11 @@ describe("memoryRetrospectiveJob", () => {
       rememberedLog: ["old pass save"],
     };
     messagesByConversationId["bg-conv-new"] = [
-      {
-        role: "assistant",
-        content: JSON.stringify([
-          {
-            type: "tool_use",
-            name: "remember",
-            input: { content: "fresh save from this run" },
-          },
-        ]),
-        createdAt: 5000,
-        metadata: null,
-      },
+      rememberToolUseMessage(
+        [{ id: "tu-fresh", content: "fresh save from this run" }],
+        5000,
+      ),
+      toolResultMessage([{ toolUseId: "tu-fresh" }], 5001),
     ];
 
     const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
@@ -1454,18 +1506,11 @@ describe("memoryRetrospectiveJob", () => {
     priorRetroId = "prior-retro-conv-1";
     priorRetroMessages = [priorRetroMessage(["scanned prior save"])];
     messagesByConversationId["bg-conv-new"] = [
-      {
-        role: "assistant",
-        content: JSON.stringify([
-          {
-            type: "tool_use",
-            name: "remember",
-            input: { content: "this run's save" },
-          },
-        ]),
-        createdAt: 5000,
-        metadata: null,
-      },
+      rememberToolUseMessage(
+        [{ id: "tu-run", content: "this run's save" }],
+        5000,
+      ),
+      toolResultMessage([{ toolUseId: "tu-run" }], 5001),
     ];
 
     const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
@@ -1527,18 +1572,11 @@ describe("memoryRetrospectiveJob", () => {
         createdAt: 1000,
         metadata: JSON.stringify({ forkSourceMessageId: "m-src-1" }),
       },
-      {
-        role: "assistant",
-        content: JSON.stringify([
-          {
-            type: "tool_use",
-            name: "remember",
-            input: { content: "post-fork tail save — included" },
-          },
-        ]),
-        createdAt: 2000,
-        metadata: null,
-      },
+      rememberToolUseMessage(
+        [{ id: "tu-tail", content: "post-fork tail save — included" }],
+        2000,
+      ),
+      toolResultMessage([{ toolUseId: "tu-tail" }], 2001),
     ];
 
     const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
@@ -1569,18 +1607,11 @@ describe("memoryRetrospectiveJob", () => {
         createdAt: 1000,
         metadata: JSON.stringify({ forkSourceMessageId: "m-src-1" }),
       },
-      {
-        role: "assistant",
-        content: JSON.stringify([
-          {
-            type: "tool_use",
-            name: "remember",
-            input: { content: "fork tail save" },
-          },
-        ]),
-        createdAt: 2000,
-        metadata: null,
-      },
+      rememberToolUseMessage(
+        [{ id: "tu-fork", content: "fork tail save" }],
+        2000,
+      ),
+      toolResultMessage([{ toolUseId: "tu-fork" }], 2001),
     ];
 
     await memoryRetrospectiveJob(makeJob(), stubConfig);
@@ -1621,5 +1652,159 @@ describe("memoryRetrospectiveJob", () => {
     // The prior's delete threw (non-fatal); this run's own ephemeral
     // conversation is still cleaned up.
     expect(deletedConversationIds).toEqual(["bg-conv-new"]);
+  });
+
+  // ── Fail-closed finalization (upstream 6d3f5d2e5b) ────────────────────
+  //
+  // `invoked: true` from the wake proves only that the run went live — the
+  // sidechain-timeout class aborts mid-run while still returning cleanly.
+  // Advancement requires positive durable evidence from THIS run.
+
+  test("fail-closed: wake succeeded but run persisted nothing → no_usable_output, pointers untouched, orphan deleted", async () => {
+    mockState = {
+      conversationId: "src-conv-1",
+      lastProcessedMessageId: "prev-msg",
+      lastRunAt: Date.now() - 60 * 60 * 1000,
+      rememberedLog: ["existing entry"],
+    };
+    messagesByConversationId["bg-conv-new"] = [];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_usable_output");
+    expect(stateUpserts).toHaveLength(0);
+    // Cooldown still applies so the retry is not a tight loop.
+    expect(lastRunAtBumps).toHaveLength(1);
+    expect(deletedConversationIds).toEqual(["bg-conv-new"]);
+  });
+
+  test("fail-closed: analysis-only reply (prose mentioning the sentinel) does not advance", async () => {
+    messagesByConversationId["bg-conv-new"] = [
+      {
+        role: "assistant",
+        content: JSON.stringify([
+          {
+            type: "text",
+            text: "I reviewed everything. Nothing new to save. Overall the user seems busy.",
+          },
+        ]),
+        createdAt: 1,
+        metadata: null,
+      },
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_usable_output");
+    expect(stateUpserts).toHaveLength(0);
+  });
+
+  test("fail-closed: exact no-findings reply with no save attempts advances the cursor", async () => {
+    messagesByConversationId["bg-conv-new"] = [noFindingsReplyMessage()];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("invoked");
+    expect(stateUpserts).toHaveLength(1);
+    expect(stateUpserts[0]!.lastProcessedMessageId).toBe("m3");
+    // A no-findings pass folds nothing new into the log.
+    expect(stateUpserts[0]!.rememberedLog).toEqual([]);
+  });
+
+  test("fail-closed: no-findings reply alongside a FAILED save attempt does not advance", async () => {
+    // A run that attempted a save and failed cannot also claim no findings.
+    messagesByConversationId["bg-conv-new"] = [
+      rememberToolUseMessage([{ id: "tu-1", content: "a fact" }], 1),
+      toolResultMessage([{ toolUseId: "tu-1", isError: true }], 2),
+      noFindingsReplyMessage(3),
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_usable_output");
+    expect(stateUpserts).toHaveLength(0);
+  });
+
+  test("fail-closed: remember whose tool_result is is_error does not advance and stays out of the log", async () => {
+    mockState = {
+      conversationId: "src-conv-1",
+      lastProcessedMessageId: "prev-msg",
+      lastRunAt: Date.now() - 60 * 60 * 1000,
+      rememberedLog: ["existing entry"],
+    };
+    messagesByConversationId["bg-conv-new"] = [
+      rememberToolUseMessage([{ id: "tu-err", content: "unsaved fact" }], 1),
+      toolResultMessage([{ toolUseId: "tu-err", isError: true }], 2),
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_usable_output");
+    // The failed save's facts must not suppress the retry's re-save.
+    expect(stateUpserts).toHaveLength(0);
+  });
+
+  test("fail-closed: remember with no matching tool_result at all does not advance", async () => {
+    messagesByConversationId["bg-conv-new"] = [
+      rememberToolUseMessage([{ id: "tu-lost", content: "orphan fact" }], 1),
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_usable_output");
+    expect(stateUpserts).toHaveLength(0);
+  });
+
+  test("fail-closed: verified remember advances and only verified saves reach the log", async () => {
+    messagesByConversationId["bg-conv-new"] = [
+      rememberToolUseMessage(
+        [
+          { id: "tu-ok", content: "verified fact" },
+          { id: "tu-bad", content: "failed fact" },
+        ],
+        1,
+      ),
+      toolResultMessage(
+        [{ toolUseId: "tu-ok" }, { toolUseId: "tu-bad", isError: true }],
+        2,
+      ),
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("invoked");
+    expect(stateUpserts).toHaveLength(1);
+    expect(stateUpserts[0]!.rememberedLog).toEqual(["verified fact"]);
+  });
+
+  test("fail-closed (fork path): run with no usable output leaves the window retryable and deletes the fork", async () => {
+    forkFlagEnabled = true;
+    conversationOverrides["fork-conv-1"] = {
+      source: "memory-retrospective-fork",
+      forkParentMessageId: null,
+    };
+    // Copied prefix only — the run's post-boundary tail is empty.
+    messagesByConversationId["fork-conv-1"] = [
+      {
+        role: "user",
+        content: JSON.stringify([{ type: "text", text: "hi" }]),
+        createdAt: 1000,
+        metadata: JSON.stringify({ forkSourceMessageId: "m-src-1" }),
+      },
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_usable_output");
+    expect(stateUpserts).toHaveLength(0);
+    expect(lastRunAtBumps).toHaveLength(1);
+    expect(deletedConversationIds).toEqual(["fork-conv-1"]);
+  });
+
+  test("fail-closed: the prompt mandates the exact no-findings reply the finalizer accepts", async () => {
+    await memoryRetrospectiveJob(makeJob(), stubConfig);
+    expect(wakeCalls[0]!.hint).toContain(
+      'reply with exactly "Nothing new to save."',
+    );
   });
 });

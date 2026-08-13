@@ -137,3 +137,55 @@ export function jobOutcomeFromDetail(
 export function jobOutcomeRan(outcome: JobOutcome): boolean {
   return outcome.kind === "produced" || outcome.kind === "empty";
 }
+
+// ---------------------------------------------------------------------------
+// Queue resolution — how the row should read after a non-throwing handler.
+//
+// `JobOutcome` answers "what did the run write". It deliberately has no
+// opinion on the job row's status, which is how a retrospective whose wake
+// failed (a returned `wake_failed`, not a throw) still landed a `completed`
+// row: the worker's only non-throw vocabulary was "complete it". This second
+// axis lets a handler that reports failure through a returned domain outcome
+// translate it into the row's real disposition. Ported from upstream
+// 6d3f5d2e5b (there `JobQueueResolution` in plugins/types.ts).
+// ---------------------------------------------------------------------------
+
+/**
+ * How the worker resolves a claimed job row after its handler returns
+ * without throwing.
+ *
+ * - `completed`: the work succeeded (or was a legitimate no-op).
+ * - `failed`: terminal failure; the row is dead-lettered with
+ *   `errorMessage` as `last_error`. Use when retry is owned elsewhere
+ *   (event-driven re-enqueue, durable backoff checkpoints).
+ * - `retryable`: transient failure; the row re-enters the queue's
+ *   attempt-budgeted retry machinery with `errorMessage` recorded.
+ * - `deferred`: the work could not run yet for a reason external to the
+ *   job (e.g. its source conversation is mid-turn); the row goes back to
+ *   pending on the deferral counter's backoff curve and dead-letters with
+ *   `deferralExhaustedMessage` once the deferral budget is spent.
+ */
+export interface JobQueueResolution {
+  queueResolution: "completed" | "failed" | "retryable" | "deferred";
+  /** Persisted to `memory_jobs.last_error` for `failed` / `retryable`. */
+  errorMessage?: string;
+  /** Retry delay override for `retryable`. */
+  retryDelayMs?: number;
+  /** Terminal `last_error` when a `deferred` job exhausts its budget. */
+  deferralExhaustedMessage?: string;
+}
+
+/**
+ * What `processJob` hands back to the worker's completion site: the write
+ * outcome (the row's `outcome` columns, when the row completes) plus the
+ * row's queue disposition.
+ */
+export interface JobHandlerResult {
+  outcome: JobOutcome;
+  queue: JobQueueResolution;
+}
+
+/** The common case: the row completes and records `outcome`. */
+export function jobCompleted(outcome: JobOutcome): JobHandlerResult {
+  return { outcome, queue: { queueResolution: "completed" } };
+}

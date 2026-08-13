@@ -48,3 +48,16 @@ export const MEMORY_RETROSPECTIVE_GROUP_ID = "system:background";
  */
 export const MEMORY_RETROSPECTIVE_INSTRUCTION_KIND =
   "memory_retrospective_instruction";
+
+/**
+ * The exact reply the retrospective instruction mandates when a reviewed
+ * window contains nothing worth saving. The finalizer treats a persisted
+ * assistant text block that trims to exactly this phrase (with no
+ * memory-writing tool attempts in the run) as the positive artifact of a
+ * legitimate no-findings review, advancing the cursor without fabricating a
+ * memory write. Compared by strict whole-block equality so analysis prose
+ * that merely mentions the phrase does not qualify. Interpolated into the
+ * prompt templates so instruction and acceptance check cannot drift apart.
+ * Ported from upstream 6d3f5d2e5b.
+ */
+export const MEMORY_RETROSPECTIVE_NO_FINDINGS_TEXT = "Nothing new to save.";

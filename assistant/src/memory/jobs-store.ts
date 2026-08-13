@@ -730,6 +730,10 @@ export function claimMemoryJobs(limits: LaneBudgets): MemoryJob[] {
  */
 export function completeMemoryJob(id: string, outcome?: JobOutcome): void {
   const db = getMemoryDb();
+  // Guarded on `running` so a late return from an abandoned execution cannot
+  // overwrite a terminal state another writer already recorded (the stalled-job
+  // watchdog's `failed` via `failStalledJobs`, or a successor worker's
+  // re-claimed row). Ported from upstream 6d3f5d2e5b.
   db.update(memoryJobs)
     .set({
       status: "completed",
@@ -739,8 +743,14 @@ export function completeMemoryJob(id: string, outcome?: JobOutcome): void {
       producedCount: outcome?.produced ?? null,
       outcomeReason: outcome ? truncate(outcome.reason ?? "", 500, "") : null,
     })
-    .where(eq(memoryJobs.id, id))
+    .where(and(eq(memoryJobs.id, id), eq(memoryJobs.status, "running")))
     .run();
+  if (memRawChanges() === 0) {
+    log.warn(
+      { jobId: id },
+      "completeMemoryJob: row was not running; late completion suppressed",
+    );
+  }
 }
 
 /** One job type's durable record of what its runs produced. */
@@ -847,7 +857,17 @@ const DEFER_MAX_DELAY_MS = 5 * 60 * 1000;
  * Returns `'deferred'` if the job was put back, or `'failed'` if max deferrals
  * were exceeded and the job was marked as failed.
  */
-export function deferMemoryJob(id: string): "deferred" | "failed" {
+export function deferMemoryJob(
+  id: string,
+  options?: {
+    /**
+     * Terminal `last_error` recorded when the deferral budget is exhausted.
+     * Defaults to the backend-unavailable wording used by the worker's
+     * infrastructure deferrals.
+     */
+    exhaustedMessage?: string;
+  },
+): "deferred" | "failed" {
   const db = getMemoryDb();
   const row = db.select().from(memoryJobs).where(eq(memoryJobs.id, id)).get();
   if (!row) return "failed";
@@ -865,9 +885,11 @@ export function deferMemoryJob(id: string): "deferred" | "failed" {
         status: "failed",
         deferrals,
         updatedAt: now,
-        lastError: `Backend unavailable after ${deferrals} deferrals`,
+        lastError:
+          options?.exhaustedMessage ??
+          `Backend unavailable after ${deferrals} deferrals`,
       })
-      .where(eq(memoryJobs.id, id))
+      .where(and(eq(memoryJobs.id, id), eq(memoryJobs.status, "running")))
       .run();
     return "failed";
   }
@@ -893,7 +915,7 @@ export function deferMemoryJob(id: string): "deferred" | "failed" {
       runAfter: now + delay,
       updatedAt: now,
     })
-    .where(eq(memoryJobs.id, id))
+    .where(and(eq(memoryJobs.id, id), eq(memoryJobs.status, "running")))
     .run();
   return "deferred";
 }
@@ -910,6 +932,9 @@ export function failMemoryJob(
   if (!row) return;
   const attempts = row.attempts + 1;
   const now = Date.now();
+  // Both transitions are guarded on `running` for the same reason as
+  // `completeMemoryJob`: a late writer must not overwrite a terminal state
+  // recorded by the stalled-job watchdog or a successor worker.
   if (attempts >= maxAttempts) {
     db.update(memoryJobs)
       .set({
@@ -918,7 +943,7 @@ export function failMemoryJob(
         updatedAt: now,
         lastError: truncate(error, 2000, ""),
       })
-      .where(eq(memoryJobs.id, id))
+      .where(and(eq(memoryJobs.id, id), eq(memoryJobs.status, "running")))
       .run();
     return;
   }
@@ -930,7 +955,7 @@ export function failMemoryJob(
       updatedAt: now,
       lastError: truncate(error, 2000, ""),
     })
-    .where(eq(memoryJobs.id, id))
+    .where(and(eq(memoryJobs.id, id), eq(memoryJobs.status, "running")))
     .run();
 }
 

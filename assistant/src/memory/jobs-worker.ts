@@ -59,7 +59,9 @@ import { mediaProcessingJob } from "./job-handlers/media-processing.js";
 import { buildConversationSummaryJob } from "./job-handlers/summarization.js";
 import {
   JOB_OUTCOME_UNREPORTED,
+  jobCompleted,
   jobEmpty,
+  type JobHandlerResult,
   type JobOutcome,
   jobOutcomeFromDetail,
   jobProduced,
@@ -332,18 +334,23 @@ export async function runMemoryJobsOnce(
     let groupProcessed = 0;
     for (const job of group) {
       try {
-        const outcome = await processJob(job, config);
-        completeMemoryJob(job.id, outcome);
-        // Observation only. A bookkeeping failure must never turn a job that
-        // succeeded into one that failed, so the streak counter is kept out
-        // of the path that decides the job's status.
-        try {
-          recordJobOutcome(job.type, outcome);
-        } catch (healthErr) {
-          log.debug(
-            { err: healthErr, jobId: job.id, type: job.type },
-            "Recording job outcome health failed; job completion unaffected",
-          );
+        const result = normalizeHandlerResult(await processJob(job, config));
+        applyQueueResolution(job, result);
+        // Observation only, and only for rows that actually completed. A
+        // bookkeeping failure must never turn a job that succeeded into one
+        // that failed, so the streak counter is kept out of the path that
+        // decides the job's status; and a dead-lettered/deferred row's truth
+        // lives in `status` + `last_error` — counting a failed wake as an
+        // "empty run" would launder failure back into the empty-streak axis.
+        if (result.queue.queueResolution === "completed") {
+          try {
+            recordJobOutcome(job.type, result.outcome);
+          } catch (healthErr) {
+            log.debug(
+              { err: healthErr, jobId: job.id, type: job.type },
+              "Recording job outcome health failed; job completion unaffected",
+            );
+          }
         }
         groupProcessed += 1;
       } catch (err) {
@@ -775,6 +782,60 @@ function handleJobError(job: MemoryJob, err: unknown): void {
 // ── Job dispatch ───────────────────────────────────────────────────
 
 /**
+ * Lift a bare {@link JobOutcome} into the two-axis {@link JobHandlerResult}.
+ * A bare outcome keeps the historical contract — the row completes and
+ * failure is signaled by throwing. Cases that report failure through a
+ * returned domain outcome (the retrospective's `wake_failed` /
+ * `no_usable_output`, the consolidation's `run_failed`) return a full
+ * result carrying the row's real disposition.
+ */
+function normalizeHandlerResult(
+  result: JobOutcome | JobHandlerResult,
+): JobHandlerResult {
+  return "queue" in result ? result : jobCompleted(result);
+}
+
+/**
+ * Apply a handler's queue resolution to its claimed row. This is the
+ * worker's half of the outcome-truthfulness boundary (upstream 6d3f5d2e5b):
+ * the persisted `memory_jobs.status` must reflect the handler's actual
+ * outcome, so a handler that reports failure through a returned value
+ * dead-letters, retries, or defers instead of silently completing.
+ */
+function applyQueueResolution(job: MemoryJob, result: JobHandlerResult): void {
+  const queue = result.queue;
+  switch (queue.queueResolution) {
+    case "completed": {
+      completeMemoryJob(job.id, result.outcome);
+      return;
+    }
+    case "failed": {
+      failMemoryJob(job.id, queue.errorMessage ?? "handler failed", {
+        maxAttempts: 1,
+      });
+      return;
+    }
+    case "retryable": {
+      failMemoryJob(job.id, queue.errorMessage ?? "handler failed", {
+        retryDelayMs:
+          queue.retryDelayMs ?? retryDelayForAttempt(job.attempts + 1),
+        maxAttempts: RETRY_MAX_ATTEMPTS,
+      });
+      return;
+    }
+    case "deferred": {
+      deferMemoryJob(
+        job.id,
+        queue.deferralExhaustedMessage
+          ? { exhaustedMessage: queue.deferralExhaustedMessage }
+          : {},
+      );
+      return;
+    }
+  }
+}
+
+/**
  * Run one job and say what it did.
  *
  * The return type is the point of this function. It used to be `void`, which
@@ -782,12 +843,14 @@ function handleJobError(job: MemoryJob, err: unknown): void {
  * "did not throw" covered both a full extraction and a run that read nothing,
  * wrote nothing and advanced its checkpoint anyway. Handlers that cannot yet
  * answer return {@link JOB_OUTCOME_UNREPORTED}: an honest gap that gets
- * counted, rather than a silent promotion to success.
+ * counted, rather than a silent promotion to success. Handlers whose domain
+ * outcome carries a failure the queue must record return a full
+ * {@link JobHandlerResult} instead of a bare outcome.
  */
 async function processJob(
   job: MemoryJob,
   config: AssistantConfig,
-): Promise<JobOutcome> {
+): Promise<JobOutcome | JobHandlerResult> {
   if (config.memory.v2.enabled && V1_QDRANT_JOB_TYPES.has(job.type)) {
     // On the owner's instance this is 13,000 `embed_segment` rows a week that
     // reach `completed` without touching a store. Correct behaviour — v2 does
@@ -903,9 +966,18 @@ async function processJob(
         case "empty_buffer":
           return jobEmpty("the buffer had nothing left to consolidate");
         case "run_failed":
-          return jobEmpty(
-            `the consolidation run did not complete${result.reason ? ` — ${result.reason}` : ""}`,
-          );
+          // A failed run dead-letters the row with the failure reason; retry
+          // cadence is owned by the consolidation scheduler's own backoff,
+          // not the queue's attempt budget (maxAttempts 1 via `failed`).
+          return {
+            outcome: jobEmpty(
+              `the consolidation run did not complete${result.reason ? ` — ${result.reason}` : ""}`,
+            ),
+            queue: {
+              queueResolution: "failed",
+              errorMessage: `consolidation run failed: ${result.reason ?? "unknown"}`,
+            },
+          };
         case "locked":
           return jobSkipped("another consolidation run holds the lock");
         case "disabled":
@@ -953,11 +1025,47 @@ async function processJob(
         case "no_new_messages":
           return jobSkipped("nothing has been said since the last pass");
         case "source_processing":
-          return jobSkipped("the source conversation is still being processed");
+          // Defer the SAME row on the bounded deferral counter instead of
+          // completing it: the retry re-checks the processing flag, and a
+          // stranded flag dead-letters with an honest message instead of
+          // minting an endless stream of "completed" skips.
+          return {
+            outcome: jobSkipped(
+              "the source conversation is still being processed",
+            ),
+            queue: {
+              queueResolution: "deferred",
+              deferralExhaustedMessage:
+                "source conversation stayed mid-turn through the deferral budget; a later trigger will re-enqueue",
+            },
+          };
         case "wake_failed":
-          return jobEmpty(
-            `the retrospective conversation could not be woken${result.reason ? ` — ${result.reason}` : ""}`,
-          );
+          // The wake never went live: dead-letter with an honest last_error.
+          // Retry stays event-driven (cooldown + trigger re-enqueue), so the
+          // queue's attempt budget deliberately does not double-drive it.
+          return {
+            outcome: jobEmpty(
+              `the retrospective conversation could not be woken${result.reason ? ` — ${result.reason}` : ""}`,
+            ),
+            queue: {
+              queueResolution: "failed",
+              errorMessage: `retrospective wake failed: ${result.reason ?? "unknown"}`,
+            },
+          };
+        case "no_usable_output":
+          // The wake went live but the run persisted neither a verified
+          // memory write nor the explicit no-findings reply. The window
+          // stays retryable in retrospective state; the row must not read
+          // `completed`.
+          return {
+            outcome: jobEmpty(
+              `the retrospective run produced no usable output${result.reason ? ` — ${result.reason}` : ""}`,
+            ),
+            queue: {
+              queueResolution: "failed",
+              errorMessage: `retrospective run produced no usable output: ${result.reason ?? "unknown"}`,
+            },
+          };
         case "disabled":
           return jobSkipped("memory retrospectives are switched off");
       }
