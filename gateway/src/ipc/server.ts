@@ -16,11 +16,22 @@
  * `/run/*`). Existing connected sockets survive the re-bind because the
  * kernel keeps connection inodes alive independently of the listener path;
  * only new `connect()` calls require the path to exist.
+ *
+ * Reachability: when the gateway and the daemon run as different uids,
+ * `GATEWAY_IPC_SOCKET_GID` group-shares the socket with the daemon — see
+ * {@link GatewayIpcServer.applySocketPermissions}.
  */
 
 import { SocketWatchdog, ensureSocketDir } from "@vellumai/ipc-server-utils";
-import { existsSync, unlinkSync } from "node:fs";
+import {
+  chmodSync,
+  chownSync,
+  existsSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
+import { dirname } from "node:path";
 
 import type { z } from "zod";
 
@@ -111,6 +122,11 @@ export class GatewayIpcServer {
       createServer: () => this.createListeningServer(),
       onRebind: (newServer, oldServer) => {
         this.server = newServer;
+        // The watchdog re-created the path entry with default ownership, so
+        // the group share has to be re-applied here too. Without this a
+        // single rebind silently locks the daemon's uid back out — the same
+        // failure as booting without the share, just later and rarer.
+        this.applySocketPermissions();
         // Move the previous listener into the legacy set so already-
         // connected clients keep their accept loop alive. close() stops
         // accepting new connections (which the kernel already won't route
@@ -129,7 +145,15 @@ export class GatewayIpcServer {
   start(): void {
     // Ensure the parent directory exists — on a fresh hatch the workspace
     // dir may not have been created yet when the IPC server starts.
+    // `ensureSocketDir` creates it 0700, which locks out any other uid, so
+    // note whether this process is the one that created it: if so we own the
+    // directory's policy and widen it to the shared group below.
+    const socketDir = dirname(this.socketPath);
+    const dirPreexisted = existsSync(socketDir);
     ensureSocketDir(this.socketPath);
+    if (!dirPreexisted) {
+      this.applySocketDirPermissions(socketDir);
+    }
 
     // Clean up stale socket file from a previous run
     if (existsSync(this.socketPath)) {
@@ -143,6 +167,7 @@ export class GatewayIpcServer {
     this.server = this.createListeningServer();
     this.server.listen(this.socketPath, () => {
       log.info({ path: this.socketPath }, "IPC server listening");
+      this.applySocketPermissions();
     });
 
     this.watchdog.start();
@@ -207,6 +232,107 @@ export class GatewayIpcServer {
   }
 
   // ── Internal ──────────────────────────────────────────────────────────
+
+  /**
+   * The gid to share the IPC socket with, or `null` when the deployment did
+   * not ask for a share (every deployment where the gateway and the daemon
+   * run as the same uid).
+   */
+  private sharedSocketGid(): number | null {
+    const raw = process.env.GATEWAY_IPC_SOCKET_GID?.trim();
+    if (!raw) return null;
+    const gid = Number(raw);
+    if (!Number.isInteger(gid) || gid < 0) {
+      log.error(
+        { value: raw },
+        "GATEWAY_IPC_SOCKET_GID is not a non-negative integer — ignoring it; " +
+          "an unprivileged daemon will NOT be able to reach the gateway",
+      );
+      return null;
+    }
+    return gid;
+  }
+
+  /**
+   * Make the listening socket reachable by the daemon when the two processes
+   * run as different uids (`CUE_DROP_DAEMON_PRIVILEGES=1`: gateway root,
+   * daemon uid/gid 1001).
+   *
+   * `connect(2)` on an AF_UNIX socket requires **write** permission on the
+   * path entry. Node binds it 0777 & ~umask — 0755 under root's usual 022 —
+   * so an unprivileged daemon gets r-x and every daemon→gateway RPC fails
+   * with EACCES. That is not a degraded mode: risk classification, autonomy
+   * policy reads and capability-token verification all ride this socket, so
+   * the assistant fails closed on *every* tool call ("The safety-check
+   * service was briefly unavailable"). Enabling the privilege drop without
+   * this took prod down on 2026-08-13.
+   *
+   * 0660 + the daemon's gid rather than 0666: the daemon is the process that
+   * runs agent-authored shell commands, and this socket hands out and
+   * verifies trust material. Naming one gid keeps it reachable by the one
+   * process that must reach it, and keeps it out of reach of any other uid
+   * that later shares this namespace — a per-skill sandbox user, a helper
+   * added to the image — without that being a new decision to remember.
+   * The container being a single trust domain today is a fact about today.
+   *
+   * Unset is the previous behaviour exactly, so the flag-off path (daemon as
+   * root, which can connect regardless of mode) is untouched.
+   */
+  private applySocketPermissions(): void {
+    const gid = this.sharedSocketGid();
+    if (gid === null) return;
+
+    try {
+      // Keep the current owner; only the group and mode change. Reading the
+      // uid back beats passing -1 — it keeps the call honest on any platform
+      // whose chown() does not special-case it.
+      const { uid } = statSync(this.socketPath);
+      chownSync(this.socketPath, uid, gid);
+      chmodSync(this.socketPath, 0o660);
+      log.info(
+        { path: this.socketPath, uid, gid, mode: "0660" },
+        "IPC socket group-shared with the daemon",
+      );
+    } catch (err) {
+      // Loud, not fatal: the gateway's HTTP surface is still worth serving,
+      // and this is recoverable by a restart. But it means the daemon cannot
+      // reach us, so it must never scroll by as a debug line.
+      log.error(
+        { err, path: this.socketPath, gid },
+        "FAILED to group-share the IPC socket — an unprivileged daemon will " +
+          "not be able to connect, and every tool call will be denied",
+      );
+    }
+  }
+
+  /**
+   * Widen a socket directory this process just created (0700, see
+   * {@link ensureSocketDir}) to the shared group, so the daemon's uid can
+   * traverse into it. Only ever called for a directory we created ourselves —
+   * a pre-existing directory (the workspace, a mounted volume) keeps whatever
+   * policy its owner set.
+   */
+  private applySocketDirPermissions(socketDir: string): void {
+    const gid = this.sharedSocketGid();
+    if (gid === null) return;
+
+    try {
+      const { uid } = statSync(socketDir);
+      chownSync(socketDir, uid, gid);
+      // 0750: traverse and list for the group, nothing for the world.
+      chmodSync(socketDir, 0o750);
+      log.info(
+        { path: socketDir, uid, gid, mode: "0750" },
+        "IPC socket directory group-shared with the daemon",
+      );
+    } catch (err) {
+      log.error(
+        { err, path: socketDir, gid },
+        "FAILED to group-share the IPC socket directory — an unprivileged " +
+          "daemon will not be able to reach the socket inside it",
+      );
+    }
+  }
 
   private createListeningServer(): Server {
     const server = createServer((socket) => this.handleConnection(socket));

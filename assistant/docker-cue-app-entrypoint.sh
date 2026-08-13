@@ -147,6 +147,19 @@ if [ "$DROP_DAEMON_PRIVILEGES" = "1" ]; then
   # /home/assistant/.vellum for exactly this identity.
   DAEMON_PRIVILEGE_PREFIX="setpriv --reuid=${CUE_DAEMON_UID} --regid=${CUE_DAEMON_GID} --clear-groups --inh-caps=-all env HOME=/home/assistant USER=assistant LOGNAME=assistant"
   echo "[cue-app] daemon will run as uid ${CUE_DAEMON_UID} (agent shell commands inherit it); gateway stays root" >&2
+
+  # The gateway stays root and so does the socket it binds — and connect(2)
+  # on a Unix socket needs WRITE permission, which a root-owned 0755 socket
+  # does not give uid 1001. Without this the daemon cannot reach the gateway
+  # at all: risk classification, autonomy policy and capability-token checks
+  # all ride that socket, so the assistant fails closed on EVERY tool call.
+  # That is exactly what took prod down on 2026-08-13.
+  #
+  # setpriv gives the daemon regid=1001 with --clear-groups, so gid 1001
+  # (the image's `assistant` group) is precisely the daemon's one group.
+  # Telling the gateway to chgrp its socket to it and go 0660 restores the
+  # round trip without opening the socket to any other uid.
+  export GATEWAY_IPC_SOCKET_GID="${CUE_DAEMON_GID}"
 fi
 
 # start_daemon: launch the daemon backgrounded via its normal entrypoint
