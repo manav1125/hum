@@ -121,6 +121,13 @@ prepare_daemon_workspace() {
   find "${VELLUM_WORKSPACE_DIR}" -path "${_secdir}" -prune -o \
     ! -user "${CUE_DAEMON_UID}" -exec chown -h "${CUE_DAEMON_UID}:${CUE_DAEMON_GID}" {} + \
     2>/dev/null || true
+
+  # Once the workspace belongs to another uid, git refuses to operate on it as
+  # root ("detected dubious ownership") — which would silently break any
+  # root-run ops tooling or backup script that shells out to git. The daemon
+  # itself is unaffected (it runs as the owner); this is purely so an operator
+  # on the box still has a working git.
+  git config --global --add safe.directory "${VELLUM_WORKSPACE_DIR}" 2>/dev/null || true
   # The FIFO and stderr tail are recreated per daemon spawn by root; the daemon
   # writes to them, so they must be owned by it too.
   for _f in "$DAEMON_STDERR_FIFO" "$DAEMON_STDERR_TAIL"; do
