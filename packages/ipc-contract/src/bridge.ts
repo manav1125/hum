@@ -313,6 +313,24 @@ export interface VellumBridge {
     open(conversationId: string): Promise<void>;
   };
   /**
+   * Floating desktop companion (slice 1): the always-on-top corner orb
+   * window rendered by the SPA's `/assistant/floating/companion` route.
+   * `setExpanded` asks main to resize the panel between the collapsed orb
+   * and the expanded mini card; `talk` surfaces the main window and starts
+   * the voice-room entry path; `openCue` surfaces the main window; `hide`
+   * hides the companion (persisted until re-enabled from the tray).
+   * `getStatus`/`onStatus` mirror the assistant status main already tracks
+   * for the tray, so the orb can be status-aware without its own polling.
+   */
+  companion: {
+    setExpanded(expanded: boolean): Promise<void>;
+    talk(): Promise<void>;
+    openCue(): Promise<void>;
+    hide(): Promise<void>;
+    getStatus(): Promise<AssistantStatus>;
+    onStatus(callback: (status: AssistantStatus) => void): () => void;
+  };
+  /**
    * Embedded VentureVerse app view (desktop inline embedding). The SPA's app
    * page drives a native WebContentsView composited into the Cue window so a
    * VentureVerse app runs first-party (its SSO handshake completes) while

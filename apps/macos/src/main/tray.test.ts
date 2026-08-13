@@ -473,3 +473,75 @@ describe("avatar and appearance updates", () => {
     expect(tray?.setImage).toHaveBeenLastCalledWith({ id: "idle" });
   });
 });
+
+describe("desktop companion items", () => {
+  const makeCompanion = ({
+    enabled = true,
+    visible = true,
+  }: { enabled?: boolean; visible?: boolean } = {}) => ({
+    isEnabled: mock(() => enabled),
+    isVisible: mock(() => visible),
+    toggle: mock(() => undefined),
+    talk: mock(() => Promise.resolve()),
+  });
+
+  const popMenu = () => {
+    handlerFor(trays[0], "right-click")?.();
+    return buildFromTemplateMock.mock.calls.at(-1)?.[0] as Array<{
+      label?: string;
+      click?: () => void | Promise<void>;
+    }>;
+  };
+
+  test("absent companion handlers render no companion items", () => {
+    installTray(handlers);
+    const labels = popMenu()
+      .map((i) => i.label)
+      .filter(Boolean);
+    expect(labels).not.toContain("Hide Cue Companion");
+    expect(labels).not.toContain("Show Cue Companion");
+    expect(labels).not.toContain("Talk to Cue");
+  });
+
+  test("flag off renders no companion items (zero tray footprint)", () => {
+    installTray({ ...handlers, companion: makeCompanion({ enabled: false }) });
+    const labels = popMenu()
+      .map((i) => i.label)
+      .filter(Boolean);
+    expect(labels).not.toContain("Hide Cue Companion");
+    expect(labels).not.toContain("Show Cue Companion");
+    expect(labels).not.toContain("Talk to Cue");
+  });
+
+  test("flag on renders Hide Cue Companion (visible) and Talk to Cue; toggle routes through the handler", () => {
+    const companion = makeCompanion({ visible: true });
+    installTray({ ...handlers, companion });
+    const template = popMenu();
+    const labels = template.map((i) => i.label).filter(Boolean);
+    expect(labels).toContain("Hide Cue Companion");
+    expect(labels).toContain("Talk to Cue");
+
+    template.find((i) => i.label === "Hide Cue Companion")?.click?.();
+    expect(companion.toggle).toHaveBeenCalledTimes(1);
+  });
+
+  test("a hidden companion offers Show Cue Companion, evaluated at pop time", () => {
+    const companion = makeCompanion({ visible: false });
+    installTray({ ...handlers, companion });
+    const labels = popMenu()
+      .map((i) => i.label)
+      .filter(Boolean);
+    expect(labels).toContain("Show Cue Companion");
+    expect(labels).not.toContain("Hide Cue Companion");
+  });
+
+  test("Talk to Cue routes through the companion talk handler", async () => {
+    const companion = makeCompanion();
+    installTray({ ...handlers, companion });
+    const template = popMenu();
+
+    await template.find((i) => i.label === "Talk to Cue")?.click?.();
+
+    expect(companion.talk).toHaveBeenCalledTimes(1);
+  });
+});

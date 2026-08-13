@@ -619,6 +619,41 @@ const bridge: VellumBridge = {
       ipcRenderer.invoke("vellum:popout:open", conversationId) as Promise<void>,
   },
   /**
+   * Floating desktop companion (slice 1). The companion BrowserWindow's
+   * renderer drives expand/collapse resizes and the Talk / Open Cue actions
+   * through main; status mirrors the tray's assistant-status state machine
+   * (pushed on change, pulled once at mount). See main/companion-window.ts.
+   */
+  companion: {
+    setExpanded: (expanded: boolean): Promise<void> =>
+      ipcRenderer.invoke(
+        "vellum:companion:setExpanded",
+        expanded,
+      ) as Promise<void>,
+    talk: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:talk") as Promise<void>,
+    openCue: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:openCue") as Promise<void>,
+    hide: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:hide") as Promise<void>,
+    getStatus: (): Promise<AssistantStatus> =>
+      ipcRenderer.invoke(
+        "vellum:companion:getStatus",
+      ) as Promise<AssistantStatus>,
+    onStatus: (callback: (status: AssistantStatus) => void) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        status: AssistantStatus,
+      ): void => {
+        callback(status);
+      };
+      ipcRenderer.on("vellum:companion:status", handler);
+      return () => {
+        ipcRenderer.off("vellum:companion:status", handler);
+      };
+    },
+  },
+  /**
    * Embedded VentureVerse app view (desktop inline embedding). The SPA's app
    * page drives a native WebContentsView composited into the Cue window: open
    * it at a rectangle, keep it aligned as the layout resizes, tear it down on

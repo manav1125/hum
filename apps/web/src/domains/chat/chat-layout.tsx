@@ -547,6 +547,11 @@ export function ChatLayout() {
     openCueLive: () => {
       void navigate(routes.cueLive);
     },
+    // Desktop companion / tray "Talk to Cue": land on the standalone voice
+    // surface (the same screen the mobile tab bar and direct links use).
+    openVoice: () => {
+      void navigate(routes.voice);
+    },
     navigateBack: () => {
       navigate(-1);
     },

@@ -82,6 +82,23 @@ export interface TrayHandlers {
    * Open (or focus the existing) About window.
    */
   openAbout(): void;
+  /**
+   * Floating desktop companion (slice 1) hooks, injected by `index.ts` the
+   * same way the window handlers are so the tray stays decoupled from the
+   * companion module. Optional: absent (older wiring, tests) means the
+   * tray renders no companion items at all — which is also the flag-off
+   * behavior via `isEnabled` returning false.
+   */
+  companion?: {
+    /** Whether the `desktop-companion` feature flag is on right now. */
+    isEnabled(): boolean;
+    /** Whether the orb is currently set to visible (persisted choice). */
+    isVisible(): boolean;
+    /** Flip the persisted visibility and reconcile the window. */
+    toggle(): void;
+    /** Surface the main window and start the voice-room entry path. */
+    talk(): Promise<void>;
+  };
 }
 
 /**
@@ -226,6 +243,28 @@ const buildTrayMenu = (
       dispatchToMain({ kind: "openCueLive" });
     },
   });
+
+  // Floating desktop companion (slice 1). Gated on the `desktop-companion`
+  // feature flag at menu-build time — flag off means these items simply
+  // don't exist, keeping the flag-off tray byte-identical to before.
+  const companion = handlers.companion;
+  if (companion?.isEnabled()) {
+    items.push({ type: "separator" });
+    items.push({
+      label: companion.isVisible()
+        ? "Hide Cue Companion"
+        : "Show Cue Companion",
+      click: () => {
+        companion.toggle();
+      },
+    });
+    items.push({
+      label: "Talk to Cue",
+      click: () => {
+        void companion.talk();
+      },
+    });
+  }
 
   items.push(
     { type: "separator" },

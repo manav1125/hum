@@ -65,6 +65,13 @@ import { handleBundleFile, installBundleFlow } from "./bundle-flow";
 import { handleFileOpen, installFileOpen, onFileOpen } from "./file-open";
 import { installAvatarIpc } from "./avatar";
 import { installCommandPaletteWindow } from "./command-palette-window";
+import {
+  installCompanionWindow,
+  isCompanionEnabled,
+  isCompanionVisible,
+  talkToCue,
+  toggleCompanionWindow,
+} from "./companion-window";
 import { installDictationOverlay } from "./dictation-overlay-window";
 import { installDock } from "./dock";
 import { installEscapeMonitor, setDictationRecording } from "./escape-monitor";
@@ -581,10 +588,20 @@ app
     setSelfHostActorTokenReader(readActorToken);
     const teardownHostProxy = installHostProxyBridge(resolveCliInvocation);
     app.on("before-quit", teardownHostProxy);
+    // Companion window installs after the status IPC (so its status pushes
+    // reflect renderer publishes) and before the tray (which renders the
+    // flag-gated Show/Hide + Talk items through the handlers below).
+    installCompanionWindow();
     installTray({
       toggleMainWindow: toggleMainWindowVisibility,
       ensureMainWindow: ensureMainWindowVisible,
       openAbout: openAboutWindow,
+      companion: {
+        isEnabled: isCompanionEnabled,
+        isVisible: isCompanionVisible,
+        toggle: toggleCompanionWindow,
+        talk: talkToCue,
+      },
     });
     installNativeAuth();
     // Before the first window: the persisted instance decides what loads.

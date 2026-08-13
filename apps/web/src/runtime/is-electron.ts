@@ -317,6 +317,19 @@ declare global {
         open(conversationId: string): Promise<void>;
       };
       /**
+       * Floating desktop companion (slice 1) — the corner orb window's
+       * bridge surface. Optional like the rest: older preloads predate it.
+       * See `apps/web/src/domains/companion/companion-bridge.ts`.
+       */
+      companion?: {
+        setExpanded(expanded: boolean): Promise<void>;
+        talk(): Promise<void>;
+        openCue(): Promise<void>;
+        hide(): Promise<void>;
+        getStatus(): Promise<AssistantStatus>;
+        onStatus(callback: (status: AssistantStatus) => void): () => void;
+      };
+      /**
        * Embedded VentureVerse app view (desktop inline embedding). Drives a
        * native WebContentsView composited into the Cue window so a
        * VentureVerse app runs first-party (SSO works) while visually embedded.

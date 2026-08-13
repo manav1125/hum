@@ -351,6 +351,23 @@ export const routeTree = [
         ),
     },
   },
+  // Desktop companion — the always-on floating corner orb rendered inside
+  // the Electron companion BrowserWindow (always-on-top, non-activating
+  // panel; gated by the `desktop-companion` flag). Same pattern as the
+  // other floating windows: sibling of `/assistant`, outside auth
+  // middleware and RootLayout for fast load.
+  {
+    path: "/assistant/floating/companion",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/domains/companion/companion-page").then(
+          (m) => m.CompanionPage,
+        ),
+    },
+  },
+
   // Legacy direct path retained so old dev windows do not blank during
   // rolling Electron/web updates.
   {

@@ -59,7 +59,8 @@ export type VellumCommand =
   | { kind: "replayOnboarding" }
   | { kind: "previewPrechat" }
   | { kind: "replayHatchFailure" }
-  | { kind: "openComponentGallery" };
+  | { kind: "openComponentGallery" }
+  | { kind: "openVoice" };
 
 // ---------------------------------------------------------------------------
 // Hotkeys

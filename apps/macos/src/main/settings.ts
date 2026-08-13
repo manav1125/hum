@@ -45,6 +45,14 @@ export interface AppSettings {
     takeControl: boolean;
   }>;
   /**
+   * Whether the floating desktop companion orb is shown. Only meaningful
+   * while the `desktop-companion` feature flag is enabled; defaults ON so
+   * enabling the flag is enough to see the companion. Toggled from the
+   * tray's "Show/Hide Cue Companion" item and the companion's own hide
+   * action (see `companion-window.ts`).
+   */
+  companionVisible: boolean;
+  /**
    * The Cue instance this install is connected to, e.g.
    * `https://cue-ada-1234.justcue.app/assistant/`. Set once, when the owner
    * connects; absent means "not connected yet" and the app opens its own
@@ -105,6 +113,10 @@ const schema: Schema<AppSettings> = {
       additionalProperties: false,
     },
     default: [],
+  },
+  companionVisible: {
+    type: "boolean",
+    default: true,
   },
   // No default: an unconnected install must have no instance, not a guess.
   selfHostUrl: {

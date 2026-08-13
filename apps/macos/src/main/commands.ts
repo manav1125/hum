@@ -66,6 +66,7 @@ export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
   previewPrechat: "",
   replayHatchFailure: "",
   openComponentGallery: "",
+  openVoice: "",
 };
 
 /**
