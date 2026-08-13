@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router";
 
 import { AssistantLifecyclePanel } from "@/domains/settings/components/panels/assistant-lifecycle-panel";
+import { LOCKED_PANEL_PARAM } from "@/domains/settings/components/dev-mode-version-unlock";
 import { EnvironmentConfigPanel } from "@/domains/settings/components/panels/environment-config-panel";
 import { FeatureFlagsPanel } from "@/domains/settings/components/panels/feature-flags-panel";
 import { SentryTestingPanel } from "@/domains/settings/components/panels/sentry-testing-panel";
@@ -32,8 +33,17 @@ export function DeveloperPage() {
     return match?.id ?? "feature-flags";
   }, [searchParams]);
 
+  // Locked. Bouncing to General is right — but bouncing SILENTLY is what made
+  // this a dead end: you type the URL, land on a different page, and nothing
+  // on it mentions developer settings or the gesture that unlocks them. The
+  // tag is what General's version row reads to explain itself.
   if (hasHydrated && !settingsDeveloperNav) {
-    return <Navigate replace to={routes.settings.general} />;
+    return (
+      <Navigate
+        replace
+        to={`${routes.settings.general}?${LOCKED_PANEL_PARAM}=developer`}
+      />
+    );
   }
 
   const setActiveTab = (tabId: DeveloperTabId) => {

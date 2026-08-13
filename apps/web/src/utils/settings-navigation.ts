@@ -189,8 +189,12 @@ export const SETTINGS_SIDEBAR: SidebarItem[] = [
  * Panels that are developer surfaces, not user settings. They are hidden from
  * every settings nav unless the `settings-developer-nav` assistant flag is on
  * (unlocked by tapping the version value 7× on the General panel — see
- * `dev-mode-version-unlock.tsx`). The routes themselves stay mounted, so a
- * developer with the flag off can still reach them by URL.
+ * `dev-mode-version-unlock.tsx`).
+ *
+ * The Debug and Advanced ROUTES stay reachable by URL with the flag off. The
+ * Developer route does not: it redirects to General, tagged so the version row
+ * there explains the gesture instead of leaving the visitor on a page that
+ * never mentions why they were moved.
  */
 export const DEVELOPER_PANEL_IDS: ReadonlySet<PanelId> = new Set<PanelId>([
   "assistant-debug",
