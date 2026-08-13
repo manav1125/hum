@@ -32,11 +32,20 @@ const log = getLogger("memory-v2-consolidate");
 
 /**
  * Hard timeout for the consolidation run. Consolidation reads the buffer,
- * rewrites several files, and re-encodes essentials/threads — generous
- * upper bound so a slow run isn't killed mid-edit, but bounded so a stuck
- * provider can't pin the worker indefinitely.
+ * rewrites several files, and re-encodes essentials/threads — on a mature
+ * corpus a full pass legitimately runs ~20 minutes under cross-process write
+ * contention, so the bound leaves headroom above that while still keeping a
+ * stuck provider from pinning the worker indefinitely. Matches the default
+ * `timeouts.providerStreamTimeoutSec` (1800s) budget a background turn spends
+ * waiting on the model.
+ *
+ * The bound must comfortably exceed a healthy run's duration: the runner does
+ * not cancel the underlying turn on timeout, so an overrun marks a run that
+ * still lands its file edits as failed, holds the scheduler on its failure
+ * backoff curve, and skips the follow-up jobs (reembeds, v3 maintenance) —
+ * the memory index then drifts silently while the agent work itself succeeds.
  */
-export const CONSOLIDATION_TIMEOUT_MS = 15 * 60 * 1000;
+export const CONSOLIDATION_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * Age past which a lock held by an apparently-live PID is taken over anyway.
