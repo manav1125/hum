@@ -165,10 +165,17 @@ RUN ln -sf /usr/local/bin/bun /usr/local/bin/bunx
 RUN printf '#!/usr/bin/env sh\nexec bun run /app/assistant/src/index.ts "$@"\n' > /usr/local/bin/assistant && \
     chmod +x /usr/local/bin/assistant
 
-# Create non-root user that also has sudo access so it can like install stuff
+# The unprivileged identity the daemon drops to when
+# CUE_DROP_DAEMON_PRIVILEGES=1 (see docker-cue-app-entrypoint.sh). Every shell
+# command the agent runs inherits it.
+#
+# No sudoers entry: passwordless sudo here would hand the whole privilege drop
+# back with one word, so the daemon could reach the gateway's trust material
+# again and the control would be decorative. If a skill genuinely needs a
+# system package, that is a deliberate image change, not something an
+# agent-authored command grants itself at runtime.
 RUN groupadd --system --gid 1001 assistant && \
-    useradd --system --uid 1001 --gid assistant --create-home --shell /bin/bash assistant && \
-    echo "assistant ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+    useradd --system --uid 1001 --gid assistant --create-home --shell /bin/bash assistant
 
 # Set up assistant home directory for local state (device.json, etc.)
 RUN mkdir -p /home/assistant/.vellum && \

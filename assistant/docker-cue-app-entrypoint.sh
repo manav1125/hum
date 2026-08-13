@@ -60,6 +60,68 @@ DAEMON_STDERR_TAIL="${VELLUM_WORKSPACE_DIR}/.daemon-stderr.log"
 DAEMON_STDERR_FIFO="${VELLUM_WORKSPACE_DIR}/.daemon-stderr.fifo"
 DAEMON_TEE_PID=""
 
+# ── Daemon privilege drop (CUE_DROP_DAEMON_PRIVILEGES=1) ────────────────
+# Everything in this container runs as uid 0 by default, and the daemon is the
+# process that executes agent-authored commands — six paths reach a shell
+# (bash, host_bash, the skill sandbox runner, inline skill commands, scheduled
+# scripts, the debug bash route). At uid 0 a prompt-injected turn can read the
+# gateway's trust material out of another process (/proc/<pid>/mem, /proc/<pid>/fd)
+# or straight off the volume, no matter what the file modes say. File-level
+# denials narrow the obvious paths; only dropping the uid removes the capability.
+#
+# So: the GATEWAY stays root (it owns the security directory and must keep sole
+# access to it), and the DAEMON — and therefore every command it spawns — runs
+# as the unprivileged `assistant` user built into the image.
+#
+# Deliberately env-gated rather than unconditional. This changes the uid every
+# skill runs under on a single production box; the flag makes the rehearsal
+# real (turn it on for a scratch machine, exercise the skill surface, then
+# enable it on prod) and makes rollback an env change rather than a rebuild.
+CUE_DAEMON_UID="${CUE_DAEMON_UID:-1001}"
+CUE_DAEMON_GID="${CUE_DAEMON_GID:-1001}"
+DROP_DAEMON_PRIVILEGES=0
+if [ "${CUE_DROP_DAEMON_PRIVILEGES:-}" = "1" ]; then
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "[cue-app] CUE_DROP_DAEMON_PRIVILEGES=1 but the container is not root — daemon already unprivileged, nothing to drop" >&2
+  elif ! command -v setpriv >/dev/null 2>&1; then
+    # Fail loudly rather than silently continuing as root: a security control
+    # that quietly does nothing is worse than one that is plainly off.
+    echo "[cue-app] FATAL: CUE_DROP_DAEMON_PRIVILEGES=1 but setpriv is unavailable; refusing to run the daemon as root under a flag that promises otherwise" >&2
+    exit 1
+  else
+    DROP_DAEMON_PRIVILEGES=1
+  fi
+fi
+
+# prepare_daemon_workspace: hand the workspace to the daemon's uid so it can
+# still read and write everything it owns. The gateway's security directory is
+# pruned — that is the material the drop exists to put out of reach, and the
+# gateway (root) is its only legitimate reader.
+#
+# Only files not already owned are touched, so the first boot after enabling
+# pays a full pass and later boots are close to free.
+prepare_daemon_workspace() {
+  _secdir="${GATEWAY_SECURITY_DIR:-${VELLUM_WORKSPACE_DIR}/gateway-security}"
+  echo "[cue-app] preparing workspace ownership for uid ${CUE_DAEMON_UID} (excluding ${_secdir})" >&2
+  find "${VELLUM_WORKSPACE_DIR}" -path "${_secdir}" -prune -o \
+    ! -user "${CUE_DAEMON_UID}" -exec chown -h "${CUE_DAEMON_UID}:${CUE_DAEMON_GID}" {} + \
+    2>/dev/null || true
+  # The FIFO and stderr tail are recreated per daemon spawn by root; the daemon
+  # writes to them, so they must be owned by it too.
+  for _f in "$DAEMON_STDERR_FIFO" "$DAEMON_STDERR_TAIL"; do
+    [ -e "$_f" ] && chown "${CUE_DAEMON_UID}:${CUE_DAEMON_GID}" "$_f" 2>/dev/null || true
+  done
+}
+
+# Word-split deliberately at the call site: empty means "run as root", so the
+# unflagged path is byte-for-byte the behaviour that shipped before this.
+DAEMON_PRIVILEGE_PREFIX=""
+if [ "$DROP_DAEMON_PRIVILEGES" = "1" ]; then
+  prepare_daemon_workspace
+  DAEMON_PRIVILEGE_PREFIX="setpriv --reuid=${CUE_DAEMON_UID} --regid=${CUE_DAEMON_GID} --clear-groups --inh-caps=-all"
+  echo "[cue-app] daemon will run as uid ${CUE_DAEMON_UID} (agent shell commands inherit it); gateway stays root" >&2
+fi
+
 # start_daemon: launch the daemon backgrounded via its normal entrypoint
 # (kata/apt prep, workspace hooks), setting DAEMON_PID to the new process.
 # DEBUG_STDOUT_LOGS=1: the daemon's pino logger writes to its rotating file
@@ -77,13 +139,19 @@ start_daemon() {
   # (Re)create the FIFO and start a fresh tee reader for this daemon instance.
   rm -f "$DAEMON_STDERR_FIFO" 2>/dev/null || true
   mkfifo "$DAEMON_STDERR_FIFO" 2>/dev/null || true
+  # Re-apply ownership of the per-spawn FIFO/tail, which root just recreated.
+  if [ "$DROP_DAEMON_PRIVILEGES" = "1" ]; then
+    for _f in "$DAEMON_STDERR_FIFO" "$DAEMON_STDERR_TAIL"; do
+      [ -e "$_f" ] && chown "${CUE_DAEMON_UID}:${CUE_DAEMON_GID}" "$_f" 2>/dev/null || true
+    done
+  fi
   if [ -p "$DAEMON_STDERR_FIFO" ]; then
     tee -a "$DAEMON_STDERR_TAIL" < "$DAEMON_STDERR_FIFO" >&2 &
     DAEMON_TEE_PID=$!
     (
       cd /app/assistant &&
         DEBUG_STDOUT_LOGS="${DEBUG_STDOUT_LOGS:-1}" \
-          exec /app/assistant/docker-entrypoint.sh 2> "$DAEMON_STDERR_FIFO"
+          exec $DAEMON_PRIVILEGE_PREFIX /app/assistant/docker-entrypoint.sh 2> "$DAEMON_STDERR_FIFO"
     ) &
     DAEMON_PID=$!
   else
@@ -93,7 +161,7 @@ start_daemon() {
     (
       cd /app/assistant &&
         DEBUG_STDOUT_LOGS="${DEBUG_STDOUT_LOGS:-1}" \
-          exec /app/assistant/docker-entrypoint.sh
+          exec $DAEMON_PRIVILEGE_PREFIX /app/assistant/docker-entrypoint.sh
     ) &
     DAEMON_PID=$!
   fi
