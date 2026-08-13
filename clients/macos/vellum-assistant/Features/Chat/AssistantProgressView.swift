@@ -709,7 +709,6 @@ struct AssistantProgressView: View {
                 onAllow: { onConfirmationAllow?(confirmation.requestId) },
                 onDeny: { onConfirmationDeny?(confirmation.requestId) },
                 onAlwaysAllow: onAlwaysAllow ?? { _, _, _, _ in },
-                onTemporaryAllow: onTemporaryAllow,
                 onAllowAndSuggestRule: {
                     // Allow the tool first
                     if let option = confirmation.allowlistOptions.first, !option.pattern.isEmpty {

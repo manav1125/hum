@@ -201,8 +201,7 @@ struct MessageCellView: View, Equatable {
                         isKeyboardActive: confirmation.requestId == activePendingRequestId,
                         onAllow: { onConfirmationAllow?(confirmation.requestId) },
                         onDeny: { onConfirmationDeny?(confirmation.requestId) },
-                        onAlwaysAllow: onAlwaysAllow ?? { _, _, _, _ in },
-                        onTemporaryAllow: onTemporaryAllow
+                        onAlwaysAllow: onAlwaysAllow ?? { _, _, _, _ in }
                     )
                     .id(message.id)
                 }
@@ -212,8 +211,7 @@ struct MessageCellView: View, Equatable {
                         confirmation: confirmation,
                         onAllow: { onConfirmationAllow?(confirmation.requestId) },
                         onDeny: { onConfirmationDeny?(confirmation.requestId) },
-                        onAlwaysAllow: onAlwaysAllow ?? { _, _, _, _ in },
-                        onTemporaryAllow: onTemporaryAllow
+                        onAlwaysAllow: onAlwaysAllow ?? { _, _, _, _ in }
                     )
                     .id(message.id)
                 }
