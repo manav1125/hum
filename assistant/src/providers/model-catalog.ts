@@ -1557,6 +1557,59 @@ export function getCatalogVisionSupport(modelId: string): boolean | undefined {
 }
 
 /**
+ * The vision fallback model for OpenRouter deploys when nothing better is
+ * configured. Must support BOTH image input and tool calling: agent-loop
+ * rounds carry the tool set, and OpenRouter 404s ("No endpoints found that
+ * support tool use") on vision models whose endpoints lack tools —
+ * qwen2.5-vl-72b (the Cue Live pick) fails exactly that way. qwen3.6-flash was
+ * probe-verified on the prod key with an image + tools payload. Deliberately
+ * not in the model catalog — catalog-unknown models pass the provider-compat
+ * check.
+ *
+ * Defined here rather than in the agent layer so the provider transport can
+ * reach it without importing upward; `agent/vision-tier.ts` re-exports it.
+ */
+export const DEFAULT_OPENROUTER_VISION_MODEL = "qwen/qwen3.6-flash";
+
+/**
+ * Pick a model to retry an image-bearing OpenRouter request on after the
+ * selected model refused the image, or `undefined` when there is nothing
+ * better to try.
+ *
+ * Candidates, in order: an explicit `CUE_OPENROUTER_VISION_MODEL` override,
+ * the deploy's configured model, then {@link DEFAULT_OPENROUTER_VISION_MODEL}.
+ *
+ * The deploy's model is a candidate rather than *the* answer. It was the whole
+ * fallback before, which is why the retry was useless on a text-only brain: on
+ * 2026-08-13 prod ran `deepseek/deepseek-v4-pro`, so the "vision-capable
+ * fallback" retried the refusal onto the model that had just refused, burned a
+ * second request, and then reported the fallback's name as the model that
+ * lacked vision.
+ *
+ * Candidates are rejected only when the catalog *knows* they are text-only.
+ * Unknown (`undefined`) passes: the catalog does not carry every OpenRouter id
+ * — `qwen/qwen3.6-flash` among them — and treating unknown as text-only would
+ * reject the model this deploy actually runs vision on. Same tri-state rule
+ * `agent/vision-tier.ts` applies when routing proactively.
+ */
+export function resolveVisionFallbackModel(
+  failedModel: string,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const candidates = [
+    env.CUE_OPENROUTER_VISION_MODEL,
+    env.CUE_OPENROUTER_MODEL,
+    DEFAULT_OPENROUTER_VISION_MODEL,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || candidate === failedModel) continue;
+    if (getCatalogVisionSupport(candidate) === false) continue;
+    return candidate;
+  }
+  return undefined;
+}
+
+/**
  * Whether the given model only supports adaptive (always-on) thinking, driven
  * by the `adaptiveThinkingOnly` capability in the catalog. Matches the model ID
  * across every provider (a model carries the same id under each provider it is

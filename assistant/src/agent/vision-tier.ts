@@ -56,6 +56,7 @@
 import { resolveCallSiteConfig } from "../config/llm-resolver.js";
 import type { LLMCallSite, LLMConfig } from "../config/schemas/llm.js";
 import {
+  DEFAULT_OPENROUTER_VISION_MODEL,
   getCatalogProviderForModel,
   getCatalogVisionSupport,
 } from "../providers/model-catalog.js";
@@ -66,17 +67,12 @@ import { resolveFlashTierRouteForTurn } from "./flash-tier.js";
 const log = getLogger("vision-tier");
 
 /**
- * The vision fallback model for OpenRouter deploys when neither
- * `llm.visionTier.model` nor a usable `cueLiveVision` resolution provides
- * one. Must support BOTH image input and tool calling: agent-loop rounds
- * carry the tool set, and OpenRouter 404s ("No endpoints found that support
- * tool use") on vision models whose endpoints lack tools — qwen2.5-vl-72b
- * (the Cue Live pick) fails exactly that way. qwen3.6-flash was probe-
- * verified on the prod key with an image + tools payload. Deliberately not
- * in the model catalog — catalog-unknown models pass the provider-compat
- * check.
+ * Re-exported so the proactive router here and the provider transport's
+ * reactive retry resolve the same fallback. The definition and its
+ * image-plus-tool-calling rationale live in `providers/model-catalog.ts`,
+ * which the transport can import without reaching up into the agent layer.
  */
-export const DEFAULT_OPENROUTER_VISION_MODEL = "qwen/qwen3.6-flash";
+export { DEFAULT_OPENROUTER_VISION_MODEL };
 
 /**
  * True when any message in the request history carries an image content

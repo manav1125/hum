@@ -6,6 +6,7 @@ import { ProviderError } from "../../util/errors.js";
 import { getLogger } from "../../util/logger.js";
 import { extractRetryAfterMs } from "../../util/retry.js";
 import { escapeXmlAttr } from "../../util/xml.js";
+import { resolveVisionFallbackModel } from "../model-catalog.js";
 import { PLACEHOLDER_EMPTY_TURN } from "../placeholder-sentinels.js";
 import { recordProviderRequestDiagnostics } from "../request-diagnostics.js";
 import { createStreamTimeout } from "../stream-timeout.js";
@@ -773,21 +774,34 @@ export class OpenAIChatCompletionsProvider implements Provider {
         }
         if (detectVisionNotSupported(error)) {
           const model = modelOverride ?? this.model;
+          // The model the caller actually selected. On a fallback retry
+          // `model` is the fallback, so the marker carries the original id
+          // through — an error naming a model the caller never chose sends
+          // whoever is debugging to the wrong config.
+          const originalModel =
+            typeof configObj?.[VISION_FALLBACK_MARKER] === "string"
+              ? (configObj[VISION_FALLBACK_MARKER] as string)
+              : model;
           // One-shot vision fallback (OpenRouter): a turn that carries image
           // input — e.g. a generated image fed back into the conversation —
           // must not die just because the selected model's endpoint lacks
-          // vision. Retry the same request once on the deploy's strong
-          // vision-capable model instead of failing the whole turn. Guarded
-          // to OpenRouter (the fallback id is an OpenRouter model path), to
-          // requests that actually contain an image block, and by the marker
-          // so a non-vision fallback can't loop.
-          const fallbackModel =
-            process.env.CUE_OPENROUTER_MODEL ?? "anthropic/claude-sonnet-4.5";
-          const alreadyRetried = configObj?.[VISION_FALLBACK_MARKER] === true;
+          // vision. Guarded to OpenRouter (the fallback id is an OpenRouter
+          // model path), to requests that actually contain an image block,
+          // and by the marker so a fallback can't loop.
+          //
+          // The fallback is RESOLVED (see `resolveVisionFallbackModel`) rather
+          // than assumed: it used to be whatever `CUE_OPENROUTER_MODEL` named,
+          // which on a text-only brain retried the refusal onto the model that
+          // had just refused. When nothing better exists, skip the retry
+          // entirely — a second request that cannot succeed only costs latency
+          // and muddies the error.
+          const alreadyRetried = configObj?.[VISION_FALLBACK_MARKER] != null;
+          const fallbackModel = alreadyRetried
+            ? undefined
+            : resolveVisionFallbackModel(model);
           if (
             this.name === "openrouter" &&
-            !alreadyRetried &&
-            fallbackModel !== model &&
+            fallbackModel !== undefined &&
             messagesContainImageInput(messages)
           ) {
             visionFallbackLog.warn(
@@ -799,12 +813,12 @@ export class OpenAIChatCompletionsProvider implements Provider {
               config: {
                 ...(configObj ?? {}),
                 model: fallbackModel,
-                [VISION_FALLBACK_MARKER]: true,
+                [VISION_FALLBACK_MARKER]: originalModel,
               },
             });
           }
           throw new ProviderError(
-            `This model (${model}) doesn't support image input. Remove the image or switch to a vision-capable model.`,
+            `This model (${originalModel}) doesn't support image input. Remove the image or switch to a vision-capable model.`,
             this.name,
             error.status,
             abortReason ? { abortReason } : undefined,
