@@ -1,7 +1,56 @@
 # Runbook — dropping the daemon out of root
 
-Status: **built, flag-gated, not yet rehearsed.** Approved by Manav 2026-08-13
-("approve, with rehearsal"). Code: `78c735a92c`.
+Status: **rehearsed 2026-08-13 on a scratch machine against a fork of the prod
+volume. Two defects found and fixed (`e275df39fe`). One BLOCKER remains before
+the flag can be enabled on prod — see below.** Code: `78c735a92c` + `e275df39fe`.
+
+## Rehearsal outcome
+
+Passed: daemon boots and serves as uid 1001 (healthz 200, socket owned by it);
+workspace writes, DB dir, skills read, bun, /tmp all fine; security dir denied
+for read *and* list; `sudo` denied; `apt-get install` and writes to `/app`
+blocked as intended. A `setpriv`'d process is non-dumpable, so its `/proc`
+entries stay root-owned — a same-uid shell cannot read the daemon's own
+environment either.
+
+Fixed as a result:
+1. **HOME** — `setpriv` changes credentials, not the environment. The daemon
+   inherited root's HOME and died on boot (`mkdir /root/.vellum` → EACCES).
+   Enabling the flag without this would have been a prod outage.
+2. **The lock** — dropping the uid while the key sat at its inherited 0644 left
+   it readable. The entrypoint now locks the directory root 0700/0600 before
+   the daemon starts.
+
+### BLOCKER — untrack the security files first
+
+Prod's workspace git repo *tracks* `gateway-security/actor-token-signing-key`,
+`backup.key` and `feature-flags.json`. `.gitignore` has the rule but does not
+untrack already-committed files. Once the directory is locked, every git
+operation errors with `Permission denied` on those three paths.
+
+Fix before enabling the flag, run **as the workspace owner** (not root):
+
+```
+git rm --cached gateway-security/actor-token-signing-key \
+                gateway-security/backup.key \
+                gateway-security/feature-flags.json
+```
+
+Verified on the fork: after this, `git status` reports zero security-dir errors.
+
+Note this is also a finding in its own right — the auth root and backup key are
+committed into a git repo, so they are in its history, not just its index.
+
+### Also noted, not caused by this change
+
+- **Prod's workspace git repo is corrupt**: `refs/heads/main` and HEAD point at
+  empty objects (`git fsck` shows several). Consistent with the 2026-07-24
+  disk-full P0. Workspace-git-backed features silently return empty because of
+  it — that is why `/v1/skills/{id}/history` returns `revisions: []`.
+- **After the chown, root cannot run git in the workspace** ("dubious
+  ownership"). Any root-run ops tooling or backup script that shells out to git
+  needs `git config --global --add safe.directory /workspace` or to run as the
+  workspace uid.
 
 ## What the flag does
 
