@@ -450,6 +450,14 @@
       "label": "Summarize Up To Here",
       "description": "Show the per-message Summarize up to here action and enable the conversation summarize endpoint",
       "defaultEnabled": true
+    },
+    {
+      "id": "desktop-companion",
+      "scope": "client",
+      "key": "desktop-companion",
+      "label": "Desktop Companion",
+      "description": "Show the always-on floating Cue companion: a small always-on-top orb pinned to a screen corner (Electron desktop only), with a menu-bar toggle, status-aware idle/active states, and Talk / Open Cue quick actions. Slice 1 of the desktop companion surface.",
+      "defaultEnabled": false
     }
   ]
 }
