@@ -32,6 +32,7 @@ import {
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { hideVendorUi, useManagedMode } from "@/assistant/use-managed-mode";
 import { IntegrationIcon } from "@/components/integrations/integration-icon";
+import { DevModeVersionUnlock } from "@/domains/settings/components/dev-mode-version-unlock";
 import { IntegrationDetailModal } from "@/domains/settings/components/integration-detail-modal";
 import { buildOrderedProfiles } from "@/domains/settings/ai/ai-utils";
 import {
@@ -65,6 +66,7 @@ import type { OAuthConnection } from "@/generated/api/types.gen";
 import {
   configGetOptions,
   configGetSetQueryData,
+  healthzGetOptions,
   oauthProvidersGetOptions,
   soundsConfigGetOptions,
   soundsConfigGetSetQueryData,
@@ -89,6 +91,7 @@ import {
   type BrandProfile,
 } from "@/pages/brand-kit/use-brand-kit";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
+import { useAssistantIdentityStore } from "@/stores/assistant-identity-store";
 import { useHasPlatformSession } from "@/stores/auth-store";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
@@ -336,7 +339,8 @@ function SectionCard({
 }
 
 // ---------------------------------------------------------------------------
-// Appearance (settings/general) — theme picker; the rest stays desktop.
+// Appearance (settings/general) — theme picker + the version row; the rest
+// stays desktop.
 // ---------------------------------------------------------------------------
 
 const THEME_ROWS: ReadonlyArray<{
@@ -350,8 +354,117 @@ const THEME_ROWS: ReadonlyArray<{
   { value: "velvet", name: "Velvet", line: "The deep-red night theme" },
 ];
 
+/**
+ * The version the desktop status panel shows, resolved the same way:
+ * `/v1/health` first, the platform release record as the fallback.
+ *
+ * The identity store is a third leg the phone genuinely needs. On a self-host
+ * gateway there is no platform assistant record at all — `AssistantStatusPanel`
+ * has an explicit branch for that and falls back to the daemon-reported
+ * identity version. Without it this row would read "—" on exactly the
+ * deployment the owner is holding, and the gesture would be unreachable for a
+ * second time in a new place.
+ */
+function useAssistantVersion(assistantId: string): {
+  version: string | null;
+  loading: boolean;
+} {
+  const { data: healthz, isLoading: healthzLoading } = useQuery({
+    ...healthzGetOptions({ path: { assistant_id: assistantId } }),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const { data: assistant } = useQuery({
+    queryKey: ["currentAssistant"],
+    queryFn: async () => {
+      const result = await getAssistant();
+      return result.ok ? result.data : null;
+    },
+    retry: false,
+  });
+  const identityVersion = useAssistantIdentityStore.use.version();
+  const releaseVersion = assistant?.current_release_version ?? null;
+  return {
+    version: healthz?.version ?? releaseVersion ?? identityVersion ?? null,
+    loading: healthzLoading && !releaseVersion && !identityVersion,
+  };
+}
+
+/**
+ * Tap-target + type scale for the REUSED desktop unlock control. The gesture
+ * itself (count, countdown, confirmation) is `DevModeVersionUnlock` unchanged —
+ * a second copy of a seven-tap counter is how the two surfaces would drift.
+ * What the phone needs is the thing desktop got for free from a mouse: the
+ * version string is a ~14px line, and seven accurate taps on a 14px target is
+ * not a gesture, it is a coordination test. The button becomes a full-width
+ * 34px band inside the row instead.
+ */
+const VERSION_UNLOCK_CSS = `
+[data-slot="mv3-version-unlock"] button {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+[data-slot="mv3-version-unlock"] p {
+  font-size: 11px;
+  line-height: 1.45;
+}
+`;
+
+/**
+ * The version row. Quiet by construction: a muted label over the value, in the
+ * card grammar every other leaf row uses. It is a version display that happens
+ * to be tappable — nothing here advertises the developer panels, and nothing
+ * here puts them in a nav. Only the gesture and its countdown are reachable.
+ */
+export function Mv3VersionRow({
+  version,
+  loading,
+  assistantId,
+}: {
+  version: string | null;
+  loading: boolean;
+  assistantId: string | null;
+}) {
+  return (
+    <div
+      data-slot="mv3-version-unlock"
+      style={{ ...rowShell(true), display: "block", padding: "11px 15px" }}
+      // The row grammar ticks on tap; the reused button can't fire it itself.
+      // Only a tap that the counter actually counts gets the tick — a tick on
+      // the label would claim progress that didn't happen.
+      onClickCapture={(event) => {
+        if ((event.target as HTMLElement).closest("button")) haptic.light();
+      }}
+    >
+      <style>{VERSION_UNLOCK_CSS}</style>
+      <span
+        style={{
+          display: "block",
+          fontSize: 11,
+          color: "var(--mv3-muted)",
+        }}
+      >
+        Version
+      </span>
+      <DevModeVersionUnlock
+        version={version}
+        loading={loading}
+        assistantId={assistantId}
+      />
+    </div>
+  );
+}
+
 export function Mv3AppearanceLeaf() {
   const velvet = useClientFeatureFlagStore.use.velvet();
+  const assistantId = useActiveAssistantId();
+  const { version, loading: versionLoading } = useAssistantVersion(assistantId);
   const [theme, setTheme] = useState<ThemePreference>(() =>
     readStoredThemePreference({ velvetEnabled: velvet }),
   );
@@ -388,6 +501,20 @@ export function Mv3AppearanceLeaf() {
           ))}
         </div>
       </SectionCard>
+
+      {/* About: the version value, and behind it the seven-tap developer
+          unlock. The phone had neither — `/assistant/settings/general` renders
+          this leaf, not the desktop General page, so there was no version
+          string on the device and the gesture could not be performed at all
+          (including after the developer page bounced you here). */}
+      <SectionCard eyebrow="About" delay={0.25}>
+        <Mv3VersionRow
+          version={version}
+          loading={versionLoading}
+          assistantId={assistantId}
+        />
+      </SectionCard>
+
       <Mv3SettingsNote>
         Assistant name, timezone and software updates live in Settings → General
         on desktop.
