@@ -66,6 +66,7 @@ export function makeCtx(
       onPollReconciled: mock(() => {}),
       onTurnTimeout: mock(() => {}),
       resetTurn: mock(() => {}),
+      clearStaleTurn: mock(() => {}),
       onProfileAutoRouted: mock(() => {}),
       enqueueMessage: mock(() => {}),
       dequeueMessage: mock(() => {}),

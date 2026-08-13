@@ -133,14 +133,53 @@ describe("sseService.attach — connection lifecycle", () => {
     expect(publishSpy).toHaveBeenCalledWith("sse.event", envelope);
   });
 
-  test("publishes sse.opened with cause=fresh on first open", () => {
+  test("publishes sse.opened with cause=fresh once the stream establishes", () => {
     sseService.attach("asst-1");
+    activeOnStreamOpen!();
 
     expect(publishSpy).toHaveBeenCalledWith("sse.opened", {
       assistantId: "asst-1",
       cause: "fresh",
     });
   });
+
+  test("does not publish sse.opened for an attempt that never establishes", () => {
+    // A connect that never opens has nothing for consumers to reconcile, and
+    // announcing it fans a refetch across every domain.
+    sseService.attach("asst-1");
+
+    const openedCalls = publishSpy.mock.calls.filter(
+      ([name]) => name === "sse.opened",
+    );
+    expect(openedCalls).toHaveLength(0);
+  });
+
+  test("a superseded stream's late error does not disconnect the live one", async () => {
+    // GIVEN a connection that is bounced, so an older stream handle is still
+    // holding the callbacks it was created with
+    sseService.attach("asst-1");
+    const supersededOnError = activeOnError!;
+    eventBus.publish("app.hidden", { signal: "visibility" });
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    eventBus.publish("app.resume", { signal: "visibility" });
+    activeOnStreamOpen!();
+    expect(subscribeEventsMock).toHaveBeenCalledTimes(2);
+    publishSpy.mockClear();
+
+    // WHEN the daemon closes the superseded connection (the per-client
+    // stream cap evicts it as soon as its replacement registers), which
+    // arrives as an error on the OLD stream after its replacement is live
+    supersededOnError(new Error("stream closed"));
+
+    // THEN the live stream keeps ownership. Acting on the stale signal would
+    // clear it, and the next trigger would open a connection that closes the
+    // live one in turn, which is the self-sustaining reconnect loop.
+    expect(useSSEConnectedStore.getState().isConnected).toBe(true);
+    const closedCalls = publishSpy.mock.calls.filter(
+      ([name]) => name === "sse.closed",
+    );
+    expect(closedCalls).toHaveLength(0);
+  }, 5_000);
 
   test("publishes sse.opened with cause=watchdog when stream reconnects after a watchdog stall", () => {
     sseService.attach("asst-1");
@@ -217,6 +256,7 @@ describe("sseService.attach — connection lifecycle", () => {
 
     // WHEN cold-start anchoring requests a re-anchor (cursor now seeded at S)
     eventBus.publish("sse.anchor-requested", {});
+    activeOnStreamOpen!();
 
     // THEN the cursor-less connection is torn down and reopened
     expect(cancelMock).toHaveBeenCalledTimes(1);
@@ -374,6 +414,7 @@ describe("sseService.attach — visibility-driven bounce", () => {
     eventBus.publish("app.hidden", { signal: "visibility" });
     await new Promise((resolve) => setTimeout(resolve, 1100));
     eventBus.publish("app.resume", { signal: "visibility" });
+    activeOnStreamOpen!();
 
     expect(publishSpy).toHaveBeenCalledWith("sse.opened", {
       assistantId: "asst-1",
@@ -506,6 +547,7 @@ describe("sseService.attach — reachability bounce", () => {
     publishSpy.mockClear();
 
     eventBus.publish("reachability.retry-requested", {});
+    activeOnStreamOpen!();
 
     expect(publishSpy).toHaveBeenCalledWith("sse.opened", {
       assistantId: "asst-1",
@@ -539,6 +581,7 @@ describe("sseService.attach — recovery after the transport gives up", () => {
     publishSpy.mockClear();
 
     await new Promise((resolve) => setTimeout(resolve, 60));
+    activeOnStreamOpen!();
 
     expect(publishSpy).toHaveBeenCalledWith("sse.opened", {
       assistantId: "asst-1",
@@ -635,6 +678,7 @@ describe("sseService.attach — debug-driven reconnect", () => {
 
     // WHEN a debug reconnect is requested
     requestSseReconnect(0);
+    activeOnStreamOpen!();
 
     // THEN the reopen is labeled as a debug-triggered reconnect so
     // reconcile consumers (which only skip on "fresh") still fire

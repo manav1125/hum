@@ -274,6 +274,7 @@ export interface TurnActions {
   onPollReconciled: (turnId?: string) => void;
   onTurnTimeout: () => void;
   resetTurn: () => void;
+  clearStaleTurn: () => void;
   onProfileAutoRouted: (profileLabel: string) => void;
   enqueueMessage: () => void;
   dequeueMessage: () => void;
@@ -544,6 +545,25 @@ const useTurnStoreBase = create<TurnStore>()((set, get) => ({
   // ----- Hard reset -----
 
   resetTurn: () => set({ ...INITIAL_TURN_STATE }),
+
+  /**
+   * Reset only when no turn is genuinely in flight — for "clean up possibly
+   * stale turn UI" callers (the reachability burst-limiter's ready signal)
+   * that must NOT clobber a live turn. The initial reachability probe
+   * resolves "ready" during a new conversation's first send; a hard reset
+   * there nulls `activeTurnId` mid-turn, after which `onTextDelta`'s
+   * stale-delta guard refuses to re-activate the phase and the whole first
+   * turn renders as phase "idle" (no thinking indicator, no streaming
+   * affordances). A live turn that just survived a reconnect needs no reset
+   * anyway: the post-reconnect reconcile resyncs its true state.
+   */
+  clearStaleTurn: () => {
+    const s = get();
+    if (s.activeTurnId && isSending(s.phase)) {
+      return;
+    }
+    set({ ...INITIAL_TURN_STATE });
+  },
 
   // ----- Profile auto-routing -----
 
