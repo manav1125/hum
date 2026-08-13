@@ -1024,6 +1024,10 @@ async function processJob(
           });
         case "no_new_messages":
           return jobSkipped("nothing has been said since the last pass");
+        case "no_user_activity":
+          return jobSkipped(
+            "the unprocessed tail carries no user activity; deferred until the user is active",
+          );
         case "source_processing":
           // Defer the SAME row on the bounded deferral counter instead of
           // completing it: the retry re-checks the processing flag, and a

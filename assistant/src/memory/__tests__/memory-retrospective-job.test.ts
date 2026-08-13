@@ -432,8 +432,16 @@ describe("memoryRetrospectiveJob", () => {
     mockState = null;
     stateUpserts = [];
     lastRunAtBumps = [];
+    // m1 is a real user turn so the default slice passes the
+    // requireUserActivity gate (upstream ff10e008e1); gate-specific tests
+    // stage assistant-only slices themselves.
     newMessages = [
-      { id: "m1", createdAt: Date.parse("2026-05-11T10:00:00Z") },
+      {
+        id: "m1",
+        createdAt: Date.parse("2026-05-11T10:00:00Z"),
+        role: "user",
+        content: JSON.stringify([{ type: "text", text: "hello" }]),
+      },
       { id: "m2", createdAt: Date.parse("2026-05-11T10:05:00Z") },
       { id: "m3", createdAt: Date.parse("2026-05-11T10:10:00Z") },
     ];
@@ -1806,5 +1814,97 @@ describe("memoryRetrospectiveJob", () => {
     expect(wakeCalls[0]!.hint).toContain(
       'reply with exactly "Nothing new to save."',
     );
+  });
+
+  // ── User-activity gate (upstream ff10e008e1) ──────────────────────────
+
+  test("activity gate: assistant-only slice → no_user_activity, pointers untouched, no wake", async () => {
+    newMessages = [
+      {
+        id: "m1",
+        createdAt: 1000,
+        role: "assistant",
+        content: JSON.stringify([{ type: "text", text: "proactive recap" }]),
+      },
+      {
+        id: "m2",
+        createdAt: 2000,
+        role: "assistant",
+        content: JSON.stringify([{ type: "text", text: "more recap" }]),
+      },
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_user_activity");
+    expect(stateUpserts).toHaveLength(0);
+    expect(lastRunAtBumps).toHaveLength(0);
+    expect(wakeCalls).toHaveLength(0);
+    expect(bootstrapCalls).toHaveLength(0);
+  });
+
+  test("activity gate: bare tool-result carrier user rows do not count as user activity", async () => {
+    newMessages = [
+      {
+        id: "m1",
+        createdAt: 1000,
+        role: "assistant",
+        content: JSON.stringify([
+          { type: "tool_use", id: "t1", name: "web_search", input: {} },
+        ]),
+      },
+      {
+        id: "m2",
+        createdAt: 2000,
+        role: "user",
+        content: JSON.stringify([{ type: "tool_result", tool_use_id: "t1" }]),
+      },
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_user_activity");
+    expect(wakeCalls).toHaveLength(0);
+  });
+
+  test("activity gate: a real user turn in the slice runs the retrospective (fork path too)", async () => {
+    forkFlagEnabled = true;
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+    expect(outcome.kind).toBe("invoked");
+  });
+
+  test("activity gate: unparseable user content fails toward running", async () => {
+    newMessages = [
+      {
+        id: "m1",
+        createdAt: 1000,
+        role: "user",
+        content: "plain legacy string",
+      },
+    ];
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+    expect(outcome.kind).toBe("invoked");
+  });
+
+  test("activity gate: requireUserActivity=false runs over assistant-only slices", async () => {
+    const config = makeConfig() as unknown as {
+      memory: { retrospective: Record<string, unknown> };
+    };
+    config.memory.retrospective.requireUserActivity = false;
+    newMessages = [
+      {
+        id: "m1",
+        createdAt: 1000,
+        role: "assistant",
+        content: JSON.stringify([{ type: "text", text: "recap" }]),
+      },
+    ];
+
+    const outcome = await memoryRetrospectiveJob(
+      makeJob(),
+      config as unknown as Parameters<typeof memoryRetrospectiveJob>[1],
+    );
+    expect(outcome.kind).toBe("invoked");
   });
 });

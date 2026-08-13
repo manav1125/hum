@@ -78,6 +78,10 @@ import {
   type MemoryJobType,
 } from "./jobs-store.js";
 import {
+  messagesHaveUserActivity,
+  retrospectiveRequiresUserActivity,
+} from "./memory-retrospective-activity.js";
+import {
   MEMORY_RETROSPECTIVE_FORK_SOURCE,
   MEMORY_RETROSPECTIVE_GROUP_ID,
   MEMORY_RETROSPECTIVE_INSTRUCTION_KIND,
@@ -118,6 +122,7 @@ const FOLLOW_UP_JOB_TYPES: readonly MemoryJobType[] = [] as const;
 export type MemoryRetrospectiveOutcome =
   | { kind: "disabled" }
   | { kind: "no_new_messages" }
+  | { kind: "no_user_activity" }
   | { kind: "source_processing" }
   | { kind: "wake_failed"; reason?: string; conversationId?: string }
   | { kind: "no_usable_output"; reason?: string; conversationId?: string }
@@ -174,6 +179,14 @@ async function runLegacyRetrospective(
     // safety-net trigger when interval/message-count have already covered
     // things.
     return { kind: "no_new_messages" };
+  }
+
+  if (sliceLacksRequiredUserActivity(config, newMessages)) {
+    log.info(
+      { sourceConversationId, newMessageCount: newMessages.length },
+      "memory-retrospective: unprocessed tail has no user activity; skipping",
+    );
+    return { kind: "no_user_activity" };
   }
 
   // 2. Pin the cutoff at job start. Messages arriving while the wake is in
@@ -377,6 +390,19 @@ async function runForkBasedRetrospective(
 
   if (newMessages.length === 0) {
     return { kind: "no_new_messages" };
+  }
+
+  // Execution-time twin of the enqueue funnel's user-activity gate: queued
+  // rows that predate the gate (or lost their user activity to a cursor
+  // race) complete as no-ops. Both state pointers stay untouched, so the
+  // first retrospective after real user activity reviews the whole deferred
+  // stretch.
+  if (sliceLacksRequiredUserActivity(config, newMessages)) {
+    log.info(
+      { sourceConversationId, newMessageCount: newMessages.length },
+      "memory-retrospective (fork): unprocessed tail has no user activity; skipping",
+    );
+    return { kind: "no_user_activity" };
   }
 
   const cutoffMessage = newMessages[newMessages.length - 1];
@@ -603,6 +629,22 @@ async function runForkBasedRetrospective(
     reason: failureReason,
     conversationId: forkId,
   };
+}
+
+/**
+ * The `memory.retrospective.requireUserActivity` gate, applied to the loaded
+ * slice (execution-time twin of the enqueue funnel's SQL probe — port of
+ * upstream ff10e008e1). True when the gate is on and no user-role row in the
+ * slice carries non-tool_result content.
+ */
+function sliceLacksRequiredUserActivity(
+  config: AssistantConfig,
+  newMessages: ReadonlyArray<{ role: string; content: string }>,
+): boolean {
+  return (
+    retrospectiveRequiresUserActivity(config.memory.retrospective) &&
+    !messagesHaveUserActivity(newMessages)
+  );
 }
 
 function enqueueFollowUpJobs(): string[] {
