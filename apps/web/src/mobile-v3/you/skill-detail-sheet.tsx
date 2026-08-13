@@ -13,6 +13,9 @@
  *  · version / installs / source render only where the API provides them.
  *  · The confirm copy references asks-first permissions only when elevated
  *    rows actually exist.
+ *  · revision history renders only for a skill that exists on THIS instance
+ *    (`skillId`), collapsed, and disappears when the assistant cannot report
+ *    it — see `Mv3SkillHistory`.
  */
 import { useEffect, useRef } from "react";
 
@@ -29,6 +32,7 @@ import { haptic } from "@/utils/haptics";
 
 import { SheetShell } from "../sheet-shell";
 import { microLabel, primaryBtn } from "../mv3-kit";
+import { Mv3SkillHistory } from "./skill-history-section";
 
 /* ───────────────────────────── Consent rows ──────────────────────────────── */
 
@@ -155,6 +159,8 @@ export function SkillDetailSheet({
   plan,
   installing,
   error,
+  assistantId = null,
+  skillId = null,
   onGet,
   onConfirm,
   onClose,
@@ -171,6 +177,14 @@ export function SkillDetailSheet({
   plan: InstallResponse | null;
   installing: boolean;
   error: string | null;
+  /**
+   * Identity of the skill AS IT EXISTS ON THIS INSTANCE, for the revision
+   * history read. Both are optional and default to null because a marketplace
+   * card that has never been installed has neither — there is no local skill
+   * to have a history — and the section simply does not render.
+   */
+  assistantId?: string | null;
+  skillId?: string | null;
   onGet: () => void;
   onConfirm: () => void;
   onClose: () => void;
@@ -397,6 +411,18 @@ export function SkillDetailSheet({
                 ) : null}
               </div>
             </div>
+          ) : null}
+
+          {/*
+            Recent revisions — reference material, so it is a collapsed
+            disclosure below the skill's own description and permissions, not
+            a section of the sheet proper. It renders only for a skill that
+            exists on this instance (a marketplace card with no local install
+            has no history to read), and self-hides when there is nothing
+            behind it.
+          */}
+          {skillId ? (
+            <Mv3SkillHistory assistantId={assistantId} skillId={skillId} />
           ) : null}
 
           {/* Install-plan extras (notice + files) once the plan is in. */}

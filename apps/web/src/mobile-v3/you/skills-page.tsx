@@ -25,8 +25,11 @@
  * connectors/network read as ✓ allow (green), secrets/writes as ‖ asks-first
  * (amber) — the daemon's own elevated-capability split.
  *
- * Frame-30 honesty: per-skill run history, runs·reversed and spend have no
- * per-skill data source yet, so those sections are omitted (never faked).
+ * Frame-30 honesty: per-skill RUN history, runs·reversed and spend have no
+ * per-skill data source yet, so those sections are omitted (never faked). The
+ * REVISION history (what changed in the skill's own files, and when) does have
+ * a source, and renders as a collapsed disclosure on both the manage screen
+ * and the detail sheet.
  * ALLOWED TO renders only when the skill's declared manifest is known (it was
  * installed from the marketplace); otherwise the section is absent.
  */
@@ -74,6 +77,7 @@ import {
   marketplaceDetailModel,
   SkillDetailSheet,
 } from "./skill-detail-sheet";
+import { Mv3SkillHistory } from "./skill-history-section";
 import { Eyebrow, QuietLink, SegRail, TrustFootnote, YouScreen } from "./you-kit";
 
 type Segment = "explore" | "installed" | "sources";
@@ -263,6 +267,15 @@ function SkillManage({
             : "Reading the skill's files…"}
         </div>
       </GlassCard>
+
+      {/*
+        What changed, and when. This is the surface the phone actually reaches
+        for an installed skill (the frame-57 sheet covers Explore), so the
+        history disclosure lives here as well as there — collapsed, below the
+        source row, and absent entirely when the instance has nothing to
+        report.
+      */}
+      <Mv3SkillHistory assistantId={assistantId} skillId={skill.id} />
 
       {removable ? (
         <div style={{ textAlign: "center", padding: "4px 0" }}>
@@ -1110,6 +1123,21 @@ export function Mv3SkillsPage({
             : catalogInstall.isPending
         }
         error={installError}
+        assistantId={assistantId}
+        // Revision history is a read against a skill that exists HERE. A
+        // catalog entry is one by id; a marketplace card only is one once it
+        // has been installed, which is what the install record resolves.
+        skillId={
+          detail === null
+            ? null
+            : detail.kind === "catalog"
+              ? detail.skill.id
+              : (installedRecs.find(
+                  (rec) =>
+                    rec.source === detail.item.source &&
+                    rec.skillPath === detail.item.skillPath,
+                )?.skillId ?? null)
+        }
         onGet={() => {
           if (detail) openConfirm(detail);
         }}

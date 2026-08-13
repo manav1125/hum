@@ -10,9 +10,11 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 
 import type { SkillInfo } from "@/domains/intelligence/skills/types";
+import { skillsByIdHistoryGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { MarketplaceItem } from "@/pages/marketplace/use-marketplace";
 
 import {
@@ -177,6 +179,70 @@ describe("SkillDetailSheet phases", () => {
     expect(screen.getByText("Install this skill?")).toBeTruthy();
     expect(screen.getByText("Install")).toBeTruthy();
     expect(screen.queryByText("Get")).toBeNull();
+  });
+
+  test("history is wired, collapsed, and only for a skill that exists here", () => {
+    const model = catalogDetailModel({
+      id: "daily-briefing",
+      name: "Daily Briefing",
+      origin: "vellum",
+      kind: "installed",
+    } as unknown as SkillInfo);
+    const props = {
+      open: true,
+      model,
+      installed: true,
+      confirming: false,
+      planPending: false,
+      plan: null,
+      installing: false,
+      error: null,
+      onGet: () => {},
+      onConfirm: () => {},
+      onClose: () => {},
+    };
+
+    // No local identity (an un-installed marketplace card) → no read at all,
+    // which is why the sheet renders fine outside a query provider above.
+    const bare = render(createElement(SkillDetailSheet, props));
+    expect(screen.queryByText("History")).toBeNull();
+    bare.unmount();
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    client.setQueryData(
+      skillsByIdHistoryGetQueryKey({
+        path: { assistant_id: "a1", id: "daily-briefing" },
+      }),
+      {
+        skillId: "daily-briefing",
+        truncatedByCompaction: false,
+        revisions: [
+          {
+            id: "5fbc2e29",
+            changedAt: "2026-07-22T08:55:31Z",
+            files: ["SKILL.md", "scripts/setup.ts"],
+            diff: "",
+          },
+        ],
+      },
+    );
+    render(
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(SkillDetailSheet, {
+          ...props,
+          assistantId: "a1",
+          skillId: "daily-briefing",
+        }),
+      ),
+    );
+    expect(screen.getByText("History")).toBeTruthy();
+    expect(screen.getByText("1 change")).toBeTruthy();
+    // Secondary: the revision list stays behind the disclosure.
+    expect(screen.queryByText("SKILL.md +1 more")).toBeNull();
   });
 
   test("installed detail is read-only — no Get, no confirm", () => {
