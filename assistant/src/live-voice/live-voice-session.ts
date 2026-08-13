@@ -758,6 +758,16 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private metricsTurnStarted = false;
   private metricsTurnFinished = false;
   private sessionEndMetricsEmitted = false;
+  /**
+   * The turn the client has been told to wait for and has not been released
+   * from: set when a `thinking` frame goes out, cleared by the `tts_done` or
+   * `turn_cancelled` that closes it. Maintained inside {@link sendFrame} on
+   * purpose — the frames that open and close a turn are written from half a
+   * dozen call sites, and a flag maintained at those call sites is a flag that
+   * drifts. What it exists for is the one question teardown has to be able to
+   * answer: is there a caller sitting on "Thinking…" right now?
+   */
+  private turnAwaitingRelease: string | null = null;
   private readonly options: LiveVoiceSessionOptions;
   /**
    * Effective live-voice config, resolved once at `start()` from
@@ -1319,6 +1329,11 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     stopTranscriberBestEffort(this.transcriber);
     this.transcriber = null;
     await this.cancelAssistantTurn("session_closed");
+    // Fail-open: whatever killed the turn, the caller must not be left on a
+    // spinner by it. Runs AFTER the cancel so the turn's own archive frames
+    // are already out, and before the queue drains below so it makes the
+    // socket.
+    await this.releaseWaitingTurnAtTeardown();
     if (shouldEmitSessionEndMetrics) {
       await this.emitSessionEndMetrics();
     }
@@ -4770,6 +4785,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         if (!shouldSend()) return;
         await this.context.sendFrame(frame);
         sent = true;
+        this.trackTurnRelease(frame);
       })
       .catch(() => {
         // Transport failures are handled by the WebSocket/session owner.
@@ -4781,6 +4797,48 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
 
   private async drainOutboundFrames(): Promise<void> {
     await this.outboundFrames.catch(() => {});
+  }
+
+  /** Keep {@link turnAwaitingRelease} in step with what actually went out. */
+  private trackTurnRelease(frame: LiveVoiceServerFramePayload): void {
+    if (frame.type === "thinking") {
+      this.turnAwaitingRelease = frame.turnId;
+      return;
+    }
+    if (frame.type !== "tts_done" && frame.type !== "turn_cancelled") return;
+    if (this.turnAwaitingRelease === frame.turnId) {
+      this.turnAwaitingRelease = null;
+    }
+  }
+
+  /**
+   * Release a caller who is still waiting on an answer as the session goes
+   * down — a provider that rejected the turn, a session torn down mid-thought,
+   * an idle timeout that landed between the question and the reply.
+   *
+   * The client leaves "Thinking…" on exactly one signal, `tts_done`, and
+   * `close()` sent none: it cancelled the turn (internal bookkeeping, no
+   * frames), drained the queue and closed the socket. So a turn that died at
+   * teardown left the orb spinning with no error, no answer and no way back,
+   * and the only thing left to do was abandon the call.
+   *
+   * Both frames are already in the client's vocabulary, so nothing new needs
+   * advertising on `ready`: an unflagged frame type is session-fatal to the
+   * shipped web client, which is exactly the trap this fix must not walk into.
+   * The error is `fatal: false` because it is the TURN that died — the client
+   * surfaces it and returns to Listening rather than reporting the call itself
+   * as broken, and the socket close that follows is handled on its own terms.
+   */
+  private async releaseWaitingTurnAtTeardown(): Promise<void> {
+    const turnId = this.turnAwaitingRelease;
+    if (turnId === null) return;
+    await this.sendFrame({
+      type: "error",
+      code: LiveVoiceProtocolErrorCode.InvalidField,
+      message: "That turn didn't finish before the call ended. Ask me again.",
+      fatal: false,
+    });
+    await this.sendFrame({ type: "tts_done", turnId });
   }
 
   private get isClosed(): boolean {

@@ -738,6 +738,28 @@ export class GeminiLiveSession implements LiveVoiceSession {
   }
 
   close(_reason: LiveVoiceSessionCloseReason): void {
+    // Fail-open, before anything else goes down: the client leaves
+    // "Thinking…" on `tts_done` and nothing else, and a turn still open at
+    // teardown never got one — the model was mid-answer when the session
+    // died, so the orb spun until the caller gave up on it. Both frames are
+    // already in the client's vocabulary, so neither needs advertising on
+    // `ready` (an unflagged frame type is session-fatal to the shipped web
+    // client). Non-fatal: the TURN died, and the socket close that follows is
+    // reported on its own terms.
+    const unfinishedTurnId = this.currentTurnId;
+    this.currentTurnId = null;
+    if (unfinishedTurnId) {
+      void this.context.sendFrame({
+        type: "error",
+        code: "invalid_field",
+        message: "That turn didn't finish before the call ended. Ask me again.",
+        fatal: false,
+      });
+      void this.context.sendFrame({
+        type: "tts_done",
+        turnId: unfinishedTurnId,
+      });
+    }
     this.closed = true;
     this.toolAbort.abort();
     // Stop watching deep-task completions: a task that finishes after the

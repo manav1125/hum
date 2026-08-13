@@ -132,13 +132,23 @@ function createHarness(options: {
 async function waitFor(
   predicate: () => boolean,
   message = "timed out waiting for the session to recover",
+  timeoutMs = 300,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     if (predicate()) return;
+    if (Date.now() >= deadline) throw new Error(message);
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  throw new Error(message);
 }
+
+/**
+ * Long enough to outlast the transcriber re-arm's own retry ladder
+ * (`TRANSCRIBER_REARM_BACKOFF_MS`: 750ms + 2000ms across three attempts).
+ * Only the give-up path waits this long; every other assertion here resolves
+ * in milliseconds.
+ */
+const REARM_EXHAUSTED_TIMEOUT_MS = 6_000;
 
 function errorFrames(frames: LiveVoiceServerFrame[]) {
   return frames.filter(
@@ -297,6 +307,101 @@ describe("a failed turn does not end the conversation", () => {
   });
 });
 
+describe("a turn that dies at teardown still releases the caller", () => {
+  /**
+   * The half of the photo bug the user actually felt.
+   *
+   * `close()` cancelled the in-flight turn as pure internal bookkeeping — no
+   * frames — then drained the queue and dropped the socket. The client leaves
+   * "Thinking…" on exactly one signal (`tts_done`), so a turn still open at
+   * teardown left the orb spinning with no answer, no error and no way back;
+   * on 2026-08-13 the only move left was to abandon the call.
+   *
+   * Both frames used here are already in the client's vocabulary, so nothing
+   * new is being introduced onto the wire — a server frame type the `ready`
+   * frame never advertised is session-fatal to the shipped web client.
+   */
+  test("closing mid-turn sends an honest error and closes the turn", async () => {
+    // A turn that starts and never finishes: the shape of a provider that
+    // rejected the request while the session was being torn down.
+    const harness = createHarness({
+      startVoiceTurn: async () =>
+        await new Promise<{ turnId: string; abort: () => void }>(() => {}),
+    });
+
+    await harness.session.start();
+    await harness.session.handleBinaryAudio(new Uint8Array([1, 2, 3]));
+    await harness.session.handleClientFrame({ type: "ptt_release" });
+    // The caller is now waiting on an answer.
+    await waitFor(() => harness.frames.some((f) => f.type === "thinking"));
+    expect(harness.frames.some((f) => f.type === "tts_done")).toBe(false);
+
+    await harness.session.close("client_end");
+
+    const thinking = harness.frames.find((f) => f.type === "thinking") as
+      | { turnId: string }
+      | undefined;
+    const ttsDone = harness.frames.filter((f) => f.type === "tts_done") as
+      | Array<{ turnId: string }>
+      | [];
+    // The turn is closed on the wire, for the turn the client was told to wait
+    // on — the one signal that moves it off "Thinking…".
+    expect(ttsDone).toHaveLength(1);
+    expect(ttsDone[0]?.turnId).toBe(thinking!.turnId);
+
+    // And it says why. Non-fatal: the TURN died, not the client's session —
+    // the socket close that follows is reported on its own terms.
+    const reported = errorFrames(harness.frames).at(-1);
+    expect(reported?.fatal).toBe(false);
+    expect(reported?.message).toContain("didn't finish before the call ended");
+  });
+
+  test("a turn already closed normally is not re-closed at teardown", async () => {
+    // The everyday hang-up: the answer was delivered and the turn released
+    // before the user ended the call. Nothing is owed, and inventing a
+    // failure notice for a call that went fine would be its own lie.
+    const harness = createHarness({
+      startVoiceTurn: async (opts: VoiceTurnOptions) => {
+        opts.callbacks?.assistant_text_delta?.({
+          type: "assistant_text_delta",
+          text: "Sure thing.",
+          conversationId: opts.conversationId,
+        });
+        opts.callbacks?.message_complete?.({
+          type: "message_complete",
+          conversationId: opts.conversationId,
+          messageId: "assistant-message-1",
+        });
+        return { turnId: "bridge-turn-1", abort: mock() };
+      },
+    });
+
+    await harness.session.start();
+    await speakAndWaitForTurnClose(harness);
+    const errorsBefore = errorFrames(harness.frames).length;
+    const doneBefore = harness.frames.filter(
+      (f) => f.type === "tts_done",
+    ).length;
+
+    await harness.session.close("client_end");
+
+    expect(harness.frames.filter((f) => f.type === "tts_done")).toHaveLength(
+      doneBefore,
+    );
+    expect(errorFrames(harness.frames)).toHaveLength(errorsBefore);
+  });
+
+  test("a call that never had a turn closes silently", async () => {
+    const harness = createHarness({});
+
+    await harness.session.start();
+    await harness.session.close("client_end");
+
+    expect(harness.frames.some((f) => f.type === "tts_done")).toBe(false);
+    expect(errorFrames(harness.frames)).toHaveLength(0);
+  });
+});
+
 describe("a failure the daemon cannot recover from is still fatal", () => {
   test("a re-arm that cannot get a transcriber reports a fatal error", async () => {
     // The guard against this becoming a blanket "nothing is fatal": when the
@@ -321,8 +426,13 @@ describe("a failure the daemon cannot recover from is still fatal", () => {
 
     await harness.session.start();
     await speakAndWaitForTurnClose(harness);
-    await waitFor(() =>
-      errorFrames(harness.frames).some((f) => f.fatal === undefined),
+    // The re-arm does not give up on the first refusal — it retries with a
+    // backoff ladder before declaring the session unrecoverable, so the wait
+    // for the fatal frame has to outlast the whole ladder.
+    await waitFor(
+      () => errorFrames(harness.frames).some((f) => f.fatal === undefined),
+      "the exhausted re-arm never reported a fatal error",
+      REARM_EXHAUSTED_TIMEOUT_MS,
     );
 
     const fatal = errorFrames(harness.frames).at(-1);

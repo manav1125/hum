@@ -199,6 +199,44 @@ describe("gemini-live turn boundary", () => {
 
     expect(frames.map((f) => f.type)).toEqual(["thinking", "tts_audio"]);
   });
+
+  test("closing mid-turn closes the turn instead of stranding the caller", async () => {
+    // `thinking` is a promise the client holds to: it leaves that state on
+    // `tts_done` and nothing else. Teardown sent none, so a turn still open
+    // when the session went down left the orb spinning with no answer and no
+    // error — the user's only move was to abandon the call.
+    const { session, frames } = await startSession();
+
+    captured.onOutputText?.("Let me check that for—");
+    const thinking = frames.find((f) => f.type === "thinking");
+    expect(thinking).toBeDefined();
+
+    session.close("client_end");
+
+    const error = frames.find((f) => f.type === "error");
+    expect(error?.fatal).toBe(false);
+    expect(String(error?.message)).toContain(
+      "didn't finish before the call ended",
+    );
+    const done = frames.filter((f) => f.type === "tts_done");
+    expect(done).toHaveLength(1);
+    expect(done[0]?.turnId).toBe(thinking?.turnId);
+  });
+
+  test("closing between turns says nothing", async () => {
+    const { session, frames } = await startSession();
+
+    captured.onOutputText?.("All done.");
+    captured.onTurnComplete?.();
+    const doneBefore = frames.filter((f) => f.type === "tts_done").length;
+
+    session.close("client_end");
+
+    expect(frames.filter((f) => f.type === "tts_done")).toHaveLength(
+      doneBefore,
+    );
+    expect(frames.some((f) => f.type === "error")).toBe(false);
+  });
 });
 
 describe("gemini-live echo gate", () => {
