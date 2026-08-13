@@ -90,6 +90,52 @@ const PluginPackageJsonSchema = z
 
 type PluginPackageJson = z.infer<typeof PluginPackageJsonSchema>;
 
+/**
+ * Read and validate `<pluginDir>/package.json` against the loader's manifest
+ * schema, returning the derived {@link PluginManifest} (scope-stripped name +
+ * version) or `undefined` when the file is missing, unreadable, or fails
+ * schema validation.
+ *
+ * This is the same acceptance test {@link buildPluginFromDir} applies before
+ * it will bring a plugin up, exported so sibling subsystems (the schedule
+ * reconciler, diagnostics) can ask "would the loader accept this directory?"
+ * without importing any plugin code. `quiet` suppresses the failure log for
+ * callers that probe speculatively on a periodic sweep.
+ */
+export async function parsePluginManifest(
+  pluginDir: string,
+  opts: { quiet?: boolean } = {},
+): Promise<PluginManifest | undefined> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf8"));
+  } catch (err) {
+    if (!opts.quiet) {
+      log.warn(
+        { pluginDir, err },
+        "parsePluginManifest: package.json could not be read or parsed",
+      );
+    }
+    return undefined;
+  }
+  const parsed = PluginPackageJsonSchema.safeParse(raw);
+  if (!parsed.success) {
+    if (!opts.quiet) {
+      log.warn(
+        { pluginDir, issues: parsed.error.message },
+        "parsePluginManifest: package.json failed schema validation",
+      );
+    }
+    return undefined;
+  }
+  const name = stripScope(parsed.data.name);
+  const version =
+    parsed.data.version && parsed.data.version.length > 0
+      ? parsed.data.version
+      : "0.0.0";
+  return { name, version };
+}
+
 export interface LoadExternalPluginOptions {
   /**
    * Maximum time to spend building the `Plugin` from disk before bailing.

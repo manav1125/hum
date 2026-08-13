@@ -316,6 +316,14 @@
       "defaultEnabled": false
     },
     {
+      "id": "plugin-schedules",
+      "scope": "assistant",
+      "key": "plugin-schedules",
+      "label": "Plugin Schedules",
+      "description": "Plugins declare recurring schedules as files (schedules/<name>/) that register and run automatically. Kill switch: turning it off disarms every plugin-declared schedule on the next reconcile pass; turning it back on re-arms them.",
+      "defaultEnabled": false
+    },
+    {
       "id": "velvet-theme",
       "scope": "client",
       "key": "velvet-theme",
