@@ -1599,3 +1599,195 @@ describe("reconnect on unexpected drop", () => {
 // The controller's MAX_RECONNECT_ATTEMPTS (kept in sync with the source; the
 // budget test only needs an upper bound to bound the loop).
 const MAX_ATTEMPTS_PROBE = 3;
+
+// ---------------------------------------------------------------------------
+// A turn that produced no answer says so
+// ---------------------------------------------------------------------------
+
+/**
+ * The user-visible half of the 2026-08-13 photo bug.
+ *
+ * A turn the daemon cannot answer is reported as a NON-fatal `error` followed
+ * by the `tts_done` that hands the floor back — deliberately, so one bad turn
+ * cannot end the call. The client dropped the message on the floor and went
+ * back to Listening as if nothing had happened, which is indistinguishable
+ * from Cue simply choosing not to answer. Silence about a failure is the
+ * failure the fail-open rule is about.
+ */
+describe("a failed turn is surfaced, not swallowed", () => {
+  const notice = () => useLiveVoiceStore.getState().turnNotice;
+
+  async function driveTurn(h: ReturnType<typeof renderController>) {
+    await startListening(h);
+    await act(async () => {
+      h.client.emit("thinking", { type: "thinking", seq: 2, turnId: "t1" });
+    });
+  }
+
+  test("an answerless turn that reported an error leaves an explanation", async () => {
+    const h = renderController({ fullDuplex: true });
+    await driveTurn(h);
+    expect(notice()).toBeNull();
+
+    await act(async () => {
+      h.client.emit("error", {
+        reason: "protocol-error",
+        message: "Live voice assistant turn could not be started: bridge down",
+        fatal: false,
+      });
+      // Non-fatal: the session must survive it.
+      await Promise.resolve();
+    });
+    expect(h.view.result.current.state).not.toBe("failed");
+
+    await act(async () => {
+      h.client.emit("ttsDone", { type: "tts_done", seq: 4, turnId: "t1" });
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(notice()).toBe("I couldn't finish that one — ask me again.");
+    // And the orb is off "Thinking" — the floor really did come back.
+    expect(h.view.result.current.state).not.toBe("thinking");
+  });
+
+  test("a hiccup the daemon answered through stays invisible", async () => {
+    // Same non-fatal severity, but the turn spoke: the daemon absorbed it and
+    // replied anyway, so there is nothing to tell the user about.
+    const h = renderController({ fullDuplex: true });
+    await driveTurn(h);
+
+    await act(async () => {
+      h.client.emit("error", {
+        reason: "protocol-error",
+        message: "transcriber poll hiccup",
+        fatal: false,
+      });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 4,
+        mimeType: "audio/pcm",
+        sampleRate: 24_000,
+        dataBase64: "AAAA",
+      });
+      h.client.emit("ttsDone", { type: "tts_done", seq: 5, turnId: "t1" });
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(notice()).toBeNull();
+  });
+
+  test("the next turn clears the last one's explanation", async () => {
+    const h = renderController({ fullDuplex: true });
+    await driveTurn(h);
+    await act(async () => {
+      h.client.emit("error", {
+        reason: "protocol-error",
+        message: "brain returned 404",
+        fatal: false,
+      });
+      h.client.emit("ttsDone", { type: "tts_done", seq: 4, turnId: "t1" });
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(notice()).not.toBeNull();
+
+    await act(async () => {
+      h.client.emit("thinking", { type: "thinking", seq: 5, turnId: "t2" });
+    });
+    expect(notice()).toBeNull();
+  });
+});
+
+describe("a drop between the question and the answer", () => {
+  function renderFresh() {
+    const clients: FakeClient[] = [];
+    const view = renderHook(() =>
+      useLiveVoice({
+        createClient: () => {
+          const c = new FakeClient();
+          clients.push(c);
+          return c as unknown as LiveVoiceChannelClient;
+        },
+        createPlayer: () => new FakePlayer() as unknown as LiveVoiceAudioPlayer,
+        createCapture: (o) =>
+          new FakeCapture(o) as unknown as LiveVoiceAudioCapture,
+        fullDuplex: true,
+      }),
+    );
+    return { view, clients };
+  }
+
+  test("the recovered session says the turn was lost", async () => {
+    // Reconnecting silently is not enough: the question was asked, the answer
+    // died with the socket, and coming back to a plain "Listening" reads as
+    // Cue having ignored it.
+    const h = renderFresh();
+    await act(async () => {
+      await h.view.result.current.start("assistant-1", "conv-1");
+    });
+    await act(async () => {
+      h.clients[0].emit("ready", {
+        type: "ready",
+        seq: 1,
+        sessionId: "s1",
+        conversationId: "conv-1",
+      });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      h.clients[0].emit("thinking", { type: "thinking", seq: 2, turnId: "t1" });
+    });
+    expect(h.view.result.current.state).toBe("thinking");
+
+    await act(async () => {
+      h.clients[0].emit("closed", undefined);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+    // It did not stay on "Thinking".
+    expect(h.view.result.current.state).not.toBe("thinking");
+    expect(h.clients.length).toBe(2);
+
+    await act(async () => {
+      h.clients[1].emit("ready", {
+        type: "ready",
+        seq: 1,
+        sessionId: "s2",
+        conversationId: "conv-1",
+      });
+      await Promise.resolve();
+    });
+    expect(useLiveVoiceStore.getState().turnNotice).toBe(
+      "The call dropped before I answered — ask me again.",
+    );
+  });
+
+  test("a drop with no turn in flight recovers quietly", async () => {
+    const h = renderFresh();
+    await act(async () => {
+      await h.view.result.current.start("assistant-1", "conv-1");
+    });
+    await act(async () => {
+      h.clients[0].emit("ready", {
+        type: "ready",
+        seq: 1,
+        sessionId: "s1",
+        conversationId: "conv-1",
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      h.clients[0].emit("closed", undefined);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+    await act(async () => {
+      h.clients[1].emit("ready", {
+        type: "ready",
+        seq: 1,
+        sessionId: "s2",
+        conversationId: "conv-1",
+      });
+      await Promise.resolve();
+    });
+    expect(useLiveVoiceStore.getState().turnNotice).toBeNull();
+  });
+});

@@ -191,6 +191,8 @@ export function MobileThreadVoice({
   const pendingApproval = useLiveVoiceStore.use.pendingApproval();
   // The mic dead-silence self-check (TCC hole): the room captions it.
   const micSilent = useLiveVoiceStore.use.micSilent();
+  // Why the last turn produced no answer, when it produced none.
+  const turnNotice = useLiveVoiceStore.use.turnNotice();
 
   // The call clock. It belongs HERE, not on the full-screen surface, for the
   // same reason the session does: this component stays mounted for the whole
@@ -307,6 +309,7 @@ export function MobileThreadVoice({
         activityTool={activityTool}
         muted={muted}
         micSilent={micSilent}
+        turnNotice={turnNotice}
         startedAt={callStartedAt}
         error={error}
         failureKind={failureKind}

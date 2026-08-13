@@ -71,6 +71,8 @@ export function ConversationVoiceRoomOverlay({
   const error = useLiveVoiceStore.use.error();
   const failureKind = useLiveVoiceStore.use.failureKind();
   const micSilent = useLiveVoiceStore.use.micSilent();
+  // Why the last turn produced no answer, when it produced none.
+  const turnNotice = useLiveVoiceStore.use.turnNotice();
 
   const open = boundHere && !minimized;
 
@@ -115,6 +117,7 @@ export function ConversationVoiceRoomOverlay({
         activityTool={activityTool}
         muted={muted}
         micSilent={micSilent}
+        turnNotice={turnNotice}
         startedAt={session.startedAt}
         error={error}
         failureKind={failureKind}

@@ -183,6 +183,14 @@ export interface VoiceFullScreenProps {
    * fail-open: the call itself is never ended or altered.
    */
   micSilent?: boolean;
+  /**
+   * Why the last turn produced no answer, or `null`. Drawn as a quiet caption
+   * under "Listening", the same shape as the mic self-check above: the call is
+   * healthy and the floor is back with the user — one turn of it just died,
+   * and the room says so rather than returning to Listening as though nothing
+   * had been asked.
+   */
+  turnNotice?: string | null;
   /** Epoch ms the call started. The clock is real or it is absent. */
   startedAt: number | null;
   /** Failure message when `state === "failed"`. */
@@ -233,6 +241,7 @@ export function VoiceFullScreen({
   activityTool,
   muted,
   micSilent = false,
+  turnNotice = null,
   startedAt,
   error,
   failureKind,
@@ -428,6 +437,7 @@ export function VoiceFullScreen({
             connecting={connecting}
             muted={muted}
             micSilent={micSilent}
+            turnNotice={turnNotice}
             currentUser={currentUser}
             currentAssistant={currentAssistant}
             activityTool={activityTool}
@@ -912,6 +922,7 @@ function LiveWords({
   connecting,
   muted,
   micSilent,
+  turnNotice,
   currentUser,
   currentAssistant,
   activityTool,
@@ -920,6 +931,7 @@ function LiveWords({
   connecting: boolean;
   muted: boolean;
   micSilent: boolean;
+  turnNotice: string | null;
   currentUser: string;
   currentAssistant: string;
   activityTool: string | null;
@@ -988,6 +1000,25 @@ function LiveWords({
           }}
         >
           {"Cue can't hear anything — check your microphone permissions."}
+        </p>
+      ) : null}
+      {/* The last turn died and the floor came back with no answer. Said
+          plainly, in the same quiet register as the mic caption above: the
+          call is fine, that one question was not. Silence here is what left
+          the room looking like Cue had simply ignored the question. */}
+      {turnNotice ? (
+        <p
+          role="status"
+          style={{
+            fontSize: 11.5,
+            color: MUTED,
+            textAlign: "center",
+            margin: "10px 0 0",
+            lineHeight: 1.5,
+            maxWidth: 300,
+          }}
+        >
+          {turnNotice}
         </p>
       ) : null}
       {currentUser ? (

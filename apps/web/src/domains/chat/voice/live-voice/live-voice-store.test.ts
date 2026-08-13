@@ -196,3 +196,22 @@ describe("mid-call camera state", () => {
     expect(s().photoRejectedReason).toBeNull();
   });
 });
+
+describe("turnNotice", () => {
+  const s = () => useLiveVoiceStore.getState();
+
+  test("starts null, holds what it is given, and clears on reset", () => {
+    expect(s().turnNotice).toBeNull();
+    s().noteTurnNotice("I couldn't finish that one — ask me again.");
+    expect(s().turnNotice).toBe("I couldn't finish that one — ask me again.");
+    s().reset();
+    expect(s().turnNotice).toBeNull();
+  });
+
+  test("the next turn's transcript clears it — a notice describes ONE turn", () => {
+    s().noteTurnNotice("something went wrong");
+    s().closeTurn();
+    s().setFinalTranscript("what about Thursday?");
+    expect(s().turnNotice).toBeNull();
+  });
+});

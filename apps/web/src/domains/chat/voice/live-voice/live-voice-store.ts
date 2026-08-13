@@ -242,6 +242,22 @@ export interface LiveVoiceState {
   /** Why the last photo was refused, for the room's wording. */
   photoRejectedReason: "unsupported" | "failed" | null;
   /**
+   * A quiet line explaining why the last turn produced no answer, or `null`.
+   *
+   * The daemon reports a failed turn with a NON-fatal `error` frame followed
+   * by the `tts_done` that hands the floor back — deliberately, so one bad
+   * turn cannot end the call. But the client had nowhere to put that message:
+   * it dropped non-fatal errors on the floor and returned to Listening as if
+   * nothing had happened, so a turn that died (a provider rejecting the
+   * request, a call torn down mid-thought) was indistinguishable from one Cue
+   * simply chose not to answer. Silence about a failure is the failure the
+   * fail-open rule is actually about.
+   *
+   * Cleared when the next turn opens ({@link OPEN_TURN}) and on reset — it
+   * describes one turn, never the session.
+   */
+  turnNotice: string | null;
+  /**
    * The active session's `attachImage` control, registered by the owning
    * controller (`useLiveVoice`) once the session is ready — or `null` when no
    * session can take a photo. Returns whether the frame actually went out
@@ -305,6 +321,11 @@ export interface LiveVoiceActions {
   setAttachImageSupported: (supported: boolean) => void;
   /** Record that the daemon refused a photo. See {@link LiveVoiceState.photoRejectedSeq}. */
   notePhotoRejected: (reason: "unsupported" | "failed") => void;
+  /**
+   * Record that the turn just closed without an answer, with the line to show
+   * for it. See {@link LiveVoiceState.turnNotice}.
+   */
+  noteTurnNotice: (message: string | null) => void;
   /** Register (or clear) the active session's attach-image control. */
   setAttachImageDelegate: (
     attachImage: ((attachmentId: string) => boolean) | null,
@@ -340,6 +361,7 @@ const INITIAL_STATE: LiveVoiceState = {
   attachImageSupported: false,
   photoRejectedSeq: 0,
   photoRejectedReason: null,
+  turnNotice: null,
   attachImage: null,
 };
 
@@ -356,6 +378,8 @@ const OPEN_TURN = {
   // turn's tool across the boundary would caption the new question with the
   // old answer's work.
   activityTool: null,
+  // Same reasoning: the last turn's failure is not this one's.
+  turnNotice: null,
 } as const;
 
 /** Build a `LiveVoiceCard` from a `card` server frame, defaulting opaque data. */
@@ -484,6 +508,7 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
       photoRejectedSeq: s.photoRejectedSeq + 1,
       photoRejectedReason: reason,
     })),
+  noteTurnNotice: (turnNotice) => set({ turnNotice }),
   setAttachImageDelegate: (attachImage) => set({ attachImage }),
   reset: () => set({ ...INITIAL_STATE }),
 }));

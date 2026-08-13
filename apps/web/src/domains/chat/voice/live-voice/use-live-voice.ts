@@ -324,6 +324,18 @@ interface SessionContext {
   utteranceEndSeq: number;
   /** Whether the assistant has sent any TTS audio for the current response. */
   responseAudioStarted: boolean;
+  /**
+   * The daemon's non-fatal `error` message for the OPEN turn, or null.
+   *
+   * A turn the daemon could not answer is reported as `error` (`fatal:
+   * false`, so the call survives it) followed by the `tts_done` that hands
+   * the floor back. Held here until that `tts_done` arrives, because only
+   * then is it known whether the turn was actually answerless: the same
+   * non-fatal severity also carries hiccups the daemon absorbed and went on
+   * to answer through, and those must stay invisible. Cleared when a new turn
+   * opens.
+   */
+  turnErrorMessage: string | null;
   /** Whether an interrupt was already sent for the current response. */
   interruptSent: boolean;
   /** Whether an automatic ptt_release is already in flight for this utterance. */
@@ -383,6 +395,17 @@ export function useLiveVoice(
   // Reconnect bookkeeping outlives the session (which is recreated on each
   // reconnect). Reset to 0 on a successful `ready` and when attempts run out.
   const reconnectAttemptsRef = useRef(0);
+  /**
+   * Set when the socket dropped while a turn was still in flight, and consumed
+   * by the recovered session's `ready`.
+   *
+   * The reconnect resets the store (twice), so a notice written at the drop
+   * would not survive to the screen it is meant for — and without it a turn
+   * that died with the socket comes back as a session that is simply
+   * listening again, with no answer and nothing said about why. The user is
+   * owed the sentence on the far side of the recovery, not before it.
+   */
+  const droppedMidTurnRef = useRef(false);
   const startRef = useRef<
     ((assistantId: string, conversationId?: string) => Promise<void>) | null
   >(null);
@@ -491,6 +514,7 @@ export function useLiveVoice(
     session.generation += 1;
     // A deliberate stop ends the recovery budget too.
     reconnectAttemptsRef.current = 0;
+    droppedMidTurnRef.current = false;
     useLiveVoiceStore.getState().setState("ending");
     for (const unsubscribe of session.unsubscribes) unsubscribe();
     session.unsubscribes = [];
@@ -557,6 +581,7 @@ export function useLiveVoice(
         utteranceOpen: false,
         utteranceEndSeq: 0,
         responseAudioStarted: false,
+        turnErrorMessage: null,
         interruptSent: false,
         releaseInFlight: false,
         speechMs: 0,
@@ -596,6 +621,14 @@ export function useLiveVoice(
           }
           // A healthy connection clears the reconnect budget.
           reconnectAttemptsRef.current = 0;
+          if (droppedMidTurnRef.current) {
+            droppedMidTurnRef.current = false;
+            useLiveVoiceStore
+              .getState()
+              .noteTurnNotice(
+                "The call dropped before I answered — ask me again.",
+              );
+          }
           // The camera renders ONLY when the daemon advertised it can take
           // the frame — an older daemon rejects `attach_image` with a
           // session-fatal `unknown_type`, so the gate is what makes a photo
@@ -686,7 +719,10 @@ export function useLiveVoice(
           // New response: reset the per-response transcript and barge-in flags.
           session.responseAudioStarted = false;
           session.interruptSent = false;
+          // The previous turn's failure belongs to the previous turn.
+          session.turnErrorMessage = null;
           const s = useLiveVoiceStore.getState();
+          s.noteTurnNotice(null);
           s.clearAssistantTranscript();
           // Cards are per-turn and replace: drop the previous turn's stack so
           // stale results don't pile up above the orb across turns.
@@ -776,7 +812,16 @@ export function useLiveVoice(
           // The daemon marked this one non-terminal and is still running the
           // session (a transcriber poll hiccup, say). Tearing down here is what
           // dropped live conversations mid-sentence; the socket is fine.
-          if (err.fatal === false) return;
+          //
+          // But it is not nothing, either. Hold the message against the open
+          // turn: if that turn then closes without a spoken answer, the user
+          // is told why instead of watching the orb go quietly back to
+          // Listening with no reply and no explanation.
+          if (err.fatal === false) {
+            console.warn(`live-voice: turn reported an error: ${err.message}`);
+            session.turnErrorMessage = err.message;
+            return;
+          }
           // Transient transport failures recover; a protocol-error is the
           // server refusing and is terminal (never retried).
           if (
@@ -793,7 +838,15 @@ export function useLiveVoice(
           // with a live session means an UNEXPECTED drop: try to recover it
           // before giving up.
           if (!live()) return;
+          // A drop between the question and the answer takes the turn with it.
+          // Remember that, so the recovered session says so rather than
+          // returning to Listening as if nothing had been asked.
+          const phaseAtDrop = useLiveVoiceStore.getState().state;
+          if (phaseAtDrop === "thinking" || phaseAtDrop === "transcribing") {
+            droppedMidTurnRef.current = true;
+          }
           if (attemptReconnect(assistantId, conversationId)) return;
+          droppedMidTurnRef.current = false;
           // Recovery is exhausted. Say so — silently resetting to idle is how a
           // dropped session read as "voice randomly stops", with the orb back
           // at "tap to talk" and nothing explaining why.
@@ -1142,6 +1195,18 @@ async function finishResponseAfterPlayback(
 ): Promise<void> {
   const generation = session.generation;
   const utteranceEndSeqAtStart = session.utteranceEndSeq;
+  // A turn that closes having spoken nothing AND having reported an error is
+  // the failed-turn shape: say so. (Spoken answers swallow the message — the
+  // daemon absorbed whatever it was and answered anyway.) Synchronous, ahead
+  // of the drain wait, because there is nothing to drain.
+  const answered = session.responseAudioStarted;
+  const failure = session.turnErrorMessage;
+  session.turnErrorMessage = null;
+  if (!answered && failure) {
+    useLiveVoiceStore
+      .getState()
+      .noteTurnNotice("I couldn't finish that one — ask me again.");
+  }
   session.responseAudioStarted = false;
   // Hands-free keeps the forwarding gate open through the drain: the server
   // VAD hears the room continuously and parks anything the user says during

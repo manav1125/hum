@@ -86,3 +86,31 @@ describe("the mic dead-silence caption", () => {
     expect(view.queryByLabelText("Mute microphone")).not.toBeNull();
   });
 });
+
+/**
+ * The same quiet-caption slot, for the other thing the room used to hide: a
+ * turn that died. The daemon reports an unanswerable turn non-fatally and
+ * hands the floor back, so the room returns to "Listening" — correctly. What
+ * was missing was the sentence saying the question went unanswered, which is
+ * the difference between a recovered call and one that appears to ignore you.
+ */
+describe("the failed-turn caption", () => {
+  const NOTICE = "I couldn't finish that one — ask me again.";
+
+  test("a turn notice draws under the state word, not instead of it", () => {
+    const view = renderRoom({ turnNotice: NOTICE });
+    expect(view.queryByText("Listening")).not.toBeNull();
+    expect(view.queryByText(NOTICE)).not.toBeNull();
+  });
+
+  test("no notice by default", () => {
+    const view = renderRoom();
+    expect(view.queryByText(NOTICE)).toBeNull();
+  });
+
+  test("fail-open: the call's controls are untouched by it", () => {
+    const view = renderRoom({ turnNotice: NOTICE });
+    expect(view.queryByLabelText("End call")).not.toBeNull();
+    expect(view.queryByLabelText("Mute microphone")).not.toBeNull();
+  });
+});
