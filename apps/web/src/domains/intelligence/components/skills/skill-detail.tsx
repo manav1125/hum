@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { isMarkdown } from "@/components/file-markdown";
 import { SkillFileContent } from "@/domains/intelligence/components/skills/skill-file-content";
 import { SkillIcon } from "@/domains/intelligence/components/skills/skill-icon";
+import { SkillRevisionHistory } from "@/domains/intelligence/components/skills/skill-revision-history";
+import {
+  shouldShowHistorySection,
+  useSkillHistory,
+} from "@/domains/intelligence/skills/use-skill-history";
 import {
   isAvailableSkill,
   isRemovableSkill,
@@ -87,6 +92,17 @@ export function SkillDetail({
     isBinary,
     isContentLoading,
   } = useSkillDetailFiles(assistantId, skill.id);
+
+  // Revision history for this skill, read from workspace git via the daemon.
+  // The section only renders when there is something behind it (or a failed
+  // read worth surfacing); an assistant without the route 404s, which the
+  // hook maps to "no revisions", so the page renders exactly as before.
+  const historyState = useSkillHistory(assistantId, skill.id);
+  const showHistory = shouldShowHistorySection({
+    isLoading: historyState.isLoading,
+    isError: historyState.isError,
+    revisionCount: historyState.revisions.length,
+  });
 
   const [viewMode, setViewMode] = useState<"preview" | "raw">("preview");
   useEffect(() => {
@@ -449,6 +465,24 @@ export function SkillDetail({
               </div>
             )}
           </div>
+
+          {/* Revision history — one entry per update to the whole skill. */}
+          {showHistory && (
+            <div
+              style={{
+                marginTop: 14,
+                border: `1px solid ${C.line}`,
+                borderRadius: 13,
+                padding: "14px 16px",
+              }}
+            >
+              <div style={{ ...metaLabel, marginBottom: 10 }}>History</div>
+              <SkillRevisionHistory
+                assistantId={assistantId}
+                skillId={skill.id}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
