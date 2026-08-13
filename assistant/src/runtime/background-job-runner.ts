@@ -28,6 +28,7 @@ import {
   commitDeferredConversation,
   discardDeferredConversation,
   registerDeferredConversation,
+  summarizeWithheldSignals,
 } from "../notifications/deferred-emit.js";
 import { emitNotificationSignal } from "../notifications/emit-signal.js";
 import type { AttentionHints } from "../notifications/signal.js";
@@ -329,9 +330,14 @@ export async function runBackgroundJob(
     // so the structured failure result still flows to the caller.
     const conversationId = conversation?.id ?? "";
 
-    if (opts.deferNotifications && conversationId) {
-      discardDeferredConversation(conversationId);
-    }
+    // Notifications the job announced before it failed. Folded into the
+    // failure notification below rather than dropped: the announced work may
+    // genuinely have happened (the email really was sent) and the user needs
+    // to know that as much as they need to know the job did not finish.
+    const reportedBeforeFailure =
+      opts.deferNotifications && conversationId
+        ? summarizeWithheldSignals(discardDeferredConversation(conversationId))
+        : [];
 
     log.error(
       {
@@ -365,6 +371,9 @@ export async function runBackgroundJob(
           jobName: opts.jobName,
           errorMessage: error.message,
           errorKind,
+          ...(reportedBeforeFailure.length > 0
+            ? { reportedBeforeFailure }
+            : {}),
         },
         attentionHints: hints,
       }).catch((emitErr) => {

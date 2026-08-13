@@ -471,12 +471,19 @@ describe("runBackgroundJob", () => {
       expect(result.ok).toBe(false);
       expect(result.errorKind).toBe("timeout");
       // Only the runner's failure signal makes it out — the buffered
-      // "success" notification is discarded.
+      // "success" notification never stands on its own.
       expect(emitCalls).toHaveLength(1);
       expect(emitCalls[0].sourceEventName).toBe("activity.failed");
+      // …but it is not erased either. The job may have really done the thing
+      // it announced before timing out on a later step, so what it reported
+      // rides along inside the failure rather than vanishing — otherwise the
+      // user never learns the work happened and repeats it.
+      expect(emitCalls[0].contextPayload).toMatchObject({
+        reportedBeforeFailure: ["premature success"],
+      });
     });
 
-    test("thrown exception also drops buffered notifications", async () => {
+    test("thrown exception also withholds buffered notifications", async () => {
       processMessageImpl = async () => {
         bufferIfDeferred(
           STUB_CONVERSATION_ID,
@@ -492,6 +499,25 @@ describe("runBackgroundJob", () => {
       expect(result.ok).toBe(false);
       expect(emitCalls).toHaveLength(1);
       expect(emitCalls[0].sourceEventName).toBe("activity.failed");
+      expect(emitCalls[0].contextPayload).toMatchObject({
+        reportedBeforeFailure: ["doomed"],
+      });
+    });
+
+    test("a failure with nothing buffered carries no reportedBeforeFailure key", async () => {
+      processMessageImpl = async () => {
+        throw new Error("kaboom");
+      };
+
+      const result = await runBackgroundJob(
+        baseOpts({ deferNotifications: true }),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(emitCalls).toHaveLength(1);
+      expect(emitCalls[0].contextPayload).not.toHaveProperty(
+        "reportedBeforeFailure",
+      );
     });
 
     // Regression: after timeout, `processMessage` keeps running and may
