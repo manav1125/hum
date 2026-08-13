@@ -68,9 +68,6 @@ public struct MessageBubbleView: View {
                         },
                         onAlwaysAllow: { requestId, pattern, scope, decision in
                             onAlwaysAllow?(requestId, pattern, scope, decision)
-                        },
-                        onTemporaryAllow: { requestId, decision in
-                            onConfirmationResponse?(requestId, decision)
                         }
                     )
                 } else if let guardianDecision = message.guardianDecision {

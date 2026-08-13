@@ -21,6 +21,7 @@ import type {
 
 import type { PermissionPrompter } from "../permissions/prompter.js";
 import type { UserDecision } from "../permissions/types.js";
+import { isAllowDecision } from "../permissions/types.js";
 import { getLogger } from "../util/logger.js";
 import type { CesClient } from "./client.js";
 
@@ -53,6 +54,12 @@ function mapUserDecisionToCesDecision(
 ): CesApprovalDecision {
   switch (decision) {
     case "allow":
+    // Temporary approval grants (allow_10m / allow_conversation) scope the
+    // CONFIRMATION-PROMPT override, not the credential grant: CES still
+    // receives a single-use approval so a timed chat override never widens
+    // credential access.
+    case "allow_10m":
+    case "allow_conversation":
       return {
         grantDecision: "approved",
         ttl: undefined,
@@ -216,8 +223,9 @@ export async function bridgeCesApproval(
     approval,
     cesClient,
     decision: cesDecision,
-    reason:
-      response.decision === "allow" ? "guardian_approved" : "guardian_denied",
+    reason: isAllowDecision(response.decision)
+      ? "guardian_approved"
+      : "guardian_denied",
   });
 }
 

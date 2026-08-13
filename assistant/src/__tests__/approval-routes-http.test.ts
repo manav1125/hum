@@ -469,7 +469,7 @@ describe("standalone approval endpoints — HTTP layer", () => {
       await stopServer();
     });
 
-    test("rejects temporal approval decisions (allow_10m is not a valid verb)", async () => {
+    test("accepts temporal approval decisions (allow_10m) and echoes the override", async () => {
       let confirmedDecision: string | undefined;
 
       const session = makeIdleSession({
@@ -500,20 +500,24 @@ describe("standalone approval endpoints — HTTP layer", () => {
           decision: "allow_10m",
         }),
       });
-      const body = (await res.json()) as { error?: { message?: string } };
+      const body = (await res.json()) as {
+        accepted?: boolean;
+        approvalOverride?: { kind?: string; conversationId?: string };
+      };
 
-      // In PR3, temporal decisions (allow_10m) are no longer valid — only allow/deny
-      // are accepted. The canonicalizeConfirmDecision function returns null for temporal
-      // decisions, resulting in a 400 before the host-access-specific check.
-      expect(res.status).toBe(400);
-      expect(body.error?.message).toContain("resolve to allow or deny");
-      expect(confirmedDecision).toBeUndefined();
-      expect(pendingInteractions.get("req-host-access")).toBeDefined();
+      // Temporary approval grants (recovered from upstream e05896063f) are
+      // valid confirm verbs again: the decision passes through to the
+      // conversation and the response echoes the override for the countdown UI.
+      expect(res.status).toBe(200);
+      expect(body.accepted).toBe(true);
+      expect(body.approvalOverride?.kind).toBe("timed");
+      expect(body.approvalOverride?.conversationId).toBe("conv-1");
+      expect(confirmedDecision).toBe("allow_10m");
 
       await stopServer();
     });
 
-    test("rejects legacy approval verbs (only allow/deny are accepted)", async () => {
+    test("rejects legacy approval verbs (always_allow is not a confirm verb)", async () => {
       const session = makeIdleSession();
       await startServer(() => session);
 
@@ -534,7 +538,7 @@ describe("standalone approval endpoints — HTTP layer", () => {
         headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
         body: JSON.stringify({
           requestId: "req-v2-invalid",
-          decision: "allow_10m",
+          decision: "always_allow",
         }),
       });
       const body = (await res.json()) as { error?: { message?: string } };

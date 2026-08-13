@@ -7,6 +7,7 @@ import {
   setAttachmentThumbnail,
 } from "../memory/attachments-store.js";
 import type { PermissionPrompter } from "../permissions/prompter.js";
+import { isAllowDecision } from "../permissions/types.js";
 import type { ContentBlock } from "../providers/types.js";
 import { getLogger } from "../util/logger.js";
 import {
@@ -62,7 +63,7 @@ export async function approveHostAttachmentRead(
     false,
   );
 
-  return response.decision === "allow";
+  return isAllowDecision(response.decision);
 }
 
 export interface AttachmentResolutionResult {

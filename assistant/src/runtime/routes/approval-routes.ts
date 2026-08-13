@@ -12,9 +12,11 @@ import { z } from "zod";
 import { findConversation } from "../../daemon/conversation-registry.js";
 import { getConversationByKey } from "../../memory/conversation-key-store.js";
 import type { UserDecision } from "../../permissions/types.js";
+import { isAllowDecision } from "../../permissions/types.js";
 import { getSubagentManager } from "../../subagent/index.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
+import { DEFAULT_TIMED_DURATION_MS } from "../conversation-approval-overrides.js";
 import * as pendingInteractions from "../pending-interactions.js";
 import { BadRequestError, NotFoundError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
@@ -25,8 +27,21 @@ function canonicalizeConfirmDecision(params: {
   decision: string;
   interaction: NonNullable<ReturnType<typeof pendingInteractions.get>>;
 }): UserDecision | null {
-  const { decision } = params;
+  const { decision, interaction } = params;
   if (decision === "allow" || decision === "deny") {
+    return decision;
+  }
+  // Temporary approval grants (recovered from upstream e05896063f). The
+  // grant is installed by the permission checker when the prompter resolves;
+  // eligibility (guardian, non-voice, no fresh-approval requirement, no
+  // checkpoint bypass) is enforced there — the route only validates the verb.
+  if (decision === "allow_10m" || decision === "allow_conversation") {
+    // Route-owned (ACP direct-resolve) confirmations have no Conversation /
+    // permission-checker flow behind them, so a temporary grant cannot be
+    // installed — degrade to a plain one-shot allow.
+    if (interaction.directResolve) {
+      return "allow";
+    }
     return decision;
   }
   return null;
@@ -82,7 +97,7 @@ function handleConfirm({ body }: RouteHandlerArgs) {
   if (interaction.directResolve) {
     pendingInteractions.resolve(
       requestId,
-      effectiveDecision === "allow" ? "approved" : "rejected",
+      isAllowDecision(effectiveDecision) ? "approved" : "rejected",
     );
     interaction.directResolve(effectiveDecision as UserDecision);
     return { accepted: true };
@@ -105,7 +120,29 @@ function handleConfirm({ body }: RouteHandlerArgs) {
     },
   );
 
-  return { accepted: true };
+  // Echo the temporary-grant intent so the client can render a live
+  // countdown chip without a second round-trip. The authoritative state
+  // lives in conversation-approval-overrides.ts (installed by the
+  // permission checker as the prompter resolves); GET /v1/approval-override
+  // re-syncs, and POST /v1/approval-override/clear revokes.
+  const approvalOverride =
+    effectiveDecision === "allow_10m"
+      ? {
+          kind: "timed" as const,
+          conversationId: interaction.conversationId,
+          expiresAt: Date.now() + DEFAULT_TIMED_DURATION_MS,
+        }
+      : effectiveDecision === "allow_conversation"
+        ? {
+            kind: "conversation" as const,
+            conversationId: interaction.conversationId,
+            expiresAt: null,
+          }
+        : undefined;
+
+  return approvalOverride
+    ? { accepted: true, approvalOverride }
+    : { accepted: true };
 }
 
 /**
@@ -296,7 +333,9 @@ export const ROUTES: RouteDefinition[] = [
     tags: ["approvals"],
     requestBody: z.object({
       requestId: z.string().describe("Pending interaction request ID"),
-      decision: z.string().describe("One of: allow, deny"),
+      decision: z
+        .string()
+        .describe("One of: allow, allow_10m, allow_conversation, deny"),
       selectedPattern: z
         .string()
         .describe("Allowlist pattern for persistent decisions")
@@ -308,6 +347,16 @@ export const ROUTES: RouteDefinition[] = [
     }),
     responseBody: z.object({
       accepted: z.boolean(),
+      approvalOverride: z
+        .object({
+          kind: z.enum(["timed", "conversation"]),
+          conversationId: z.string(),
+          expiresAt: z.number().nullable(),
+        })
+        .describe(
+          "Present when the decision installed a temporary approval override",
+        )
+        .optional(),
     }),
   },
   {

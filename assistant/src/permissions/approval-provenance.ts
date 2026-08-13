@@ -7,6 +7,9 @@ import type { ApprovalMode, ApprovalReason } from "./types.js";
  *
  * Decision strings:
  *   "allow"                 — auto-allowed by policy (sandbox, trust rule, or threshold)
+ *   "allow_10m"             — user approved via prompt AND granted a 10-minute override
+ *   "allow_conversation"    — user approved via prompt AND granted a conversation override
+ *   "temporary_override"    — auto-approved by an active temporary approval override
  *   "deny"                  — user denied via interactive prompt
  *   "denied"                — system denied (no interactive client, or trust rule deny)
  *   "platform_auto_approve" — guardian bash in platform-hosted session
@@ -29,6 +32,20 @@ export function mapApprovalProvenance(
 
   if (decision === "guardian_auto_approve") {
     return { approvalMode: "auto", approvalReason: "within_threshold" };
+  }
+
+  // Temporary approval grants: the user answered the prompt (approving this
+  // action) and additionally installed an ephemeral override. The grant
+  // itself is a prompted user approval.
+  if (decision === "allow_10m" || decision === "allow_conversation") {
+    return { approvalMode: "prompted", approvalReason: "user_approved" };
+  }
+
+  // Auto-approved by an active temporary override the user granted earlier
+  // in this conversation. No prompt was shown for THIS action, but the
+  // authority traces back to an explicit user approval.
+  if (decision === "temporary_override") {
+    return { approvalMode: "auto", approvalReason: "user_approved" };
   }
 
   if (decision === "allow") {

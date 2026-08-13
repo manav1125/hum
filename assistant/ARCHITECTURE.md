@@ -160,18 +160,25 @@ In addition to persistent trust rules (`always_allow` / `always_deny`), the appr
 
 **Conversation-scoped, in-memory only:** Overrides are keyed by `conversationId` and stored in an in-memory `Map` inside `conversation-approval-overrides.ts`. They do not survive daemon restarts, which is intentional — temporary approvals should not outlive the conversation that created them.
 
-**Integration with the permission pipeline:** The permission checker (`src/tools/permission-checker.ts`) checks for an active temporary override via `getEffectiveMode()` before prompting the user. If an active override exists for the current conversation, the confirmation is auto-approved without surfacing a prompt. This check runs after persistent trust rules, so a persistent `deny` rule still takes precedence.
+**Integration with the permission pipeline:** The permission checker (`src/tools/permission-checker.ts`) checks for an active temporary override via `getEffectiveMode()` before prompting the user. If an active override exists for the current conversation, the confirmation is auto-approved without surfacing a prompt (decision string `temporary_override`). This check runs after persistent trust rules and after the checker's deny branch, so a persistent `deny` rule and `never`-mode autonomy categories always take precedence.
 
-**No persistent side effects:** Temporary modes do not write to `trust.json` or create persistent trust rules. They are purely ephemeral. The `buildDecisionActions()` function in `guardian-decision-types.ts` controls whether temporary options (`allow_10m`, `allow_conversation`) are surfaced in the approval prompt UI, gated by the `temporaryOptionsAvailable` flag.
+**Hard carve-outs (an override can never widen these):**
+
+- **Checkpoint / send-guard classes still fire.** Prompts forced by the per-category autonomy policy or an enabled guardrail checkpoint (send / money / delete / publish / contact — see `src/permissions/approval-policy.ts` and `src/guardrails/checkpoint-enforcement.ts`) carry `autonomyAskEnforced` on the check result and are never auto-approved by an override.
+- **`requireFreshApproval` tools always prompt** — a cached grant cannot substitute for per-invocation human review.
+- **Voice/call sessions keep per-action prompts** — overrides are neither consulted nor installed for voice-scoped invocations (`callSessionId` set, or a voice execution channel).
+- **Expiry auto-allows nothing** — an expired timed override lazily disappears and the conversation returns to ask.
+
+**No persistent side effects:** Temporary modes do not write to `trust.json` or create persistent trust rules. They are purely ephemeral. Grants are installed by the permission checker when the prompter resolves with `allow_10m` / `allow_conversation` (accepted by `POST /v1/confirm`); clients read live status via `GET /v1/approval-override` and revoke via `POST /v1/approval-override/clear` (`src/runtime/routes/approval-override-routes.ts`).
 
 **Key source files:**
 
 | File                                             | Purpose                                                                                                                  |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | `src/runtime/conversation-approval-overrides.ts` | In-memory store: `setConversationMode`, `setTimedMode`, `getEffectiveMode`, `clearMode`, `hasActiveOverride`, `clearAll` |
-| `src/permissions/types.ts`                       | `UserDecision` type (includes `allow_10m`, `allow_conversation`, `temporary_override`), `isAllowDecision()` helper       |
-| `src/runtime/guardian-decision-types.ts`         | `buildDecisionActions()` — controls which temporary options appear in approval prompts                                   |
-| `src/tools/permission-checker.ts`                | Permission pipeline integration — checks temporary overrides before prompting                                            |
+| `src/permissions/types.ts`                       | `UserDecision` type (includes `allow_10m`, `allow_conversation`), `isAllowDecision()` helper                             |
+| `src/runtime/routes/approval-override-routes.ts` | Status + revoke endpoints for the client countdown chip                                                                  |
+| `src/tools/permission-checker.ts`                | Permission pipeline integration — consults overrides before prompting, installs them on grant decisions                  |
 
 ### Canonical Guardian Request System
 

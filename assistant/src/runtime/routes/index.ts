@@ -14,6 +14,7 @@ import { ROUTES as ACTS_ROUTES } from "./acts-routes.js";
 import { ROUTES as AGENTS_ROUTES } from "./agents-routes.js";
 import { ROUTES as APP_MANAGEMENT_ROUTES } from "./app-management-routes.js";
 import { ROUTES as APP_ROUTES } from "./app-routes.js";
+import { ROUTES as APPROVAL_OVERRIDE_ROUTES } from "./approval-override-routes.js";
 import { ROUTES as APPROVAL_ROUTES } from "./approval-routes.js";
 import { ROUTES as ARRIVAL_COMPREHENSION_ROUTES } from "./arrival-comprehension-routes.js";
 import { ROUTES as ARRIVALS_ROUTES } from "./arrivals-routes.js";
@@ -185,6 +186,7 @@ export const ROUTES: RouteDefinition[] = [
   ...AGENTS_ROUTES,
   ...APP_MANAGEMENT_ROUTES,
   ...APP_ROUTES,
+  ...APPROVAL_OVERRIDE_ROUTES,
   ...APPROVAL_ROUTES,
   ...ARRIVAL_COMPREHENSION_ROUTES,
   ...ARRIVALS_ROUTES,

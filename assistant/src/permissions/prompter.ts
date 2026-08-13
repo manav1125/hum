@@ -8,6 +8,7 @@ import type { ExecutionTarget } from "../tools/types.js";
 import { AssistantError, ErrorCode } from "../util/errors.js";
 import { getLogger } from "../util/logger.js";
 import type { AllowlistOption, ScopeOption, UserDecision } from "./types.js";
+import { isAllowDecision } from "./types.js";
 
 const log = getLogger("permission-prompter");
 
@@ -219,7 +220,7 @@ export class PermissionPrompter {
     // routing to resolveConfirmation, which fires the rpcResolve callback.
     const interaction = pendingInteractions.resolve(
       requestId,
-      decision === "allow" ? "approved" : "rejected",
+      isAllowDecision(decision) ? "approved" : "rejected",
     );
     this.ownedIds.delete(requestId);
     (interaction?.rpcResolve as ((v: ConfirmResult) => void) | undefined)?.({

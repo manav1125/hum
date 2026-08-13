@@ -48,10 +48,31 @@ export interface TrustRule {
   userModifiedAt?: number;
 }
 
-export type UserDecision = "allow" | "deny";
+/**
+ * A user's answer to an interactive permission prompt.
+ *
+ * `allow_10m` / `allow_conversation` are temporary approval grants (recovered
+ * from upstream e05896063f / 46d64df40d^): they approve the current action AND
+ * install an ephemeral per-conversation override so subsequent eligible
+ * prompts auto-approve (see runtime/conversation-approval-overrides.ts).
+ */
+export type UserDecision =
+  | "allow"
+  | "allow_10m"
+  | "allow_conversation"
+  | "deny";
 
+/**
+ * Returns true for any allow-variant decision. Centralizes the check to
+ * prevent omissions when new allow variants are added — never compare a
+ * UserDecision against the literal "allow" to mean "approved".
+ */
 export function isAllowDecision(decision: UserDecision): boolean {
-  return decision === "allow";
+  return (
+    decision === "allow" ||
+    decision === "allow_10m" ||
+    decision === "allow_conversation"
+  );
 }
 
 export interface PermissionCheckResult {
@@ -60,6 +81,14 @@ export interface PermissionCheckResult {
   matchedRule?: TrustRule;
   /** True when the decision was taken via the sandbox auto-approve path. */
   hasSandboxAutoApprove?: boolean;
+  /**
+   * True when a "prompt" decision was forced by the per-category autonomy
+   * policy / guardrail checkpoint layer (send, money, delete, publish,
+   * contact classes or an enabled `autonomy:<class>` checkpoint). Temporary
+   * approval overrides must NEVER auto-approve these prompts — the
+   * checkpoint still fires and a human answers each one.
+   */
+  autonomyAskEnforced?: boolean;
 }
 
 /** Contextual information passed alongside a permission check for policy decisions. */

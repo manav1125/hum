@@ -15,6 +15,11 @@ import type {
   RiskThreshold,
 } from "../permissions/types.js";
 import { RiskLevel } from "../permissions/types.js";
+import {
+  getEffectiveMode,
+  setConversationMode,
+  setTimedMode,
+} from "../runtime/conversation-approval-overrides.js";
 import { getLogger } from "../util/logger.js";
 import { buildPolicyContext } from "./policy-context.js";
 import { isSideEffectTool } from "./side-effects.js";
@@ -22,6 +27,25 @@ import type { ExecutionTarget } from "./types.js";
 import type { Tool, ToolContext, ToolLifecycleEvent } from "./types.js";
 
 const log = getLogger("permission-checker");
+
+/**
+ * Execution channels that carry live-voice / call turns. Temporary approval
+ * overrides are scoped to non-voice chat for v1 — voice sessions keep
+ * per-action prompts (V-3 design), so overrides are neither consulted nor
+ * installed for these channels.
+ */
+const VOICE_EXECUTION_CHANNELS = new Set<string>([
+  "phone",
+  "voice",
+  "live-voice",
+  "call",
+]);
+
+function isVoiceScopedInvocation(context: ToolContext): boolean {
+  if (context.callSessionId) return true;
+  const channel = context.executionChannel;
+  return typeof channel === "string" && VOICE_EXECUTION_CHANNELS.has(channel);
+}
 
 export type PermissionDecision =
   | {
@@ -347,6 +371,56 @@ export class PermissionChecker {
           };
         }
 
+        // Temporary approval override (allow_10m / allow_conversation):
+        // if the guardian granted a conversation-scoped or timed "allow all"
+        // mode, skip the interactive prompt and auto-approve.
+        //
+        // Placement and carve-outs are deliberate:
+        //   - Runs strictly AFTER the deny branch above — persistent deny
+        //     rules and "never" autonomy classes always win.
+        //   - `autonomyAskEnforced` prompts (send/money/delete/publish/
+        //     contact classes and guardrail checkpoints) are NEVER
+        //     auto-approved — the checkpoint still fires and a human answers.
+        //   - `requireFreshApproval` tools always show the prompt — a cached
+        //     grant cannot substitute for per-invocation human review.
+        //   - Voice/call sessions keep per-action prompts (v1 scope).
+        //   - Dynamic skill loads execute embedded commands and must never
+        //     be silently auto-approved.
+        //   - Expiry auto-allows NOTHING: an expired override reads as
+        //     undefined and control falls through to the normal prompt.
+        const temporaryOverridesEligible =
+          context.trustClass === "guardian" &&
+          !context.requireFreshApproval &&
+          !context.forcePromptSideEffects &&
+          !isDynamicSkillLoad &&
+          result.autonomyAskEnforced !== true &&
+          !isVoiceScopedInvocation(context) &&
+          typeof context.conversationId === "string" &&
+          context.conversationId.length > 0;
+
+        if (
+          temporaryOverridesEligible &&
+          getEffectiveMode(context.conversationId as string) !== undefined
+        ) {
+          log.info(
+            {
+              toolName: name,
+              riskLevel,
+              conversationId: context.conversationId,
+            },
+            "Temporary approval override active - auto-approving without prompt",
+          );
+          return {
+            allowed: true,
+            decision: "temporary_override",
+            riskLevel,
+            matchedTrustRuleId,
+            riskMeta,
+            ...mapApprovalProvenance("temporary_override", {}),
+            riskThreshold,
+          };
+        }
+
         const previewDiff = computePreviewDiff(name, input, context.workingDir);
         const promptOptions = {
           allowlistOptions: await generateAllowlistOptions(
@@ -437,6 +511,30 @@ export class PermissionChecker {
             }),
             riskThreshold,
           };
+        }
+
+        // Activate temporary approval mode when the user chose a
+        // time-limited or conversation-scoped grant. Subsequent eligible
+        // tool invocations in this conversation auto-approve without
+        // prompting (consulted above in the temporary-override block, with
+        // the same carve-outs). Installation is gated on the same
+        // eligibility so an out-of-band client cannot install an override
+        // from a voice turn or a fresh-approval-required prompt.
+        if (decision === "allow_10m" && temporaryOverridesEligible) {
+          setTimedMode(context.conversationId as string);
+          log.info(
+            { toolName: name, conversationId: context.conversationId },
+            "Timed temporary approval mode activated (10 minutes)",
+          );
+        } else if (
+          decision === "allow_conversation" &&
+          temporaryOverridesEligible
+        ) {
+          setConversationMode(context.conversationId as string);
+          log.info(
+            { toolName: name, conversationId: context.conversationId },
+            "Conversation-scoped temporary approval mode activated",
+          );
         }
 
         return {

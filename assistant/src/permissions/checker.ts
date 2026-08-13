@@ -655,6 +655,10 @@ export async function check(
     decision: approvalDecision.decision,
     reason: enrichedReason,
     matchedRule: approvalDecision.matchedRule,
+    // Checkpoint/autonomy-forced prompts are marked so temporary approval
+    // overrides (allow_10m / allow_conversation) cannot silently approve
+    // send/money/delete-class actions — those checkpoints must still fire.
+    autonomyAskEnforced: approvalDecision.enforcedByAutonomyPolicy || undefined,
     hasSandboxAutoApprove:
       approvalDecision.reason ===
         "Workspace filesystem operation (sandbox auto-approve)" || undefined,

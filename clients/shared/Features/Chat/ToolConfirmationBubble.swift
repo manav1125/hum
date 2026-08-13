@@ -8,8 +8,6 @@ public struct ToolConfirmationBubble: View {
     public let onAllow: () -> Void
     public let onDeny: () -> Void
     public let onAlwaysAllow: (String, String, String, String) -> Void
-    /// Called when a temporary approval option is selected: (requestId, decision).
-    public let onTemporaryAllow: ((String, String) -> Void)?
     /// When `true` this bubble owns the keyboard monitor and shows selection
     /// highlights. When `false` the monitor is removed and keyboard-only state
     /// is cleared so a lower stacked bubble doesn't steal input.
@@ -27,7 +25,6 @@ public struct ToolConfirmationBubble: View {
         onAllow: @escaping () -> Void,
         onDeny: @escaping () -> Void,
         onAlwaysAllow: @escaping (String, String, String, String) -> Void,
-        onTemporaryAllow: ((String, String) -> Void)? = nil,
         onCreateRule: (() -> Void)? = nil,
         onAllowAndSuggestRule: (() -> Void)? = nil
     ) {
@@ -36,7 +33,6 @@ public struct ToolConfirmationBubble: View {
         self.onAllow = onAllow
         self.onDeny = onDeny
         self.onAlwaysAllow = onAlwaysAllow
-        self.onTemporaryAllow = onTemporaryAllow
         self.onCreateRule = onCreateRule
         self.onAllowAndSuggestRule = onAllowAndSuggestRule
     }

@@ -85,6 +85,13 @@ export interface ApprovalDecision {
   reason: string;
   /** Present only when the decision was driven by a matched rule. */
   matchedRule?: TrustRule;
+  /**
+   * True when a "prompt" was forced by the per-category autonomy mode
+   * (send/money/delete/publish/contact defaults or an enabled guardrail
+   * checkpoint). Downstream shortcuts (temporary approval overrides) must
+   * not auto-approve prompts carrying this flag.
+   */
+  enforcedByAutonomyPolicy?: boolean;
 }
 
 /** An object that evaluates an approval context and returns a decision. */
@@ -162,6 +169,7 @@ export class DefaultApprovalPolicy implements ApprovalPolicy {
       return {
         decision: "prompt",
         reason: "category requires approval",
+        enforcedByAutonomyPolicy: true,
       };
     }
 

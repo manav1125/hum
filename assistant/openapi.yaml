@@ -1474,6 +1474,82 @@ paths:
           schema:
             type: integer
           description: Trailing window in days (default 7)
+  /v1/approval-override:
+    get:
+      operationId: approvaloverride_get
+      summary: Get the active temporary approval override
+      description:
+        Report the active allow_10m / allow_conversation override for a conversation, including remaining time for
+        timed grants.
+      tags:
+        - approvals
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                  kind:
+                    type: string
+                    enum:
+                      - timed
+                      - conversation
+                  expiresAt:
+                    type: number
+                  remainingMs:
+                    type: number
+                required:
+                  - active
+                additionalProperties: false
+      parameters:
+        - name: conversationId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Conversation ID
+  /v1/approval-override/clear:
+    post:
+      operationId: approvaloverride_clear_post
+      summary: Revoke a temporary approval override
+      description:
+        Clear the allow_10m / allow_conversation override for a conversation, returning it to per-action approval
+        prompts.
+      tags:
+        - approvals
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cleared:
+                    type: boolean
+                  hadOverride:
+                    type: boolean
+                required:
+                  - cleared
+                  - hadOverride
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                conversationId:
+                  type: string
+                  description: Conversation ID
+              required:
+                - conversationId
+              additionalProperties: false
   /v1/apps:
     get:
       operationId: apps_get
@@ -6853,7 +6929,23 @@ paths:
                             - done
                         kind:
                           type: string
-                          const: work_item
+                          enum:
+                            - work_item
+                            - inbox_cleanup
+                        counts:
+                          type: object
+                          properties:
+                            archived:
+                              type: number
+                            drafted:
+                              type: number
+                            keptImportant:
+                              type: number
+                          required:
+                            - archived
+                            - drafted
+                            - keptImportant
+                          additionalProperties: false
                         completedAt:
                           type: string
                       required:
@@ -10238,6 +10330,26 @@ paths:
                 properties:
                   accepted:
                     type: boolean
+                  approvalOverride:
+                    type: object
+                    properties:
+                      kind:
+                        type: string
+                        enum:
+                          - timed
+                          - conversation
+                      conversationId:
+                        type: string
+                      expiresAt:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                    required:
+                      - kind
+                      - conversationId
+                      - expiresAt
+                    additionalProperties: false
+                    description: Present when the decision installed a temporary approval override
                 required:
                   - accepted
                 additionalProperties: false
@@ -10253,7 +10365,7 @@ paths:
                   description: Pending interaction request ID
                 decision:
                   type: string
-                  description: "One of: allow, deny"
+                  description: "One of: allow, allow_10m, allow_conversation, deny"
                 selectedPattern:
                   type: string
                   description: Allowlist pattern for persistent decisions
@@ -11933,6 +12045,79 @@ paths:
                     - trusted-contact
                     - unknown
               additionalProperties: false
+  /v1/contacts/quiet-lately:
+    get:
+      operationId: contacts_quietlately_get
+      summary: People who have gone quiet relative to their own rhythm
+      description: >-
+        Design v38 §2. Quiet means silence greater than 3x this person's own median inbound gap AND greater than 14 days
+        — both, so a daily correspondent silent for four days is not flagged and a monthly one is not flagged for being
+        monthly. Ranked by how far past their OWN normal, never by raw silence.
+
+
+        `eligible` is what separates the two empty states, which are different facts and must never share a sentence:
+        rows empty with eligible > 0 means everyone is talking at their usual pace; eligible = 0 means Cue has no rhythm
+        yet and should say so. This endpoint THROWS on a read failure rather than returning an empty list — an empty
+        list is a claim about the owner's relationships and must not be producible by a database error.
+      tags:
+        - contacts
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        contactId:
+                          type: string
+                        name:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        address:
+                          type: string
+                        medianGapDays:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: Their normal, in whole days — the 'usually every 3 days' number.
+                        silentDays:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: Days since they last wrote — the 'silent 19' number.
+                        ratio:
+                          type: number
+                          description: silentDays / medianGapDays. The sort key.
+                      required:
+                        - contactId
+                        - name
+                        - address
+                        - medianGapDays
+                        - silentDays
+                        - ratio
+                      additionalProperties: false
+                  eligible:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Contacts with enough history to be judged at all.
+                  considered:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Contacts looked at, whether or not they had a baseline.
+                required:
+                  - rows
+                  - eligible
+                  - considered
+                additionalProperties: false
   /v1/contacts/search:
     post:
       operationId: contacts_search_post
@@ -29199,6 +29384,76 @@ paths:
                                 required:
                                   - requestId
                                 additionalProperties: false
+                              answeredQuestion:
+                                type: object
+                                properties:
+                                  requestId:
+                                    type: string
+                                  questions:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        id:
+                                          type: string
+                                        question:
+                                          type: string
+                                        description:
+                                          type: string
+                                        options:
+                                          type: array
+                                          items:
+                                            type: object
+                                            properties:
+                                              id:
+                                                type: string
+                                              label:
+                                                type: string
+                                              description:
+                                                type: string
+                                            required:
+                                              - id
+                                              - label
+                                            additionalProperties: false
+                                        freeTextPlaceholder:
+                                          type: string
+                                      required:
+                                        - id
+                                        - question
+                                        - options
+                                      additionalProperties: false
+                                  responses:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        questionId:
+                                          type: string
+                                        decision:
+                                          type: string
+                                          enum:
+                                            - option
+                                            - free_text
+                                            - skipped
+                                        optionId:
+                                          type: string
+                                        text:
+                                          type: string
+                                      required:
+                                        - questionId
+                                        - decision
+                                      additionalProperties: false
+                                  overall:
+                                    type: string
+                                    enum:
+                                      - completed
+                                      - closed
+                                required:
+                                  - requestId
+                                  - questions
+                                  - responses
+                                  - overall
+                                additionalProperties: false
                             required:
                               - name
                               - input
@@ -29580,6 +29835,76 @@ paths:
                                             type: boolean
                                         required:
                                           - requestId
+                                        additionalProperties: false
+                                      answeredQuestion:
+                                        type: object
+                                        properties:
+                                          requestId:
+                                            type: string
+                                          questions:
+                                            type: array
+                                            items:
+                                              type: object
+                                              properties:
+                                                id:
+                                                  type: string
+                                                question:
+                                                  type: string
+                                                description:
+                                                  type: string
+                                                options:
+                                                  type: array
+                                                  items:
+                                                    type: object
+                                                    properties:
+                                                      id:
+                                                        type: string
+                                                      label:
+                                                        type: string
+                                                      description:
+                                                        type: string
+                                                    required:
+                                                      - id
+                                                      - label
+                                                    additionalProperties: false
+                                                freeTextPlaceholder:
+                                                  type: string
+                                              required:
+                                                - id
+                                                - question
+                                                - options
+                                              additionalProperties: false
+                                          responses:
+                                            type: array
+                                            items:
+                                              type: object
+                                              properties:
+                                                questionId:
+                                                  type: string
+                                                decision:
+                                                  type: string
+                                                  enum:
+                                                    - option
+                                                    - free_text
+                                                    - skipped
+                                                optionId:
+                                                  type: string
+                                                text:
+                                                  type: string
+                                              required:
+                                                - questionId
+                                                - decision
+                                              additionalProperties: false
+                                          overall:
+                                            type: string
+                                            enum:
+                                              - completed
+                                              - closed
+                                        required:
+                                          - requestId
+                                          - questions
+                                          - responses
+                                          - overall
                                         additionalProperties: false
                                     required:
                                       - name
