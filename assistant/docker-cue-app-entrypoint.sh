@@ -103,6 +103,21 @@ fi
 prepare_daemon_workspace() {
   _secdir="${GATEWAY_SECURITY_DIR:-${VELLUM_WORKSPACE_DIR}/gateway-security}"
   echo "[cue-app] preparing workspace ownership for uid ${CUE_DAEMON_UID} (excluding ${_secdir})" >&2
+
+  # Close the directory before the daemon ever runs unprivileged. Dropping the
+  # uid while the trust material stays world-readable is not a privilege drop —
+  # the rehearsal on 2026-08-13 confirmed uid 1001 could still read
+  # actor-token-signing-key at its inherited 0644. Root-owned 0700/0600 is what
+  # makes the drop mean something, and it must be in place BEFORE the daemon
+  # starts so there is no window where the daemon is unprivileged and the key
+  # is not. -type guards keep this off symlinks (chmod follows them).
+  if [ -d "$_secdir" ]; then
+    chown -h 0:0 "$_secdir" 2>/dev/null || true
+    chmod 0700 "$_secdir" 2>/dev/null || true
+    find "$_secdir" -type d -exec chown 0:0 {} + -exec chmod 0700 {} + 2>/dev/null || true
+    find "$_secdir" -type f -exec chown 0:0 {} + -exec chmod 0600 {} + 2>/dev/null || true
+    echo "[cue-app] locked ${_secdir} to root 0700/0600" >&2
+  fi
   find "${VELLUM_WORKSPACE_DIR}" -path "${_secdir}" -prune -o \
     ! -user "${CUE_DAEMON_UID}" -exec chown -h "${CUE_DAEMON_UID}:${CUE_DAEMON_GID}" {} + \
     2>/dev/null || true
@@ -118,7 +133,12 @@ prepare_daemon_workspace() {
 DAEMON_PRIVILEGE_PREFIX=""
 if [ "$DROP_DAEMON_PRIVILEGES" = "1" ]; then
   prepare_daemon_workspace
-  DAEMON_PRIVILEGE_PREFIX="setpriv --reuid=${CUE_DAEMON_UID} --regid=${CUE_DAEMON_GID} --clear-groups --inh-caps=-all"
+  # HOME must move with the uid. setpriv changes credentials, not the
+  # environment, so the daemon would inherit root's HOME and die on boot:
+  # ensureDataDir() (src/util/platform.ts) does mkdir "$HOME/.vellum", and
+  # uid 1001 cannot write /root. The image already creates and owns
+  # /home/assistant/.vellum for exactly this identity.
+  DAEMON_PRIVILEGE_PREFIX="setpriv --reuid=${CUE_DAEMON_UID} --regid=${CUE_DAEMON_GID} --clear-groups --inh-caps=-all env HOME=/home/assistant USER=assistant LOGNAME=assistant"
   echo "[cue-app] daemon will run as uid ${CUE_DAEMON_UID} (agent shell commands inherit it); gateway stays root" >&2
 fi
 
