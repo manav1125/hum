@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
 
+import type { AnsweredQuestion } from "../api/events/question-answered.js";
 import { isAssistantFeatureFlagEnabled } from "../config/assistant-feature-flags.js";
 import { getConfig } from "../config/loader.js";
 import type { LLMCallSite } from "../config/schemas/llm.js";
@@ -218,6 +219,8 @@ export type AgentEvent =
       approvalReason?: string;
       riskThreshold?: string;
       activityMetadata?: ToolActivityMetadata;
+      /** Answered `ask_question` record (see `ToolExecutionResult.answeredQuestion`). */
+      answeredQuestion?: AnsweredQuestion;
       /**
        * Set when the loop synthesizes this result for a tool_use that never
        * executed (a "Cancelled by user" block on abort). The daemon still
@@ -624,6 +627,7 @@ export type LoopToolExecutor = (
   approvalReason?: string;
   riskThreshold?: string;
   activityMetadata?: ToolActivityMetadata;
+  answeredQuestion?: AnsweredQuestion;
 }>;
 
 export interface AgentLoopConstructorOptions {
@@ -2164,6 +2168,7 @@ export class AgentLoop {
             approvalReason: result.approvalReason,
             riskThreshold: result.riskThreshold,
             activityMetadata: result.activityMetadata,
+            answeredQuestion: result.answeredQuestion,
           });
         }
 

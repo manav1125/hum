@@ -27,6 +27,8 @@ import {
   isSuppressedUiTool,
 } from "@/domains/chat/transcript/message-content";
 import { parseInlineSurfaces } from "@/domains/chat/utils/parse-inline-surfaces";
+import { hasRenderableAnswer } from "@/domains/chat/answered-question";
+import { AnsweredQuestionCard } from "@/domains/chat/components/answered-question-card";
 import { AnswerSources } from "@/domains/chat/partner/answer-sources-line";
 import { deriveAnswerSources } from "@/domains/chat/partner/answer-sources";
 import { suppressedOfferSurfaceIds } from "@/domains/chat/partner/adjacent-offer";
@@ -255,6 +257,27 @@ export function TranscriptMessageBody({
     );
   };
 
+  // An answered `ask_question` renders its questions and the user's answers as
+  // a durable transcript row. The record rides the tool call itself (live from
+  // `tool_result`, then from the daemon's persisted copy on reload), so this
+  // renders identically on both paths and cannot double up: one card per
+  // answered tool call.
+  const renderAnsweredQuestionCards = (toolCalls: ChatMessageToolCall[]) => {
+    const answered = toolCalls.filter((tc) =>
+      hasRenderableAnswer(tc.answeredQuestion),
+    );
+    if (answered.length === 0) {
+      return null;
+    }
+    return (
+      <div className="flex w-full flex-col gap-1.5">
+        {answered.map((tc) => (
+          <AnsweredQuestionCard key={tc.id} answered={tc.answeredQuestion!} />
+        ))}
+      </div>
+    );
+  };
+
   // Render one `activity` group (a contiguous thinking + tool run) into its
   // combined `MultiActivityGroup`, a lone inline link, or a bare thinking
   // `SingleActivity` — mirroring the legacy interleaved branch but reading
@@ -283,12 +306,22 @@ export function TranscriptMessageBody({
         if (isSuppressedUiTool(tc)) {
           continue;
         }
+        // The answered-question card renders this call's content in full, so
+        // the raw chip would be a duplicate. Suppression requires the card to
+        // actually be there (`hasRenderableAnswer`, not mere field presence):
+        // an empty record keeps the chip rather than dropping the step from
+        // the transcript entirely.
+        if (hasRenderableAnswer(tc.answeredQuestion)) {
+          groupToolCalls.push(tc);
+          continue;
+        }
         groupToolCalls.push(tc);
         cardItems.push({ kind: "toolCall", toolCall: tc });
       }
     }
     const renderableToolCalls = groupToolCalls.filter(
-      (tc) => !isSubagentSpawnCall(tc),
+      (tc) =>
+        !isSubagentSpawnCall(tc) && !hasRenderableAnswer(tc.answeredQuestion),
     );
     const loneTool =
       cardItems.length === 1 &&
@@ -303,6 +336,7 @@ export function TranscriptMessageBody({
         <Fragment key={key}>
           <SingleActivity variant="tool" toolCall={loneTool} />
           {renderInlineSubagentCards(groupToolCalls)}
+          {renderAnsweredQuestionCards(groupToolCalls)}
         </Fragment>
       );
     }
@@ -321,6 +355,7 @@ export function TranscriptMessageBody({
             />
           </div>
           {renderInlineSubagentCards(groupToolCalls)}
+          {renderAnsweredQuestionCards(groupToolCalls)}
         </Fragment>
       );
     }
@@ -339,6 +374,7 @@ export function TranscriptMessageBody({
           />
         )}
         {renderInlineSubagentCards(groupToolCalls)}
+        {renderAnsweredQuestionCards(groupToolCalls)}
       </Fragment>
     );
   };

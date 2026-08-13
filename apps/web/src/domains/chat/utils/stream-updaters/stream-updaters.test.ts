@@ -18,6 +18,7 @@ import {
   upsertToolCall,
 } from "@/domains/chat/utils/stream-updaters/tool-call-updaters";
 import type { ToolActivityMetadata } from "@/assistant/web-activity-types";
+import type { AnsweredQuestion } from "@vellumai/assistant-api";
 import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
 import {
   isToolCallCompleted,
@@ -832,6 +833,83 @@ describe("applyToolResult — activityMetadata", () => {
       result: "...",
     });
     expect(result[0]!.toolCalls![0]!.activityMetadata).toEqual(metadata);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyToolResult — answered ask_question persistence
+// ---------------------------------------------------------------------------
+
+describe("applyToolResult — answeredQuestion", () => {
+  const ANSWERED: AnsweredQuestion = {
+    requestId: "req-1",
+    questions: [
+      {
+        id: "q1",
+        question: "Which Alice?",
+        options: [
+          { id: "alice_work", label: "Alice (work)" },
+          { id: "alice_personal", label: "Alice (personal)" },
+        ],
+      },
+    ],
+    responses: [
+      { questionId: "q1", decision: "option", optionId: "alice_work" },
+    ],
+    overall: "completed",
+  };
+
+  function msgWithRunningAskQuestion(): DisplayMessage {
+    return makeAssistantMsg({
+      toolCalls: [
+        {
+          id: "tc-q",
+          name: "ask_question",
+          input: { questions: [{ question: "Which Alice?" }] },
+          startedAt: 1000,
+        },
+      ],
+      contentOrder: [{ type: "toolCall", id: "tc-q" }],
+    });
+  }
+
+  it("folds the answered record onto the ask_question tool call", () => {
+    const result = applyToolResult([msgWithRunningAskQuestion()], {
+      toolUseId: "tc-q",
+      result: "answered",
+      answeredQuestion: ANSWERED,
+    });
+    expect(result[0]!.toolCalls![0]!.answeredQuestion).toEqual(ANSWERED);
+  });
+
+  it("preserves a prior answered record when re-applied without one", () => {
+    // The card renders one per tool call, so a re-applied result that omits
+    // the record must leave the persisted one untouched.
+    const msg = makeAssistantMsg({
+      toolCalls: [
+        {
+          id: "tc-q",
+          name: "ask_question",
+          input: {},
+          startedAt: 1000,
+          answeredQuestion: ANSWERED,
+        },
+      ],
+      contentOrder: [{ type: "toolCall", id: "tc-q" }],
+    });
+    const result = applyToolResult([msg], {
+      toolUseId: "tc-q",
+      result: "answered",
+    });
+    expect(result[0]!.toolCalls![0]!.answeredQuestion).toEqual(ANSWERED);
+  });
+
+  it("leaves the tool call untouched when the result carries no answer", () => {
+    const result = applyToolResult([msgWithRunningAskQuestion()], {
+      toolUseId: "tc-q",
+      result: "done",
+    });
+    expect(result[0]!.toolCalls![0]!.answeredQuestion).toBeUndefined();
   });
 });
 

@@ -87,6 +87,7 @@ export function handleToolResult(
       riskScopeOptions: event.riskScopeOptions,
       riskDirectoryScopeOptions: event.riskDirectoryScopeOptions,
       activityMetadata: event.activityMetadata,
+      answeredQuestion: event.answeredQuestion,
       completedAt:
         "completedAt" in event && typeof event.completedAt === "number"
           ? event.completedAt

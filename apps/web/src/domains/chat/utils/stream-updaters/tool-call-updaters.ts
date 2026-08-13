@@ -9,7 +9,10 @@
 
 import type { DisplayMessage } from "@/domains/chat/types/types";
 import { isToolCallRunning } from "@/domains/chat/utils/tool-call-status";
-import type { ConversationContentBlock } from "@vellumai/assistant-api";
+import type {
+  AnsweredQuestion,
+  ConversationContentBlock,
+} from "@vellumai/assistant-api";
 import type {
   AllowlistOption,
   DirectoryScopeOption,
@@ -160,6 +163,12 @@ export function applyToolResult(
      */
     activityMetadata?: ToolActivityMetadata;
     /**
+     * Answered `ask_question` record from the tool_result event. Folded onto
+     * the tool call so the answered card renders the instant the prompt
+     * settles, from the same record the daemon persists for history reopens.
+     */
+    answeredQuestion?: AnsweredQuestion;
+    /**
      * Server-stamped completion time (ms). Keeps the final duration on the
      * same clock as the daemon-stamped `startedAt`; falls back to the local
      * clock for older daemons that omit it.
@@ -215,6 +224,9 @@ export function applyToolResult(
     riskDirectoryScopeOptions: opts.riskDirectoryScopeOptions,
     ...(opts.activityMetadata !== undefined
       ? { activityMetadata: opts.activityMetadata }
+      : {}),
+    ...(opts.answeredQuestion !== undefined
+      ? { answeredQuestion: opts.answeredQuestion }
       : {}),
     completedAt: opts.completedAt ?? Date.now(),
   };

@@ -220,6 +220,12 @@ export {
 } from "./events/notification-intent.js";
 export { type OpenUrlEvent, OpenUrlEventSchema } from "./events/open-url.js";
 export {
+  type AnsweredQuestion,
+  type AnsweredQuestionResponse,
+  AnsweredQuestionResponseSchema,
+  AnsweredQuestionSchema,
+} from "./events/question-answered.js";
+export {
   type QuestionEntry,
   QuestionEntrySchema,
   type QuestionOption,

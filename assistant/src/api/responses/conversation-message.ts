@@ -30,6 +30,7 @@ import {
   DirectoryScopeOptionSchema,
   ScopeOptionSchema,
 } from "../events/confirmation-request.js";
+import { AnsweredQuestionSchema } from "../events/question-answered.js";
 import { ToolActivityMetadataSchema } from "../events/tool-result.js";
 
 // ---------------------------------------------------------------------------
@@ -190,6 +191,13 @@ export const ConversationMessageToolCallSchema = z.object({
    * Guaranteed present for outstanding prompts as of daemon v0.8.8.
    */
   pendingConfirmation: PendingToolConfirmationSchema.optional(),
+  /**
+   * The questions an `ask_question` call asked and the answers the user gave.
+   * Persisted on the tool_use block rather than stamped from the live
+   * registry, so it survives a conversation switch, a reload, and a history
+   * reopen. Absent on history rows written before the daemon recorded it.
+   */
+  answeredQuestion: AnsweredQuestionSchema.optional(),
 });
 export type ConversationMessageToolCall = z.infer<
   typeof ConversationMessageToolCallSchema

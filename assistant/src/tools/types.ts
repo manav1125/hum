@@ -12,6 +12,7 @@ import type {
 import { RiskLevel } from "@vellumai/skill-host-contracts";
 import { z } from "zod";
 
+import type { AnsweredQuestion } from "../api/events/question-answered.js";
 import type { InterfaceId } from "../channels/types.js";
 import type { ToolActivityMetadata } from "../daemon/message-types/web-activity.js";
 import type { SecretPromptResult } from "../permissions/secret-prompter.js";
@@ -164,6 +165,14 @@ export interface ToolExecutionResult {
   /** Structured activity metadata for client rendering (web search, web fetch, etc).
    *  Populated by daemon-internal tools; plugins must not set this. */
   activityMetadata?: ToolActivityMetadata;
+  /**
+   * Typed side channel from the `ask_question` executor to the agent loop: the
+   * questions asked and the answers the user gave. The loop forwards it on the
+   * `tool_result` event and persists it on the tool_use block, so the answered
+   * card renders live and survives a history reopen instead of the decision
+   * disappearing with the interactive prompt. Set only by `ask_question`.
+   */
+  answeredQuestion?: AnsweredQuestion;
 }
 
 export type ProxyToolResolver = (

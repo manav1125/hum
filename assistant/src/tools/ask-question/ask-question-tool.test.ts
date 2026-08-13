@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 import type {
+  QuestionPromptOutcome,
   QuestionPromptParams,
   QuestionPromptResult,
 } from "../../permissions/question-prompter.js";
@@ -25,16 +26,23 @@ function setNextResult(result: QuestionPromptResult): void {
 
 mock.module("../../permissions/question-prompter.js", () => ({
   QuestionPrompter: class {
-    async prompt(params: QuestionPromptParams): Promise<QuestionPromptResult> {
+    async prompt(params: QuestionPromptParams): Promise<QuestionPromptOutcome> {
       calls.push(params);
-      return nextResult;
+      // Mirror the real prompter: it mints the request id and assigns the
+      // per-question `q1..qN` ids, then returns them alongside the resolution.
+      return {
+        requestId: "req-stub",
+        questions: params.questions.map((q, i) => ({ id: `q${i + 1}`, ...q })),
+        ...nextResult,
+      };
     }
   },
 }));
 
 // Import after the mock so the tool's `import { QuestionPrompter }` binds
 // to the stub class above.
-const { askQuestionTool } = await import("./ask-question-tool.js");
+const { askQuestionTool, toAnsweredQuestion } =
+  await import("./ask-question-tool.js");
 
 type PromptParams = QuestionPromptParams;
 
@@ -533,10 +541,17 @@ describe("AskQuestionTool credential solicitation", () => {
   test("does not offer to accept a password — the live Netlify card is refused", async () => {
     const result = await askQuestionTool.execute(
       {
-        question: "How do you want to log into Netlify? I can control the browser from here.",
+        question:
+          "How do you want to log into Netlify? I can control the browser from here.",
         options: [
-          { id: "email", label: "Log in with email (I'll provide credentials)" },
-          { id: "cli", label: "Use Netlify CLI instead — I'll give you an access token" },
+          {
+            id: "email",
+            label: "Log in with email (I'll provide credentials)",
+          },
+          {
+            id: "cli",
+            label: "Use Netlify CLI instead — I'll give you an access token",
+          },
         ],
       },
       makeContext(),
@@ -606,5 +621,102 @@ describe("AskQuestionTool credential solicitation", () => {
       "Never use this tool to collect a secret",
     );
     expect(askQuestionTool.description).toContain("credential_store");
+  });
+});
+
+describe("answered-question record", () => {
+  test("carries the option the user chose, keyed to the questions as asked", async () => {
+    setNextResult({
+      entries: [{ questionId: "q1", decision: "option", optionId: "b" }],
+      overall: "completed",
+    });
+
+    const result = await askQuestionTool.execute(validInput, makeContext());
+
+    expect(result.answeredQuestion).toEqual({
+      requestId: "req-stub",
+      questions: [{ id: "q1", ...singleQ }],
+      responses: [{ questionId: "q1", decision: "option", optionId: "b" }],
+      overall: "completed",
+    });
+  });
+
+  test("carries a free-text answer", async () => {
+    setNextResult({
+      entries: [{ questionId: "q1", decision: "free_text", text: "Cherry" }],
+      overall: "completed",
+    });
+
+    const result = await askQuestionTool.execute(validInput, makeContext());
+
+    expect(result.answeredQuestion?.responses).toEqual([
+      { questionId: "q1", decision: "free_text", text: "Cherry" },
+    ]);
+  });
+
+  test("records a closed card as every question skipped", async () => {
+    setNextResult({
+      entries: [
+        { questionId: "q1", decision: "skipped" },
+        { questionId: "q2", decision: "skipped" },
+      ],
+      overall: "closed",
+    });
+
+    const result = await askQuestionTool.execute(
+      { questions: [singleQ, singleQ] },
+      makeContext(),
+    );
+
+    expect(result.answeredQuestion?.overall).toBe("closed");
+    expect(result.answeredQuestion?.responses).toEqual([
+      { questionId: "q1", decision: "skipped" },
+      { questionId: "q2", decision: "skipped" },
+    ]);
+  });
+
+  test("keeps per-question skips inside an otherwise completed batch", async () => {
+    setNextResult({
+      entries: [
+        { questionId: "q1", decision: "option", optionId: "a" },
+        { questionId: "q2", decision: "skipped" },
+      ],
+      overall: "completed",
+    });
+
+    const result = await askQuestionTool.execute(
+      { questions: [singleQ, singleQ] },
+      makeContext(),
+    );
+
+    expect(result.answeredQuestion?.responses).toEqual([
+      { questionId: "q1", decision: "option", optionId: "a" },
+      { questionId: "q2", decision: "skipped" },
+    ]);
+  });
+
+  test("records nothing for a prompt that timed out or was aborted", async () => {
+    for (const overall of ["timed_out", "aborted"] as const) {
+      setNextResult({
+        entries: [{ questionId: "q1", decision: overall }],
+        overall,
+      });
+
+      const result = await askQuestionTool.execute(validInput, makeContext());
+
+      expect(result.isError).toBe(true);
+      expect(result.answeredQuestion).toBeUndefined();
+    }
+  });
+
+  test("toAnsweredQuestion is undefined for non-user outcomes", () => {
+    expect(
+      toAnsweredQuestion({
+        requestId: "req-1",
+        questions: [],
+        entries: [],
+        overall: "timed_out",
+      }),
+    ).toBeUndefined();
   });
 });
