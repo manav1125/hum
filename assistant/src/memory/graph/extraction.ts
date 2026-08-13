@@ -178,14 +178,11 @@ Create triggers for:
 
 ## Images in Conversation
 
-When the conversation contains images (marked with <image> tags and shown inline), you may attach them to memories using image_refs. Include image_refs for images that are meaningful:
-- Photos of people — describe them in detail (appearance, clothing, expression, setting)
-- Photos the user shared to show you something about themselves or their life
-- Diagrams, drawings, or visual content that was discussed
+Images the conversation contained appear as <image message_id="..." block_index="..."> tags. The picture itself is NOT shown to you — extraction runs on text only — so the tag is a pointer, nothing more.
 
-Do NOT attach images that are incidental (screenshots of error messages fully described in text, generic UI screenshots, etc.).
+You may still attach a pointed-at image to a memory using image_refs when the surrounding text makes it clearly meaningful (a photo of a person who is being talked about, a picture the user shared to show you something about their life, a diagram that was discussed). Do NOT attach images that are incidental (screenshots of error messages fully described in text, generic UI screenshots, etc.).
 
-Write detailed descriptions — these are used for text-based retrieval when visual search isn't available.
+The description you write must come from what the CONVERSATION says about the image. Never invent appearance, clothing, setting, or any other visual detail you were not told — you cannot see the picture, and a made-up description is worse than none. If the text says nothing about what the image shows, do not attach it at all.
 
 ${(() => {
   const reconsolidationNodes = activeContextNodeIds?.size
@@ -1062,10 +1059,15 @@ export async function runGraphExtraction(
   const conversationTimestampBlock =
     buildAuthoritativeConversationTimestampBlock(conversationTimestamp);
 
-  // 6. LLM call — use multimodal message when images are present
-  const useMultimodal = imageResult?.hasImages === true;
+  // 6. LLM call. TEXT ONLY, always — see `stripImageContent`. The DB-derived
+  //    interleave is preferred when this run read the conversation itself,
+  //    because it carries the `<image>` pointer tags that image_refs needs;
+  //    a caller-supplied transcript (live voice, bootstrap) is authoritative
+  //    and is never second-guessed against the conversation's own rows.
+  const useDbContent =
+    opts?.transcript === undefined && imageResult?.hasImages === true;
 
-  const extractionMessages: Message[] = useMultimodal
+  const extractionMessages: Message[] = useDbContent
     ? [
         {
           role: "user",
@@ -1074,7 +1076,7 @@ export async function runGraphExtraction(
               type: "text" as const,
               text: `${conversationTimestampBlock}\n\n## Conversation Transcript\n\n`,
             },
-            ...imageResult.message.content,
+            ...stripImageContent(imageResult.message.content),
           ],
         },
       ]
@@ -1473,6 +1475,33 @@ function loadTranscriptWithImages(
   };
 
   return { message, hasImages: hasImagesFlag, lastTimestamp };
+}
+
+/**
+ * Drop every image block from extraction input, keeping the `<image …/>`
+ * pointer tags {@link loadTranscriptWithImages} writes beside them.
+ *
+ * Memory extraction is text-only by construction: it runs on the
+ * `memoryExtraction` call site, which is a cost-optimized text model, and it
+ * asks for a forced tool call rather than a description of a picture. Sending
+ * it image content therefore cannot help and can only fail — and it did, in
+ * exactly the way an unguarded assumption fails once a new writer appears.
+ *
+ * A photo taken during a live-voice call is persisted as its own user message
+ * (`live-voice-photo.ts`), so from then on the conversation's rows carry image
+ * blocks. End-of-call synthesis handed extraction a plain text transcript, but
+ * extraction re-read the conversation from the DB anyway and sent the image;
+ * the provider answered "this model doesn't support image input" (via a
+ * "vision fallback" that retries on a model no more vision-capable than the
+ * first), and every call containing a photo silently wrote nothing to memory.
+ *
+ * The tags survive on purpose: they are the coordinates `image_refs` are
+ * expressed in, so a memory can still be attached to a photo the conversation
+ * talked about. What the model must not do is describe one — see the "Images
+ * in Conversation" section of the extraction prompt.
+ */
+export function stripImageContent(blocks: ContentBlock[]): ContentBlock[] {
+  return blocks.filter((block) => block?.type !== "image");
 }
 
 async function findCandidateNodes(
