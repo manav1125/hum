@@ -59,7 +59,12 @@ export function unlockProgressHint(
 /** What the seventh tap says, in the direction it just moved. */
 export function unlockResultMessage(nowEnabled: boolean): string {
   return nowEnabled
-    ? "Developer settings unlocked — Debug, Advanced and Developer are now in the settings list."
+    ? // Deliberately does not enumerate the panels. Which ones actually
+      // appear depends on the surface: mobile always prunes Advanced, and a
+      // self-host session also prunes Debug (see mobile/mobile-settings.tsx),
+      // so naming all three told a phone owner to look for two panels that
+      // were never going to show up.
+      "Developer settings unlocked — they're in the settings list now."
     : "Developer settings hidden again. Tap 7× to bring them back.";
 }
 

@@ -149,7 +149,11 @@ describe("the gesture narrates itself", () => {
     renderRow();
     tap(TAP_THRESHOLD);
     expect(screen.getByText(unlockResultMessage(true))).toBeTruthy();
-    expect(screen.getByText(/Debug, Advanced and Developer/)).toBeTruthy();
+    expect(screen.getByText(/in the settings list/)).toBeTruthy();
+    // It must NOT name individual panels: mobile prunes Advanced always and
+    // Debug on self-host, so an enumeration sends a phone owner looking for
+    // panels that will never appear on their surface.
+    expect(screen.queryByText(/Debug, Advanced and Developer/)).toBeNull();
     // The countdown is gone — the gesture completed.
     expect(screen.queryByText(/more tap/)).toBeNull();
   });
