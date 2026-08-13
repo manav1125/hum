@@ -129,7 +129,7 @@ describe("persistUnsendableImageDowngrades (downscalable host)", () => {
     );
 
     // WHEN the downgrade is persisted
-    const rewritten = persistUnsendableImageDowngrades(conv.id);
+    const rewritten = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN the nested block stays an image, rewritten to the downscaled payload
     expect(rewritten).toBe(1);
@@ -154,10 +154,10 @@ describe("persistUnsendableImageDowngrades (downscalable host)", () => {
       JSON.stringify([toolResultWithImage(oversizedPngBase64())]),
       { skipIndexing: true },
     );
-    expect(persistUnsendableImageDowngrades(conv.id)).toBe(1);
+    expect(await persistUnsendableImageDowngrades(conv.id)).toBe(1);
 
     // WHEN the downgrade runs again
-    const secondRun = persistUnsendableImageDowngrades(conv.id);
+    const secondRun = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN nothing further is rewritten
     expect(secondRun).toBe(0);

@@ -522,7 +522,7 @@ async function tryConsumeCanonicalGuardianReply(params: {
       attachments,
     });
 
-    const cleanUserMessage = createUserMessage(content, attachments);
+    const cleanUserMessage = await createUserMessage(content, attachments);
     const llmUserMessage = enrichMessageWithSourcePaths(
       cleanUserMessage,
       attachments,

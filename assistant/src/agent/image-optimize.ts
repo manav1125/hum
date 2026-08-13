@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -81,14 +80,16 @@ function evictIfNeeded(dir: string): void {
   }
 }
 
-function runSips(inputBytes: Buffer): Buffer | null {
+async function runSips(inputBytes: Buffer): Promise<Buffer | null> {
   const srcPath = join(tmpdir(), `vellum-img-opt-${Date.now()}-src`);
   const outPath = join(tmpdir(), `vellum-img-opt-${Date.now()}-out.jpg`);
   try {
     writeFileSync(srcPath, inputBytes);
-    execFileSync(
-      "sips",
+    // Bun.spawn (not execFileSync): sips can take seconds on large images,
+    // and a sync spawn would stall the daemon's event loop for the duration.
+    const proc = Bun.spawn(
       [
+        "sips",
         "--resampleHeightWidthMax",
         String(MAX_DIMENSION),
         "-s",
@@ -101,8 +102,12 @@ function runSips(inputBytes: Buffer): Buffer | null {
         "--out",
         outPath,
       ],
-      { stdio: "pipe", timeout: 15_000 },
+      { stdout: "ignore", stderr: "ignore", timeout: 15_000 },
     );
+    await proc.exited;
+    if (proc.exitCode !== 0) {
+      return null;
+    }
     return readFileSync(outPath) as Buffer;
   } catch {
     return null;
@@ -157,10 +162,10 @@ export function shouldRescaleImage(
   return byteLength > OPTIMIZE_THRESHOLD_BYTES;
 }
 
-export function optimizeImageForTransport(
+export async function optimizeImageForTransport(
   base64Data: string,
   mediaType: string,
-): { data: string; mediaType: string } {
+): Promise<{ data: string; mediaType: string }> {
   const rawBytes = Buffer.from(base64Data, "base64");
   const dims = parseImageDimensions(base64Data, mediaType);
 
@@ -175,7 +180,7 @@ export function optimizeImageForTransport(
   if (cached) return cached;
 
   // Run sips (macOS). On other platforms this gracefully returns null.
-  const optimized = runSips(rawBytes);
+  const optimized = await runSips(rawBytes);
   if (!optimized) {
     return { data: base64Data, mediaType };
   }

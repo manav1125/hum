@@ -154,10 +154,10 @@ function loadDotEnv(): void {
   dotenvConfig({ path: getDotEnvPath(), quiet: true });
 }
 
-function runDeferredDiskPressureStartupSample(): void {
+async function runDeferredDiskPressureStartupSample(): Promise<void> {
   diskPressureStartupSampleTimer = null;
   try {
-    const status = evaluateDiskPressureNow();
+    const status = await evaluateDiskPressureNow();
     if (status.error) {
       log.warn(
         { error: status.error },
@@ -177,10 +177,9 @@ export function startDiskPressureGuardForLifecycle(): void {
     const startedStatus = startDiskPressureGuard();
     if (!startedStatus.enabled) return;
     if (!diskPressureStartupSampleTimer) {
-      diskPressureStartupSampleTimer = setTimeout(
-        runDeferredDiskPressureStartupSample,
-        0,
-      );
+      diskPressureStartupSampleTimer = setTimeout(() => {
+        void runDeferredDiskPressureStartupSample();
+      }, 0);
       (diskPressureStartupSampleTimer as { unref?: () => void }).unref?.();
     }
   } catch (err) {

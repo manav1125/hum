@@ -61,10 +61,10 @@ export function detectMediaType(buf: Buffer): string | null {
   return null;
 }
 
-function buildImageToolResult(
+async function buildImageToolResult(
   buffer: Buffer,
   sourceLabel: string,
-): ToolExecutionResult {
+): Promise<ToolExecutionResult> {
   if (buffer.length > MAX_SOURCE_SIZE_BYTES) {
     const sizeMB = (buffer.length / (1024 * 1024)).toFixed(1);
     return {
@@ -85,10 +85,8 @@ function buildImageToolResult(
 
   // Optimize before size-checking — oversized images may compress under the limit.
   const rawBase64 = buffer.toString("base64");
-  const { data: base64Data, mediaType: finalType } = optimizeImageForTransport(
-    rawBase64,
-    detectedType,
-  );
+  const { data: base64Data, mediaType: finalType } =
+    await optimizeImageForTransport(rawBase64, detectedType);
   const optimized = base64Data !== rawBase64;
 
   const optimizedBytes = Buffer.from(base64Data, "base64").length;
@@ -125,7 +123,7 @@ function buildImageToolResult(
 export function readImageBase64(
   base64Data: string,
   sourceLabel: string,
-): ToolExecutionResult {
+): Promise<ToolExecutionResult> {
   return buildImageToolResult(Buffer.from(base64Data, "base64"), sourceLabel);
 }
 
@@ -136,7 +134,9 @@ export function readImageBase64(
  * The caller is responsible for path resolution and sandbox enforcement -
  * `resolvedPath` must be an already-validated absolute path.
  */
-export function readImageFile(resolvedPath: string): ToolExecutionResult {
+export async function readImageFile(
+  resolvedPath: string,
+): Promise<ToolExecutionResult> {
   let stat;
   try {
     stat = statSync(resolvedPath);

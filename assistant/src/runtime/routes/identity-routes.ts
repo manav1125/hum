@@ -332,7 +332,7 @@ export function handleHealth(): Response {
   return Response.json({ status: "ok" });
 }
 
-function getDetailedHealth() {
+async function getDetailedHealth() {
   let profiler: ReturnType<typeof getProfilerRuntimeStatus> | undefined;
   try {
     profiler = getProfilerRuntimeStatus();
@@ -346,7 +346,7 @@ function getDetailedHealth() {
     status: "healthy",
     timestamp: new Date().toISOString(),
     version: APP_VERSION,
-    disk: getDiskUsageInfo(),
+    disk: await getDiskUsageInfo(),
     memory: getMemoryInfo(),
     cpu: getCpuInfo(),
     migrations: {
@@ -368,8 +368,8 @@ function getDetailedHealth() {
   };
 }
 
-export function handleDetailedHealth(): Response {
-  return Response.json(getDetailedHealth());
+export async function handleDetailedHealth(): Promise<Response> {
+  return Response.json(await getDetailedHealth());
 }
 
 export function handleReadyz(): Response {

@@ -43,13 +43,15 @@ const postModelCall: PluginHookFn<PostModelCallContext> = async (ctx) => {
     !isImageRecoveryAttempted(ctx.conversationId)
   ) {
     markImageRecoveryAttempted(ctx.conversationId);
-    ctx.messages = recoverOversizedImages(ctx.messages);
+    ctx.messages = await recoverOversizedImages(ctx.messages);
     // Make the downgrade durable so the rejected image can't rehydrate from the
     // stored row and re-reject on later turns. This is cleanup for future
     // turns, so a persistence failure must never abort the retry that is about
     // to run — log it and continue with the in-memory recovery.
     try {
-      const rewritten = persistUnsendableImageDowngrades(ctx.conversationId);
+      const rewritten = await persistUnsendableImageDowngrades(
+        ctx.conversationId,
+      );
       if (rewritten > 0) {
         ctx.logger.info(
           { plugin: "image-recovery", rewritten },

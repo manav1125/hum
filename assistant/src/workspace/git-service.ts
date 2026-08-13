@@ -1,4 +1,4 @@
-import { execFile, spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -291,18 +291,19 @@ export class WorkspaceGitService {
    * open, we leave it alone. If no process holds it, it's stale (crashed
    * process) and safe to remove.
    */
-  private cleanStaleLockFile(): void {
+  private async cleanStaleLockFile(): Promise<void> {
     const lockPath = join(this.workspaceDir, ".git", "index.lock");
     if (!existsSync(lockPath)) {
       return;
     }
 
     try {
-      const result = spawnSync("lsof", ["-t", lockPath], {
+      // lsof exits non-zero when no process holds the file, which rejects the
+      // promise and falls through to removal below.
+      const { stdout } = await execFileAsync("lsof", ["-t", lockPath], {
         timeout: 3000,
-        stdio: ["ignore", "pipe", "ignore"],
       });
-      if (result.status === 0 && result.stdout?.length > 0) {
+      if (stdout.length > 0) {
         log.debug("index.lock held by an active process, skipping removal");
         return;
       }
@@ -368,7 +369,7 @@ export class WorkspaceGitService {
 
           // Clean up stale lock files before any git operations.
           if (existsSync(gitDir)) {
-            this.cleanStaleLockFile();
+            await this.cleanStaleLockFile();
           }
 
           if (existsSync(gitDir)) {
@@ -525,7 +526,7 @@ export class WorkspaceGitService {
     await this.ensureInitialized();
 
     await this.mutex.withLock(async () => {
-      this.cleanStaleLockFile();
+      await this.cleanStaleLockFile();
 
       // Stage all changes
       await this.execGit(["add", "-A"]);
@@ -602,7 +603,7 @@ export class WorkspaceGitService {
 
     try {
       const result = await this.mutex.withLock(async () => {
-        this.cleanStaleLockFile();
+        await this.cleanStaleLockFile();
 
         // Re-check breaker under lock: a queued call that started before the
         // breaker opened should not proceed with expensive git work now that
@@ -1068,7 +1069,7 @@ export class WorkspaceGitService {
   ): Promise<void> {
     await this.ensureInitialized();
     await this.mutex.withLock(async () => {
-      this.cleanStaleLockFile();
+      await this.cleanStaleLockFile();
       await fn((args) => {
         // Intercept commit commands to enforce hook hardening.
         if (args[0] === "commit") {

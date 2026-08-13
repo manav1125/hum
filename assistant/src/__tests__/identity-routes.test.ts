@@ -216,7 +216,7 @@ afterEach(() => {
 describe("identity routes — health endpoint", () => {
   describe("backward compatibility (profiler disabled)", () => {
     test("/v1/health returns expected shape without profiler key when env vars are absent", async () => {
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       expect(res.status).toBe(200);
 
       const body = (await res.json()) as Record<string, unknown>;
@@ -241,7 +241,7 @@ describe("identity routes — health endpoint", () => {
 
     test("/v1/healthz returns the same shape as /v1/health", async () => {
       // Both endpoints call handleDetailedHealth, so the shape must match
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
 
       expect(body.status).toBe("healthy");
@@ -250,7 +250,7 @@ describe("identity routes — health endpoint", () => {
     });
 
     test("includes ces.connected=false when no CES client is registered", async () => {
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
 
       expect(body.ces).toBeDefined();
@@ -294,7 +294,7 @@ describe("identity routes — health endpoint", () => {
         close: () => {},
       } as unknown as import("../credential-execution/client.js").CesClient;
       setCesClient(mockClient);
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
 
       expect(body.ces).toBeDefined();
@@ -307,7 +307,7 @@ describe("identity routes — health endpoint", () => {
         close: () => {},
       } as unknown as import("../credential-execution/client.js").CesClient;
       setCesClient(mockClient);
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
 
       expect(body.ces).toBeDefined();
@@ -323,7 +323,7 @@ describe("identity routes — health endpoint", () => {
       });
       ensureProfilerRunDir("run-health-test-1");
 
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
 
       expect(body.profiler).toBeDefined();
@@ -343,7 +343,7 @@ describe("identity routes — health endpoint", () => {
       });
       ensureProfilerRunDir("run-budget-test");
 
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
       const profiler = body.profiler as Record<string, unknown>;
       const budget = profiler.budget as Record<string, unknown>;
@@ -366,7 +366,7 @@ describe("identity routes — health endpoint", () => {
       // Non-artifact file should not count
       writeArtifactFile("run-artifact-count", "log.txt", 512);
 
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
       const profiler = body.profiler as Record<string, unknown>;
 
@@ -381,7 +381,7 @@ describe("identity routes — health endpoint", () => {
       // Write a file larger than the budget
       writeArtifactFile("run-over-budget", "big.cpuprofile", 5000);
 
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
       const profiler = body.profiler as Record<string, unknown>;
       const budget = profiler.budget as Record<string, unknown>;
@@ -399,7 +399,7 @@ describe("identity routes — health endpoint", () => {
       });
       ensureProfilerRunDir("run-no-completed");
 
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
       const profiler = body.profiler as Record<string, unknown>;
 
@@ -426,7 +426,7 @@ describe("identity routes — health endpoint", () => {
       writeArtifactFile(completedId, "profile.cpuprofile", 3072);
       writeArtifactFile(completedId, "summary.md", 256);
 
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
       const profiler = body.profiler as Record<string, unknown>;
       const last = profiler.lastCompletedRun as Record<string, unknown>;
@@ -463,7 +463,7 @@ describe("identity routes — health endpoint", () => {
       });
       writeArtifactFile("newer-completed", "new.heapsnapshot", 1024);
 
-      const res = handleDetailedHealth();
+      const res = await handleDetailedHealth();
       const body = (await res.json()) as Record<string, unknown>;
       const profiler = body.profiler as Record<string, unknown>;
       const last = profiler.lastCompletedRun as Record<string, unknown>;

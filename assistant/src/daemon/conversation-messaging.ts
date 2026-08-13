@@ -201,15 +201,17 @@ export interface MessagingConversationContext {
   getTurnInterfaceContext(): TurnInterfaceContext | null;
 }
 
-export function serializePersistedUserMessageContent(
+export async function serializePersistedUserMessageContent(
   content: string,
   attachments: MessageAttachmentInput[],
   displayContent: string | undefined,
-): string {
+): Promise<string> {
   return JSON.stringify(
-    createUserMessage(
-      displayContent !== undefined ? displayContent : content,
-      attachments,
+    (
+      await createUserMessage(
+        displayContent !== undefined ? displayContent : content,
+        attachments,
+      )
     ).content,
   );
 }
@@ -484,7 +486,7 @@ export async function persistQueuedMessageBody(
     extractedText: attachment.extractedText,
     filePath: attachment.filePath,
   }));
-  const cleanMessage = createUserMessage(content, attachmentInputs);
+  const cleanMessage = await createUserMessage(content, attachmentInputs);
   const llmMessage = enrichMessageWithSourcePaths(
     cleanMessage,
     attachmentInputs,
@@ -551,7 +553,7 @@ export async function persistQueuedMessageBody(
     // intent stripping), persist that to DB so users see the full message
     // after restart. The in-memory userMessage (sent to the LLM) still uses
     // the stripped content.
-    const contentToPersist = serializePersistedUserMessageContent(
+    const contentToPersist = await serializePersistedUserMessageContent(
       content,
       attachmentInputs,
       displayContent,

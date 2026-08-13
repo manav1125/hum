@@ -253,7 +253,7 @@ function createValidVBundle(files?: VBundleFile[]): Uint8Array {
 // ---------------------------------------------------------------------------
 
 describe("validateVBundle", () => {
-  test("valid bundle returns is_valid: true with manifest", () => {
+  test("valid bundle returns is_valid: true with manifest", async () => {
     const vbundle = createValidVBundle();
     const result = validateVBundle(vbundle);
 
@@ -265,7 +265,7 @@ describe("validateVBundle", () => {
     expect(result.manifest?.contents[0].path).toBe("data/db/assistant.db");
   });
 
-  test("valid bundle with multiple files", () => {
+  test("valid bundle with multiple files", async () => {
     const configData = new TextEncoder().encode('{"key": "value"}');
     const dbData = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]);
     const files: VBundleFile[] = [
@@ -280,7 +280,7 @@ describe("validateVBundle", () => {
     expect(result.manifest?.contents).toHaveLength(2);
   });
 
-  test("invalid gzip returns INVALID_GZIP error", () => {
+  test("invalid gzip returns INVALID_GZIP error", async () => {
     const result = validateVBundle(new Uint8Array([0x00, 0x01, 0x02]));
 
     expect(result.is_valid).toBe(false);
@@ -288,7 +288,7 @@ describe("validateVBundle", () => {
     expect(result.errors[0].code).toBe("INVALID_GZIP");
   });
 
-  test("missing manifest.json returns MISSING_ENTRY error", () => {
+  test("missing manifest.json returns MISSING_ENTRY error", async () => {
     const dbData = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]);
     const tar = createTarArchive([
       { name: "data/db/assistant.db", data: dbData },
@@ -303,7 +303,7 @@ describe("validateVBundle", () => {
     expect(manifestError).toBeDefined();
   });
 
-  test("bundle with only manifest (no data files) — valid schema rejects empty contents via refine", () => {
+  test("bundle with only manifest (no data files) — valid schema rejects empty contents via refine", async () => {
     // The v1 schema's `.refine()` requires `data/db/assistant.db` in
     // contents, so a manifest declaring `contents: []` is rejected by
     // the validator. This documents the new behavior: bundles must
@@ -329,7 +329,7 @@ describe("validateVBundle", () => {
     expect(result.is_valid).toBe(false);
   });
 
-  test("invalid manifest JSON returns INVALID_MANIFEST_JSON error", () => {
+  test("invalid manifest JSON returns INVALID_MANIFEST_JSON error", async () => {
     const badJson = new TextEncoder().encode("not valid json{{{");
     const dbData = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]);
     const tar = createTarArchive([
@@ -345,7 +345,7 @@ describe("validateVBundle", () => {
     );
   });
 
-  test("manifest with missing required fields returns MANIFEST_SCHEMA_ERROR", () => {
+  test("manifest with missing required fields returns MANIFEST_SCHEMA_ERROR", async () => {
     // Missing schema_version, created_at, files, manifest_sha256
     const manifestData = new TextEncoder().encode(
       JSON.stringify({ extra: "field" }),
@@ -364,7 +364,7 @@ describe("validateVBundle", () => {
     );
   });
 
-  test("manifest checksum mismatch returns MANIFEST_CHECKSUM_MISMATCH", () => {
+  test("manifest checksum mismatch returns MANIFEST_CHECKSUM_MISMATCH", async () => {
     const dbData = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]);
     const manifest = {
       ...v1Skeleton(),
@@ -393,7 +393,7 @@ describe("validateVBundle", () => {
     ).toBe(true);
   });
 
-  test("file checksum mismatch returns FILE_CHECKSUM_MISMATCH", () => {
+  test("file checksum mismatch returns FILE_CHECKSUM_MISMATCH", async () => {
     const dbData = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]);
     const wrongChecksum =
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -425,7 +425,7 @@ describe("validateVBundle", () => {
     );
   });
 
-  test("file size mismatch returns FILE_SIZE_MISMATCH", () => {
+  test("file size mismatch returns FILE_SIZE_MISMATCH", async () => {
     const dbData = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]);
 
     const manifest = {
@@ -455,7 +455,7 @@ describe("validateVBundle", () => {
     );
   });
 
-  test("missing declared file returns MISSING_DECLARED_FILE", () => {
+  test("missing declared file returns MISSING_DECLARED_FILE", async () => {
     const dbData = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]);
     const missingFileHash = sha256Hex(new TextEncoder().encode("missing"));
 
@@ -650,7 +650,7 @@ describe("integration: existing routes unaffected", () => {
   test("GET /v1/health still works (not intercepted by migration routes)", async () => {
     const { handleDetailedHealth } =
       await import("../runtime/routes/identity-routes.js");
-    const res = handleDetailedHealth();
+    const res = await handleDetailedHealth();
     const body = (await res.json()) as Record<string, unknown>;
 
     expect(res.status).toBe(200);

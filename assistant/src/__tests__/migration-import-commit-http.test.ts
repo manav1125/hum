@@ -763,7 +763,7 @@ describe("handleMigrationImport — version_incompatible", () => {
 // ---------------------------------------------------------------------------
 
 describe("commitImport", () => {
-  test("returns ok: true with report on success", () => {
+  test("returns ok: true with report on success", async () => {
     const newDbData = new Uint8Array([0xfa, 0xce]);
     const vbundle = createValidVBundle([
       { path: "data/db/assistant.db", data: newDbData },
@@ -782,7 +782,7 @@ describe("commitImport", () => {
     }
   });
 
-  test("returns validation_failed for invalid bundles", () => {
+  test("returns validation_failed for invalid bundles", async () => {
     const resolver = new DefaultPathResolver(testDir);
     const result = commitImport({
       archiveData: new Uint8Array([0xba, 0xad]),
@@ -798,7 +798,7 @@ describe("commitImport", () => {
     }
   });
 
-  test("creates parent directories if they do not exist", () => {
+  test("creates parent directories if they do not exist", async () => {
     // Use a workspace that does not exist yet
     const nonexistentWorkspace = join(testDir, "new-workspace");
     const expectedDbPath = join(
@@ -829,7 +829,7 @@ describe("commitImport", () => {
     rmSync(nonexistentWorkspace, { recursive: true, force: true });
   });
 
-  test("post-write integrity: written file SHA-256 matches expected", () => {
+  test("post-write integrity: written file SHA-256 matches expected", async () => {
     const newDbData = new Uint8Array([0xab, 0xcd, 0xef]);
     const expectedSha256 = sha256Hex(newDbData);
 
@@ -858,7 +858,7 @@ describe("commitImport", () => {
     }
   });
 
-  test("handles multiple files (db + config)", () => {
+  test("handles multiple files (db + config)", async () => {
     const newDbData = new Uint8Array([0x11, 0x22, 0x33]);
     const newConfigData = new TextEncoder().encode('{"model":"claude"}');
 
@@ -908,7 +908,7 @@ describe("commitImport — workspace clearing", () => {
     }
   });
 
-  test("clears stale files via workspace clearing (new-format workspace/ entries)", () => {
+  test("clears stale files via workspace clearing (new-format workspace/ entries)", async () => {
     mkdirSync(join(skillsDir, "stale-skill"), { recursive: true });
     writeFileSync(join(skillsDir, "stale-skill", "SKILL.md"), "stale");
 
@@ -937,7 +937,7 @@ describe("commitImport — workspace clearing", () => {
     expect(existsSync(join(skillsDir, "stale-skill"))).toBe(false);
   });
 
-  test("old-format skills/ entries do not trigger workspace clearing", () => {
+  test("old-format skills/ entries do not trigger workspace clearing", async () => {
     mkdirSync(join(skillsDir, "stale-skill"), { recursive: true });
     writeFileSync(join(skillsDir, "stale-skill", "SKILL.md"), "stale");
 
@@ -963,7 +963,7 @@ describe("commitImport — workspace clearing", () => {
     expect(existsSync(join(skillsDir, "stale-skill", "SKILL.md"))).toBe(true);
   });
 
-  test("hooks/ entries import to hooksDir (not workspace/hooks/)", () => {
+  test("hooks/ entries import to hooksDir (not workspace/hooks/)", async () => {
     // Use a separate hooks dir outside the workspace, like production layout
     const externalHooksDir = join(testDir, ".hooks-external");
     mkdirSync(externalHooksDir, { recursive: true });
@@ -995,7 +995,7 @@ describe("commitImport — workspace clearing", () => {
     rmSync(externalHooksDir, { recursive: true, force: true });
   });
 
-  test("without workspaceDir, no clearing happens", () => {
+  test("without workspaceDir, no clearing happens", async () => {
     mkdirSync(join(skillsDir, "existing-skill"), { recursive: true });
     writeFileSync(
       join(skillsDir, "existing-skill", "SKILL.md"),
@@ -1030,7 +1030,7 @@ describe("commitImport — workspace clearing", () => {
 // ---------------------------------------------------------------------------
 
 describe("commitImport — config sanitization", () => {
-  test("imported workspace/config.json has environment-specific fields stripped", () => {
+  test("imported workspace/config.json has environment-specific fields stripped", async () => {
     const configWithEnvFields = {
       provider: "anthropic",
       model: "test-model",
@@ -1086,7 +1086,7 @@ describe("commitImport — config sanitization", () => {
     expect(writtenConfig.memory.enabled).toBe(true);
   });
 
-  test("imported config/settings.json (legacy) has environment-specific fields stripped", () => {
+  test("imported config/settings.json (legacy) has environment-specific fields stripped", async () => {
     const configWithEnvFields = {
       provider: "openai",
       daemon: { autoStart: false },
@@ -1175,7 +1175,7 @@ describe("integration: existing routes unaffected", () => {
   test("GET /v1/health still works", async () => {
     const { handleDetailedHealth } =
       await import("../runtime/routes/identity-routes.js");
-    const res = handleDetailedHealth();
+    const res = await handleDetailedHealth();
     const body = (await res.json()) as Record<string, unknown>;
 
     expect(res.status).toBe(200);

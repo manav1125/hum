@@ -133,7 +133,7 @@ describe("persistUnsendableImageDowngrades", () => {
     );
 
     // WHEN the downgrade is persisted
-    const rewritten = persistUnsendableImageDowngrades(conv.id);
+    const rewritten = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN one message is rewritten with no image block left
     expect(rewritten).toBe(1);
@@ -163,7 +163,7 @@ describe("persistUnsendableImageDowngrades", () => {
     );
 
     // WHEN the downgrade is persisted
-    const rewritten = persistUnsendableImageDowngrades(conv.id);
+    const rewritten = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN only the rejected original is removed
     expect(rewritten).toBe(1);
@@ -185,7 +185,7 @@ describe("persistUnsendableImageDowngrades", () => {
     );
 
     // WHEN the downgrade is persisted
-    const rewritten = persistUnsendableImageDowngrades(conv.id);
+    const rewritten = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN nothing is rewritten and the image remains
     expect(rewritten).toBe(0);
@@ -203,7 +203,7 @@ describe("persistUnsendableImageDowngrades", () => {
     });
 
     // WHEN the downgrade is persisted
-    const rewritten = persistUnsendableImageDowngrades(conv.id);
+    const rewritten = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN the oversized-payload image is removed
     expect(rewritten).toBe(1);
@@ -227,7 +227,7 @@ describe("persistUnsendableImageDowngrades", () => {
     );
 
     // WHEN the downgrade is persisted
-    const rewritten = persistUnsendableImageDowngrades(conv.id);
+    const rewritten = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN the message is rewritten with the nested image swapped for a note
     expect(rewritten).toBe(1);
@@ -253,7 +253,7 @@ describe("persistUnsendableImageDowngrades", () => {
     );
 
     // WHEN the downgrade is persisted
-    const rewritten = persistUnsendableImageDowngrades(conv.id);
+    const rewritten = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN nothing is rewritten and the nested image remains
     expect(rewritten).toBe(0);
@@ -276,10 +276,10 @@ describe("persistUnsendableImageDowngrades", () => {
       JSON.stringify([imageBlock(makePngBase64(10000, 10000))]),
       { skipIndexing: true },
     );
-    expect(persistUnsendableImageDowngrades(conv.id)).toBe(1);
+    expect(await persistUnsendableImageDowngrades(conv.id)).toBe(1);
 
     // WHEN the downgrade runs a second time
-    const secondRun = persistUnsendableImageDowngrades(conv.id);
+    const secondRun = await persistUnsendableImageDowngrades(conv.id);
 
     // THEN nothing further is rewritten
     expect(secondRun).toBe(0);
@@ -290,22 +290,22 @@ describe("oversizedImageReplacement", () => {
   /** A still-sendable image must be left alone — never replaced with a note.
    *  This is the gate that keeps the in-memory recovery from discarding valid
    *  screenshots when only one image in the turn was actually oversized. */
-  test("returns null for an image within the provider caps", () => {
+  test("returns null for an image within the provider caps", async () => {
     const sendable = imageBlock(makePngBase64(1024, 768)) as Extract<
       ContentBlock,
       { type: "image" }
     >;
-    expect(oversizedImageReplacement(sendable)).toBeNull();
+    expect(await oversizedImageReplacement(sendable)).toBeNull();
   });
 
   /** An image past the provider caps that cannot be shrunk on this host (fake
    *  PNG that sips cannot decode) collapses to the unsendable note. */
-  test("returns the unsendable note when an oversized image cannot be shrunk", () => {
+  test("returns the unsendable note when an oversized image cannot be shrunk", async () => {
     const oversized = imageBlock(makePngBase64(12000, 9000)) as Extract<
       ContentBlock,
       { type: "image" }
     >;
-    const replacement = oversizedImageReplacement(oversized);
+    const replacement = await oversizedImageReplacement(oversized);
     expect(replacement?.type).toBe("text");
   });
 });

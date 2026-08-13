@@ -435,7 +435,7 @@ export async function resolveInjectionImages(
       const data = await loadImageRefData(refs[0]!);
       if (!data) continue;
 
-      const optimized = optimizeImageForTransport(
+      const optimized = await optimizeImageForTransport(
         data.data.toString("base64"),
         data.mimeType,
       );

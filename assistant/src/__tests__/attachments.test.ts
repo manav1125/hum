@@ -11,8 +11,8 @@ import { createUserMessage } from "../agent/message-types.js";
 // ---------------------------------------------------------------------------
 
 describe("attachmentsToContentBlocks", () => {
-  test("creates image content block for image/jpeg", () => {
-    const blocks = attachmentsToContentBlocks([
+  test("creates image content block for image/jpeg", async () => {
+    const blocks = await attachmentsToContentBlocks([
       { filename: "photo.jpg", mimeType: "image/jpeg", data: "base64data" },
     ]);
 
@@ -27,8 +27,8 @@ describe("attachmentsToContentBlocks", () => {
     expect(block.source.data).toBe("base64data");
   });
 
-  test("creates image content block for image/png", () => {
-    const blocks = attachmentsToContentBlocks([
+  test("creates image content block for image/png", async () => {
+    const blocks = await attachmentsToContentBlocks([
       { filename: "screenshot.png", mimeType: "image/png", data: "pngdata" },
     ]);
 
@@ -36,8 +36,8 @@ describe("attachmentsToContentBlocks", () => {
     expect(blocks[0].type).toBe("image");
   });
 
-  test("creates image content block for image/webp", () => {
-    const blocks = attachmentsToContentBlocks([
+  test("creates image content block for image/webp", async () => {
+    const blocks = await attachmentsToContentBlocks([
       { filename: "sticker.webp", mimeType: "image/webp", data: "webpdata" },
     ]);
 
@@ -45,8 +45,8 @@ describe("attachmentsToContentBlocks", () => {
     expect(blocks[0].type).toBe("image");
   });
 
-  test("creates file content block for non-image mime types", () => {
-    const blocks = attachmentsToContentBlocks([
+  test("creates file content block for non-image mime types", async () => {
+    const blocks = await attachmentsToContentBlocks([
       { filename: "doc.pdf", mimeType: "application/pdf", data: "pdfdata" },
     ]);
 
@@ -60,8 +60,8 @@ describe("attachmentsToContentBlocks", () => {
     expect(block.source.media_type).toBe("application/pdf");
   });
 
-  test("handles multiple attachments including mixed types", () => {
-    const blocks = attachmentsToContentBlocks([
+  test("handles multiple attachments including mixed types", async () => {
+    const blocks = await attachmentsToContentBlocks([
       { filename: "photo.jpg", mimeType: "image/jpeg", data: "imgdata" },
       { filename: "notes.txt", mimeType: "text/plain", data: "txtdata" },
     ]);
@@ -71,8 +71,8 @@ describe("attachmentsToContentBlocks", () => {
     expect(blocks[1].type).toBe("file");
   });
 
-  test("returns empty array for no attachments", () => {
-    const blocks = attachmentsToContentBlocks([]);
+  test("returns empty array for no attachments", async () => {
+    const blocks = await attachmentsToContentBlocks([]);
     expect(blocks).toHaveLength(0);
   });
 });
@@ -82,8 +82,8 @@ describe("attachmentsToContentBlocks", () => {
 // ---------------------------------------------------------------------------
 
 describe("createUserMessage with image attachments", () => {
-  test("includes both text and image blocks", () => {
-    const msg = createUserMessage("what is this?", [
+  test("includes both text and image blocks", async () => {
+    const msg = await createUserMessage("what is this?", [
       { filename: "photo.jpg", mimeType: "image/jpeg", data: "base64img" },
     ]);
 
@@ -96,8 +96,8 @@ describe("createUserMessage with image attachments", () => {
     expect(msg.content[1].type).toBe("image");
   });
 
-  test("includes only image block when text is empty", () => {
-    const msg = createUserMessage("", [
+  test("includes only image block when text is empty", async () => {
+    const msg = await createUserMessage("", [
       { filename: "photo.jpg", mimeType: "image/jpeg", data: "base64img" },
     ]);
 
@@ -106,8 +106,8 @@ describe("createUserMessage with image attachments", () => {
     expect(msg.content[0].type).toBe("image");
   });
 
-  test("includes only image block when text is whitespace", () => {
-    const msg = createUserMessage("   ", [
+  test("includes only image block when text is whitespace", async () => {
+    const msg = await createUserMessage("   ", [
       { filename: "photo.jpg", mimeType: "image/jpeg", data: "base64img" },
     ]);
 
@@ -116,8 +116,8 @@ describe("createUserMessage with image attachments", () => {
     expect(msg.content[0].type).toBe("image");
   });
 
-  test("includes multiple image blocks", () => {
-    const msg = createUserMessage("compare these", [
+  test("includes multiple image blocks", async () => {
+    const msg = await createUserMessage("compare these", [
       { filename: "a.jpg", mimeType: "image/jpeg", data: "img1" },
       { filename: "b.png", mimeType: "image/png", data: "img2" },
     ]);
@@ -129,9 +129,9 @@ describe("createUserMessage with image attachments", () => {
     expect(msg.content[2].type).toBe("image");
   });
 
-  test("preserves base64 data in image content block", () => {
+  test("preserves base64 data in image content block", async () => {
     const base64 = "dGVzdC1pbWFnZS1kYXRh";
-    const msg = createUserMessage("test", [
+    const msg = await createUserMessage("test", [
       { filename: "photo.jpg", mimeType: "image/jpeg", data: base64 },
     ]);
 
@@ -150,7 +150,7 @@ describe("createUserMessage with image attachments", () => {
 // ---------------------------------------------------------------------------
 
 describe("enrichMessageWithSourcePaths", () => {
-  test("appends a source path annotation for images with filePath", () => {
+  test("appends a source path annotation for images with filePath", async () => {
     const attachments = [
       {
         filename: "photo.jpg",
@@ -159,7 +159,7 @@ describe("enrichMessageWithSourcePaths", () => {
         filePath: "/Users/me/Desktop/photo.jpg",
       },
     ];
-    const original = createUserMessage("what is this?", attachments);
+    const original = await createUserMessage("what is this?", attachments);
     const enriched = enrichMessageWithSourcePaths(original, attachments);
 
     expect(enriched).not.toBe(original);
@@ -172,7 +172,7 @@ describe("enrichMessageWithSourcePaths", () => {
     );
   });
 
-  test("returns the original message (same reference) when no images have filePath", () => {
+  test("returns the original message (same reference) when no images have filePath", async () => {
     const attachments = [
       {
         filename: "photo.jpg",
@@ -180,13 +180,13 @@ describe("enrichMessageWithSourcePaths", () => {
         data: "base64img",
       },
     ];
-    const original = createUserMessage("what is this?", attachments);
+    const original = await createUserMessage("what is this?", attachments);
     const result = enrichMessageWithSourcePaths(original, attachments);
 
     expect(result).toBe(original);
   });
 
-  test("skips non-image attachments with filePath", () => {
+  test("skips non-image attachments with filePath", async () => {
     const attachments = [
       {
         filename: "doc.pdf",
@@ -195,14 +195,14 @@ describe("enrichMessageWithSourcePaths", () => {
         filePath: "/Users/me/Documents/doc.pdf",
       },
     ];
-    const original = createUserMessage("review this", attachments);
+    const original = await createUserMessage("review this", attachments);
     const result = enrichMessageWithSourcePaths(original, attachments);
 
     // Non-image attachments are not annotated, so we get back the same ref
     expect(result).toBe(original);
   });
 
-  test("handles multiple images with file paths", () => {
+  test("handles multiple images with file paths", async () => {
     const attachments = [
       {
         filename: "a.jpg",
@@ -217,7 +217,7 @@ describe("enrichMessageWithSourcePaths", () => {
         filePath: "/path/to/b.png",
       },
     ];
-    const original = createUserMessage("compare", attachments);
+    const original = await createUserMessage("compare", attachments);
     const enriched = enrichMessageWithSourcePaths(original, attachments);
 
     expect(enriched).not.toBe(original);
@@ -230,7 +230,7 @@ describe("enrichMessageWithSourcePaths", () => {
     );
   });
 
-  test("only annotates images that have filePath, skips those without", () => {
+  test("only annotates images that have filePath, skips those without", async () => {
     const attachments = [
       {
         filename: "a.jpg",
@@ -245,7 +245,7 @@ describe("enrichMessageWithSourcePaths", () => {
         // no filePath — e.g. pasted screenshot
       },
     ];
-    const original = createUserMessage("compare", attachments);
+    const original = await createUserMessage("compare", attachments);
     const enriched = enrichMessageWithSourcePaths(original, attachments);
 
     expect(enriched).not.toBe(original);

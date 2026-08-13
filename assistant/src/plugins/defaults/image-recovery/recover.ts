@@ -59,9 +59,9 @@ export const UNSENDABLE_IMAGE_NOTE =
  * in context, so without it the original oversized block rehydrates and
  * re-rejects on every later turn.
  */
-export function oversizedImageReplacement(
+export async function oversizedImageReplacement(
   block: Extract<ContentBlock, { type: "image" }>,
-): ContentBlock | null {
+): Promise<ContentBlock | null> {
   const payloadBytes = block.source.data.length;
   const dims = parseImageDimensions(block.source.data, block.source.media_type);
   const exceedsDimensionCap =
@@ -71,7 +71,7 @@ export function oversizedImageReplacement(
   const exceedsPayloadCap = payloadBytes > PROVIDER_MAX_IMAGE_PAYLOAD_BYTES;
   if (!exceedsDimensionCap && !exceedsPayloadCap) return null;
 
-  const optimized = optimizeImageForTransport(
+  const optimized = await optimizeImageForTransport(
     block.source.data,
     block.source.media_type,
   );
@@ -100,9 +100,9 @@ export function oversizedImageReplacement(
  * image, so neither matches on a second run. Returns the number of rewritten
  * messages.
  */
-export function persistUnsendableImageDowngrades(
+export async function persistUnsendableImageDowngrades(
   conversationId: string,
-): number {
+): Promise<number> {
   let rewritten = 0;
   for (const row of getMessages(conversationId)) {
     // Cheap prefilter — JSON.stringify emits no spaces, so an image block
@@ -118,31 +118,47 @@ export function persistUnsendableImageDowngrades(
     if (!Array.isArray(parsed)) continue;
 
     let changed = false;
-    const next = (parsed as ContentBlock[]).map((block): ContentBlock => {
+    const next: ContentBlock[] = [];
+    for (const block of parsed as ContentBlock[]) {
       if (block.type === "image") {
-        const replacement = oversizedImageReplacement(block);
-        if (!replacement) return block;
+        const replacement = await oversizedImageReplacement(block);
+        if (!replacement) {
+          next.push(block);
+          continue;
+        }
         changed = true;
-        return replacement;
+        next.push(replacement);
+        continue;
       }
       // Images returned by a tool (e.g. browser_screenshot) live inside the
       // tool_result's contentBlocks, not as top-level blocks. Downgrade them
       // in place so the tool_use/tool_result pairing stays intact.
       if (block.type === "tool_result" && block.contentBlocks?.length) {
         let nestedChanged = false;
-        const contentBlocks = block.contentBlocks.map((cb): ContentBlock => {
-          if (cb.type !== "image") return cb;
-          const replacement = oversizedImageReplacement(cb);
-          if (!replacement) return cb;
+        const contentBlocks: ContentBlock[] = [];
+        for (const cb of block.contentBlocks) {
+          if (cb.type !== "image") {
+            contentBlocks.push(cb);
+            continue;
+          }
+          const replacement = await oversizedImageReplacement(cb);
+          if (!replacement) {
+            contentBlocks.push(cb);
+            continue;
+          }
           nestedChanged = true;
-          return replacement;
-        });
-        if (!nestedChanged) return block;
+          contentBlocks.push(replacement);
+        }
+        if (!nestedChanged) {
+          next.push(block);
+          continue;
+        }
         changed = true;
-        return { ...block, contentBlocks };
+        next.push({ ...block, contentBlocks });
+        continue;
       }
-      return block;
-    });
+      next.push(block);
+    }
     if (!changed) continue;
 
     updateMessageContent(row.id, JSON.stringify(next));
@@ -178,32 +194,36 @@ function messageHasImageBlock(content: ReadonlyArray<ContentBlock>): boolean {
  * provider-cap gate as {@link persistUnsendableImageDowngrades} so the in-memory
  * retry and the durable rewrite agree on which images are unsendable.
  */
-export function recoverOversizedImages(
+export async function recoverOversizedImages(
   messages: ReadonlyArray<Message>,
-): Message[] {
-  return messages.map((msg) => {
-    if (!Array.isArray(msg.content)) return msg;
-    if (!messageHasImageBlock(msg.content)) return msg;
-    return {
-      ...msg,
-      content: msg.content.flatMap((b): ContentBlock[] => {
-        if (b.type === "image") {
-          return [oversizedImageReplacement(b) ?? b];
+): Promise<Message[]> {
+  const recovered: Message[] = [];
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content) || !messageHasImageBlock(msg.content)) {
+      recovered.push(msg);
+      continue;
+    }
+    const content: ContentBlock[] = [];
+    for (const b of msg.content) {
+      if (b.type === "image") {
+        content.push((await oversizedImageReplacement(b)) ?? b);
+        continue;
+      }
+      if (b.type === "tool_result" && b.contentBlocks?.length) {
+        const contentBlocks: ContentBlock[] = [];
+        for (const cb of b.contentBlocks) {
+          contentBlocks.push(
+            cb.type === "image"
+              ? ((await oversizedImageReplacement(cb)) ?? cb)
+              : cb,
+          );
         }
-        if (b.type === "tool_result" && b.contentBlocks?.length) {
-          return [
-            {
-              ...b,
-              contentBlocks: b.contentBlocks.map((cb) =>
-                cb.type === "image"
-                  ? (oversizedImageReplacement(cb) ?? cb)
-                  : cb,
-              ),
-            },
-          ];
-        }
-        return [b];
-      }),
-    };
-  });
+        content.push({ ...b, contentBlocks });
+        continue;
+      }
+      content.push(b);
+    }
+    recovered.push({ ...msg, content });
+  }
+  return recovered;
 }
