@@ -21,13 +21,24 @@ export type PathFailureReason = "not_absolute" | "out_of_bounds" | "denied";
 const DENIED_BASENAMES = new Set([".backup.key", "backup.key"]);
 
 /**
- * `/proc/<pid>/environ` for any pid, including the `self` and `thread-self`
- * aliases. Reading one yields the target process's full environment.
+ * Anything under a per-process `/proc` directory — `/proc/<pid>/…` and the
+ * `self` / `thread-self` aliases. The whole subtree is denied rather than a
+ * list of sensitive leaves, because the leaf list is not something we can keep
+ * complete: `environ` alone is reachable at `/proc/<pid>/environ`,
+ * `/proc/self/environ` AND `/proc/<pid>/task/<tid>/environ` (every thread
+ * directory republishes the process environment, and the main thread's tid
+ * equals the pid, which `/proc/self/status` will happily tell you). Alongside
+ * it sit `cmdline` (argv), `mem` (the address space), `fd/<n>` (any open
+ * file, boundary or no boundary), `root` and `cwd` (symlinks that resolve
+ * anywhere). Enumerating those is a game we would lose eventually.
+ *
+ * System-wide entries — `/proc/cpuinfo`, `/proc/meminfo`, `/proc/loadavg` —
+ * are not per-process and stay readable.
  */
-const PROC_ENVIRON_PATTERN = /^\/proc\/(?:\d+|self|thread-self)\/environ$/;
+const PROC_PER_PROCESS_PATTERN = /^\/proc\/(?:\d+|self|thread-self)(?:\/|$)/;
 
 /**
- * Whether a path exposes a process environment block.
+ * Whether a path reaches into a process's private `/proc` directory.
  *
  * The daemon's own environment carries credential material the file tools must
  * never hand back: the actor token signing key, the CES service token, the
@@ -38,10 +49,10 @@ const PROC_ENVIRON_PATTERN = /^\/proc\/(?:\d+|self|thread-self)\/environ$/;
  * file tools from becoming the looser path to the same secrets.
  *
  * Checked on both the logical and the symlink-resolved path, so a symlink with
- * an innocuous name pointing at an environ block is still caught.
+ * an innocuous name pointing into one of these directories is still caught.
  */
-export function isProcessEnvironPath(path: string): boolean {
-  return PROC_ENVIRON_PATTERN.test(path);
+export function isProcessPrivatePath(path: string): boolean {
+  return PROC_PER_PROCESS_PATTERN.test(path);
 }
 
 export type PathResult =
@@ -150,11 +161,11 @@ export function sandboxPolicy(
     };
   }
 
-  if (isProcessEnvironPath(resolved) || isProcessEnvironPath(realResolved)) {
+  if (isProcessPrivatePath(resolved) || isProcessPrivatePath(realResolved)) {
     return {
       ok: false,
       reason: "denied",
-      error: "Access to process environment blocks is denied",
+      error: "Access to process-private /proc entries is denied",
     };
   }
 
@@ -193,11 +204,11 @@ export function hostPolicy(rawPath: string): PathResult {
   } catch {
     realPath = rawPath;
   }
-  if (isProcessEnvironPath(rawPath) || isProcessEnvironPath(realPath)) {
+  if (isProcessPrivatePath(rawPath) || isProcessPrivatePath(realPath)) {
     return {
       ok: false,
       reason: "denied",
-      error: "Access to process environment blocks is denied",
+      error: "Access to process-private /proc entries is denied",
     };
   }
   return { ok: true, resolved: rawPath };

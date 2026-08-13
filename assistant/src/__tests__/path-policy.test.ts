@@ -13,7 +13,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import {
   hostPolicy,
-  isProcessEnvironPath,
+  isProcessPrivatePath,
   sandboxPolicy,
 } from "../tools/shared/filesystem/path-policy.js";
 
@@ -250,38 +250,52 @@ describe("hostPolicy", () => {
     "/proc/thread-self/environ",
     "/proc/1/environ",
     "/proc/48231/environ",
-  ])("denies the process environment block %s", (path) => {
+    // The per-thread republication of the same environment. Reachable in two
+    // reads with no privileges: /proc/self/status names the pid, and the main
+    // thread's tid equals it. An environ-only denial misses this entirely.
+    "/proc/self/task/1/environ",
+    "/proc/48231/task/48231/environ",
+    // Siblings that leak the same material by other means.
+    "/proc/self/cmdline",
+    "/proc/self/mem",
+    "/proc/self/fd/3",
+    // Symlinks out of the per-process dir that resolve anywhere on the host.
+    "/proc/self/root/etc/shadow",
+    "/proc/self/cwd",
+  ])("denies the process-private /proc entry %s", (path) => {
     const result = hostPolicy(path);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe("denied");
-      expect(result.error).toContain("process environment blocks");
+      expect(result.error).toContain("process-private");
     }
   });
 
-  test("still allows other /proc entries", () => {
-    // The denial is scoped to environ blocks, not to /proc as a whole.
-    expect(hostPolicy("/proc/self/status").ok).toBe(true);
+  test("still allows system-wide /proc entries", () => {
+    // The denial covers per-process directories, not /proc as a whole.
     expect(hostPolicy("/proc/cpuinfo").ok).toBe(true);
-    expect(hostPolicy("/proc/1/cmdline").ok).toBe(true);
+    expect(hostPolicy("/proc/meminfo").ok).toBe(true);
+    expect(hostPolicy("/proc/loadavg").ok).toBe(true);
   });
 });
 
-describe("isProcessEnvironPath", () => {
-  test("matches every pid form", () => {
-    expect(isProcessEnvironPath("/proc/self/environ")).toBe(true);
-    expect(isProcessEnvironPath("/proc/thread-self/environ")).toBe(true);
-    expect(isProcessEnvironPath("/proc/9/environ")).toBe(true);
+describe("isProcessPrivatePath", () => {
+  test("matches every per-process form", () => {
+    expect(isProcessPrivatePath("/proc/self/environ")).toBe(true);
+    expect(isProcessPrivatePath("/proc/thread-self/environ")).toBe(true);
+    expect(isProcessPrivatePath("/proc/9/environ")).toBe(true);
+    expect(isProcessPrivatePath("/proc/9/task/9/environ")).toBe(true);
+    expect(isProcessPrivatePath("/proc/self/anything/at/all")).toBe(true);
+    // The directory itself, with no trailing component.
+    expect(isProcessPrivatePath("/proc/self")).toBe(true);
   });
 
-  test("does not match lookalikes", () => {
-    // Anchored on both ends, so neither a longer path nor a similarly-named
-    // file elsewhere is caught by accident.
-    expect(isProcessEnvironPath("/proc/self/environ/x")).toBe(false);
-    expect(isProcessEnvironPath("/proc/self/environment")).toBe(false);
-    expect(isProcessEnvironPath("/home/me/proc/self/environ")).toBe(false);
-    expect(isProcessEnvironPath("/proc/notapid/environ")).toBe(false);
-    expect(isProcessEnvironPath("/environ")).toBe(false);
+  test("does not match system-wide entries or lookalikes", () => {
+    expect(isProcessPrivatePath("/proc/cpuinfo")).toBe(false);
+    expect(isProcessPrivatePath("/proc/selfish/environ")).toBe(false);
+    expect(isProcessPrivatePath("/home/me/proc/self/environ")).toBe(false);
+    expect(isProcessPrivatePath("/proc/notapid/environ")).toBe(false);
+    expect(isProcessPrivatePath("/environ")).toBe(false);
   });
 });
 
