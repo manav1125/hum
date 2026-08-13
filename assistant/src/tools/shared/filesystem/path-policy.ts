@@ -20,6 +20,30 @@ export type PathFailureReason = "not_absolute" | "out_of_bounds" | "denied";
  */
 const DENIED_BASENAMES = new Set([".backup.key", "backup.key"]);
 
+/**
+ * `/proc/<pid>/environ` for any pid, including the `self` and `thread-self`
+ * aliases. Reading one yields the target process's full environment.
+ */
+const PROC_ENVIRON_PATTERN = /^\/proc\/(?:\d+|self|thread-self)\/environ$/;
+
+/**
+ * Whether a path exposes a process environment block.
+ *
+ * The daemon's own environment carries credential material the file tools must
+ * never hand back: the actor token signing key, the CES service token, the
+ * guardian bootstrap secret, GATEWAY_SECURITY_DIR / CREDENTIAL_SECURITY_DIR,
+ * and any provider API keys forwarded in at launch. The bash tool already
+ * strips those from the child processes it spawns via the `SAFE_ENV_VARS`
+ * allowlist (see `tools/terminal/safe-env.ts`), so denying them here keeps the
+ * file tools from becoming the looser path to the same secrets.
+ *
+ * Checked on both the logical and the symlink-resolved path, so a symlink with
+ * an innocuous name pointing at an environ block is still caught.
+ */
+export function isProcessEnvironPath(path: string): boolean {
+  return PROC_ENVIRON_PATTERN.test(path);
+}
+
 export type PathResult =
   | { ok: true; resolved: string }
   | { ok: false; reason: PathFailureReason; error: string };
@@ -126,6 +150,14 @@ export function sandboxPolicy(
     };
   }
 
+  if (isProcessEnvironPath(resolved) || isProcessEnvironPath(realResolved)) {
+    return {
+      ok: false,
+      reason: "denied",
+      error: "Access to process environment blocks is denied",
+    };
+  }
+
   return { ok: true, resolved };
 }
 
@@ -150,6 +182,22 @@ export function hostPolicy(rawPath: string): PathResult {
       ok: false,
       reason: "denied",
       error: `Access to "${basename(rawPath)}" is denied`,
+    };
+  }
+  // The host policy applies no boundary at all, so this denial is the only
+  // thing standing between `host_file_read` and the daemon's environment.
+  // Resolve symlinks too: a link with an innocuous name must not be a way in.
+  let realPath = rawPath;
+  try {
+    realPath = realpathSync(rawPath);
+  } catch {
+    realPath = rawPath;
+  }
+  if (isProcessEnvironPath(rawPath) || isProcessEnvironPath(realPath)) {
+    return {
+      ok: false,
+      reason: "denied",
+      error: "Access to process environment blocks is denied",
     };
   }
   return { ok: true, resolved: rawPath };

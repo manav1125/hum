@@ -5,6 +5,7 @@ import type { ContentBlock, ToolResultContent } from "../providers/types.js";
 import {
   buildTruncatedContent,
   getToolResultFilePath,
+  isSpooledToolResultRead,
   isTruncationEligible,
   TOOL_RESULT_DIR,
 } from "./post-turn-tool-result-truncation.js";
@@ -18,29 +19,27 @@ import {
 const AX_TREE_TAG = "<ax-tree>";
 
 /**
- * Tools whose results keep their full content at result time even when
- * oversized. `file_read` is the model's only way to page spooled content back
- * into context: stubbing a read of a `.tool-results/` file would spool a
- * fresh copy and hand back another stub, so oversized content could never be
- * read at all. Explicit reads are therefore honored in full; the post-turn
- * pass still truncates them at turn end, after the model has consumed the
- * content.
- */
-const RESULT_TIME_STUB_EXEMPT_TOOLS = new Set<string>(["file_read"]);
-
-/**
- * Whether a tool result is eligible for the result-time spool/stub pass:
- * the post-turn pass's shared rules plus the AX-tree and `file_read`
- * exemptions above.
+ * Whether a tool result is eligible for the result-time spool/stub pass: the
+ * post-turn pass's shared rules plus the AX-tree exemption, minus reads of
+ * already-spooled `.tool-results/` files ({@link isSpooledToolResultRead}).
+ *
+ * The spooled-read exemption is what keeps paging possible: a file read is the
+ * model's only way to pull spooled content back into context, so stubbing a
+ * read of a `.tool-results/` file would write a fresh copy and hand back
+ * another stub, putting that content out of reach for good. It is scoped by
+ * target path rather than by tool name, because a file read aimed anywhere
+ * else is ordinary oversized output with no such circularity, and exempting it
+ * keeps a whole file inline on every LLM call for the rest of the turn. The
+ * post-turn pass still truncates those at turn end, after the model has
+ * consumed the content.
  */
 function isSpoolEligible(
   tr: ToolResultContent,
   toolName: string | undefined,
+  toolInput: Record<string, unknown> | undefined,
 ): boolean {
   if (!isTruncationEligible(tr, toolName)) return false;
-  if (toolName !== undefined && RESULT_TIME_STUB_EXEMPT_TOOLS.has(toolName)) {
-    return false;
-  }
+  if (isSpooledToolResultRead(toolName, toolInput)) return false;
   if (tr.content.includes(AX_TREE_TAG)) return false;
   return true;
 }
@@ -56,8 +55,8 @@ function isSpoolEligible(
  * rewriting an earlier message between calls would invalidate the cache from
  * that point on every iteration. The model still gets the head/tail preview
  * plus the on-disk path, so it can page the full content back in with
- * `file_read` (whose results are exempt from this pass) when it actually
- * needs it.
+ * `file_read` or `host_file_read` (a read of a `.tool-results/` path is exempt
+ * from this pass) when it actually needs it.
  *
  * Uses the same file paths, stub bytes, and eligibility rules as
  * `postTurnTruncateToolResults`, whose `TRUNCATION_MARKER` guard then skips
@@ -73,14 +72,23 @@ export function spoolAndStubOversizedToolResults(
   blocks: ContentBlock[],
   options: {
     conversationDir: string;
-    toolNameById: (toolUseId: string) => string | undefined;
+    /**
+     * The originating call for a `tool_use_id`. A `tool_result` carries only
+     * the id, and eligibility turns on both the tool's name and the path it
+     * was pointed at, so the two travel together rather than as separate
+     * lookups that could disagree.
+     */
+    toolCallById: (
+      toolUseId: string,
+    ) => { name: string; input: Record<string, unknown> } | undefined;
   },
 ): number {
   let stubbedCount = 0;
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
     if (block.type !== "tool_result") continue;
-    if (!isSpoolEligible(block, options.toolNameById(block.tool_use_id))) {
+    const toolCall = options.toolCallById(block.tool_use_id);
+    if (!isSpoolEligible(block, toolCall?.name, toolCall?.input)) {
       continue;
     }
 

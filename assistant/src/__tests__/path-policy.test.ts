@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -12,6 +13,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import {
   hostPolicy,
+  isProcessEnvironPath,
   sandboxPolicy,
 } from "../tools/shared/filesystem/path-policy.js";
 
@@ -234,6 +236,71 @@ describe("hostPolicy", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.resolved).toBe("/");
+    }
+  });
+
+  // The host policy applies no boundary at all, so before this denial existed
+  // `host_file_read("/proc/self/environ")` handed back the daemon's entire
+  // environment: the actor-token signing key, the CES service token, the
+  // guardian bootstrap secret, and every provider API key forwarded in at
+  // launch. The bash tool already strips those via SAFE_ENV_VARS, so the file
+  // tools were the looser path to the same secrets.
+  test.each([
+    "/proc/self/environ",
+    "/proc/thread-self/environ",
+    "/proc/1/environ",
+    "/proc/48231/environ",
+  ])("denies the process environment block %s", (path) => {
+    const result = hostPolicy(path);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("denied");
+      expect(result.error).toContain("process environment blocks");
+    }
+  });
+
+  test("still allows other /proc entries", () => {
+    // The denial is scoped to environ blocks, not to /proc as a whole.
+    expect(hostPolicy("/proc/self/status").ok).toBe(true);
+    expect(hostPolicy("/proc/cpuinfo").ok).toBe(true);
+    expect(hostPolicy("/proc/1/cmdline").ok).toBe(true);
+  });
+});
+
+describe("isProcessEnvironPath", () => {
+  test("matches every pid form", () => {
+    expect(isProcessEnvironPath("/proc/self/environ")).toBe(true);
+    expect(isProcessEnvironPath("/proc/thread-self/environ")).toBe(true);
+    expect(isProcessEnvironPath("/proc/9/environ")).toBe(true);
+  });
+
+  test("does not match lookalikes", () => {
+    // Anchored on both ends, so neither a longer path nor a similarly-named
+    // file elsewhere is caught by accident.
+    expect(isProcessEnvironPath("/proc/self/environ/x")).toBe(false);
+    expect(isProcessEnvironPath("/proc/self/environment")).toBe(false);
+    expect(isProcessEnvironPath("/home/me/proc/self/environ")).toBe(false);
+    expect(isProcessEnvironPath("/proc/notapid/environ")).toBe(false);
+    expect(isProcessEnvironPath("/environ")).toBe(false);
+  });
+});
+
+describe("sandboxPolicy — process environment blocks", () => {
+  test("a symlink inside the workspace pointing at environ is denied", () => {
+    // Only meaningful where /proc exists (Linux, i.e. prod). On macOS dev
+    // boxes the link dangles, realpathSync cannot resolve it, and there is no
+    // environ block to reach in the first place; the hostPolicy cases above
+    // cover the logical-path denial on every platform.
+    if (!existsSync("/proc/self/environ")) {
+      return;
+    }
+    const dir = makeTempDir();
+    const link = join(dir, "harmless.txt");
+    symlinkSync("/proc/self/environ", link);
+    const result = sandboxPolicy(link, dir);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("denied");
     }
   });
 });
