@@ -212,19 +212,26 @@ returns nothing), and `git status` as both uids reports zero permission errors.
 and writes outside the workspace fail. Adding a package becomes an image change
 rather than something a runtime command grants itself.
 
+**Fixed since the rehearsal:**
+
+- ~~`$WORKSPACE/config.json`~~ — **fixed in `c7fc035490`.** The gateway rewrote
+  it atomically (`gateway/src/config-file-utils.ts` `writeConfigFileAtomic`:
+  root-owned tmp file + rename), which **replaced** the 1001-owned file with a
+  root-owned one. The daemon writes the same file in place
+  (`assistant/src/config/loader.ts` `saveRawConfig`), so after one gateway-side
+  config mutation (a privacy-settings save, or velay) daemon config writes
+  started failing. Several callers swallow the error, so it degraded into
+  "settings don't stick" rather than a crash. `writeConfigFileAtomic` now stats
+  the target and carries its uid/gid — and its mode — onto the tmp file before
+  the rename. No-op when the target is absent or already matches (i.e. every
+  same-uid deployment), and a failing chown logs at warn and still completes
+  the write. Regression cover:
+  `gateway/src/__tests__/config-file-atomic-ownership.test.ts`.
+
 **Verified latent, not blocking** — these did not fire because the paths already
 exist on prod's volume and are owned by 1001, but they would bite a fresh
 workspace or a later gateway write:
 
-- `$WORKSPACE/config.json` — the gateway rewrites it atomically
-  (`gateway/src/config-file-utils.ts` `writeConfigFileAtomic`: root-owned tmp
-  file + rename), which **replaces** the 1001-owned file with a root-owned one.
-  The daemon writes the same file in place (`assistant/src/config/loader.ts`
-  `saveRawConfig`), so after one gateway-side config mutation (a privacy-settings
-  save, or velay) daemon config writes start failing. Several callers swallow
-  the error, so it degrades into "settings don't stick" rather than a crash.
-  Worth fixing before the next enable: preserve the target's ownership across
-  the rename.
 - `$WORKSPACE/data/credentials/` and `$WORKSPACE/data/avatar/` — both created by
   the gateway (`credential-watcher.ts`, `avatar-sync-watcher.ts`) and written by
   the daemon. `ensureDataDir()` does not pre-create either, so on a workspace
@@ -254,7 +261,8 @@ verified: uid 1001 cannot read the gateway's environ or fds.
 
 ## Cutting prod over
 
-The image prod runs must contain `f6f22e91ae` and the key-seeding commit. The
+The image prod runs must contain `f6f22e91ae`, `c7fc035490` (the config.json
+ownership fix above) and the key-seeding commit. The
 rehearsal proved the *code* by patching both files into a scratch container at
 the exact committed bytes (sha256-verified); it did not ship an image. So:
 build and deploy a release off this branch line first — per the deploy lineage
