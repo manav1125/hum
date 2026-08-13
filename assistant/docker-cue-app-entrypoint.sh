@@ -356,6 +356,20 @@ echo "[cue-app] assistant socket ready; starting gateway" >&2
 # `keys set` writes via the daemon IPC socket (now ready). Idempotent: it
 # silently overwrites. The key value never leaves the container — it goes
 # straight from the env into the local encrypted store.
+#
+# All three seeding blocks below run under $DAEMON_PRIVILEGE_PREFIX, i.e. as
+# the SAME identity as the daemon. That is load-bearing, not tidiness: the
+# store path is HOME-derived. vellumRoot() (src/util/platform.ts) takes the
+# parent of VELLUM_WORKSPACE_DIR, and for /workspace that parent is "/", so it
+# falls back to $HOME/.vellum. Seeding as root therefore writes
+# /root/.vellum/protected/keys.enc while a dropped daemon reads
+# /home/assistant/.vellum/protected — and it does so *while reporting
+# success*, because when the daemon's IPC is not accepting yet the CLI falls
+# back to writing the store in-process (src/cli/lib/daemon-credential-client.ts
+# isDaemonUnreachable). Rehearsed 2026-08-13: with the flag on and root-run
+# seeding, `keys list` showed anthropic/openrouter/replicate/apify to root and
+# NOTHING to uid 1001. Every one of those is a "No API key configured" outage.
+# With the flag off the prefix is empty, so this is the previous behaviour.
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   # Run in the background with retries: the socket FILE exists once the daemon
   # binds, but its IPC server only starts accepting a few seconds later (the
@@ -366,7 +380,7 @@ if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   (
     j=0
     while [ "$j" -lt 30 ]; do
-      if ( cd /app/assistant && bun run src/index.ts keys set anthropic "$ANTHROPIC_API_KEY" ) >/dev/null 2>&1; then
+      if ( cd /app/assistant && $DAEMON_PRIVILEGE_PREFIX bun run src/index.ts keys set anthropic "$ANTHROPIC_API_KEY" ) >/dev/null 2>&1; then
         echo "[cue-app] anthropic key seeded from env into secure store" >&2
         exit 0
       fi
@@ -387,7 +401,7 @@ if [ -n "${OPENROUTER_API_KEY:-}" ]; then
   (
     j=0
     while [ "$j" -lt 30 ]; do
-      if ( cd /app/assistant && bun run src/index.ts keys set openrouter "$OPENROUTER_API_KEY" ) >/dev/null 2>&1; then
+      if ( cd /app/assistant && $DAEMON_PRIVILEGE_PREFIX bun run src/index.ts keys set openrouter "$OPENROUTER_API_KEY" ) >/dev/null 2>&1; then
         echo "[cue-app] openrouter key seeded from env into secure store" >&2
         exit 0
       fi
@@ -410,7 +424,7 @@ for pair in "replicate:REPLICATE_API_TOKEN" "apify:APIFY_API_TOKEN"; do
     (
       j=0
       while [ "$j" -lt 30 ]; do
-        if ( cd /app/assistant && bun run src/index.ts keys set "$service" "$value" ) >/dev/null 2>&1; then
+        if ( cd /app/assistant && $DAEMON_PRIVILEGE_PREFIX bun run src/index.ts keys set "$service" "$value" ) >/dev/null 2>&1; then
           echo "[cue-app] $service key seeded from env into secure store" >&2
           exit 0
         fi
