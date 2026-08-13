@@ -56,6 +56,7 @@ mock.module("../contacts/contact-store.js", () => ({
 
 // Import AFTER mocks so the module under test binds to the stubbed
 // implementations.
+import { resolveUserName } from "../daemon/identity-helpers.js";
 import {
   ensureGuardianPersonaFile,
   isGuardianPersonaCustomized,
@@ -194,6 +195,84 @@ describe("resolveGuardianPersonaStrict", () => {
     );
 
     expect(resolveGuardianPersonaStrict()).toContain("Alice");
+  });
+});
+
+// ── resolveUserName ────────────────────────────────────────────────
+
+describe("resolveUserName", () => {
+  function writeUsersFile(name: string, body: string): void {
+    const usersDir = join(mockWorkspaceDir, "users");
+    mkdirSync(usersDir, { recursive: true });
+    writeFileSync(join(usersDir, name), body, "utf-8");
+  }
+
+  test("reads the name from the guardian's own persona file", () => {
+    // The defect: this used to read only `users/default.md`, so a guardian
+    // with their own persona file was addressed by a generic label.
+    mockVellumGuardian = { contact: { userFile: "alice.md" }, channel: {} };
+    writeUsersFile("alice.md", "- Preferred name/reference: Alice\n");
+
+    expect(resolveUserName(mockWorkspaceDir)).toBe("Alice");
+  });
+
+  test("prefers the guardian's file over default.md", () => {
+    mockVellumGuardian = { contact: { userFile: "alice.md" }, channel: {} };
+    writeUsersFile("alice.md", "- Preferred name/reference: Alice\n");
+    writeUsersFile("default.md", "**Name:** Wrong\n");
+
+    expect(resolveUserName(mockWorkspaceDir)).toBe("Alice");
+  });
+
+  test("falls back to default.md when no guardian file resolves", () => {
+    mockVellumGuardian = null;
+    mockAnyGuardian = null;
+    writeUsersFile("default.md", "**Name:** Fallback\n");
+
+    expect(resolveUserName(mockWorkspaceDir)).toBe("Fallback");
+  });
+
+  test.each([
+    ["**Name:** Bold", "Bold"],
+    ["- **Preferred name:** Bulleted", "Bulleted"],
+    ["- Preferred name/reference: Scaffold", "Scaffold"],
+  ])("matches the label shape %p", (line, expected) => {
+    // All three are shapes this codebase writes itself; matching only
+    // `**Name:**` missed the ones our own writers store.
+    mockVellumGuardian = { contact: { userFile: "alice.md" }, channel: {} };
+    writeUsersFile("alice.md", `${line}\n`);
+
+    expect(resolveUserName(mockWorkspaceDir)).toBe(expected);
+  });
+
+  test("an unfilled scaffold line does not swallow the next line", () => {
+    // Horizontal-whitespace-only match: `\s*` would run past the newline and
+    // adopt whatever followed as the user's name.
+    mockVellumGuardian = { contact: { userFile: "alice.md" }, channel: {} };
+    writeUsersFile(
+      "alice.md",
+      "- Preferred name/reference:\n- Pronouns: they/them\n",
+    );
+
+    expect(resolveUserName(mockWorkspaceDir)).toBeNull();
+  });
+
+  test("a recorded refusal to be named is not used as a name", () => {
+    mockVellumGuardian = { contact: { userFile: "alice.md" }, channel: {} };
+    writeUsersFile(
+      "alice.md",
+      "- Preferred name/reference: declined_by_user\n",
+    );
+    writeUsersFile("default.md", "**Name:** Fallback\n");
+
+    expect(resolveUserName(mockWorkspaceDir)).toBe("Fallback");
+  });
+
+  test("returns null when nothing resolves", () => {
+    mockVellumGuardian = null;
+    mockAnyGuardian = null;
+
+    expect(resolveUserName(mockWorkspaceDir)).toBeNull();
   });
 });
 
