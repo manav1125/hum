@@ -8,9 +8,9 @@
 import { describe, expect, test } from "bun:test";
 
 import type { McpServerConfig } from "../config/schemas/mcp.js";
+import type { McpServerManager } from "../mcp/manager.js";
 import { RiskLevel } from "../permissions/types.js";
 import { createMcpTool } from "../tools/mcp/mcp-tool-factory.js";
-import type { McpServerManager } from "../mcp/manager.js";
 
 function serverConfig(defaultRiskLevel: "low" | "medium" | "high") {
   return {

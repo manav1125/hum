@@ -6,7 +6,6 @@
 
 import { appendFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-
 import { beforeEach, describe, expect, test } from "bun:test";
 
 import { getDataDir } from "../util/platform.js";
@@ -16,7 +15,8 @@ import {
 } from "./inbox-run-summary.js";
 
 const HOUR = 60 * 60 * 1000;
-const iso = (msAgo: number): string => new Date(Date.now() - msAgo).toISOString();
+const iso = (msAgo: number): string =>
+  new Date(Date.now() - msAgo).toISOString();
 
 // Each test starts from an empty log (the store appends; tests in this file
 // share one temp workspace). The path is a JSONL under the per-test temp
@@ -28,18 +28,43 @@ beforeEach(() => {
 describe("inbox-run-summary store", () => {
   test("records a run and reads it back inside the window", () => {
     const ranAt = iso(1 * HOUR);
-    recordInboxRunSummary({ archived: 14, drafted: 3, keptImportant: 2, ranAt });
+    recordInboxRunSummary({
+      archived: 14,
+      drafted: 3,
+      keptImportant: 2,
+      ranAt,
+    });
     const latest = readLatestInboxRunSummary(Date.now() - 24 * HOUR);
-    expect(latest).toEqual({ archived: 14, drafted: 3, keptImportant: 2, ranAt });
+    expect(latest).toEqual({
+      archived: 14,
+      drafted: 3,
+      keptImportant: 2,
+      ranAt,
+    });
   });
 
   test("returns the most recent run, and runs before sinceMs are invisible", () => {
     const oldRun = iso(30 * HOUR);
     const mid = iso(5 * HOUR);
     const newest = iso(2 * HOUR);
-    recordInboxRunSummary({ archived: 1, drafted: 0, keptImportant: 0, ranAt: newest });
-    recordInboxRunSummary({ archived: 2, drafted: 0, keptImportant: 0, ranAt: oldRun });
-    recordInboxRunSummary({ archived: 3, drafted: 0, keptImportant: 0, ranAt: mid });
+    recordInboxRunSummary({
+      archived: 1,
+      drafted: 0,
+      keptImportant: 0,
+      ranAt: newest,
+    });
+    recordInboxRunSummary({
+      archived: 2,
+      drafted: 0,
+      keptImportant: 0,
+      ranAt: oldRun,
+    });
+    recordInboxRunSummary({
+      archived: 3,
+      drafted: 0,
+      keptImportant: 0,
+      ranAt: mid,
+    });
 
     expect(readLatestInboxRunSummary(Date.now() - 24 * HOUR)?.ranAt).toBe(
       newest,

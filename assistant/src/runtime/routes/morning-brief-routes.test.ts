@@ -6,7 +6,6 @@
  */
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("../../util/logger.js", () => ({
@@ -28,6 +27,7 @@ import { recordInboxRunSummary } from "../../home/inbox-run-summary.js";
 import { getDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { createTask } from "../../tasks/task-store.js";
+import { getDataDir } from "../../util/platform.js";
 import {
   createAgent,
   deleteAgent,
@@ -40,7 +40,6 @@ import {
   removeWorkItemFromQueue,
   updateWorkItem,
 } from "../../work-items/work-item-store.js";
-import { getDataDir } from "../../util/platform.js";
 import {
   clear as clearInteractions,
   register,
@@ -360,7 +359,12 @@ describe("morning brief endpoint", () => {
       ranAt: new Date(Date.now() - 6 * HOUR).toISOString(),
     });
     const ranAt = new Date(Date.now() - 2 * HOUR).toISOString();
-    recordInboxRunSummary({ archived: 14, drafted: 3, keptImportant: 2, ranAt });
+    recordInboxRunSummary({
+      archived: 14,
+      drafted: 3,
+      keptImportant: 2,
+      ranAt,
+    });
 
     const brief = await callBrief();
     const rows = brief.overnight.filter((o) => o.kind === "inbox_cleanup");
