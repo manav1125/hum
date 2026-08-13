@@ -35,7 +35,11 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
       requestId: options.body.requestId!,
       decision: options.body.decision!,
     });
-    return { data: { accepted: true }, response: new Response(), error: undefined };
+    return {
+      data: { accepted: true },
+      response: new Response(),
+      error: undefined,
+    };
   }),
 }));
 
@@ -76,12 +80,7 @@ function draw(r: PausedRun) {
   });
   return render(
     <QueryClientProvider client={client}>
-      <ApprovalSheet
-        assistantId="asst-1"
-        run={r}
-        open
-        onClose={() => {}}
-      />
+      <ApprovalSheet assistantId="asst-1" run={r} open onClose={() => {}} />
     </QueryClientProvider>,
   );
 }
@@ -164,9 +163,9 @@ describe("the facts are only ever as real as the payload", () => {
 
   test("the title is a question and never a bare id", () => {
     expect(approvalTitle(run())).toBe("Approve stripe__PAYMENT_CREATE?");
-    expect(
-      approvalTitle(run({ toolName: null, kind: null })),
-    ).toContain("did not name");
+    expect(approvalTitle(run({ toolName: null, kind: null }))).toContain(
+      "did not name",
+    );
   });
 });
 
@@ -239,7 +238,10 @@ describe("the sheet", () => {
 
   test("a successful approve invalidates what the row reads", async () => {
     const client = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
     const invalidated: unknown[] = [];
     const real = client.invalidateQueries.bind(client);
@@ -264,5 +266,67 @@ describe("the sheet", () => {
     // one drives this sheet's facts. A stale either re-renders a decided run.
     await waitFor(() => expect(invalidated.length).toBeGreaterThanOrEqual(2));
     expect(JSON.stringify(invalidated)).toContain("conv-1");
+  });
+});
+
+describe("temporary approval tiers (More options)", () => {
+  test("the timed tiers hide behind the disclosure — the primary geometry is untouched", () => {
+    draw(run());
+    // Collapsed by default: no grant buttons on screen.
+    expect(
+      screen.queryByRole("button", { name: /allow for 10 minutes/i }),
+    ).toBeNull();
+    // The primary row still holds Approve, ALONE.
+    const primary = document.body.querySelector(
+      '[data-slot="approval-primary-row"]',
+    );
+    expect(primary?.querySelectorAll("button")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    expect(
+      screen.getByRole("button", { name: /allow for 10 minutes/i }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /allow for this conversation/i }),
+    ).toBeTruthy();
+    // Even expanded, the primary row is still one button.
+    expect(primary?.querySelectorAll("button")).toHaveLength(1);
+  });
+
+  test("the 10-minute tier fires allow_10m", async () => {
+    draw(run());
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /allow for 10 minutes/i }),
+    );
+    await waitFor(() =>
+      expect(confirmCalls).toEqual([
+        { requestId: "req-1", decision: "allow_10m" },
+      ]),
+    );
+  });
+
+  test("the conversation tier fires allow_conversation", async () => {
+    draw(run());
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /allow for this conversation/i }),
+    );
+    await waitFor(() =>
+      expect(confirmCalls).toEqual([
+        { requestId: "req-1", decision: "allow_conversation" },
+      ]),
+    );
+  });
+
+  test("a run that cannot name its conversation offers no grant tiers", () => {
+    draw(run({ conversationId: null }));
+    expect(screen.queryByRole("button", { name: "More options" })).toBeNull();
+  });
+
+  test("the disclosure states that hard-checkpointed classes still stop", () => {
+    draw(run());
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    expect(document.body.textContent).toContain("still stop here every time");
   });
 });

@@ -19,8 +19,15 @@ import type { AssistantEvent as APIAssistantEvent } from "@vellumai/assistant-ap
 // SSE event interfaces
 // ---------------------------------------------------------------------------
 
-/** Valid decisions accepted by the assistant runtime's POST /v1/confirm endpoint. */
-export type ConfirmationDecision = "allow" | "deny";
+/**
+ * Valid decisions accepted by the assistant runtime's POST /v1/confirm
+ * endpoint.
+ * `allow_10m` / `allow_conversation` approve the current action AND install a
+ * temporary auto-approval override for the conversation (10 minutes / until
+ * the conversation ends). Expiry always returns to per-action prompts.
+ */
+export type ConfirmationDecision =
+  "allow" | "allow_10m" | "allow_conversation" | "deny";
 
 export interface UnknownEvent {
   type: "unknown";

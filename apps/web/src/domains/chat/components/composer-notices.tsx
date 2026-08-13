@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 
+import { ApprovalOverrideChip } from "@/domains/chat/components/approval-override-chip";
 import { CompactionCircuitOpenBanner } from "@/domains/chat/components/compaction-circuit-open-banner";
 import { MaintenanceModeBanner } from "@/domains/chat/components/maintenance-mode-banner";
 import { MissingApiKeyBanner } from "@/domains/chat/components/missing-api-key-banner";
@@ -122,6 +123,9 @@ export function ComposerNotices({
 }: ComposerNoticesProps) {
   return (
     <>
+      {/* Temporary-approval countdown chip — fully self-contained (reads the
+          approval-override store), so it needs no props from the parent. */}
+      <ApprovalOverrideChip />
       {textStateNoticesSlot}
       {attachmentLastError && (
         <div className="mb-2">

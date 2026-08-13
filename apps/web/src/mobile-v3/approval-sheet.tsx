@@ -267,7 +267,8 @@ function Fact({
         style={{
           fontSize: 12,
           flexShrink: 0,
-          color: tone === "amber" ? "var(--mv3-amber-text)" : "var(--mv3-muted)",
+          color:
+            tone === "amber" ? "var(--mv3-amber-text)" : "var(--mv3-muted)",
         }}
       >
         {label}
@@ -308,6 +309,11 @@ export function ApprovalSheet({
 }) {
   const queryClient = useQueryClient();
   const [failed, setFailed] = useState<string | null>(null);
+  // v1 mobile keeps two verbs on the sheet; the temporary tiers
+  // (allow_10m / allow_conversation) live behind a "More options"
+  // disclosure so the primary geometry (Approve full-width and ALONE)
+  // is untouched.
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const facts = approvalFacts(run);
 
   const decide = useMutation({
@@ -344,7 +350,9 @@ export function ApprovalSheet({
     },
   });
 
-  const send = (decision: "allow" | "deny") => {
+  const send = (
+    decision: "allow" | "allow_10m" | "allow_conversation" | "deny",
+  ) => {
     setFailed(null);
     haptic.medium();
     decide.mutate({
@@ -574,6 +582,81 @@ export function ApprovalSheet({
         >
           Not now leaves the run stopped. Decline ends it.
         </div>
+
+        {/*
+          Temporary approval tiers, behind a disclosure. Each approves THIS
+          action and additionally auto-approves eligible follow-up prompts in
+          the same conversation — but never another hard-checkpointed send /
+          payment / publish / delete: those stop here every time regardless.
+          Rows render only when the run names its conversation; a grant that
+          cannot name its scope is not offered.
+        */}
+        {run.conversationId ? (
+          <div data-slot="approval-more-options" style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className="cue-pressable"
+              disabled={decide.isPending}
+              onClick={() => {
+                haptic.light();
+                setShowMoreOptions((v) => !v);
+              }}
+              aria-expanded={showMoreOptions}
+              style={{
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                color: "var(--mv3-muted)",
+                fontSize: 11.5,
+                fontFamily: "inherit",
+                padding: 6,
+                cursor: decide.isPending ? "default" : "pointer",
+              }}
+            >
+              {showMoreOptions ? "Fewer options" : "More options"}
+            </button>
+            {showMoreOptions ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  marginTop: 6,
+                }}
+              >
+                <button
+                  type="button"
+                  className="cue-pressable"
+                  disabled={decide.isPending}
+                  onClick={() => send("allow_10m")}
+                  style={{ ...secondaryBtn, padding: 11, fontSize: 12.5 }}
+                >
+                  Approve &amp; allow for 10 minutes
+                </button>
+                <button
+                  type="button"
+                  className="cue-pressable"
+                  disabled={decide.isPending}
+                  onClick={() => send("allow_conversation")}
+                  style={{ ...secondaryBtn, padding: 11, fontSize: 12.5 }}
+                >
+                  Approve &amp; allow for this conversation
+                </button>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "var(--mv3-muted)",
+                    textAlign: "center",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Sends, payments, publishes and deletes still stop here every
+                  time.
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </SheetShell>
   );

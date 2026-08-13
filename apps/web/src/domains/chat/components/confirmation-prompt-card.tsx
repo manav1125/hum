@@ -99,101 +99,143 @@ export function ConfirmationPromptCard({
     ? getRiskBadgeStyle(confirmation.riskLevel)
     : null;
   const hasAllowlistOptions = (confirmation.allowlistOptions?.length ?? 0) > 0;
+  // Temporary grants (allow_10m / allow_conversation) are offered only when
+  // persistent decisions are allowed — the daemon sets
+  // persistentDecisionsAllowed: false for requireFreshApproval tools, whose
+  // prompts may never be satisfied by a cached grant. The daemon additionally
+  // enforces eligibility (guardian, non-voice, checkpoint classes still
+  // prompt) at both install and consumption time.
+  const temporaryGrantsAvailable =
+    confirmation.persistentDecisionsAllowed !== false;
 
   return (
     <Card className="border-l-[3px] border-l-[var(--accent-cue)]">
       <span className="mb-1 block font-mono text-label-medium-default uppercase tracking-[0.08em] text-[var(--accent-cue-strong)]">
         Approval
       </span>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex items-start gap-2">
-            <Shield className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-cue)]" />
-            <span className="text-body-medium-default text-[var(--content-default)]">
-              {headline}
-            </span>
-            {riskBadge && (
-              <span
-                // typography: off-scale — compact risk badge pill
+      <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex items-start gap-2">
+          <Shield className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-cue)]" />
+          <span className="text-body-medium-default text-[var(--content-default)]">
+            {headline}
+          </span>
+          {riskBadge && (
+            <span
+              // typography: off-scale — compact risk badge pill
 
-                className={`ml-1 shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium leading-tight ${riskBadge.bg} ${riskBadge.text}`}
-              >
-                {riskBadge.label}
-              </span>
-            )}
-          </div>
-          {showRiskReason && (
-            <p className="pl-6 text-body-small-default text-[var(--content-tertiary)] dark:text-[var(--content-disabled)]">
-              {confirmation.riskReason}
-            </p>
+              className={`ml-1 shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium leading-tight ${riskBadge.bg} ${riskBadge.text}`}
+            >
+              {riskBadge.label}
+            </span>
           )}
         </div>
+        {showRiskReason && (
+          <p className="pl-6 text-body-small-default text-[var(--content-tertiary)] dark:text-[var(--content-disabled)]">
+            {confirmation.riskReason}
+          </p>
+        )}
+      </div>
 
-        <div className="flex shrink-0 gap-2">
-          {/* Allow button — split when allowlistOptions present */}
-          {hasAllowlistOptions && onAllowAndCreateRule ? (
-            <div ref={splitMenuRef} className="relative flex">
-              {/* Primary: plain Allow */}
+      {/* Two-group decision layout (recovered upstream design — see
+          design/surfaces/Chat.dc.html "grant once / 10 min / always"):
+          temporary grants first, then the single-action verbs. */}
+      <div className="mt-3 flex flex-col gap-3">
+        {temporaryGrantsAvailable && (
+          <div data-slot="approve-all-actions-group">
+            <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--content-tertiary)]">
+              Approve all actions
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => onSubmit("allow_10m")}
+                className="flex items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--surface-lift)] px-3 py-1.5 text-body-small-default text-[var(--content-default)] transition-colors hover:border-[var(--accent-cue)] disabled:opacity-50"
+              >
+                Allow for 10 minutes
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => onSubmit("allow_conversation")}
+                className="flex items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--surface-lift)] px-3 py-1.5 text-body-small-default text-[var(--content-default)] transition-colors hover:border-[var(--accent-cue)] disabled:opacity-50"
+              >
+                Allow for this conversation
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div data-slot="this-action-only-group">
+          <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--content-tertiary)]">
+            This action only
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {/* Allow button — split when allowlistOptions present */}
+            {hasAllowlistOptions && onAllowAndCreateRule ? (
+              <div ref={splitMenuRef} className="relative flex">
+                {/* Primary: plain Allow once */}
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => onSubmit("allow")}
+                  className="flex items-center gap-1.5 rounded-l-md bg-[var(--primary-base)] px-3 py-1.5 text-body-small-default text-[var(--content-inset)] transition-colors hover:opacity-90 disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  {confirmation.confirmLabel || "Allow once"}
+                </button>
+                {/* Chevron toggle */}
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => setShowSplitMenu((v) => !v)}
+                  className="flex items-center rounded-r-md border-l border-[var(--content-inset)]/30 bg-[var(--primary-base)] px-1.5 py-1.5 text-[var(--content-inset)] transition-colors hover:opacity-90 disabled:opacity-50"
+                  aria-label="More allow options"
+                  aria-haspopup="menu"
+                  aria-expanded={showSplitMenu}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                {/* Dropdown */}
+                {showSplitMenu && (
+                  <div className="absolute right-0 top-full z-10 mt-1 min-w-[180px] rounded-md border border-[var(--border-base)] bg-[var(--surface-lift)] py-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSplitMenu(false);
+                        onAllowAndCreateRule();
+                      }}
+                      className="flex w-full items-center px-3 py-2 text-body-small-default text-[var(--content-default)] transition-colors hover:bg-[var(--ghost-hover)]"
+                    >
+                      Allow &amp; Create Rule
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
               <button
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => onSubmit("allow")}
-                className="flex items-center gap-1.5 rounded-l-md bg-[var(--primary-base)] px-3 py-1.5 text-body-small-default text-[var(--content-inset)] transition-colors hover:opacity-90 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-md bg-[var(--primary-base)] px-3 py-1.5 text-body-small-default text-[var(--content-inset)] transition-colors hover:opacity-90 disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : null}
-                {confirmation.confirmLabel || "Allow"}
+                {confirmation.confirmLabel || "Allow once"}
               </button>
-              {/* Chevron toggle */}
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => setShowSplitMenu((v) => !v)}
-                className="flex items-center rounded-r-md border-l border-[var(--content-inset)]/30 bg-[var(--primary-base)] px-1.5 py-1.5 text-[var(--content-inset)] transition-colors hover:opacity-90 disabled:opacity-50"
-                aria-label="More allow options"
-                aria-haspopup="menu"
-                aria-expanded={showSplitMenu}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-              {/* Dropdown */}
-              {showSplitMenu && (
-                <div className="absolute right-0 top-full z-10 mt-1 min-w-[180px] rounded-md border border-[var(--border-base)] bg-[var(--surface-lift)] py-1 shadow-lg">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowSplitMenu(false);
-                      onAllowAndCreateRule();
-                    }}
-                    className="flex w-full items-center px-3 py-2 text-body-small-default text-[var(--content-default)] transition-colors hover:bg-[var(--ghost-hover)]"
-                  >
-                    Allow &amp; Create Rule
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
+            )}
             <button
               type="button"
               disabled={isSubmitting}
-              onClick={() => onSubmit("allow")}
-              className="flex items-center gap-1.5 rounded-md bg-[var(--primary-base)] px-3 py-1.5 text-body-small-default text-[var(--content-inset)] transition-colors hover:opacity-90 disabled:opacity-50"
+              onClick={() => onSubmit("deny")}
+              className="flex items-center gap-1.5 rounded-md bg-[var(--system-negative-strong)] px-3 py-1.5 text-body-small-default text-white transition-colors hover:opacity-90 disabled:opacity-50"
             >
-              {isSubmitting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : null}
-              {confirmation.confirmLabel || "Allow"}
+              {confirmation.denyLabel || "Don't allow"}
             </button>
-          )}
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={() => onSubmit("deny")}
-            className="flex items-center gap-1.5 rounded-md bg-[var(--system-negative-strong)] px-3 py-1.5 text-body-small-default text-white transition-colors hover:opacity-90 disabled:opacity-50"
-          >
-            {confirmation.denyLabel || "Deny"}
-          </button>
+          </div>
         </div>
       </div>
 

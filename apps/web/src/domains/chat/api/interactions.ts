@@ -12,6 +12,8 @@ import type { QuestionSubmission } from "@/domains/chat/api/event-types";
 import { client } from "@/generated/api/client.gen";
 import { pendinginteractionsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import {
+  approvaloverrideClearPost,
+  approvaloverrideGet,
   confirmPost,
   pendinginteractionsGet,
   questionresponsePost,
@@ -142,19 +144,90 @@ export async function submitSecretResponse(
   }
 }
 
+/**
+ * Echo of a temporary approval override installed by an allow_10m /
+ * allow_conversation confirm decision. `expiresAt` is null for
+ * conversation-scoped grants.
+ */
+export type ApprovalOverrideEcho = {
+  kind: "timed" | "conversation";
+  conversationId: string;
+  expiresAt: number | null;
+};
+
+export type SubmitConfirmationResult =
+  | { ok: true; approvalOverride?: ApprovalOverrideEcho }
+  | { ok: false; status: number; error: string };
+
 export async function submitConfirmation(
   assistantId: string,
   requestId: string,
   decision: ConfirmationDecision,
   trustRule?: { selectedPattern: string; selectedScope: string },
-): Promise<SubmitSecretResponseResult> {
+): Promise<SubmitConfirmationResult> {
   try {
-    const { error, response } = await confirmPost({
+    const { data, error, response } = await confirmPost({
       path: { assistant_id: assistantId },
       body: { requestId, decision, ...trustRule },
       throwOnError: false,
     });
     assertHasResponse(response, error, "Failed to submit confirmation");
+    if (!response.ok) {
+      const msg = extractErrorMessage(error, response);
+      return { ok: false, status: response.status, error: msg };
+    }
+    return data?.approvalOverride
+      ? { ok: true, approvalOverride: data.approvalOverride }
+      : { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 500,
+      error: err instanceof Error ? err.message : "Something went wrong.",
+    };
+  }
+}
+
+/**
+ * Live temporary-override status for a conversation. Used to re-sync the
+ * countdown chip (e.g. after a reload); `active: false` covers both "never
+ * granted" and "already expired" — expiry always returns to per-action asks.
+ */
+export async function getApprovalOverrideStatus(
+  assistantId: string,
+  conversationId: string,
+): Promise<
+  | { active: false }
+  | { active: true; kind: "timed" | "conversation"; expiresAt?: number }
+> {
+  try {
+    const { data, response } = await approvaloverrideGet({
+      path: { assistant_id: assistantId },
+      query: { conversationId },
+      throwOnError: false,
+    });
+    if (!response?.ok || !data?.active || !data.kind) {
+      return { active: false };
+    }
+    return { active: true, kind: data.kind, expiresAt: data.expiresAt };
+  } catch {
+    // Status is display-only; failing closed (no chip) never widens approvals.
+    return { active: false };
+  }
+}
+
+/** Revoke a temporary approval override (tap-to-revoke on the countdown chip). */
+export async function clearApprovalOverride(
+  assistantId: string,
+  conversationId: string,
+): Promise<SubmitSecretResponseResult> {
+  try {
+    const { error, response } = await approvaloverrideClearPost({
+      path: { assistant_id: assistantId },
+      body: { conversationId },
+      throwOnError: false,
+    });
+    assertHasResponse(response, error, "Failed to revoke approval override");
     if (!response.ok) {
       const msg = extractErrorMessage(error, response);
       return { ok: false, status: response.status, error: msg };

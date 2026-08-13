@@ -15,6 +15,7 @@ import { useStreamStore } from "@/domains/chat/stream-store";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useRuleEditorStore } from "@/domains/chat/rule-editor-store";
 import type { RuleEditorContext } from "@/domains/chat/rule-editor-store";
+import { useApprovalOverrideStore } from "@/domains/chat/approval-override-store";
 import { clearConfirmationByRequestId } from "@/domains/chat/utils/send-message-utils";
 import { deriveCommandText } from "@/domains/chat/utils/chat";
 import { toRiskLevel } from "@/domains/chat/utils/risk";
@@ -41,8 +42,9 @@ function cleanupAfterConfirmationDecision(
   mappedToolCallId: string | undefined,
   decision: ConfirmationDecision,
 ): void {
-  const confirmationDecisionValue =
-    decision === "allow" ? "approved" : "denied";
+  // Deny is the only rejecting verb — allow, allow_10m and allow_conversation
+  // are all approvals. Compare against "deny", never against "allow".
+  const confirmationDecisionValue = decision === "deny" ? "denied" : "approved";
   useInteractionStore.getState().dismissConfirmation();
   useInteractionStore.getState().setInlineConfirmationToolCallId(null);
   const convKey = useConversationStore.getState().activeConversationId;
@@ -197,6 +199,20 @@ export async function handleConfirmationSubmit(
       useInteractionStore.getState().submitConfirmationEnd();
       return;
     }
+
+    // A grant decision (allow_10m / allow_conversation) installed a
+    // temporary override — mirror the echo so the countdown chip near the
+    // composer can tick and offer tap-to-revoke.
+    if (result.approvalOverride) {
+      useApprovalOverrideStore.getState().setActiveOverride({
+        conversationId: result.approvalOverride.conversationId,
+        conversationKey:
+          useConversationStore.getState().activeConversationId ?? null,
+        kind: result.approvalOverride.kind,
+        expiresAt: result.approvalOverride.expiresAt,
+      });
+    }
+
     cleanupAfterConfirmationDecision(snapshot, mappedToolCallId, decision);
   } catch (err) {
     captureError(err, { context: "submit_confirmation" });
