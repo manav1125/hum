@@ -111,9 +111,6 @@ export interface ToolSetupContext extends SurfaceConversationContext {
   currentTurnAuthContext?: AuthContext;
   /** Voice/call session ID, if the conversation originates from a call. Propagated into ToolContext for scoped grant consumption. */
   callSessionId?: string;
-  /** The interface ID of the connected client driving the current turn (e.g. "macos", "chrome-extension"). Propagated into ToolContext for browser backend selection. */
-  readonly transportInterface?: InterfaceId;
-
   /** Turn-scoped flag: true when any tool call in the current turn received explicit user approval via interactive prompt. Cleared at turn end. */
   approvedViaPromptThisTurn?: boolean;
   /**

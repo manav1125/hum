@@ -70,8 +70,12 @@ function buildMockContext(
   hostCuProxy?: InstanceType<typeof HostCuProxy>,
   trustGuardianPrincipalId: string | null = DEFAULT_PRINCIPAL,
   actorPrincipalId: string | null = trustGuardianPrincipalId,
+  // Mirrors `Conversation.ensureHostProxiesForTurn`: attaches a CU proxy when
+  // the gate passes. Left undefined to model a conversation that cannot
+  // attach one (the gate denies, or the context predates the hook).
+  ensureHostProxiesForTurn?: () => void,
 ): SurfaceConversationContext {
-  return {
+  const ctx: SurfaceConversationContext = {
     conversationId: "test-session",
     trustContext:
       trustGuardianPrincipalId != null
@@ -101,12 +105,15 @@ function buildMockContext(
     surfaceActionRequestIds: new Set(),
     currentTurnSurfaces: [],
     hostCuProxy,
+    transportInterface: "web",
+    ensureHostProxiesForTurn,
     isProcessing: () => false,
     enqueueMessage: () => ({ queued: false, requestId: "r1" }),
     getQueueDepth: () => 0,
     processMessage: async () => "",
     withSurface: async (_id, fn) => fn(),
   };
+  return ctx;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,8 +145,76 @@ describe("surfaceProxyResolver — CU tool routing", () => {
   // No desktop client connected
   // -------------------------------------------------------------------------
 
-  describe("no desktop client connected", () => {
-    test("returns error when hostCuProxy is undefined", async () => {
+  describe("attaching the proxy at tool-call time", () => {
+    test("attaches a proxy when the conversation has none and dispatches", async () => {
+      // The reported bug: `assistant clients list` showed the desktop
+      // connected and usable, while every computer_use_* call answered "no
+      // desktop client connected" — because attachment was decided at turn
+      // start, before the desktop was reachable, and never revisited.
+      sentMessages.length = 0;
+      mockHasClient = true;
+      mockCuClients = [
+        {
+          clientId: "mock-client-1",
+          capabilities: ["host_cu"],
+          actorPrincipalId: DEFAULT_PRINCIPAL,
+        },
+      ];
+
+      let attachCalls = 0;
+      const ctx: SurfaceConversationContext = buildMockContext(
+        /* no proxy */ undefined,
+        DEFAULT_PRINCIPAL,
+        DEFAULT_PRINCIPAL,
+        () => {
+          attachCalls++;
+          proxy = new HostCuProxy();
+          (ctx as { hostCuProxy?: unknown }).hostCuProxy = proxy;
+        },
+      );
+
+      const resultPromise = surfaceProxyResolver(ctx, "computer_use_click", {
+        element_id: 42,
+        reasoning: "click the button",
+      });
+
+      expect(attachCalls).toBe(1);
+      expect(ctx.hostCuProxy).toBeDefined();
+      // Dispatched for real: the request reached the wire, not an error result.
+      expect(sentMessages).toHaveLength(1);
+      const sent = sentMessages[0] as { type?: string; requestId?: string };
+      expect(sent.type).toBe("host_cu_request");
+
+      proxy.processObservation(sent.requestId!, { axTree: "window Safari" });
+      const result = await resultPromise;
+      expect(result.isError).toBe(false);
+    });
+
+    test("reports the interface, not a missing desktop, when the gate still denies", async () => {
+      // The gate ran and refused (e.g. a chrome-extension source, or a
+      // desktop signed in as someone else). Saying "no desktop client
+      // connected" here contradicts a listing that plainly shows one.
+      mockCuClients = [
+        {
+          clientId: "mock-client-other",
+          capabilities: ["host_cu"],
+          actorPrincipalId: "someone-else",
+        },
+      ];
+      const ctx = buildMockContext(/* no proxy, no attach hook */);
+      const result = await surfaceProxyResolver(ctx, "computer_use_click", {
+        element_id: 42,
+        reasoning: "click the button",
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("not available");
+      expect(result.content).not.toContain("no desktop client");
+      expect(result.content).toContain("advertise host_cu");
+    });
+
+    test("returns the no-desktop error when nothing advertises host_cu", async () => {
+      mockCuClients = [];
       const ctx = buildMockContext(/* no proxy */);
       const result = await surfaceProxyResolver(ctx, "computer_use_click", {
         element_id: 42,
