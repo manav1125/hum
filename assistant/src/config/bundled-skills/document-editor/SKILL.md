@@ -1,6 +1,6 @@
 ---
 name: document-editor
-description: Use whenever the user wants to write or draft ANY document or long-form content — a letter (cover letter, business/formal letter, reference, support, or application letter), memo, proposal, report, brief, essay, article, blog post, plan, statement, contract draft, story, or any multi-paragraph written piece. Creates the content in a rich text editor instead of dumping it in chat or writing it to a scratch file, so it can be streamed, reviewed, edited, and exported.
+description: Use whenever the user wants to write or draft ANY document or long-form content — a letter (cover letter, business/formal letter, reference, support, or application letter), memo, proposal, report, brief, essay, article, blog post, plan, statement, contract draft, story, or any multi-paragraph written piece. Prose goes into a rich text editor instead of chat or a scratch file, so it can be streamed, reviewed, edited, and exported; a presented artifact (proposal, one-pager, pitch, client report, invoice, flyer) is built instead as a designed PDF with `pdf_create`.
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "✍️"
@@ -12,6 +12,7 @@ metadata:
       - "User wants written content they will iterate on, review, sign, send, or export — use the editor instead of inline markdown"
       - "A file attachment contains a draft or document the user wants to revise — open it in the editor"
       - "User asks for a PDF — a report, invoice, one-pager, or an export of an existing document"
+      - "User asks for something they will SHOW someone — a proposal, one-pager, pitch, brief, client-facing report, case study, quote, invoice or flyer — build it as a designed PDF with pdf_create(html), never in the Markdown editor"
     avoid-when:
       - "The user wants an interactive app, dashboard, calculator, game, or anything with state or data — use app-builder instead"
       - "A one or two sentence answer is enough — just reply in chat"
@@ -30,15 +31,65 @@ Write and edit long-form documents using the built-in rich text editor. Document
 - **document_open** - Opens an existing document in the editor panel by `surface_id`. Use this when a document exists but isn't visible in the editor — for example after the user switches devices, refreshes the page, or when the editor panel was closed. Fetches the document from storage and sends it to the client.
 - **document_delete** - Deletes a document by `surface_id`. Use to clean up unwanted documents.
 - **document_export_pdf** - Renders an existing document to a polished PDF and delivers it as an in-chat attachment. The share/print/send path.
-- **pdf_create** - Builds a standalone PDF from markdown or self-contained HTML (invoices, one-pagers, flyers) without creating an editable document first.
+- **pdf_create** - Builds a standalone PDF from self-contained HTML (or plain markdown) without creating an editable document first. This is the path for every **designed** deliverable — proposal, one-pager, pitch, brief, client report, invoice, flyer. Style it with `{baseDir}/references/DESIGNED_PDF.md`.
 
-## Exporting to PDF
+## FIRST: which path — editor, or designed PDF?
 
-When the user says "PDF", "send it", "share it", or "print it": finish the document's content first, then call `document_export_pdf` with its `surface_id` — the PDF arrives as an attachment they can download. For deliverables that are files by nature (an invoice, a one-pager, a flyer), skip the editor and use `pdf_create` directly. When a document you produced is deliverable-shaped (report, proposal, formal letter), proactively offer the export: "Want this as a PDF?"
+Decide on the **shape of the deliverable, not its length**. This is the most
+consequential choice in the skill and you make it before any other tool call.
+
+| The deliverable is… | Path |
+| --- | --- |
+| **Prose** the user will read, iterate on, sign, paste or send as text — letter, memo, essay, article, blog post, plan, meeting notes, statement, contract draft, story, internal write-up | `document_create` → stream with `document_update` (the editor) |
+| **A presented artifact** — something they will put in front of someone else — proposal, one-pager, pitch, brief, client-facing report, case study, quote, statement of work, invoice, flyer, menu, certificate | `pdf_create({ html })` using the house style in `{baseDir}/references/DESIGNED_PDF.md` |
+
+**The tells for a designed PDF**, any one of which decides it: the user says "one
+pager", "proposal", "pitch", "deck", "brochure", "invoice", "quote"; or says they'll
+"share it with them", "send it to the client", "show the board"; or names an external
+recipient organisation. "Build me a proposal for X that I can share with them" is a
+designed PDF, unambiguously.
+
+On the designed path: **read `{baseDir}/references/DESIGNED_PDF.md` with `file_read`
+before writing any HTML.** It carries the tokens, the type pairing, the components
+(cover, numbered sections, stat rows, pricing tables, callouts, steps, assumptions
+footer) and the offline-render constraints. Don't improvise a visual system — the
+whole point is that these come out looking designed rather than like a text dump.
+Then call `pdf_create` once with the finished HTML. Do **not** create a document, do
+**not** append eight Markdown chunks, and do **not** export the editor's Markdown as
+the proposal — that path is what produces the flat text-only PDF this skill exists to
+avoid.
+
+If you started in the editor and only then realised the deliverable is an artifact,
+stop, build it with `pdf_create({ html })`, and tell the user the document is still
+there as the working draft.
+
+**If `file_read` can't reach the reference** (it lives outside the sandbox in some
+environments), still take the designed path — apply at minimum: CSS custom properties
+for `--ink / --accent / --paper / --plate` declared once at `:root` and used
+everywhere; a serif for the title and section headings against a sans body and a mono
+for eyebrows, table headers and money; a dark full-width cover block with the title,
+one-line lede and a who/for/when meta strip; numbered sections (`01`, `02`); bordered
+cards and tables with `break-inside: avoid` and a highlighted recommended row; a dark
+footer carrying assumptions and sources. Nothing remote (no webfonts, no images —
+every font stack ends in `serif` / `sans-serif` / `monospace`), no blurred
+`box-shadow` (it prints as a grey slab), no `prefers-color-scheme` — a PDF has one
+theme. Call with `margin_inches: 0` when the cover bleeds.
+
+`pdf_create` also accepts `markdown` — that is for a plain text file (a receipt, a
+transcript, a quick note as a file), never for something with a client's name on it.
+
+### Exporting a document the user already has
+
+When the user says "PDF", "send it", "share it", or "print it" about an existing
+document: finish its content first, then call `document_export_pdf` with its
+`surface_id` — the PDF arrives as an attachment they can download. When a document
+you produced is deliverable-shaped, proactively offer the export: "Want this as a
+PDF?"
 
 ## Creating a new document
 
-This is the default path when the user asks you to write something.
+This is the path for prose (see the routing table above — an artifact goes to
+`pdf_create` instead).
 
 1. **Create the document**: Call `document_create` with a title (inferred from the request). Call the tool immediately, not after conversational preamble. Capture the `surface_id` from the response — every subsequent `document_update` call must reference it.
 2. **Write content in Markdown**: Use proper structure (`#` for titles, `##` for sections), **bold**, _italic_, code blocks, tables, lists, blockquotes as appropriate.
@@ -66,7 +117,8 @@ When the request is prefixed with a **`DESIGN CONTRACT`** or **`BRAND`** block (
 
 - **Voice & tone** — write ALL copy in the specified tone; follow the brand's do/don't lists; weave the boilerplate in where natural (e.g. an intro or closing line). This is the part that matters most for docs and you must apply it.
 - **Boilerplate / naming** — use the exact brand name, product names, and any required phrasing verbatim.
-- **Palette / fonts / logo** — the editor renders Markdown, so you can't set arbitrary hexes or font faces inline; don't fake it with HTML. Instead, when the user exports (`document_export_pdf`) the brand styling is applied at that layer — just keep the content brand-appropriate. If a logo asset is named, mention it as a placeholder at the top ("_[Brand logo]_") rather than trying to embed a remote image.
+- **Palette / fonts / logo** — _in the editor_, the canvas is Markdown: you can't set arbitrary hexes or font faces inline, and inline HTML won't render, so don't try. Brand styling is applied at the `document_export_pdf` layer; keep the content brand-appropriate. If a logo asset is named, mention it as a placeholder at the top ("_[Brand logo]_") rather than embedding a remote image.
+- **A contract with a real palette is itself a signal.** If the user handed you brand colours and fonts, they expect to see them — that is a presented artifact, so take the designed-PDF path and express the palette through the tokens in `{baseDir}/references/DESIGNED_PDF.md` (`--accent`, `--accent-deep`, `--accent-wash`, `--plate`). There you _can_ honour the palette exactly. Fonts still have to come from the system stacks — the render has no network — so match the brand's *category* (serif display vs. geometric sans), never a remote webfont.
 
 The user's words after the `---` are the primary instruction; the contract shapes the writing style. Absent any such block, write as usual.
 
@@ -137,8 +189,36 @@ Users can leave inline comments on documents. Open comments are surfaced in a `<
 3. Call `comment_resolve` on comments you have addressed.
 4. If a comment is ambiguous, call `comment_reply` to ask for clarification instead of guessing.
 
+## Numbers you can defend
+
+Anything the user will put in front of a client is a document that can be checked.
+A fabricated figure is the failure mode that actually loses the deal, so this applies
+on **both** paths, editor and PDF:
+
+- **Never invent** a metric, percentage, price, headcount, client name, testimonial,
+  case study, award or logo — not as a "realistic example", not as filler, not
+  because a layout has a gap.
+- **Every figure you print must be traceable** to this conversation, a tool result,
+  or a cited public source. Say which, in the document.
+- **A number you need but don't have is a visible placeholder**, never a plausible
+  invention. In the editor: `**[client to confirm: 2026 headcount]**`. In a designed
+  PDF: `<span class="tbd">[client to confirm: 2026 headcount]</span>`, which prints
+  as an amber dashed box nobody can send by accident.
+- **Arithmetic must close.** Totals equal the sum of their rows; a quoted discount is
+  applied in the worked example.
+- **A priced document ends with an assumptions/sources block**, and you tell the user
+  in chat which figures are placeholders, in the same message that delivers the file.
+
 ## Anti-Patterns
 
+- **Don't build a proposal, one-pager or pitch in the Markdown editor.** Eight
+  `document_update` appends followed by `document_export_pdf` produces a text-only
+  PDF for something the user is about to show a client. Route it to
+  `pdf_create({ html })` with the house style instead.
+- **Don't improvise a visual system.** On the designed path, read
+  `{baseDir}/references/DESIGNED_PDF.md` and use its tokens and components.
+- **Don't reference anything remote in PDF HTML** — no webfonts, no hosted logos, no
+  CDN scripts. The render blocks the network and they come out blank.
 - **Don't use `app_create` for blog posts, articles, or written content.** Use `document_create` — apps are for interactive content with state/data.
 - **Don't write the article into the chat response.** Long-form prose goes in the document editor via `document_create`, not in chat and not into a `.md` file in the workspace. Acknowledge what you're doing and stream to the editor.
 - **Don't wait to generate everything before sending.** Stream content in chunks via `document_update` with `mode: "append"` so users see progress in real time.
@@ -149,3 +229,12 @@ Users can leave inline comments on documents. Open comments are surfaced in a `<
 - Documents are automatically saved and accessible via the Generated panel.
 - Users can manually edit documents at any time.
 - Write in clear, engaging prose. Use active voice, vary sentence structure, and break content into logical sections with descriptive headings.
+
+## Reference files
+
+Read with `file_read` (`{baseDir}` resolves to this skill's directory):
+
+- `{baseDir}/references/DESIGNED_PDF.md` — the house style for `pdf_create({ html })`:
+  tokens, type pairing, cover / numbered sections / stat rows / pricing tables /
+  callouts / steps / assumptions footer, the offline-render constraints, and the
+  preflight checklist. Read it before writing HTML for any presented artifact.

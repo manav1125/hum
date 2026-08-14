@@ -274,7 +274,7 @@
     },
     {
       "name": "pdf_create",
-      "description": "Create a standalone PDF file from markdown or full self-contained HTML and deliver it as an in-chat attachment — invoices, one-pagers, flyers, formal letters, reports that should be a FILE rather than an editable document. For content the user will iterate on, prefer document_create then document_export_pdf. HTML must be self-contained (no external assets — network is blocked during render).",
+      "description": "Create a standalone PDF file from full self-contained HTML (or plain markdown) and deliver it as an in-chat attachment. This is the path for every PRESENTED artifact — proposal, one-pager, pitch, brief, client-facing report, case study, quote, invoice, flyer — which must be built with `html` and the skill's house style (references/DESIGNED_PDF.md), never written in the Markdown editor and exported. Use `markdown` only for a plain text file. For prose the user will iterate on, prefer document_create then document_export_pdf. HTML must be self-contained (no external assets — network is blocked during render).",
       "category": "content",
       "risk": "low",
       "input_schema": {
