@@ -12,7 +12,7 @@ metadata:
       - "User wants written content they will iterate on, review, sign, send, or export — use the editor instead of inline markdown"
       - "A file attachment contains a draft or document the user wants to revise — open it in the editor"
       - "User asks for a PDF — a report, invoice, one-pager, or an export of an existing document"
-      - "User asks for a document in a specific file format — Word/.docx (especially 'so I can edit it' or 'to redline'), Excel/.xlsx, an image/PNG to paste somewhere, HTML, or Markdown — export it with document_export or file_create"
+      - "User asks for a document in a specific file format — Word/.docx (especially 'so I can edit it' or 'to redline'), PowerPoint/.pptx (structured slides they can edit), Excel/.xlsx, an image/PNG to paste somewhere, HTML, or Markdown — export it with document_export or file_create"
       - "User asks for something they will SHOW someone — a proposal, one-pager, pitch, brief, client-facing report, case study, quote, invoice or flyer — build it as a designed PDF with pdf_create(html), never in the Markdown editor"
     avoid-when:
       - "The user wants an interactive app, dashboard, calculator, game, or anything with state or data — use app-builder instead"
@@ -32,9 +32,9 @@ Write and edit long-form documents using the built-in rich text editor. Document
 - **document_open** - Opens an existing document in the editor panel by `surface_id`. Use this when a document exists but isn't visible in the editor — for example after the user switches devices, refreshes the page, or when the editor panel was closed. Fetches the document from storage and sends it to the client.
 - **document_delete** - Deletes a document by `surface_id`. Use to clean up unwanted documents.
 - **document_export_pdf** - Renders an existing document to a polished PDF and delivers it as an in-chat attachment. The share/print/send path.
-- **document_export** - Exports an existing document in any format: `pdf`, `png`, `markdown`, `html`, `docx` (Word), `xlsx` (Excel). See the format table below.
+- **document_export** - Exports an existing document in any format: `pdf`, `png`, `markdown`, `html`, `docx` (Word), `xlsx` (Excel), `pptx` (PowerPoint). See the format table below.
 - **pdf_create** - Builds a standalone PDF from self-contained HTML (or plain markdown) without creating an editable document first. This is the path for every **designed** deliverable — proposal, one-pager, pitch, brief, client report, invoice, flyer. Style it with `{baseDir}/references/DESIGNED_PDF.md`.
-- **file_create** - The non-PDF sibling of `pdf_create`: a standalone `png`, `html`, `markdown`, `docx` or `xlsx` from markdown or self-contained HTML, without an editable document first.
+- **file_create** - The non-PDF sibling of `pdf_create`: a standalone `png`, `html`, `markdown`, `docx`, `xlsx` or `pptx` from markdown or self-contained HTML, without an editable document first.
 
 ## FIRST: which path — editor, or designed PDF?
 
@@ -99,6 +99,7 @@ answer for something the other side has to change.
 | --- | --- | --- |
 | Read it, print it, file it — nothing changes | `pdf` | `document_export_pdf`, or `pdf_create({ html })` for a designed artifact |
 | **Edit or redline it in Word** — contracts, proposals, anything going through legal or a client's review | `docx` | `document_export` / `file_create` |
+| **Present it, or edit the slides in PowerPoint** — a structured deck they will re-order and retype | `pptx` | `document_export` / `file_create` |
 | **Re-calculate the numbers** — pricing, budgets, line items, any data table | `xlsx` | `document_export` / `file_create` |
 | **Paste it into Slack, a deck, a doc, a message** — anywhere an image travels better than a file | `png` | `document_export` / `file_create` |
 | Publish it, paste it into a CMS, or send it as an email body | `html` | `document_export` / `file_create` |
@@ -107,13 +108,37 @@ answer for something the other side has to change.
 The tells, and they are usually explicit: "so I can edit it", "send me the Word
 version", "put it in a doc" → **docx**. "as a spreadsheet", "in Excel", "can I get
 the pricing in a sheet" → **xlsx**. "screenshot of this", "as an image", "so I can
-drop it in the deck" → **png**.
+drop it in the deck" → **png**. "in PowerPoint", "as slides", "a deck I can edit"
+→ **pptx** — and say in the same breath that it is the structure as slides, not
+the designed layout.
 
 **docx is the one that wins deals.** When a proposal, quote, statement of work or
 contract is going to a client who will comment on it, offer the Word version in
 the same message as the PDF — a PDF forces them to retype your terms into their
 own document, and that is where your language stops being yours. The export keeps
 real headings, lists, tables and character styles, so track changes works on it.
+
+**pptx exports structure, not a design — say so.** Each `#` and `##` becomes a
+16:9 slide titled with that heading; the content under it becomes the body, with
+bullets, numbered lists, nesting, tables and bold/italic all landing as real
+PowerPoint objects the recipient can click into and retype. A section too long
+for one slide is split across several, and the extra slides are titled
+"… (cont.)" so the reader knows the list didn't restart. A `---` in the markdown
+is honoured as an explicit slide break.
+
+What it is **not** is a picture of a designed layout. The slides wear
+PowerPoint's own styling, not the house style from `references/DESIGNED_PDF.md`.
+So when you hand one over, name it: "editable slides built from the structure —
+the styling is PowerPoint's, not the designed layout". A user who thinks they
+received their designed deck and then emails it to a client is the bad outcome
+this sentence exists to prevent.
+
+**A designed deck stays a PDF.** A slide deck built with `app-builder` is HTML
+and CSS; there is no honest conversion from that into editable shapes, and the
+alternative — one screenshot per slide — produces a file that looks like a real
+export until someone tries to fix a typo. Export those with `deck_export_pdf`.
+If the user wants a designed deck *and* something editable, offer both: the PDF
+for how it looks, a pptx built from the same structure for what they can change.
 
 **xlsx** takes the document's markdown **tables** and writes one sheet per table,
 with currency and percentage cells as real numbers (so `$12,000.00` sums, and
@@ -264,9 +289,12 @@ on **both** paths, editor and PDF:
   logos, no CDN scripts. The render blocks the network and they come out blank.
 - **Don't send a PDF when the user said they need to edit it.** "Can I get this in
   Word" is a request for `docx`, not for a PDF with an apology.
-- **Don't pass `html` to the docx or xlsx export.** Those are built from the
-  markdown's structure; the tool will refuse rather than embed a picture of the
-  page. Pass the content as markdown.
+- **Don't pass `html` to the docx, xlsx or pptx export.** Those are built from
+  the markdown's structure; the tool will refuse rather than embed a picture of
+  the page. Pass the content as markdown.
+- **Don't offer pptx as a way to "convert" a designed deck.** It exports
+  structure into PowerPoint's styling. Claiming it reproduces a designed layout
+  is the one mistake here that reaches the user's client.
 - **Don't use `app_create` for blog posts, articles, or written content.** Use `document_create` — apps are for interactive content with state/data.
 - **Don't write the article into the chat response.** Long-form prose goes in the document editor via `document_create`, not in chat and not into a `.md` file in the workspace. Acknowledge what you're doing and stream to the editor.
 - **Don't wait to generate everything before sending.** Stream content in chunks via `document_update` with `mode: "append"` so users see progress in real time.

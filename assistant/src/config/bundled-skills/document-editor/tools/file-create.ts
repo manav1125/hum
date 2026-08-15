@@ -1,13 +1,14 @@
 /**
- * file_create — build a standalone file (PNG, HTML, Markdown, Word, Excel)
- * from markdown or self-contained HTML and deliver it as an in-chat
+ * file_create — build a standalone file (PNG, HTML, Markdown, Word, Excel,
+ * PowerPoint) from markdown or self-contained HTML and deliver it as an in-chat
  * attachment. The non-PDF sibling of `pdf_create`.
  *
  * The `html` input only makes sense for the formats that are, or can be
- * rasterized from, a rendered page — `png` and `html`. Word and Excel want
- * structure, not a picture of one, so those formats take `markdown`; that
- * restriction is enforced here rather than silently producing a document with
- * a screenshot pasted into it.
+ * rasterized from, a rendered page — `png` and `html`. Word, Excel and
+ * PowerPoint want structure, not a picture of one, so those formats take
+ * `markdown`; that restriction is enforced here rather than silently producing
+ * a document with a screenshot pasted into it. For pptx in particular, that is
+ * the difference between slides the recipient can edit and slides they cannot.
  */
 
 import {
@@ -27,10 +28,10 @@ import type {
 const MAX_CONTENT_BYTES = 2 * 1024 * 1024;
 
 /** `pdf_create` owns PDF; offering it here too would only split the routing. */
-const SUPPORTED = ["png", "html", "markdown", "docx", "xlsx"] as const;
+const SUPPORTED = ["png", "html", "markdown", "docx", "xlsx", "pptx"] as const;
 
 /** Formats that need the markdown structure, not a rendered page. */
-const MARKDOWN_ONLY = new Set(["docx", "xlsx", "markdown"]);
+const MARKDOWN_ONLY = new Set(["docx", "xlsx", "pptx", "markdown"]);
 
 export async function run(
   input: Record<string, unknown>,
@@ -58,8 +59,12 @@ export async function run(
     };
   }
   if (html && MARKDOWN_ONLY.has(format)) {
+    const extra =
+      format === "pptx"
+        ? " A designed HTML deck cannot become editable slides — the only way to put that layout in a .pptx is a screenshot per slide, which is worse than the PDF. Send the deck's structure as markdown, or export the design as a PDF instead."
+        : " Pass the content as markdown, or choose png/html.";
     return {
-      content: `\`${format}\` needs \`markdown\` — it is built from the document's structure (headings, lists, tables), not from rendered HTML. Pass the content as markdown, or choose png/html.`,
+      content: `\`${format}\` needs \`markdown\` — it is built from the document's structure (headings, lists, tables), not from rendered HTML.${extra}`,
       isError: true,
     };
   }

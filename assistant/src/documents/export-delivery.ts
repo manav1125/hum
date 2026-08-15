@@ -12,6 +12,7 @@ import { renderMarkdownToDocx } from "./docx-render.js";
 import { renderMarkdownToHtmlDocument } from "./html-export.js";
 import { renderMarkdownToPDF } from "./pdf-render.js";
 import { renderMarkdownToPng } from "./png-render.js";
+import { renderMarkdownToPptx } from "./pptx-render.js";
 import { renderMarkdownTablesToXlsx } from "./xlsx-render.js";
 
 export const EXPORT_FORMATS = [
@@ -21,6 +22,7 @@ export const EXPORT_FORMATS = [
   "html",
   "docx",
   "xlsx",
+  "pptx",
 ] as const;
 
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -44,6 +46,10 @@ const SPEC: Record<ExportFormat, { ext: string; mime: string }> = {
   xlsx: {
     ext: "xlsx",
     mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  },
+  pptx: {
+    ext: "pptx",
+    mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   },
 };
 
@@ -134,6 +140,21 @@ export async function renderMarkdownAs(
       return {
         bytes: book.bytes,
         detail: { sheets: book.sheets, tableCount: book.tableCount },
+      };
+    }
+
+    case "pptx": {
+      const deck = await renderMarkdownToPptx(markdown, { title: opts.title });
+      return {
+        bytes: deck.bytes,
+        detail: {
+          editable: true,
+          slideCount: deck.slideCount,
+          slideTitles: deck.slideTitles,
+          // Said explicitly so the model repeats it rather than implying the
+          // deck reproduces a designed layout.
+          note: "Structural export: real editable text, PowerPoint's own styling — not a copy of a designed layout.",
+        },
       };
     }
   }

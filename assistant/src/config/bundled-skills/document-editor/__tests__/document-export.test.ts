@@ -150,10 +150,37 @@ describe("document_export", () => {
     expect(result.content).toMatch(/No tables found/);
   });
 
-  test("rejects an unknown format by listing the real ones", async () => {
+  test("produces editable slides, and says they are structural", async () => {
     const { surfaceId, context } = seedDocument();
     const result = await documentExport(
       { surface_id: surfaceId, format: "pptx" },
+      context,
+    );
+
+    expect(result.isError).toBe(false);
+    const body = payload(result.content as string);
+    expect(body.filename).toBe("Quarterly-Proposal.pptx");
+    expect(body.slideCount).toBeGreaterThan(0);
+    // The model has to be able to repeat the limitation to the user.
+    expect(String(body.note)).toMatch(/not a copy of a designed layout/i);
+
+    const stored = getAttachmentById(body.attachmentId as string);
+    expect(stored?.mimeType).toBe(
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    );
+
+    const zip = await JSZip.loadAsync(bytesOf(body.attachmentId as string));
+    const xml = await zip.file("ppt/slides/slide1.xml")!.async("string");
+    expect(xml).toContain("Acme Trading LLC");
+    // Real text runs, not a picture of the document.
+    expect(xml).toContain("<a:t>");
+    expect(xml).not.toContain("<a:blip");
+  });
+
+  test("rejects an unknown format by listing the real ones", async () => {
+    const { surfaceId, context } = seedDocument();
+    const result = await documentExport(
+      { surface_id: surfaceId, format: "keynote" },
       context,
     );
     expect(result.isError).toBe(true);
