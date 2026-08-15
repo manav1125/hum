@@ -38,11 +38,21 @@ import {
 import type { Token, Tokens } from "marked";
 import { marked } from "marked";
 
+import type { ColumnText } from "./table-columns.js";
+import { apportionColumns, roundToTotal } from "./table-columns.js";
+
 const FONT_BODY = "Calibri";
 const FONT_MONO = "Consolas";
 
 /** Word measures in twips (1/20 pt); these are the numbers we reuse. */
 const PT = 20;
+
+/** Body text size, in points — `size: 22` half-points in the document style. */
+const BODY_PT = 11;
+
+/** Cell padding in twips, mirrored by `cellMargins()`. */
+const CELL_PAD_LEFT = 100;
+const CELL_PAD_RIGHT = 100;
 
 const HEADING_LEVELS = [
   HeadingLevel.HEADING_1,
@@ -396,34 +406,33 @@ function listItemParagraphs(
 }
 
 /**
- * Column widths, in twips, apportioned by how much text each column carries.
+ * Column widths, in twips.
  *
  * A table with no explicit grid is the single worst-looking thing this exporter
  * can emit: OOXML's default `gridCol` is 100 twips (~0.07"), and a renderer
  * that honours the grid instead of auto-fitting squeezes every column into a
  * one-character ribbon. Word itself usually recovers; Quick Look and Pages do
  * not. So the grid is always written.
+ *
+ * `apportionColumns` decides the split; see there for why a column's longest
+ * unbreakable token, not just its text volume, sets a floor.
  */
 function columnWidths(token: Tokens.Table, contentWidth: number): number[] {
-  const columns = token.header.length;
-  if (columns === 0) return [];
+  if (token.header.length === 0) return [];
 
-  const weights = token.header.map((cell, i) => {
-    const longest = Math.max(
-      cell.text.length,
-      ...token.rows.map((row) => row[i]?.text.length ?? 0),
-    );
-    // Clamp so one long prose cell can't starve the numeric columns, and an
-    // empty column still gets something to hold its border.
-    return Math.min(40, Math.max(6, longest));
-  });
+  const columns: ColumnText[] = token.header.map((cell, i) => ({
+    header: cell.text,
+    cells: token.rows.map((row) => row[i]?.text ?? ""),
+  }));
 
-  const total = weights.reduce((a, b) => a + b, 0);
-  const widths = weights.map((w) => Math.floor((contentWidth * w) / total));
-  // Give the rounding remainder to the widest column so the row fills the page.
-  const widest = widths.indexOf(Math.max(...widths));
-  widths[widest] += contentWidth - widths.reduce((a, b) => a + b, 0);
-  return widths;
+  return roundToTotal(
+    apportionColumns(columns, contentWidth, {
+      fontPt: BODY_PT,
+      unitsPerPt: PT,
+      padding: CELL_PAD_LEFT + CELL_PAD_RIGHT,
+    }),
+    contentWidth,
+  );
 }
 
 function tableOf(token: Tokens.Table, contentWidth: number): Table {
@@ -490,8 +499,8 @@ function cellMargins() {
   return {
     top: 60,
     bottom: 60,
-    left: 100,
-    right: 100,
+    left: CELL_PAD_LEFT,
+    right: CELL_PAD_RIGHT,
   };
 }
 

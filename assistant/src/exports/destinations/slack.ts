@@ -1,12 +1,20 @@
 /**
- * Slack destination — the one that proves the primitive.
+ * Slack destination.
  *
- * Slack is the only destination that does not go through Composio: Cue already
- * holds a Slack bot token and already implements the v2 external-upload flow
- * for channel egress, so this is a thin adapter over `uploadFileToSlack`
- * rather than a second implementation. (The Composio Slack toolkit is
- * JSON-only and structurally cannot do a multipart file upload, so routing
- * through it would be a downgrade.)
+ * Slack is the only destination that does not go through Composio: it is a
+ * thin adapter over `uploadFileToSlack`, the v2 external-upload flow Cue
+ * already implements for channel egress, rather than a second implementation
+ * of the same three-step dance.
+ *
+ * The consequence is worth stating plainly, because it is not what the
+ * Connectors page implies. This route authenticates with the **Slack channel
+ * bot token** (`credential/slack_channel/bot_token`) — the token from the
+ * Slack app that lets Cue talk in Slack. It does NOT use the Composio Slack
+ * connector, so a Composio Slack connection showing "connected" on the
+ * Connectors page does nothing for this path, and an install that has only
+ * the Composio connection cannot send a file here at all. `notConnected`
+ * below therefore has to name the right credential; sending the user to
+ * Connectors, where Slack already reads as connected, is a dead end.
  */
 
 import { uploadFileToSlack } from "../../messaging/providers/slack/send.js";
@@ -67,7 +75,7 @@ export const slackDestination: Destination = {
       return notSent(
         notConnected ? "not_connected" : "destination_error",
         notConnected
-          ? "Slack is not connected — connect it in Connectors, then try again."
+          ? "Sending a file to Slack needs Cue's Slack channel bot token, which is not set on this install. That is a different credential from the Slack connector on the Connectors page — a Slack connector shown there as connected will not do it. Add the Slack bot and app tokens on the assistant's Channels surface, then try again."
           : `Slack refused the upload: ${message}`,
       );
     }

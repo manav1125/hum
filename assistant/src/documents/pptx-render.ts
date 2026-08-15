@@ -30,6 +30,9 @@ import type { Token, Tokens } from "marked";
 import { marked } from "marked";
 import pptxgen from "pptxgenjs";
 
+import type { ColumnText } from "./table-columns.js";
+import { apportionColumns } from "./table-columns.js";
+
 /**
  * pptxgenjs ships `module.exports = PptxGenJS` — the constructor itself — but
  * declares `export default` in its `.d.ts`. Under NodeNext resolution that
@@ -66,6 +69,9 @@ const PT_BODY = 16;
 const PT_NESTED = 14;
 const PT_MONO = 12;
 const PT_TABLE = 12;
+
+/** Padding inside a table cell, in points, per side — passed to `addTable`. */
+const CELL_MARGIN_PT = 5;
 
 const FONT_BODY = "Arial";
 const FONT_MONO = "Courier New";
@@ -590,23 +596,21 @@ function tableRowHeights(table: TableModel): {
 }
 
 /**
- * Column widths in inches, apportioned by how much text each column carries.
- * Clamped so one prose column cannot starve the numeric ones.
+ * Column widths in inches. `apportionColumns` decides the split; see there for
+ * why a column's longest unbreakable token, not just its text volume, sets a
+ * floor.
  */
 function columnWidths(table: TableModel): number[] {
-  const columns = table.headerText.length;
-  if (columns === 0) return [];
-  const weights = table.headerText.map((head, i) =>
-    Math.min(
-      40,
-      Math.max(
-        6,
-        Math.max(head.length, ...table.rowText.map((r) => (r[i] ?? "").length)),
-      ),
-    ),
-  );
-  const total = weights.reduce((a, b) => a + b, 0);
-  return weights.map((w) => (CONTENT_W * w) / total);
+  if (table.headerText.length === 0) return [];
+  const columns: ColumnText[] = table.headerText.map((head, i) => ({
+    header: head,
+    cells: table.rowText.map((r) => r[i] ?? ""),
+  }));
+  return apportionColumns(columns, CONTENT_W, {
+    fontPt: PT_TABLE,
+    unitsPerPt: 1 / 72,
+    padding: (2 * CELL_MARGIN_PT) / 72,
+  });
 }
 
 interface Page {
@@ -948,7 +952,7 @@ export async function renderMarkdownToPptx(
         fontFace: FONT_BODY,
         color: INK,
         border: { type: "solid", pt: 1, color: RULE },
-        margin: 5,
+        margin: CELL_MARGIN_PT,
         autoPage: false,
       });
     } else if (page.lines.length) {
