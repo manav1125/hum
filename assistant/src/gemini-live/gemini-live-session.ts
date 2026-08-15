@@ -195,6 +195,32 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private pendingUserText = "";
   private pendingAssistantText = "";
   /**
+   * Per-turn telemetry. This engine logged ONE line for an entire call
+   * ("session started"), so a caller reporting "it hung after ten seconds" left
+   * nothing in the log to confirm or deny — no turn boundaries, no
+   * interruptions, no audio. That absence is why the same symptom has been
+   * diagnosed three times with three different real causes and still recurs.
+   *
+   * The signature worth catching: a self-barge (the assistant's own speaker
+   * audio re-entering the mic and tripping interruption) shows up as turns
+   * interrupted a second or two after their first audio, at clockwork
+   * intervals, with an empty user transcript. `interrupted` + `sinceFirstAudioMs`
+   * + `userChars` distinguish that from an ordinary caller barge-in, which
+   * carries speech.
+   *
+   * Volume is one line per turn plus one per session, deliberately: this log is
+   * already hard to read under the memory-v2 salvage warnings.
+   */
+  private turnSeq = 0;
+  private turnStartedAtMs = 0;
+  private turnFirstAudioAtMs = 0;
+  private turnAudioBytes = 0;
+  private turnMicChunks = 0;
+  private turnEchoSuppressedChunks = 0;
+  private sessionTurns = 0;
+  private sessionInterruptions = 0;
+  private readonly sessionStartedAtMs = Date.now();
+  /**
    * Rolling window of the most recent completed turns, kept so a NON-resumed
    * upstream reconnect (fresh Gemini session — no conversation context) can be
    * handed a recap instead of amnesia mid-call. Bounded; the saved thread is
@@ -345,6 +371,16 @@ export class GeminiLiveSession implements LiveVoiceSession {
         onInterrupted: () => {
           // The user barged in; Gemini stops generating server-side. We simply
           // stop emitting audio for the interrupted turn.
+          this.sessionInterruptions += 1;
+          // The one signal that separates a real barge-in from the assistant
+          // interrupting ITSELF through the caller's speakers. Self-barge lands
+          // a second or two into playback with no user speech to show for it;
+          // a real barge-in carries a transcript. Logged at every interruption
+          // because the interesting case is the one nobody was watching for.
+          this.logTurn("interrupted", {
+            interruptions: this.sessionInterruptions,
+            userChars: this.pendingUserText.trim().length,
+          });
           this.currentTurnId = null;
         },
         onError: (message) => {
@@ -553,6 +589,7 @@ export class GeminiLiveSession implements LiveVoiceSession {
     // never loops the reply back through its mic — pass its audio through
     // untouched so the user can interrupt mid-reply at full sensitivity.
     const classifier = this.echoClassifier;
+    this.turnMicChunks += 1;
     if (!classifier) return [chunk];
     if (Date.now() >= this.playbackTailUntilMs + this.echoDrainSlackMs) {
       // Outside the echo window: nothing we sent can still be audible.
@@ -562,14 +599,17 @@ export class GeminiLiveSession implements LiveVoiceSession {
     const buffer = Buffer.isBuffer(chunk)
       ? chunk
       : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    return classifier
-      .classify(buffer)
-      .map((classified) =>
-        classified.classification === "echo"
-          ? (SILENCE_CHUNKS.get(classified.chunk.length) ??
-            new Uint8Array(classified.chunk.length))
-          : classified.chunk,
+    return classifier.classify(buffer).map((classified) => {
+      if (classified.classification !== "echo") return classified.chunk;
+      // Counted, not logged per chunk: the useful number is the per-turn
+      // proportion. A turn where most mic audio was suppressed as echo is a
+      // caller who could not have been heard even if they did speak.
+      this.turnEchoSuppressedChunks += 1;
+      return (
+        SILENCE_CHUNKS.get(classified.chunk.length) ??
+        new Uint8Array(classified.chunk.length)
       );
+    });
   }
 
   /**
@@ -587,13 +627,50 @@ export class GeminiLiveSession implements LiveVoiceSession {
     if (existing) return existing;
     const turnId = randomUUID();
     this.currentTurnId = turnId;
+    this.turnSeq += 1;
+    this.sessionTurns += 1;
+    this.turnStartedAtMs = Date.now();
+    this.turnFirstAudioAtMs = 0;
+    this.turnAudioBytes = 0;
+    this.turnMicChunks = 0;
+    this.turnEchoSuppressedChunks = 0;
     void this.context.sendFrame({ type: "thinking", turnId });
     return turnId;
+  }
+
+  /**
+   * One structured line per turn-lifecycle event, carrying the timings that
+   * make a reported hang diagnosable after the fact instead of only
+   * reproducible in the moment. `sinceFirstAudioMs` is the discriminator: a
+   * turn that dies shortly after audio begins is the assistant talking over
+   * itself, not the caller interrupting.
+   */
+  private logTurn(event: string, extra?: Record<string, unknown>): void {
+    const now = Date.now();
+    log.info(
+      {
+        event,
+        conversationId: this.conversationId,
+        turn: this.turnSeq,
+        sinceTurnStartMs: this.turnStartedAtMs ? now - this.turnStartedAtMs : 0,
+        sinceFirstAudioMs: this.turnFirstAudioAtMs
+          ? now - this.turnFirstAudioAtMs
+          : null,
+        audioBytes: this.turnAudioBytes,
+        micChunks: this.turnMicChunks,
+        echoSuppressedChunks: this.turnEchoSuppressedChunks,
+        sessionMs: now - this.sessionStartedAtMs,
+        ...extra,
+      },
+      `gemini-live turn ${event}`,
+    );
   }
 
   private onModelAudio(pcm: Buffer): void {
     if (this.closed) return;
     this.beginTurn();
+    this.turnAudioBytes += pcm.length;
+    if (this.turnFirstAudioAtMs === 0) this.turnFirstAudioAtMs = Date.now();
     // Feed the echo classifier's reference with the PCM the client will play
     // (unflagged sessions only). A reference left over from a previous,
     // fully-drained playback burst is stale — discard it so the correlation
@@ -634,6 +711,13 @@ export class GeminiLiveSession implements LiveVoiceSession {
       this.recentTurns.push({ user: userText, assistant: assistantText });
       if (this.recentTurns.length > 8) this.recentTurns.shift();
     }
+    // A silent turn — no audio and no transcript — is itself the reported
+    // symptom ("it stopped answering"), so it must be as visible as a good one.
+    this.logTurn("complete", {
+      userChars: userText.trim().length,
+      assistantChars: assistantText.trim().length,
+      silent: this.turnAudioBytes === 0 && assistantText.trim().length === 0,
+    });
     void this.context.sendFrame({ type: "tts_done", turnId });
   }
 
@@ -782,7 +866,22 @@ export class GeminiLiveSession implements LiveVoiceSession {
     this.client?.sendToolResponse(responses);
   }
 
-  close(_reason: LiveVoiceSessionCloseReason): void {
+  close(reason: LiveVoiceSessionCloseReason): void {
+    // The call's epitaph, and the line to read first when someone says a call
+    // ended on its own: how long it lasted, how many turns it managed, how many
+    // of those were cut short, and whether it died with a turn still open.
+    log.info(
+      {
+        event: "session_closed",
+        conversationId: this.conversationId,
+        reason,
+        turns: this.sessionTurns,
+        interruptions: this.sessionInterruptions,
+        durationMs: Date.now() - this.sessionStartedAtMs,
+        unfinishedTurn: this.currentTurnId !== null,
+      },
+      "gemini-live session closed",
+    );
     // Fail-open, before anything else goes down: the client leaves
     // "Thinking…" on `tts_done` and nothing else, and a turn still open at
     // teardown never got one — the model was mid-answer when the session
