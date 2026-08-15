@@ -107,6 +107,15 @@ export interface CreateTemplate {
  * `<elicit_first>` directive (which the model could, and did, ignore). This
  * file only owns the template + question DATA; the compose/route logic lives in
  * `create-elicit.ts` and `create-elicit-form.tsx`.
+ *
+ * NO STYLE PICKERS (design v29, 2026-08-03). A question that asks what the
+ * output should LOOK like does not belong in this catalog: the gallery *shows*
+ * the look, and a chip only names it — choosing from pictures beats choosing
+ * from words. Two such chips ("Visual direction?", on Investor pitch deck and
+ * Product launch deck) were deleted for exactly that reason; the deletion is
+ * pinned by a test in `create-templates.test.ts` so it can't quietly return.
+ * Questions about CONTENT (tone, audience, length, period) are unaffected —
+ * the gallery can't show those.
  */
 
 export interface CreateMode {
@@ -158,14 +167,8 @@ export const CREATE_MODES: CreateMode[] = [
             ],
             freeTextPlaceholder: "e.g. fintech, healthtech, climate",
           },
-          {
-            question: "Visual direction?",
-            options: [
-              { label: "Modern & confident", isDefault: true },
-              { label: "Minimal & editorial" },
-              { label: "Bold & energetic" },
-            ],
-          },
+          // No "Visual direction?" chip here — see the style-picker note above
+          // `CREATE_MODES`. The look is chosen from the gallery, in pictures.
         ],
       },
       {
@@ -233,14 +236,7 @@ export const CREATE_MODES: CreateMode[] = [
               { label: "Already live" },
             ],
           },
-          {
-            question: "Visual direction?",
-            options: [
-              { label: "Energetic & professional", isDefault: true },
-              { label: "Bold & consumer" },
-              { label: "Minimal & premium" },
-            ],
-          },
+          // No "Visual direction?" chip here either — same reason.
         ],
       },
       {

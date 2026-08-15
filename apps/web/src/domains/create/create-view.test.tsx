@@ -100,6 +100,11 @@ describe("CreateView — client-side elicitation wiring", () => {
     expect(sent.startsWith("Build me an investor pitch deck")).toBe(true);
     // The default answers are baked into the prompt as concrete inputs.
     expect(sent).toContain("- Which round are you raising: Seed");
-    expect(sent).toContain("Visual direction: Modern & confident");
+    expect(sent).toContain("- What sector: SaaS / software");
+    // …and no style chip rides along: v29 deleted the "Visual direction?"
+    // picker because the gallery shows the look (create-templates.test.ts
+    // pins the catalog side).
+    expect(sent).not.toContain("Visual direction");
   });
 });
+

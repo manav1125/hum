@@ -88,6 +88,34 @@ describe("CREATE_MODES elicit catalog", () => {
     }
   });
 
+  test("no elicit field is a style picker — the gallery shows the look", () => {
+    // Design v29: "the gallery *shows* the look; a chip only names it."
+    // Two "Visual direction?" chips (investor-pitch, product-launch) were
+    // deleted on that ruling. This pins the absence so neither returns, and
+    // catches a new one written under any wording.
+    const styleQuestion = /visual direction|what look|which look|visual style|what style|which style|aesthetic/i;
+    const offenders = all
+      .flatMap((t) => (t.elicit ?? []).map((f) => ({ t, q: f.question })))
+      .filter(({ q }) => styleQuestion.test(q));
+    expect(offenders.map((o) => `${o.t.id}: ${o.q}`)).toEqual([]);
+  });
+
+  test("the two deleted style pickers left their content questions intact", () => {
+    // The deletion must remove one chip, not gut the template: both still ask
+    // the questions the gallery genuinely cannot answer.
+    const pitch = all.find((t) => t.id === "investor-pitch");
+    expect(pitch?.elicit?.map((f) => f.question)).toEqual([
+      "Which round are you raising?",
+      "What sector?",
+    ]);
+    const launch = all.find((t) => t.id === "product-launch");
+    expect(launch?.elicit?.map((f) => f.question)).toEqual([
+      "What are you launching?",
+      "Who's the primary audience?",
+      "When does it launch?",
+    ]);
+  });
+
   test("genuinely open-ended / creative templates stay instant (no forced form)", () => {
     // Free-form subject with no meaningful default, or a raw creative prompt,
     // or a paste/attach flow — forcing a form here would degrade the surface.
