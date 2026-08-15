@@ -19,103 +19,217 @@ import {
 // Print template (documents)
 // ---------------------------------------------------------------------------
 
-const FONT_STACK = `"DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-
+/**
+ * The document print stylesheet — the plain-prose half of the house style
+ * described in `document-editor/references/DESIGNED_PDF.md`. Same tokens, same
+ * serif/sans/mono pairing, but it has to land on bare markdown output (`h1`,
+ * `table`, `blockquote`…) rather than on composed components, so every rule
+ * hangs off an element selector.
+ *
+ * Constraints inherited from the renderer: the network is blocked, so no
+ * `@font-face` and no `@import` — every stack ends in a generic family, because
+ * on the prod container the only faces installed are FreeSerif/FreeSans/
+ * FreeMono. Chromium rasterizes blurred `box-shadow` into flat grey slabs, so
+ * surfaces take their definition from a 1px border instead of a fill.
+ */
 export function wrapInPrintTemplate(innerHtml: string): string {
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --ink: #1a2230;
+    --ink-2: #4a5568;
+    --ink-3: #6b7688;
+    --card: #ffffff;
+    --line: #e1e6ef;
+    --line-2: #edf0f6;
+    --accent: #3d6ee8;
+    --serif: Georgia, "Times New Roman", "Liberation Serif", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "Liberation Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
 
   body {
-    font-family: ${FONT_STACK};
+    font-family: var(--sans);
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--ink);
+    background: var(--card);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Headings — serif for the titles, sans semibold for block headings. */
+  h1, h2, h3, h4, h5, h6 {
+    text-wrap: balance;
+    break-after: avoid;
+    break-inside: avoid;
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 32px;
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    margin: 30px 0 12px;
+  }
+
+  h2 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 22px;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin: 28px 0 10px;
+  }
+
+  h3 {
     font-size: 14px;
-    line-height: 1.7;
-    color: #1a1a1a;
-    background: #ffffff;
-    padding: 0;
-  }
-
-  h1 { font-size: 28px; font-weight: 600; margin-top: 32px; margin-bottom: 12px; }
-  h2 { font-size: 22px; font-weight: 600; margin-top: 28px; margin-bottom: 10px; }
-  h3 { font-size: 18px; font-weight: 600; margin-top: 24px; margin-bottom: 8px; }
-  h4, h5, h6 { font-size: 16px; font-weight: 600; margin-top: 20px; margin-bottom: 8px; }
-
-  p {
-    margin-bottom: 12px;
-  }
-
-  pre {
-    background: #f5f5f5;
-    border-radius: 8px;
-    padding: 12px 16px;
-    overflow-x: auto;
-    margin-bottom: 12px;
-  }
-
-  code {
-    font-family: "DM Mono", "SF Mono", monospace;
-    font-size: 13px;
-    background: #f5f5f5;
-    border-radius: 4px;
-    padding: 2px 5px;
-  }
-
-  pre code {
-    background: none;
-    padding: 0;
-    border-radius: 0;
-  }
-
-  blockquote {
-    border-left: 3px solid #6366f1;
-    padding-left: 16px;
-    margin: 12px 0;
-    color: #555555;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 12px 0;
-  }
-
-  th, td {
-    border: 1px solid #e0e0e0;
-    padding: 8px 12px;
-    text-align: left;
-  }
-
-  th {
-    background: #f5f5f5;
     font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 24px 0 6px;
   }
 
-  ul, ol {
-    margin: 12px 0;
-    padding-left: 24px;
+  h4, h5, h6 {
+    font-size: 12px;
+    font-weight: 600;
+    margin: 20px 0 6px;
   }
 
-  li {
-    margin-bottom: 4px;
-  }
+  h6 { color: var(--ink-2); }
+
+  body > :first-child { margin-top: 0; }
+
+  p { margin: 10px 0; }
+  strong { font-weight: 600; }
 
   a {
-    color: #6366f1;
+    color: var(--accent);
     text-decoration: none;
   }
 
+  ul, ol {
+    margin: 10px 0;
+    padding-left: 22px;
+  }
+
+  li { margin: 4px 0; }
+  li::marker { color: var(--ink-3); }
+
+  /* Code — bordered, never a grey slab, and wrapped so nothing clips off the
+     page (a PDF has no horizontal scrollbar). */
+  pre {
+    font-size: 10.5px;
+    line-height: 1.55;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 16px 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    break-inside: avoid;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.92em;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
+
+  pre code {
+    font-size: inherit;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+  }
+
+  /* Blockquote reads as the house callout. */
+  blockquote {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 12px 16px;
+    margin: 16px 0;
+    color: var(--ink-2);
+    break-inside: avoid;
+  }
+
+  blockquote > :first-child { margin-top: 0; }
+  blockquote > :last-child { margin-bottom: 0; }
+
+  /* Tables — a bordered surface with mono headers. Separated borders keep the
+     rounded corners that border-collapse would square off. */
+  table {
+    width: 100%;
+    font-size: 11px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 18px 0;
+    break-inside: avoid;
+  }
+
+  /* A table longer than the page has to break somewhere — but never through
+     the middle of a row. */
+  tr { break-inside: avoid; }
+
+  th, td {
+    text-align: left;
+    vertical-align: top;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line-2);
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 8.5px;
+    font-weight: 500;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--line);
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* A right-aligned markdown column is a figure column by convention: mono and
+     tabular so the digits stack. */
+  td { font-variant-numeric: tabular-nums; }
+
+  td[align="right"] {
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+
+  th[align="right"] {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  td[align="center"], th[align="center"] { text-align: center; }
+
   hr {
     border: none;
-    border-top: 1px solid #e0e0e0;
-    margin: 24px 0;
+    border-top: 1px solid var(--line);
+    margin: 26px 0;
   }
 
   img {
     max-width: 100%;
     height: auto;
+    break-inside: avoid;
   }
 
 </style>
