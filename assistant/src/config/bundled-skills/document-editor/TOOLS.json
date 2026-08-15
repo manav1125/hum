@@ -308,6 +308,61 @@
       "execution_target": "host"
     },
     {
+      "name": "document_send",
+      "description": "Send a document (or an export you already made) OUT to an external destination instead of returning it as an in-chat attachment. Use when the user names a place to put it \u2014 \"send this to Slack\", \"save it to Drive\", \"make it a Google Doc\", \"put it on the Acme deal in HubSpot\", \"add it to my Notion page\". Destinations: `slack` takes any format and uploads the file to a channel (target_id = channel ID like C0123456789, optional thread_ts). `google_drive` takes any format; binary files (pdf/png/docx/xlsx) are capped at 5 MB (target_id = folder ID, optional). `google_docs` takes markdown ONLY and is the best destination when the recipient should EDIT the document \u2014 the markdown becomes a real Google Doc with headings, lists and tables intact (no target_id). `hubspot` takes markdown ONLY and adds it as a note on a record (target_id = record ID, object_type = deals/contacts/companies/tickets); HubSpot has no file-upload route here, so a PDF cannot be attached. `notion` takes markdown ONLY and appends it to a page as native Notion blocks (target_id = page ID); Notion cannot store a PDF or image. Pass surface_id to render the document on the way out, or attachment_id to send an export that already exists. Every send asks the user to confirm first, and a send is only reported as done when the destination confirms it.",
+      "category": "content",
+      "risk": "high",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string",
+            "enum": [
+              "slack",
+              "google_drive",
+              "google_docs",
+              "hubspot",
+              "notion"
+            ],
+            "description": "Where to send it."
+          },
+          "surface_id": {
+            "type": "string",
+            "description": "The document to render and send (from document_create or <active_documents>). Use this OR attachment_id, not both."
+          },
+          "attachment_id": {
+            "type": "string",
+            "description": "An export that already exists as an in-chat attachment (the attachmentId returned by document_export). Use this OR surface_id, not both."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["pdf", "png", "markdown", "html", "docx", "xlsx"],
+            "description": "With surface_id: which format to render before sending. Defaults to markdown. google_docs, hubspot and notion require markdown."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "Where inside the destination: Slack channel ID, Drive folder ID, Notion page ID, or HubSpot record ID. Not needed for google_docs."
+          },
+          "object_type": {
+            "type": "string",
+            "enum": ["deals", "contacts", "companies", "tickets"],
+            "description": "HubSpot only: which kind of record target_id names. Defaults to deals."
+          },
+          "thread_ts": {
+            "type": "string",
+            "description": "Slack only: reply into this thread instead of the channel root."
+          },
+          "message": {
+            "type": "string",
+            "description": "Slack: a note posted alongside the file. Google Docs: overrides the document title."
+          }
+        },
+        "required": ["destination"]
+      },
+      "executor": "tools/document-send.ts",
+      "execution_target": "host"
+    },
+    {
       "name": "pdf_create",
       "description": "Create a standalone PDF file from full self-contained HTML (or plain markdown) and deliver it as an in-chat attachment. This is the path for every PRESENTED artifact — proposal, one-pager, pitch, brief, client-facing report, case study, quote, invoice, flyer — which must be built with `html` and the skill's house style (references/DESIGNED_PDF.md), never written in the Markdown editor and exported. Use `markdown` only for a plain text file. For prose the user will iterate on, prefer document_create then document_export_pdf. HTML must be self-contained (no external assets — network is blocked during render).",
       "category": "content",

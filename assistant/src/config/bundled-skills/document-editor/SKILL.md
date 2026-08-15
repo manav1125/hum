@@ -33,6 +33,7 @@ Write and edit long-form documents using the built-in rich text editor. Document
 - **document_delete** - Deletes a document by `surface_id`. Use to clean up unwanted documents.
 - **document_export_pdf** - Renders an existing document to a polished PDF and delivers it as an in-chat attachment. The share/print/send path.
 - **document_export** - Exports an existing document in any format: `pdf`, `png`, `markdown`, `html`, `docx` (Word), `xlsx` (Excel), `pptx` (PowerPoint). See the format table below.
+- **document_send** - Sends a document (or an existing export) OUT to Slack, Google Drive, Google Docs, HubSpot or Notion instead of attaching it to the chat. Always asks the user first.
 - **pdf_create** - Builds a standalone PDF from self-contained HTML (or plain markdown) without creating an editable document first. This is the path for every **designed** deliverable — proposal, one-pager, pitch, brief, client report, invoice, flyer. Style it with `{baseDir}/references/DESIGNED_PDF.md`.
 - **file_create** - The non-PDF sibling of `pdf_create`: a standalone `png`, `html`, `markdown`, `docx`, `xlsx` or `pptx` from markdown or self-contained HTML, without an editable document first.
 
@@ -153,6 +154,47 @@ one part" path.
 
 Offer more than one when it is obviously useful: a priced proposal is usefully a
 PDF *and* a docx *and* an xlsx of the pricing table. Deliver them in one message.
+
+## Sending a document somewhere instead of attaching it
+
+`document_export` returns a file into the chat. `document_send` puts it
+**where the user actually works** — a Slack channel, their Drive, a Google Doc,
+a HubSpot record, a Notion page. When the request names a place ("send this to
+#sales", "save it in Drive", "make it a Google Doc", "attach it to the Acme
+deal", "add it to my Notion doc"), that is `document_send`, not an export
+followed by a shrug.
+
+You do not have to export first: pass `surface_id` and a `format` and Cue
+renders it on the way out. Pass `attachment_id` instead only when you are
+sending an export the user has already seen.
+
+| Destination | Takes | `target_id` |
+| --- | --- | --- |
+| `slack` | any format | channel ID (`C0123456789`); `thread_ts` to reply in-thread |
+| `google_drive` | any format; binary capped at 5 MB | folder ID, optional |
+| `google_docs` | `markdown` only | — |
+| `hubspot` | `markdown` only | record ID + `object_type` |
+| `notion` | `markdown` only | page ID |
+
+**Google Docs is the strongest destination in the set.** The markdown becomes a
+real Google Doc — headings, lists and tables intact, editable and commentable in
+place. When someone says "put it in a doc so we can work on it", that beats
+every attachment. Send `markdown`, not `docx`.
+
+**Say what a destination cannot do rather than substituting silently.** HubSpot
+has no file-upload route from here, so a PDF cannot be attached to a deal — the
+document goes on as a note. Notion stores blocks, not files, so a PDF or PNG
+cannot go there at all. If the user asked for a PDF on a HubSpot deal, tell them
+that and offer the note (or Drive plus a link) — do not quietly send something
+else and call it done.
+
+**Every send asks the user first.** It is outbound egress and it is gated as
+such; you cannot send a document out of Cue on your own initiative. And a send
+is only "done" when the destination confirms it — if `document_send` returns
+`sent: false`, the file did **not** arrive. Relay the reason: `not_connected`
+means the connector needs connecting in Connectors, `too_large` means pick a
+lighter format, `unsupported_payload` means that destination cannot take that
+file type.
 
 ## Creating a new document
 

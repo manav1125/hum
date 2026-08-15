@@ -69,6 +69,7 @@ import * as documentList from "./bundled-skills/document-editor/tools/document-l
 import * as documentOpen from "./bundled-skills/document-editor/tools/document-open.js";
 import * as documentRead from "./bundled-skills/document-editor/tools/document-read.js";
 import * as documentReplaceText from "./bundled-skills/document-editor/tools/document-replace-text.js";
+import * as documentSend from "./bundled-skills/document-editor/tools/document-send.js";
 import * as documentUpdate from "./bundled-skills/document-editor/tools/document-update.js";
 import * as fileCreate from "./bundled-skills/document-editor/tools/file-create.js";
 import * as pdfCreate from "./bundled-skills/document-editor/tools/pdf-create.js";
@@ -229,6 +230,7 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["document-editor:tools/comment-reply.ts", commentReply],
   ["document-editor:tools/document-export-pdf.ts", documentExportPdf],
   ["document-editor:tools/document-export.ts", documentExport],
+  ["document-editor:tools/document-send.ts", documentSend],
   ["document-editor:tools/pdf-create.ts", pdfCreate],
   ["document-editor:tools/file-create.ts", fileCreate],
 

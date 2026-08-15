@@ -91,7 +91,15 @@ mock.module("../../../ipc/gateway-client.js", () => ({
   ipcClassifyRisk: async () => ({ risk: "low" }),
 }));
 
+// Spread the real module and override only the seams this suite drives. A
+// hand-written export list here deletes every export it does not name — for
+// this file and for every file that runs after it — so adding an export to
+// send.ts would break unrelated suites with an import error rather than a
+// visible failure.
+const actualSlackSend =
+  await import("../../../messaging/providers/slack/send.js");
 mock.module("../../../messaging/providers/slack/send.js", () => ({
+  ...actualSlackSend,
   sendSlackReply: async (
     chatId: string,
     text: string,

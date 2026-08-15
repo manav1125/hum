@@ -83,12 +83,21 @@ function resolveBlocks(
 // File uploads
 // ---------------------------------------------------------------------------
 
-async function uploadFileToSlack(
+/**
+ * Upload one file to a Slack channel via the v2 external-upload flow.
+ *
+ * Exported because it is the only implementation of this three-step flow in
+ * the tree, and the export-destination layer needs the same bytes-to-Slack
+ * path that channel egress uses. Returns the Slack file id so callers that
+ * must *prove* the upload landed have something from Slack to point at;
+ * `sendSlackAttachments` ignores it.
+ */
+export async function uploadFileToSlack(
   channelId: string,
   buffer: Buffer,
   filename: string,
   threadTs?: string,
-): Promise<void> {
+): Promise<{ fileId: string }> {
   const urlData = await callSlackApiForm(
     "files.getUploadURLExternal",
     new URLSearchParams({ filename, length: String(buffer.length) }),
@@ -102,6 +111,7 @@ async function uploadFileToSlack(
 
   await uploadToSlackUrl(urlData.upload_url, buffer);
   await completeSlackUpload(urlData.file_id, filename, channelId, threadTs);
+  return { fileId: urlData.file_id };
 }
 
 // ---------------------------------------------------------------------------
