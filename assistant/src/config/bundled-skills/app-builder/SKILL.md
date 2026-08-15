@@ -385,4 +385,6 @@ Read with `file_read` using the `{baseDir}/references/...` paths (`{baseDir}` re
 
 ## Deck export
 
-After building or revising a slide deck, offer `deck_export_pdf` — it renders the deck app to a 16:9 PDF attachment (one slide per page) the user can send or present outside Cue. Pitch decks intended for investors should always end with that offer. Decks must include the print contract from the SLIDES reference or the export collapses to one page. `.pptx` export is not supported yet; PDF is the shareable format.
+After building or revising a slide deck, offer `deck_export_pdf` — it renders the deck app to a 16:9 PDF attachment (one slide per page) the user can send or present outside Cue. Pitch decks intended for investors should always end with that offer. Decks must include the print contract from the SLIDES reference or the export collapses to one page.
+
+PDF is the shareable format for a deck built here, and `.pptx` is deliberately not offered for it. The document editor does export `.pptx`, but from markdown STRUCTURE — headings, bullets, tables become editable slides. A deck app is a designed CSS layout, and there is no honest path from that to editable shapes: it would come out as one screenshot per slide, which is worse than this PDF and only reveals itself when the recipient tries to fix a typo. If someone asks for a deck app "as PowerPoint", say that plainly and offer the PDF.
