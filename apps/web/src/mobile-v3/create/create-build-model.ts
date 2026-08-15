@@ -1,13 +1,22 @@
 /**
- * Mobile v3 Create — the build state (J4 → J5).
+ * Mobile v3 Create — the build state (v29 N2 → J5).
  *
- * Design's rule 2: "Building is narrated and non-blocking — real thumbnails as
- * they render, a current-step line, a live composer for mid-build redirects, and
- * *You can leave — I'll put it in this thread*. Anything over 30s must survive
- * backgrounding."
+ * v27's J4 asked for real thumbnails appearing as slides render, over an
+ * ordinal ("BUILDING · 7 OF 12"). **v29 withdrew both**, and for the reason this
+ * module had already recorded independently — neither is available, and drawing
+ * them anyway would be a fabricated generation. What replaces them:
  *
- * Three of those four are buildable today. One is not, and this module is
- * explicit about which:
+ *   > *"A step list that checks off — real progress from real events — with
+ *   > elapsed time instead of an estimate, and one line saying there's nothing
+ *   > to see yet. Turns out this is better: a count makes you wait, a
+ *   > description lets you leave."*
+ *
+ * So `steps` below is an accumulating list of what actually happened, not a
+ * plan: a step appears only once the turn has emitted it, which is why it can
+ * be ticked. Nothing predicts the next one and nothing states a total.
+ *
+ * Design's rule 2 otherwise stands — "building is narrated and non-blocking;
+ * anything over 30s must survive backgrounding":
  *
  * - **Narrated current step — REAL.** The chat turn emits tool-call steps over
  *   SSE and the app already derives a human label for each
@@ -18,16 +27,14 @@
  *   server-side; the client re-attaches by loading that conversation, and the
  *   SSE transport has a resume cursor. `conversationId` here is that handle.
  * - **Live composer for redirects — REAL.** It is the thread's own composer.
- * - **Real thumbnails as they render — NOT AVAILABLE.** There is no partial
- *   artefact stream. Nothing in the daemon emits a per-slide image mid-build,
- *   and the client renders nothing until the run completes. So this module
- *   exposes `skeleton`, never `thumbnails`, and the UI labels it as the template
- *   skeleton (see `create-skeleton.ts`). Showing invented thumbnails that
- *   "fill in" on a timer would be a fabricated generation.
+ * - **Anything to look at mid-build — NOT AVAILABLE, and no longer drawn.**
+ *   There is no partial artefact stream, so the card says so in as many words
+ *   (`NOTHING_YET`) instead of filling the space with structure that reads as a
+ *   preview of the user's own artefact.
  *
  * Equally deliberate: **there is no total and no percentage.** The step stream is
  * tool-call granularity — it cannot say "slide 7 of 12", and the daemon emits no
- * artefact-count event. `stepsSeen` is a real observed count; there is no
+ * artefact-count event. `steps` is a real observed list; there is no
  * denominator, so none is rendered. ("Never a fake number.")
  */
 
@@ -78,6 +85,15 @@ export interface BuildState {
    * a fabricated step.
    */
   currentStep: string | null;
+  /**
+   * Every step the turn has genuinely emitted, oldest first, INCLUDING the one
+   * still running (which is `currentStep`, and the only one not yet ticked).
+   *
+   * This is N2's list. It is a record, never a forecast — nothing is added
+   * until the event that describes it has arrived, so a step on screen is
+   * always a step that happened.
+   */
+  steps: string[];
   /** How many steps we have genuinely observed. No denominator exists. */
   stepsSeen: number;
   artefact: BuildArtefact | null;
@@ -98,19 +114,31 @@ export function startBuild(params: {
     templateId: params.templateId,
     startedAt: params.now ?? Date.now(),
     currentStep: null,
+    steps: [],
     stepsSeen: 0,
     artefact: null,
     failure: null,
   };
 }
 
-/** A real step arrived from the turn's tool stream. */
+/**
+ * A real step arrived from the turn's tool stream.
+ *
+ * An empty label advances nothing: it would add a blank row to the list that
+ * could never be read as progress. A repeat of the current step is also
+ * swallowed — the SSE stream can re-emit, and the same line twice would read as
+ * two things having happened.
+ */
 export function observeStep(state: BuildState, label: string): BuildState {
   if (state.phase === "delivered" || state.phase === "failed") return state;
+  const step = label.trim();
+  if (!step) return { ...state, phase: "building" };
+  if (step === state.currentStep) return state;
   return {
     ...state,
     phase: "building",
-    currentStep: label.trim() || state.currentStep,
+    currentStep: step,
+    steps: [...state.steps, step],
     stepsSeen: state.stepsSeen + 1,
   };
 }
@@ -197,3 +225,12 @@ export function statusEyebrow(state: BuildState): string {
 /** Design's promise, and it is true: the turn runs server-side. */
 export const LEAVE_PROMISE =
   "You can leave — I'll put it in this thread and ping you.";
+
+/**
+ * N2's other line. It replaces the structural tile strip: the pipeline emits no
+ * partial artefact, and saying that plainly is what lets someone put the phone
+ * down. A row of placeholder tiles says the opposite — that there is something
+ * here worth watching.
+ */
+export const NOTHING_YET =
+  "I'll show you the finished thing — there's nothing to look at until then.";

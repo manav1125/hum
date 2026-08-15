@@ -9,17 +9,19 @@
  * every one of the ten types, and every template each of them offers, is driven
  * to a build.
  *
- * It also locks the three prohibitions that are easy to regress by "improving"
+ * It also locks the four prohibitions that are easy to regress by "improving"
  * the UI later:
  *
  *   - the gallery cannot be rendered unscoped (there is no such Stage);
  *   - a free-text run with no type signal must not silently pick one;
- *   - fill must never come back as a bare list of empty inputs.
+ *   - fill must never come back as a bare list of empty inputs;
+ *   - v29's chip stage is asked for exactly three types and never for Sheets.
  */
 
 import { describe, expect, test } from "bun:test";
 
 import {
+  blankNumbersLine,
   buildFillPlan,
   fillHeadline,
   fillProgressLabel,
@@ -27,12 +29,15 @@ import {
   knownHeadline,
 } from "./create-fill-model";
 import type { KnownFact } from "./create-known-facts";
+import { chipQuestionsFor, hasChipStage } from "./create-chip-sets";
 import {
   fromBlank,
+  fromChips,
   fromEntry,
   fromGallery,
   fromPurpose,
   inferType,
+  toBuild,
   PURPOSE_OPTIONS,
   type BuildRequest,
   type Stage,
@@ -87,6 +92,10 @@ function driveToBuild(start: Transition, hops = 0): BuildRequest {
         known: stage.plan.known,
       };
     }
+    case "chips":
+      // Stage two must be answerable AND skippable; skipping is the harder
+      // case, so that is the one the exhaustive drive uses.
+      return driveToBuild(fromChips(stage.pending, {}), hops + 1);
     case "purpose":
       return driveToBuild(fromPurpose(PURPOSE_OPTIONS[0].id), hops + 1);
     case "entry":
@@ -110,6 +119,14 @@ describe("the spine reaches a build from every route", () => {
         expect(request.typeId).toBe(type.id);
       }
     }
+  });
+
+  test("blank on a chip-stage type still reaches its build", () => {
+    // Blank is the route with the least information, so it is the one where a
+    // skipped stage two would strand the user rather than build.
+    const t = fromBlank("video", "a 30 second teaser", CTX);
+    expect(t.go).toBe("stage");
+    expect(driveToBuild(t).typeId).toBe("video");
   });
 
   test("a suggestion goes to a build without passing through a gallery", () => {
@@ -165,6 +182,70 @@ describe("the gallery is scoped, never global", () => {
       expect(t.stage.kind).toBe("gallery");
       if (t.stage.kind === "gallery") expect(t.stage.typeId).toBe("slides");
     }
+  });
+});
+
+/**
+ * v29's one structural change to the machine.
+ *
+ * NOTE FOR REVIEWERS: this describe block has no v27 counterpart, because v27
+ * had no stage two. The Sheets assertion is the important one — v29 corrected
+ * its own earlier draft, which had grouped Sheets with the other three, and a
+ * chip row on Sheets would ask a second time over its existing elicit sets.
+ */
+describe("chip stage two is asked exactly where v29 says", () => {
+  const WITH_CHIPS = ["video", "canvas", "audio"];
+
+  test.each(MV3_CREATE_TYPES.map((t) => [t.id] as const))(
+    "%s carries a chip stage only if v29 named it",
+    (typeId) => {
+      expect(hasChipStage(typeId)).toBe(WITH_CHIPS.includes(typeId));
+    },
+  );
+
+  test("Sheets is excluded — it already has its own elicit sets", () => {
+    expect(hasChipStage("sheets")).toBe(false);
+    const t = toBuild({ typeId: "sheets", values: {}, known: [] });
+    expect(t.go).toBe("build");
+  });
+
+  test("video is asked format, length and voiceover before the render", () => {
+    const t = toBuild({ typeId: "video", values: {}, known: [] });
+    expect(t.go).toBe("stage");
+    if (t.go !== "stage" || t.stage.kind !== "chips") throw new Error("no chips");
+    expect(t.stage.questions.map((q) => q.key)).toEqual([
+      "format",
+      "length",
+      "voiceover",
+    ]);
+  });
+
+  test("no chip is pre-selected — the stage asks, it does not assume", () => {
+    for (const typeId of WITH_CHIPS) {
+      const t = toBuild({ typeId, values: {}, known: [] });
+      if (t.go !== "stage" || t.stage.kind !== "chips") throw new Error("no chips");
+      expect(t.stage.pending.values).toEqual({});
+      for (const q of t.stage.questions) expect(q.options.length).toBeGreaterThan(1);
+    }
+  });
+
+  test("answers ride into the build; skipped questions send nothing", () => {
+    const pending = { typeId: "video", values: {}, known: [] };
+    const answered = fromChips(pending, { format: "Animated", length: "" });
+    expect(answered.go).toBe("build");
+    if (answered.go !== "build") return;
+    expect(answered.request.values.format).toBe("Animated");
+    // A skipped question is absent, not defaulted to a plausible choice.
+    expect("length" in answered.request.values).toBe(false);
+    expect("voiceover" in answered.request.values).toBe(false);
+  });
+
+  test("the stage is asked once — an answered request goes straight through", () => {
+    const answers = Object.fromEntries(
+      chipQuestionsFor("video").map((q) => [q.key, q.options[0]]),
+    );
+    const t = toBuild({ typeId: "video", values: answers, known: [] });
+    expect(t.go).toBe("build");
   });
 });
 
@@ -287,19 +368,28 @@ describe("fill is never an empty form", () => {
     expect(plan.totalFields).toBe(0);
   });
 
-  test("the progress label never counts a deferred field as known", () => {
+  /**
+   * REPLACES two v27 tests ("the progress label never counts a deferred field
+   * as known" and "a real fact does show up in the known count"). Both asserted
+   * the "6 of 8 known · 2 to go" header, which v29 withdrew along with the
+   * prefill badge — a ratio of what Cue claims to know is that badge in numeric
+   * form, and the user cannot judge a ratio. What survives from those tests is
+   * the thing they were really protecting: the header must never overstate.
+   * It now does that by counting only the questions it is about to ask.
+   */
+  test("the header counts the questions it is about to ask, and nothing else", () => {
     const plan = buildFillPlan("slides", "form-investor-pitch", []);
     expect(plan.totalFields).toBe(8);
     expect(plan.deferred.length).toBeGreaterThan(0);
-    // Nothing is known, so the label must not claim a "known" count at all —
-    // `totalFields - gaps` would have reported the three optional fields.
+
     const label = fillProgressLabel(plan);
+    expect(label).toBe(`${plan.gaps.length} questions · skip any`);
+    // No claim about what Cue knows, and no denominator to inflate it with.
     expect(label).not.toContain("known");
-    expect(label).toContain(`${plan.gaps.length} to go`);
-    expect(label).toContain(`${plan.deferred.length} optional`);
+    expect(label).not.toContain("of 8");
   });
 
-  test("a real fact does show up in the known count", () => {
+  test("a fact that answers a field lowers the count, and the header follows", () => {
     const plan = buildFillPlan("slides", "form-investor-pitch", [
       {
         id: "c",
@@ -309,6 +399,48 @@ describe("fill is never an empty form", () => {
         origin: "context",
       },
     ]);
-    expect(fillProgressLabel(plan)).toContain("1 of 8 known");
+    expect(fillProgressLabel(plan)).toBe(
+      `${plan.gaps.length} questions · skip any`,
+    );
+  });
+
+  /**
+   * v29: *"a card labelled '8 fields' opening a five-question screen was its
+   * own small dishonesty."* The card and the screen behind it are computed in
+   * different modules, so this checks they agree for every structured template.
+   */
+  test("the gallery card's count is what the fill screen actually asks", () => {
+    for (const type of MV3_CREATE_TYPES) {
+      for (const entry of galleryEntriesFor(type.id)) {
+        if (entry.source !== "form") continue;
+        const plan = buildFillPlan(type.id, entry.id, []);
+        expect(entry.questionCount).toBe(plan.gaps.length);
+      }
+    }
+  });
+
+  test("the investor pitch card says five, not eight", () => {
+    // Design's own example, and the one they corrected by name.
+    const entry = galleryEntriesFor("slides").find(
+      (e) => e.id === "form-investor-pitch",
+    );
+    expect(entry?.fieldCount).toBe(8);
+    expect(entry?.questionCount).toBe(5);
+  });
+
+  test("a template asking for figures says it will leave them blank", () => {
+    // The invariant, surfaced before the build rather than apologised for after.
+    const withFigures = buildFillPlan("data", "form-budget-tracker", []);
+    expect(
+      [...withFigures.gaps, ...withFigures.deferred].some(
+        (g) => g.kind === "number",
+      ),
+    ).toBe(true);
+    expect(blankNumbersLine(withFigures)).toContain("rather than invent them");
+
+    // And a template with no numeric input does not answer a question nobody
+    // asked.
+    const noFigures = buildFillPlan("slides", "form-investor-pitch", []);
+    expect(blankNumbersLine(noFigures)).toBeNull();
   });
 });

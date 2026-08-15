@@ -22,6 +22,7 @@ import { useCallback, useState } from "react";
 
 import { haptic } from "@/utils/haptics";
 
+import { CreateChipStage } from "./create-chip-stage";
 import { CreateDetentSheet, type Detent } from "./create-detent-sheet";
 import { CreateEntry, type EntrySuggestion } from "./create-entry";
 import { CreateFill } from "./create-fill";
@@ -31,7 +32,9 @@ import { fillProgressLabel } from "./create-fill-model";
 import type { KnownFact } from "./create-known-facts";
 import {
   fromBlank,
+  fromChips,
   fromEntry,
+  fromFill,
   fromGallery,
   fromPurpose,
   type BuildRequest,
@@ -39,7 +42,7 @@ import {
   type Stage,
   type Transition,
 } from "./create-spine";
-import { getCreateType } from "./create-types";
+import { getCreateType, withArticle } from "./create-types";
 import { useSwipeBack } from "./use-swipe-back";
 
 import "./mv3-create.css";
@@ -132,6 +135,14 @@ export function CreateFlow({
         sub: fillProgressLabel(stage.plan),
       };
     }
+    if (stage.kind === "chips") {
+      const noun = getCreateType(stage.pending.typeId)?.noun;
+      const n = stage.questions.length;
+      return {
+        title: noun ? withArticle(noun) : "Before I start",
+        sub: `${n} question${n === 1 ? "" : "s"}`,
+      };
+    }
     if (stage.kind === "purpose") return { title: "Not sure" };
     return null;
   };
@@ -174,6 +185,19 @@ export function CreateFlow({
               <div className="mv3c-navtitle">{nav.title}</div>
               {nav.sub ? <div className="mv3c-navsub">{nav.sub}</div> : null}
             </div>
+            {/* Stage two is never a gate: skipping builds with what we have. */}
+            {stage.kind === "chips" ? (
+              <button
+                type="button"
+                className="mv3c-skip"
+                onClick={() => {
+                  haptic.light();
+                  apply(fromChips(stage.pending, {}));
+                }}
+              >
+                Skip
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -206,7 +230,7 @@ export function CreateFlow({
               apply(
                 fromBlank(
                   stage.typeId,
-                  `Make me a ${getCreateType(stage.typeId)?.label.toLowerCase().replace(/s$/, "") ?? "thing"} — I'll describe what I want.`,
+                  `Make me ${withArticle(getCreateType(stage.typeId)?.noun ?? "thing")} — I'll describe what I want.`,
                   { known },
                 ),
               )
@@ -218,28 +242,19 @@ export function CreateFlow({
           <CreateFill
             plan={stage.plan}
             brandName={brandName}
-            onBuild={(values) =>
-              apply({
-                go: "build",
-                request: {
-                  typeId: stage.plan.typeId,
-                  templateId: stage.plan.templateId,
-                  values,
-                  known: stage.plan.known,
-                },
-              })
-            }
-            onSkip={() =>
-              apply({
-                go: "build",
-                request: {
-                  typeId: stage.plan.typeId,
-                  templateId: stage.plan.templateId,
-                  values: stage.plan.prefilled,
-                  known: stage.plan.known,
-                },
-              })
-            }
+            // Both exits go through the spine, so neither can route around the
+            // chip stage that v29 puts in front of a video / canvas / audio run.
+            onBuild={(values) => apply(fromFill(stage.plan, values))}
+            onSkip={() => apply(fromFill(stage.plan, stage.plan.prefilled))}
+          />
+        ) : null}
+
+        {stage.kind === "chips" ? (
+          <CreateChipStage
+            typeId={stage.pending.typeId}
+            noun={getCreateType(stage.pending.typeId)?.noun ?? "thing"}
+            questions={stage.questions}
+            onBuild={(answers) => apply(fromChips(stage.pending, answers))}
           />
         ) : null}
 

@@ -72,20 +72,40 @@ function CardPreview({ entry }: { entry: Mv3GalleryEntry }) {
   );
 }
 
+/**
+ * A connector claim, restated as a requirement — v29 constraint 4.
+ *
+ * *"'Pulls from Sheets' comes off template cards. Replaced with 'needs Sheets
+ * connected' — a requirement, not a claim about content."* The registry writes
+ * provenance as prose for the desktop chip, and on a card that prose promises a
+ * connector read that nothing in this flow performs: connector tool schemas are
+ * withheld until the model calls `tool_search` mid-run, so at gallery-render
+ * time Cue has read nothing. Anything that is not a pull claim is passed
+ * through unchanged.
+ */
+function requirementLine(source: string): string {
+  const pull = /^pulls?\s+from\s+((?:the|your|connected)\s+)*(.+?)\.?$/i.exec(source);
+  if (!pull) return source;
+  return `needs ${pull[2].trim()} connected`;
+}
+
 /** The one-line meta under a card — only says what the registry actually knows. */
 function cardSub(entry: Mv3GalleryEntry): string {
   const parts: string[] = [];
-  if (entry.source === "form" && entry.fieldCount) {
-    parts.push(`${entry.fieldCount} fields`);
-  }
-  if (entry.source === "quick" && entry.questionCount) {
-    parts.push(`${entry.questionCount} questions`);
+  // v29: the number is what the next screen asks, and it is asked in questions.
+  // A count of declared fields over-states the work and disagrees with N1.
+  if (entry.questionCount > 0) {
+    parts.push(
+      `${entry.questionCount} question${entry.questionCount === 1 ? "" : "s"}`,
+    );
   }
   // A registry provenance hint is a description of the template, not a promise
-  // about this user's projects — so it is rendered as the source it names, and
-  // only when the template actually declares one.
+  // about this user's projects — so it is rendered only when the template
+  // declares one, and only as a requirement it can stand behind. A `files` hint
+  // is deliberately not rendered at all: constraint 3 moves the filing line to
+  // the delivered card, where it is a receipt rather than a promise.
   if (entry.provenance && "source" in entry.provenance) {
-    parts.push(entry.provenance.source);
+    parts.push(requirementLine(entry.provenance.source));
   }
   return parts.join(" · ");
 }

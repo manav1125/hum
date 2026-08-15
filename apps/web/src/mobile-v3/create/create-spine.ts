@@ -1,26 +1,40 @@
 /**
  * Mobile v3 Create — the routing spine.
  *
- * Design's v27 rule, as a pure state machine:
+ * Design's rule as of **v27 amended by v29**, as a pure state machine:
  *
- *   1a  tap a type       ──→  1c scoped gallery  ──→  J3 fill
- *   1a  tap a suggestion ──────────────────────→  J3 fill  (template known)
- *   1a  type or speak    ──→  1d stream  ──→  asks only what's missing
- *   1a  "not sure"       ──→  J6 "what's it for?"  ──→  scoped gallery
+ *   1a  tap a type       ──→  1c scoped gallery  ──→  N1 fill  ──┐
+ *   1a  tap a suggestion ──────────────────────→  N1 fill  ──────┤
+ *   1a  type or speak    ──→  asks only what's missing  ─────────┼─→  build
+ *   1a  "not sure"       ──→  J6 "what's it for?"  ──→  1c  ─────┤
+ *                                                                │
+ *                        N3 chip stage two  ────────────────────┘
+ *                        (video · canvas · audio only)
  *
- * Three properties this file exists to guarantee, each covered by a test:
+ * **The one branch v27 did not have.** v29 adds a second elicitation stage for
+ * the types that carry no questions of their own, and excludes Sheets by name
+ * because Sheets already has elicit sets. So the last hop before a build is
+ * conditional on the TYPE — this is no longer a uniform machine, and the file
+ * says so rather than letting the diagram imply otherwise. `create-chip-sets.ts`
+ * holds which types and why.
+ *
+ * Four properties this file exists to guarantee, each covered by a test:
  *
  * 1. **Every route reaches a build.** There is no stage whose only exit is back
- *    to the entry. `nextAfterFill` always yields a build request.
+ *    to the entry, and the chip stage cannot dead-end: skipping it builds.
  * 2. **The gallery is never global.** `Stage.gallery` requires a `typeId`; there
  *    is no representation of an unscoped gallery, so one cannot be rendered.
  * 3. **Fill is skipped when nothing is missing.** `enterFill` returns a build
  *    request directly when the plan has no gaps (design's rule 1).
+ * 4. **Stage two is asked exactly where v29 says.** Every build passes through
+ *    `toBuild`, so no route can reach the generator around the chip stage, and
+ *    no type outside the three can be asked by adding a call site.
  *
  * J6 is reachable only from the explicit `not_sure` action. It is a rescue, not
  * a step: no other transition produces it.
  */
 
+import { chipQuestionsFor, type ChipQuestion } from "./create-chip-sets";
 import { buildFillPlan, type FillPlan } from "./create-fill-model";
 import type { KnownFact } from "./create-known-facts";
 
@@ -37,8 +51,14 @@ export type Stage =
   | { kind: "entry" }
   /** 1c — always scoped to exactly one type. */
   | { kind: "gallery"; typeId: string }
-  /** J3 — the plan carries what's known and what's still missing. */
+  /** N1 — the plan carries what's known and what's still missing. */
   | { kind: "fill"; plan: FillPlan }
+  /**
+   * N3 — chip stage two, for the types v29 names. It carries the build request
+   * it is standing in front of, so answering or skipping both resolve to that
+   * same request and the stage cannot lose the run it was elicited for.
+   */
+  | { kind: "chips"; questions: ChipQuestion[]; pending: BuildRequest }
   /** J6 — the rescue. */
   | { kind: "purpose" };
 
@@ -137,8 +157,47 @@ export interface SpineContext {
 }
 
 /**
- * Enter fill for a known template — or skip straight to the build when the plan
- * has no gaps. Design's rule 1: "If Cue knows everything, skip J3 and build."
+ * The single door to a build — v29's type-conditional last hop.
+ *
+ * Every route funnels through here, which is what makes "video, canvas and
+ * audio are asked; Sheets and everyone else are not" a property of the machine
+ * rather than of seven remembered call sites. When the type carries a chip set
+ * and the request has not already been through it, stage two is interposed;
+ * otherwise the request goes straight out.
+ */
+export function toBuild(request: BuildRequest): Transition {
+  const questions = chipQuestionsFor(request.typeId);
+  const alreadyAsked = questions.every((q) => q.key in request.values);
+  if (questions.length === 0 || alreadyAsked) {
+    return { go: "build", request };
+  }
+  return { go: "stage", stage: { kind: "chips", questions, pending: request } };
+}
+
+/**
+ * Answering (or skipping) stage two. Unanswered chips are simply absent from
+ * the values — a skipped question sends nothing, never a default dressed up as
+ * the user's choice.
+ */
+export function fromChips(
+  pending: BuildRequest,
+  answers: Record<string, string>,
+): Transition {
+  const chosen = Object.entries(answers).filter(([, v]) => v?.trim());
+  return {
+    go: "build",
+    request: {
+      ...pending,
+      values: { ...pending.values, ...Object.fromEntries(chosen) },
+    },
+  };
+}
+
+/**
+ * Enter fill for a known template — or skip past it when the plan has no gaps.
+ * Design's rule 1: "If Cue knows everything, skip fill and build." Skipping fill
+ * does not skip stage two: a video template with no typed inputs is exactly the
+ * case v29's N3 was drawn for.
  */
 export function enterFill(
   typeId: string,
@@ -148,18 +207,28 @@ export function enterFill(
 ): Transition {
   const plan = buildFillPlan(typeId, templateId, ctx.known, freeText);
   if (plan.gaps.length === 0) {
-    return {
-      go: "build",
-      request: {
-        typeId,
-        templateId,
-        values: plan.prefilled,
-        freeText,
-        known: plan.known,
-      },
-    };
+    return toBuild({
+      typeId,
+      templateId,
+      values: plan.prefilled,
+      freeText,
+      known: plan.known,
+    });
   }
   return { go: "stage", stage: { kind: "fill", plan } };
+}
+
+/** Leaving the fill screen — with answers, or skipped. */
+export function fromFill(
+  plan: FillPlan,
+  values: Record<string, string | string[]>,
+): Transition {
+  return toBuild({
+    typeId: plan.typeId,
+    templateId: plan.templateId,
+    values,
+    known: plan.known,
+  });
 }
 
 /**
@@ -187,10 +256,12 @@ export function fromEntry(
     case "free_text": {
       const { typeId, confidence } = inferType(action.text);
       if (typeId && confidence === "inferred") {
-        return {
-          go: "build",
-          request: { typeId, values: {}, freeText: action.text, known: ctx.known },
-        };
+        return toBuild({
+          typeId,
+          values: {},
+          freeText: action.text,
+          known: ctx.known,
+        });
       }
       return { go: "stage", stage: { kind: "purpose" } };
     }
@@ -215,10 +286,7 @@ export function fromGallery(
  * template, so it goes straight to a build seeded by the user's own words.
  */
 export function fromBlank(typeId: string, text: string, ctx: SpineContext): Transition {
-  return {
-    go: "build",
-    request: { typeId, values: {}, freeText: text, known: ctx.known },
-  };
+  return toBuild({ typeId, values: {}, freeText: text, known: ctx.known });
 }
 
 /* ----------------------------------------------------------------------- */

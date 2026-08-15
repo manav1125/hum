@@ -1,5 +1,10 @@
 /**
- * Create — the v27 flow, driveable.
+ * Create — the flow as of v27-amended-by-v29, driveable.
+ *
+ * Two routes worth clicking in particular: **Slides → Investor pitch deck** is
+ * N1 (the known block with labelled origins, and the questions), and **Video →
+ * any template** is N3, the chip stage two v29 added. Sheets deliberately has
+ * no chip stage — it already elicits — so it is the useful negative case.
  *
  * `CreateFlow` takes `onRun` and holds no stores, so the whole spine can be
  * driven here at a real phone size, in both themes, at both detents, with no
@@ -89,6 +94,7 @@ export const KnowsSomething: Story = {
         label: "Raise",
         value: "Northwind is raising a seed round and wants to close it this quarter.",
         origin: "memory",
+        asOf: "Jul 28",
       },
       {
         id: "m2",

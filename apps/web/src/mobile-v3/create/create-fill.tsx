@@ -1,5 +1,5 @@
 /**
- * Mobile v3 Create — J3, fill.
+ * Mobile v3 Create — N1, fill (v29; replaces v27 J3).
  *
  * Design's rule 1, restated as what this component may and may not render:
  *
@@ -7,6 +7,13 @@
  *   MAY   ask nothing, when there are no gaps (the host skips this screen)
  *   MAY   say plainly that it knows nothing yet, and ask only what's required
  *   NEVER render a bare list of empty inputs with no framing
+ *   NEVER present a figure the user did not give — a numeric gap left empty
+ *         stays empty, and the screen says so before the build starts
+ *
+ * The last one is v29's invariant reaching the surface: **Cue may draft words it
+ * hasn't been given; it may never draft numbers it hasn't been given.** So a
+ * numeric input is never a blocker — `ready` ignores it — and the build button
+ * stays live with the figure boxes empty.
  *
  * The last one is the load-bearing prohibition and it is covered by a test. The
  * defence is structural rather than stylistic: `buildFillPlan` never puts an
@@ -24,12 +31,15 @@ import { useMemo, useState } from "react";
 import { haptic } from "@/utils/haptics";
 
 import {
+  blankNumbersLine,
   fillHeadline,
   fillProgressLabel,
+  FIGURE_SKIP_HELP,
   knownHeadline,
   type FillPlan,
   type Gap,
 } from "./create-fill-model";
+import { originLabel } from "./create-known-facts";
 
 import "./mv3-create.css";
 
@@ -43,6 +53,15 @@ export interface CreateFillProps {
 }
 
 type Values = Record<string, string | string[]>;
+
+/**
+ * The line under an input. The registry's own help wins; a figure with no help
+ * of its own still says what happens when it is left blank, because "skip any"
+ * is only credible if the consequence is stated at the point of skipping.
+ */
+function helpFor(gap: Gap): string | undefined {
+  return gap.help ?? (gap.kind === "number" ? FIGURE_SKIP_HELP : undefined);
+}
 
 function GapField({
   gap,
@@ -99,7 +118,14 @@ function GapField({
       aria-label={gap.label}
       placeholder={
         gap.placeholder ??
-        (gap.kind === "tags" ? "Comma separated" : undefined)
+        // v29: an empty metric box reads as "—", never as a specimen figure.
+        // A worked example in a number field is the first half of a fabricated
+        // measurement — the user accepts it and it ships.
+        (gap.kind === "number"
+          ? "—"
+          : gap.kind === "tags"
+            ? "Comma separated"
+            : undefined)
       }
       value={shown}
       onChange={(e) =>
@@ -127,9 +153,15 @@ export function CreateFill({
 
   // Every required gap answered — the button is only live when the build has
   // what it needs. "Skip" remains available and is a different, stated act.
+  //
+  // Figures are exempt. v29 makes blank a legitimate output for a number, so
+  // gating the build on one would force the user to type something into a box
+  // whose honest content is nothing — and the thing people type into a box that
+  // won't let them past is a plausible guess.
   const ready = useMemo(
     () =>
       plan.gaps.every((gap) => {
+        if (gap.kind === "number") return true;
         const v = values[gap.key];
         return Array.isArray(v) ? v.length > 0 : Boolean(v?.toString().trim());
       }),
@@ -137,6 +169,7 @@ export function CreateFill({
   );
 
   const known = knownHeadline(plan);
+  const blankNumbers = blankNumbersLine(plan);
 
   return (
     <>
@@ -153,7 +186,8 @@ export function CreateFill({
                   </span>
                   <span className="mv3c-knownlabel">{fact.label}</span>
                   <span className="mv3c-knownvalue">{fact.value}</span>
-                  <span className="mv3c-origin">{fact.origin}</span>
+                  {/* v29: a labelled origin, not the raw token. */}
+                  <span className="mv3c-origin">{originLabel(fact)}</span>
                 </div>
               ))}
             </div>
@@ -164,6 +198,9 @@ export function CreateFill({
             and work the rest out as I build.
           </div>
         )}
+
+        {/* The invariant, before the build rather than as an excuse after it. */}
+        {blankNumbers ? <div className="mv3c-said">{blankNumbers}</div> : null}
 
         {plan.gaps.length > 0 ? (
           <>
@@ -177,8 +214,8 @@ export function CreateFill({
                     value={values[gap.key]}
                     onChange={(next) => set(gap.key, next)}
                   />
-                  {gap.help ? (
-                    <div className="mv3c-disclaimer">{gap.help}</div>
+                  {helpFor(gap) ? (
+                    <div className="mv3c-disclaimer">{helpFor(gap)}</div>
                   ) : null}
                 </div>
               ))}
@@ -243,8 +280,8 @@ export function CreateFill({
         </button>
         <div className="mv3c-footnote">
           {ready
-            ? "Lands in the thread — you can leave while it runs."
-            : `${fillProgressLabel(plan)} · fill these in, or skip and I'll ask as I go.`}
+            ? "Lands in this thread when it's done — you can leave while it runs."
+            : `${fillProgressLabel(plan)} — or skip and I'll ask as I go.`}
         </div>
         {!ready ? (
           <button

@@ -61,16 +61,19 @@ export default meta;
 type Story = StoryObj;
 
 /**
- * Mid-build. The eyebrow says BUILDING with a real elapsed clock — there is no
- * ordinal and no percentage, because the pipeline emits neither. The tiles are
- * the chosen template's real layout rhythm, captioned as structure.
+ * Mid-build (v29 N2). The eyebrow says BUILDING with a real elapsed clock —
+ * there is no ordinal and no percentage, because the pipeline emits neither.
+ * Below it, the steps the turn actually emitted, ticked as they finish, and the
+ * line that makes leaving the right move: there is nothing to look at yet.
  */
 export const Building: Story = {
-  render: () => (
-    <CreateBuildingCard
-      state={observeStep(base(), "writing the traction slide")}
-    />
-  ),
+  render: () => {
+    let state = observeStep(base(), "Read the Series A structure");
+    state = observeStep(state, "Pulled your brand and the Acme story");
+    state = observeStep(state, "Drafted the narrative arc");
+    state = observeStep(state, "Writing the slides");
+    return <CreateBuildingCard state={state} />;
+  },
 };
 
 /** Before the first step arrives — honest, rather than an invented step. */

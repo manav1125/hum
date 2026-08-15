@@ -1,10 +1,21 @@
 /**
- * Mobile v3 Create — the fill plan (J3).
+ * Mobile v3 Create — the fill plan (v29 N1, which replaces v27 J3).
  *
  * Design's rule 1: "Fill is never an empty form. State what Cue knows as a
  * checkable block, ask only the gaps. If Cue knows everything, skip fill and
- * build." The line they want is *"the 8-field form becomes 2 questions — same
- * completeness, a fifth of the typing."*
+ * build."
+ *
+ * **v29 corrected the claim around that rule.** The v27 line — *"the 8-field
+ * form becomes 2 questions, a fifth of the typing"* — is withdrawn. The accurate
+ * one is *"Cue states what it knows with sources, and asks the rest"*, and on
+ * the frame design draws that is FIVE questions, not two, with the known block
+ * rendered verbatim and each row's origin named. Two consequences here:
+ *
+ *   - the header counts QUESTIONS, not a known-of-total ratio. "6 of 8 known"
+ *     was the prefill badge in numeric form, and v29 withdrew the badge.
+ *   - a template that asks for figures carries the line that earns more trust
+ *     than any prefill would: *"I don't have your numbers, so I'll leave them
+ *     blank rather than invent them."* See `blankNumbersLine`.
  *
  * This module turns a real `TemplateDefinition` (create-form-templates.ts) plus
  * whatever Cue genuinely knows into that plan. Two reductions do the work, and
@@ -19,9 +30,8 @@
  *      eight questions on a phone even with an empty known block.
  *
  * So the worst case is "ask the required fields", not "ask everything" — and the
- * plan always reports honestly how it got there (`knownCount` / `askCount` /
- * `deferredCount`) so the header can say "6 of 8 known · 2 to go" using real
- * numbers rather than a decorative ratio.
+ * count in the header is that number, so the card that opened this screen and
+ * the screen itself can never disagree about how much work it is.
  */
 
 import {
@@ -86,7 +96,7 @@ export interface FillPlan {
   templateId: string;
   /** The template's real title, for the pushed screen's header. */
   title: string;
-  /** The backing skill's name — real provenance for the footer. */
+  /** The backing skill's name. Not rendered — see `Mv3CreateType.skillLabel`. */
   skillLabel: string;
   /** Facts Cue holds, rendered as the checkable block. May be empty. */
   known: KnownFact[];
@@ -101,23 +111,52 @@ export interface FillPlan {
 }
 
 /**
- * The header's counts — "6 of 8 known · 2 to go".
+ * The header — v29 N1's *"5 questions · skip any"*.
  *
- * Each number counts one thing and says which. The tempting shortcut,
- * `totalFields - gaps`, silently reports deferred OPTIONAL fields as "known",
- * so a template with three optional inputs claims Cue knows three things about
- * you when it knows nothing. Known means a fact answered the field; optional
- * means we chose not to ask. They are counted separately because they are
- * different claims.
+ * It counts one thing: what this screen is about to ask. v27's "6 of 8 known ·
+ * 2 to go" is gone, and deliberately: a ratio of what Cue claims to know is the
+ * prefill badge expressed as arithmetic, and v29 withdrew the badge. What Cue
+ * knows is stated verbatim in the block below, with its origin, where the user
+ * can actually judge it — a number cannot be judged.
+ *
+ * "skip any" is only appended because it is true: every gap can be left empty
+ * and the build still runs (see `CreateFill`'s skip path).
  */
 export function fillProgressLabel(plan: FillPlan): string {
-  const knownCount = Object.keys(plan.prefilled).length;
-  const parts: string[] = [];
-  if (knownCount > 0) parts.push(`${knownCount} of ${plan.totalFields} known`);
-  if (plan.gaps.length > 0) parts.push(`${plan.gaps.length} to go`);
-  if (plan.deferred.length > 0) parts.push(`${plan.deferred.length} optional`);
-  return parts.length > 0 ? parts.join(" · ") : "Nothing left to ask";
+  const n = plan.gaps.length;
+  if (n === 0) return "Nothing left to ask";
+  return `${n} question${n === 1 ? "" : "s"} · skip any`;
 }
+
+/** True when this gap asks the user for a figure. */
+function isFigure(gap: Gap): boolean {
+  return gap.kind === "number";
+}
+
+/**
+ * v29's invariant, said out loud before the build starts:
+ *
+ * > Cue may draft *words* it hasn't been given. It may never draft *numbers* it
+ * > hasn't been given.
+ *
+ * Returned only when this template actually asks for a figure — on a template
+ * with no numeric input the sentence would be answering a question nobody asked.
+ * `null` means: render nothing. Blank is a legitimate output, announced before
+ * building, and it needs no apology on the artefact afterwards.
+ */
+export function blankNumbersLine(plan: FillPlan): string | null {
+  const asksForFigures =
+    plan.gaps.some(isFigure) || plan.deferred.some(isFigure);
+  if (!asksForFigures) return null;
+  return "I don't have your numbers, so I'll leave them blank rather than invent them.";
+}
+
+/**
+ * What happens to a figure you don't give. Rendered under every numeric input,
+ * because "skip any" has to be believable at the point of skipping.
+ */
+export const FIGURE_SKIP_HELP =
+  "Leave it blank and it ships with the field empty.";
 
 function toGap(field: InputField): Gap {
   const kind = gapKindFor(field);
@@ -234,7 +273,7 @@ export function fillHeadline(plan: FillPlan): string {
 /** The block's own heading — only claims memory when there is some. */
 export function knownHeadline(plan: FillPlan): string | null {
   if (plan.known.length === 0) return null;
-  return "Here's what I already have —";
+  return "Here's what I'm going on:";
 }
 
 function spellSmall(n: number): string {

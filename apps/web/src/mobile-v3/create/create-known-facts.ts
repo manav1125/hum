@@ -41,12 +41,26 @@
  * A fact that cannot be proven is simply absent. There is no placeholder path.
  */
 
-/** How a known fact reached us — shown to the user so they can judge it. */
+/**
+ * How a known fact reached us — shown to the user so they can judge it.
+ *
+ * v29 withdrew the prefill badge in favour of "verbatim statements, origin
+ * labelled — *you told me · Jun 12* not *from memory*". So the token below is
+ * the machine-readable origin and `originLabel()` is the only thing a surface
+ * may render: a bare `memory` on screen is the badge under another name.
+ */
 export type FactOrigin =
   /** Read from the assistant's saved Brand Kit (server-backed). */
   | "brand"
-  /** Retrieved from the memory store, verbatim. */
+  /** Retrieved from the memory store, verbatim, and the user said it. */
   | "memory"
+  /**
+   * Retrieved from the memory store, but Cue observed or inferred it rather
+   * than being told it. Separate from `memory` on purpose: labelling an
+   * inferred recollection "you told me" would be a fresh piece of the fabricated
+   * provenance v29 exists to remove.
+   */
+  | "noticed"
   /** Carried in from the text the user just typed. */
   | "your words"
   /** Supplied by the surface that opened Create (e.g. an open project). */
@@ -70,6 +84,37 @@ export interface KnownFact {
   fieldKey?: string;
   /** Where it came from. Rendered, never hidden. */
   origin: FactOrigin;
+  /**
+   * When the fact was recorded, already formatted for display ("Jul 28").
+   * Absent when the source carries no date — the label then simply omits it
+   * rather than inventing a plausible one.
+   */
+  asOf?: string;
+}
+
+/**
+ * The origin as the user reads it — v29's "labelled origins".
+ *
+ * Each label says who supplied the fact, in the second person where the user
+ * supplied it, so the block reads as an account of what Cue was told rather than
+ * a claim about what Cue worked out.
+ */
+export function originLabel(fact: KnownFact): string {
+  const base = (() => {
+    switch (fact.origin) {
+      case "brand":
+        return "from Brand Kit";
+      case "memory":
+        return "you told me";
+      case "noticed":
+        return "I noticed";
+      case "your words":
+        return "from what you just typed";
+      case "context":
+        return "from what you had open";
+    }
+  })();
+  return fact.asOf ? `${base} · ${fact.asOf}` : base;
 }
 
 /** Supplies the facts Cue holds for a given build. */
@@ -147,6 +192,21 @@ export interface MemoryItemLike {
   subject?: string | null;
   statement?: string | null;
   sourceType?: string | null;
+  /** Epoch ms the memory was first recorded. Real, and used for the date. */
+  firstSeenAt?: number | null;
+}
+
+/**
+ * The date beside an origin — "Jul 28".
+ *
+ * Returns `undefined` for anything that is not a usable timestamp, so a bad
+ * value drops the date rather than rendering "Invalid Date" or today's.
+ */
+function asOfLabel(at?: number | null): string | undefined {
+  if (typeof at !== "number" || !Number.isFinite(at) || at <= 0) return undefined;
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /** Statements shorter than this are too fragmentary to show on their own. */
@@ -165,6 +225,10 @@ export const MAX_MEMORY_FACTS = 4;
  * These facts carry no `fieldKey`: a sentence cannot be proven to answer a typed
  * input, so they inform the build as context but never silently complete a form
  * field the user would then not be asked about.
+ *
+ * The origin follows the item's own `sourceType` rather than defaulting to "you
+ * told me": only a `direct` memory was actually said by the user, and the store
+ * also holds observed and inferred ones.
  */
 export function memoryFacts(
   items: readonly MemoryItemLike[] | null | undefined,
@@ -179,7 +243,8 @@ export function memoryFacts(
       id: `memory:${item.id ?? out.length}`,
       label: item.subject?.trim() || "Remembered",
       value: statement,
-      origin: "memory",
+      origin: item.sourceType === "direct" ? "memory" : "noticed",
+      asOf: asOfLabel(item.firstSeenAt),
     });
     if (out.length >= limit) break;
   }

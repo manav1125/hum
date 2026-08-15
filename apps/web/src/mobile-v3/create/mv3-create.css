@@ -724,20 +724,46 @@
   animation: mv3Bar 1.2s ease-in-out infinite;
 }
 
-.mv3c-skeleton {
-  display: flex;
+/* v29 N2: a step list that checks off, in place of the structural tile strip.
+   Only steps that actually happened have a row, so the list grows downward and
+   never reserves space for work that may not occur. */
+.mv3c-steplist {
+  list-style: none;
+  margin: 0;
+  padding: 0 13px 10px;
+  display: grid;
   gap: 5px;
-  padding: 0 13px 9px;
 }
 
-/* Structure, drawn as structure. These are never presented as thumbnails of the
-   user's artefact — the caption under them says what they are. */
-.mv3c-skel {
-  flex: 1;
-  height: 34px;
-  border-radius: 5px;
-  border: 1px dashed var(--mv3c-ghost-line);
-  background: var(--mv3c-ghost);
+.mv3c-steprow {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.mv3c-steptick {
+  width: 10px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 10px;
+}
+
+.mv3c-steprow[data-state="done"] .mv3c-steptick {
+  color: var(--mv3-violet-glyph);
+}
+
+.mv3c-steprow[data-state="done"] .mv3c-steptext {
+  color: var(--mv3-muted);
+}
+
+.mv3c-steprow[data-state="running"] .mv3c-steptick {
+  color: var(--mv3-muted);
+}
+
+.mv3c-steprow[data-state="running"] .mv3c-steptext {
+  color: var(--mv3-text);
 }
 
 .mv3c-caption {

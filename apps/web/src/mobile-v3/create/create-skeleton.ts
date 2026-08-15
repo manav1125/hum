@@ -9,8 +9,17 @@
  *   b) the template's real skeleton — available, honest;
  *   c) invented thumbnails that fill in on a timer — a fabricated generation.
  *
- * This module does (b), and the components that use it LABEL it as a skeleton.
- * That labelling is not decoration: this codebase previously shipped a brand
+ * This module does (b), and any component that uses it must LABEL it as a
+ * skeleton.
+ *
+ * **v29 note.** The building card no longer renders this. N2 removed the tile
+ * strip outright — *"no fake thumbnails… nothing to look at until then"* —
+ * because an artefact-shaped row invites you to sit and watch it fill even when
+ * its caption is honest. The module stays because the value is real and a
+ * template preview is still a legitimate place for it; it simply has no place
+ * on a surface whose whole message is that there is nothing to see yet.
+ *
+ * That labelling requirement is not decoration: this codebase previously shipped a brand
  * extraction that returned a hardcoded palette and invented font names as though
  * they had been extracted, and the fix (assistant/src/brand/brand-extract-job.ts)
  * established the rule — a thing that could not be derived is shown as absent or

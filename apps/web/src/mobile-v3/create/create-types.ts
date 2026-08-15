@@ -8,9 +8,13 @@
  * typed in. If a mode disappears upstream, this file stops listing it instead of
  * advertising a door that opens onto nothing.
  *
- * Design draws ten type tiles (v27 J1/J2). There are exactly ten `CREATE_MODES`,
- * so the mapping is 1:1 — `slides · data · docs · sheets · research · images ·
- * canvas · video · audio · leads`.
+ * Design draws ten type tiles (v27 J1/J2, unchanged by v29). There are exactly
+ * ten `CREATE_MODES`, so the mapping is 1:1 — `slides · data · docs · sheets ·
+ * research · images · canvas · video · audio · leads`.
+ *
+ * **App Builder is not an eleventh, and v29 confirmed it stays dropped.** It is
+ * the SKILL behind slides and dashboards, not a thing a user chooses; naming it
+ * would be a provenance badge for an engine we cannot promise ran.
  *
  * Ordering matters: J1's peek detent shows the first two as large tiles and
  * summarises the rest, so the two highest-frequency types lead.
@@ -34,9 +38,25 @@ export interface Mv3CreateType {
   label: string;
   /** The noun used in body copy ("Blank deck", "12 templates"). */
   blankLabel: string;
+  /**
+   * The singular thing this type makes — "deck", "image edit".
+   *
+   * Stated per type rather than derived from the label, because de-pluralising
+   * a label is wrong exactly where it matters: `"Canvas"` → `"canva"`, and
+   * "Build the canva →" was shipping on the type v29 just added a stage to.
+   */
+  noun: string;
   /** Emoji used in the compressed "and 8 more" row at the peek detent. */
   glyph: string;
-  /** The backing skill's human name — real provenance, shown on cards. */
+  /**
+   * The backing skill's human name.
+   *
+   * **Not for display on mobile.** v29 ruled on this while dropping App Builder
+   * as a tile: *"a provenance badge naming an engine is for us, not the user —
+   * nobody picks a template because of which skill runs it"*, reinforced by the
+   * constraint that skill routing isn't enforced, so the badge would name an
+   * engine we cannot promise ran. Kept for logs and routing; rendered nowhere.
+   */
   skillLabel: string;
   /** Total templates this type can offer (quick-start + structured form). */
   templateCount: number;
@@ -47,18 +67,26 @@ export interface Mv3CreateType {
  * mode id so a typo can't silently create a phantom type — `buildTypes()` only
  * emits entries whose id exists in `CREATE_MODES`.
  */
-const DISPLAY: Record<string, { blankLabel: string; glyph: string }> = {
-  slides: { blankLabel: "Blank deck", glyph: "▤" },
-  docs: { blankLabel: "Blank doc", glyph: "📄" },
-  data: { blankLabel: "Blank dashboard", glyph: "📊" },
-  sheets: { blankLabel: "Blank sheet", glyph: "▦" },
-  research: { blankLabel: "Open question", glyph: "🔎" },
-  images: { blankLabel: "Describe an image", glyph: "🎨" },
-  canvas: { blankLabel: "Start from an image", glyph: "✂" },
-  video: { blankLabel: "Describe a video", glyph: "🎬" },
-  audio: { blankLabel: "Describe audio", glyph: "🎵" },
-  leads: { blankLabel: "Blank search", glyph: "👥" },
+const DISPLAY: Record<
+  string,
+  { blankLabel: string; glyph: string; noun: string }
+> = {
+  slides: { blankLabel: "Blank deck", glyph: "▤", noun: "deck" },
+  docs: { blankLabel: "Blank doc", glyph: "📄", noun: "doc" },
+  data: { blankLabel: "Blank dashboard", glyph: "📊", noun: "dashboard" },
+  sheets: { blankLabel: "Blank sheet", glyph: "▦", noun: "sheet" },
+  research: { blankLabel: "Open question", glyph: "🔎", noun: "brief" },
+  images: { blankLabel: "Describe an image", glyph: "🎨", noun: "image" },
+  canvas: { blankLabel: "Start from an image", glyph: "✂", noun: "image edit" },
+  video: { blankLabel: "Describe a video", glyph: "🎬", noun: "video" },
+  audio: { blankLabel: "Describe audio", glyph: "🎵", noun: "audio clip" },
+  leads: { blankLabel: "Blank search", glyph: "👥", noun: "lead list" },
 };
+
+/** "a deck" / "an image edit" — the article the noun actually takes. */
+export function withArticle(noun: string): string {
+  return `${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun}`;
+}
 
 /**
  * How many distinct templates a type actually offers.
@@ -105,6 +133,7 @@ function buildTypes(): Mv3CreateType[] {
       id: mode.id,
       label: mode.label,
       blankLabel: display?.blankLabel ?? `Blank ${mode.label.toLowerCase()}`,
+      noun: display?.noun ?? mode.label.toLowerCase(),
       glyph: display?.glyph ?? "✎",
       skillLabel: mode.skillLabel,
       templateCount: templateCountFor(mode),
@@ -138,10 +167,18 @@ export interface Mv3GalleryEntry {
   description: string;
   /** "form" carries typed inputs; "quick" carries chip elicitation. */
   source: "form" | "quick";
-  /** Number of typed inputs, when this is a form template. */
+  /**
+   * How many questions tapping this card actually opens.
+   *
+   * v29: *"a card labelled '8 fields' opening a five-question screen was its own
+   * small dishonesty."* So this is what the next screen will ASK — a form
+   * template's required inputs, or a quick-start's elicit questions — and never
+   * the count of inputs it declares. `form-investor-pitch` declares eight and
+   * asks five; the card says five.
+   */
+  questionCount: number;
+  /** Total typed inputs, including the optional ones fill defers. */
   fieldCount?: number;
-  /** Number of chip questions, when this is a quick-start template. */
-  questionCount?: number;
   /**
    * A real provenance hint from the registry, when the template declares one.
    * `files` names a project the output would be filed onto; `source` names a
@@ -175,6 +212,10 @@ export function galleryEntriesFor(typeId: string): Mv3GalleryEntry[] {
     title: t.title,
     description: t.description,
     source: "form",
+    // The count the fill screen will show. Optional inputs are deferred there,
+    // so counting them here would put a bigger number on the card than the
+    // screen behind it — which is the exact mismatch v29 corrected.
+    questionCount: t.inputs.filter((f) => f.required).length,
     fieldCount: t.inputs.length,
     provenance: t.provenance,
   }));

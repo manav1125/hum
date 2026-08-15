@@ -9,23 +9,27 @@
  *
  * ## What is real here, and what is deliberately not drawn
  *
- * Design's J4 shows "BUILDING · 7 OF 12" over five slide thumbnails, three
- * filled and two dashed. Neither is available:
+ * v27's J4 showed "BUILDING · 7 OF 12" over five slide thumbnails, three filled
+ * and two dashed. **v29's N2 withdrew both**, which is where the code already
+ * was for the ordinal and is a change of position on the tiles:
  *
  * - **No ordinal.** No event in the SSE union carries `{current, total}`. The
  *   step stream is tool-call granularity and `trace_event.sequence` is a
  *   monotonic stream counter with no known total. So the eyebrow reads
  *   "BUILDING" with a real elapsed clock beside it, and never an "n of m".
- * - **No partial thumbnails.** Nothing emits a per-slide image mid-build; the
- *   client has nothing to render until the run completes. So the tiles are the
- *   TEMPLATE SKELETON — real `layoutRhythm` from the chosen template — and the
- *   caption says exactly that. Thumbnails that "fill in" on a timer would be a
- *   fabricated generation, which is the specific failure this codebase already
- *   shipped once with brand extraction.
+ * - **No tiles at all.** This card previously drew the chosen template's real
+ *   layout rhythm as a dashed strip, captioned as structure. v29 removed it:
+ *   *"no fake thumbnails… nothing to look at until then."* An honest caption
+ *   under a row of artefact-shaped boxes still invites someone to sit and watch
+ *   them fill, which is the behaviour the whole frame is trying to prevent.
+ *   `create-skeleton.ts` still exists and is still honest — it just has no
+ *   business on a surface whose message is "go away, I'll ping you".
+ * - **A step list instead.** Every step the turn actually emitted, ticked,
+ *   with the running one live. Real events, no forecast, no total.
  *
- * What IS real: the narrated current step (from the turn's tool stream), the
- * elapsed clock, the leave-and-come-back promise (the turn runs server-side
- * against a conversation id), and the filing line (see create-filing.ts).
+ * What IS real: the step list (from the turn's tool stream), the elapsed clock,
+ * the leave-and-come-back promise (the turn runs server-side against a
+ * conversation id), and the filing line (see create-filing.ts).
  */
 
 import { haptic } from "@/utils/haptics";
@@ -36,17 +40,12 @@ import {
   isDelivered,
   LEAVE_PROMISE,
   narrationLine,
+  NOTHING_YET,
   statusEyebrow,
   type BuildState,
 } from "./create-build-model";
 import { filingLine, type FilingDestination } from "./create-filing";
 import type { AdjacentOffer, RemixChip } from "./create-followups";
-import {
-  humanizeStep,
-  skeletonFor,
-  skeletonTileCount,
-  type Skeleton,
-} from "./create-skeleton";
 
 import "./mv3-create.css";
 
@@ -60,26 +59,33 @@ export interface CreateBuildingCardProps {
   now?: number;
 }
 
-function SkeletonStrip({ skeleton }: { skeleton: Skeleton }) {
-  const count = skeletonTileCount(skeleton);
+/**
+ * N2's step list.
+ *
+ * Everything before the last entry is done and ticked; the last entry is what is
+ * happening now and carries a live marker instead. There is no row for a step
+ * that has not happened — a greyed-out "next: …" would be a forecast, and the
+ * pipeline does not publish one.
+ */
+function StepList({ steps }: { steps: string[] }) {
   return (
-    <>
-      <div className="mv3c-skeleton" aria-hidden>
-        {Array.from({ length: count }).map((_, i) => (
-          <div key={i} className="mv3c-skel" />
-        ))}
-      </div>
-      <div className="mv3c-caption">
-        <div className="mv3c-step">
-          {skeleton.steps
-            .slice(0, count)
-            .map(humanizeStep)
-            .join(" · ")}
-        </div>
-        {/* Non-optional: a skeleton without this reads as a preview. */}
-        <div className="mv3c-disclaimer">{skeleton.disclaimer}</div>
-      </div>
-    </>
+    <ol className="mv3c-steplist">
+      {steps.map((step, i) => {
+        const done = i < steps.length - 1;
+        return (
+          <li
+            key={`${i}-${step}`}
+            className="mv3c-steprow"
+            data-state={done ? "done" : "running"}
+          >
+            <span className="mv3c-steptick" aria-hidden>
+              {done ? "✓" : "·"}
+            </span>
+            <span className="mv3c-steptext">{step}</span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -88,8 +94,6 @@ export function CreateBuildingCard({ state, now }: CreateBuildingCardProps) {
   // swapped to the artefact card; rendering nothing is safer than showing a
   // spinner over a run that already ended.
   if (state.phase === "delivered" || state.phase === "failed") return null;
-
-  const skeleton = skeletonFor(state.templateId);
 
   return (
     <div className="mv3c" data-mv3>
@@ -100,22 +104,21 @@ export function CreateBuildingCard({ state, now }: CreateBuildingCardProps) {
             <span className="mv3c-bar" style={{ animationDelay: "0.3s" }} />
           </span>
           <span className="mv3c-buildlabel">{statusEyebrow(state)}</span>
+          {/* Elapsed, not estimated — v29 chose the measurement over the guess. */}
           <span className="mv3c-elapsed">{elapsedLabel(state, now)}</span>
         </div>
 
-        {skeleton ? (
-          <SkeletonStrip skeleton={skeleton} />
+        {state.steps.length > 0 ? (
+          <StepList steps={state.steps} />
         ) : (
           <div className="mv3c-caption" style={{ borderTop: "none" }}>
             <div className="mv3c-step">{narrationLine(state)}</div>
           </div>
         )}
 
-        {skeleton ? (
-          <div className="mv3c-caption">
-            <div className="mv3c-step">{narrationLine(state)}</div>
-          </div>
-        ) : null}
+        <div className="mv3c-caption">
+          <div className="mv3c-disclaimer">{NOTHING_YET}</div>
+        </div>
       </div>
 
       <div className="mv3c-leave">{LEAVE_PROMISE}</div>

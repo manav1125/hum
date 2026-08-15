@@ -13,9 +13,9 @@
  * 2. **A no-op reported as a success.** A run that ends with no artefact must
  *    become a failure the user sees, not a silently empty card.
  * 3. **A fabricated build reading.** The pipeline emits no artefact ordinal, so
- *    the building card must never render "n of m" or a percentage, and its
- *    structural tiles must carry the sentence that says they are the template's
- *    skeleton and not the user's slides.
+ *    the building card must never render "n of m" or a percentage, and it must
+ *    say outright that there is nothing to look at yet rather than filling the
+ *    space with artefact-shaped boxes.
  *
  * Plus design's counting rules: the filing line is always present and always
  * true, and there is at most one adjacent offer.
@@ -255,6 +255,36 @@ describe("the building card", () => {
     expect(screen.getByText(/writing the traction slide/)).toBeDefined();
   });
 
+  /**
+   * v29 N2: the list is a record of what happened, so every step the turn
+   * emitted stays on screen with the finished ones ticked. v27's J4 showed only
+   * the current step over a thumbnail strip; the strip is gone and the history
+   * is what replaced it.
+   */
+  test("keeps every real step, ticking the ones that finished", () => {
+    let state = observeStep(baseState(), "Read the Series A structure");
+    state = observeStep(state, "Pulled your brand and the Acme story");
+    state = observeStep(state, "Writing the slides");
+    render(<CreateBuildingCard state={state} />);
+
+    expect(screen.getByText("Read the Series A structure")).toBeDefined();
+    expect(screen.getByText("Pulled your brand and the Acme story")).toBeDefined();
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    // Everything but the last is done; the last one is still running.
+    expect(rows.slice(0, 2).every((r) => r.dataset.state === "done")).toBe(true);
+    expect(rows[2].dataset.state).toBe("running");
+  });
+
+  test("a repeated step is not two things having happened", () => {
+    // The SSE stream can re-emit; a duplicated row would read as progress.
+    let state = observeStep(baseState(), "Writing the slides");
+    state = observeStep(state, "Writing the slides");
+    expect(state.steps).toHaveLength(1);
+    expect(state.stepsSeen).toBe(1);
+  });
+
   test("says something honest before the first step arrives", () => {
     render(<CreateBuildingCard state={baseState()} />);
     expect(screen.getByText("Starting…")).toBeDefined();
@@ -269,11 +299,20 @@ describe("the building card", () => {
     expect(text).not.toMatch(/\d+\s*%/);
   });
 
-  test("labels its structural tiles as the template skeleton", () => {
+  /**
+   * REPLACES a v27 test ("labels its structural tiles as the template
+   * skeleton"). That test locked in J4's dashed tile strip, captioned as
+   * structure. v29's N2 removes the strip entirely — an honest caption under a
+   * row of artefact-shaped boxes still tells someone there is something here
+   * worth waiting for, and the frame's whole argument is that there isn't. So
+   * the assertion inverts: no tiles, and the card says why.
+   */
+  test("shows nothing artefact-shaped, and says there is nothing to see yet", () => {
     const state = observeStep(baseState(), "writing the traction slide");
-    render(<CreateBuildingCard state={state} />);
-    // Rule B: a preview that is not a real generation must say what it is.
-    expect(screen.getByText(/Template structure/)).toBeDefined();
+    const { container } = render(<CreateBuildingCard state={state} />);
+    expect(screen.getByText(/nothing to look at until then/)).toBeDefined();
+    expect(container.querySelector(".mv3c-skel")).toBeNull();
+    expect(container.querySelector(".mv3c-skeleton")).toBeNull();
   });
 
   test("promises the run can be left, which the conversation id makes true", () => {
