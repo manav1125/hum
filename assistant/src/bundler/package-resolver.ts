@@ -6,7 +6,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { ensureBun } from "../util/bun-runtime.js";
@@ -25,8 +25,15 @@ export const ALLOWED_PACKAGES: readonly string[] = [
   "lucide",
 ] as const;
 
+/**
+ * The trust bound on this resolver is {@link ALLOWED_PACKAGES} plus this
+ * timeout: only a fixed set of vetted packages is ever installed, and an
+ * install that hangs is killed. There is deliberately no unpacked-size cap —
+ * a size limit adds no safety on top of a closed allowlist, and half the
+ * allowlist (chart.js ~5.9 MB, date-fns ~10.4 MB, lucide ~20.4 MB unpacked)
+ * would fail it, breaking every generated app that charts or formats a date.
+ */
 const INSTALL_TIMEOUT_MS = 10_000;
-const MAX_PACKAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /** In-flight install promises keyed by package name, to deduplicate concurrent requests. */
 const inflight = new Map<string, Promise<string | null>>();
@@ -147,37 +154,9 @@ async function installPackage(
       return null;
     }
 
-    // Enforce max size
-    if (existsSync(pkgDir)) {
-      const size = await dirSize(pkgDir);
-      if (size > MAX_PACKAGE_SIZE_BYTES) {
-        log.warn({ pkg, size }, "Package exceeds size limit, removing");
-        const { rm } = await import("node:fs/promises");
-        await rm(pkgDir, { recursive: true, force: true });
-        return null;
-      }
-    }
-
     return existsSync(pkgDir) ? nodeModulesDir : null;
   } catch (err) {
     log.warn({ pkg, err }, "Package resolution failed");
     return null;
   }
-}
-
-/** Recursively sum file sizes under a directory. */
-async function dirSize(dir: string): Promise<number> {
-  const { readdir } = await import("node:fs/promises");
-  const entries = await readdir(dir, { withFileTypes: true });
-  let total = 0;
-  for (const entry of entries) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      total += await dirSize(full);
-    } else {
-      const s = await stat(full);
-      total += s.size;
-    }
-  }
-  return total;
 }
