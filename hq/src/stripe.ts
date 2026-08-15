@@ -71,9 +71,29 @@ export function isWebhookConfigured(): boolean {
 
 function priceIdForPlan(plan: CustomerPlan): string | undefined {
   // Legacy founding aliases keep their dedicated price env vars so existing
-  // founding checkouts are unaffected by the tier rollout.
-  if (plan === "founding") return process.env.STRIPE_PRICE_FOUNDING;
-  if (plan === "founding_byo") return process.env.STRIPE_PRICE_FOUNDING_BYO;
+  // founding checkouts are unaffected by the tier rollout — but only when
+  // those vars actually exist. They do not on prod: HQ carries
+  // STRIPE_PRICE_CHIEF_OF_STAFF (and ASSISTANT/OPERATOR) and no
+  // STRIPE_PRICE_FOUNDING at all, so returning early handed back `undefined`
+  // and every legacy-plan customer got `no_price_configured_for_founding`
+  // instead of a checkout. Both of the real customers on this instance are on
+  // `founding`, so the paid path was dead for all of them.
+  //
+  // `resolvePlan` already maps founding / founding_byo to chief_of_staff, so
+  // falling through to it is the mapping the rest of the code believes in.
+  // The dedicated var still wins when set.
+  if (plan === "founding") {
+    return (
+      process.env.STRIPE_PRICE_FOUNDING ??
+      process.env[resolvePlan(plan).stripePriceEnvVar]
+    );
+  }
+  if (plan === "founding_byo") {
+    return (
+      process.env.STRIPE_PRICE_FOUNDING_BYO ??
+      process.env[resolvePlan(plan).stripePriceEnvVar]
+    );
+  }
   return process.env[resolvePlan(plan).stripePriceEnvVar];
 }
 

@@ -17,6 +17,9 @@ const ENV_KEYS = [
   "STRIPE_WEBHOOK_SECRET",
   "STRIPE_PRICE_FOUNDING",
   "STRIPE_PRICE_FOUNDING_BYO",
+  // The legacy-alias tests set this; without it here the value leaks into
+  // every file that runs after this one.
+  "STRIPE_PRICE_CHIEF_OF_STAFF",
 ];
 
 beforeEach(() => {
@@ -244,6 +247,53 @@ describe("checkout session (mock fetch)", () => {
     expect(form.get("mode")).toBe("subscription");
     expect(form.get("line_items[0][price]")).toBe("price_f1");
     expect(form.get("metadata[customerId]")).toBe("cust-42");
+  });
+});
+
+describe("legacy plan aliases still resolve a price", () => {
+  test("REGRESSION: founding falls back to the chief_of_staff price", async () => {
+    // Prod carries STRIPE_PRICE_CHIEF_OF_STAFF and no STRIPE_PRICE_FOUNDING.
+    // The legacy branch used to return early with `undefined`, so every
+    // founding customer — which on this instance is BOTH real customers — got
+    // `no_price_configured_for_founding` instead of a checkout.
+    process.env.STRIPE_SECRET_KEY = "sk_test_123";
+    delete process.env.STRIPE_PRICE_FOUNDING;
+    process.env.STRIPE_PRICE_CHIEF_OF_STAFF = "price_cos";
+    let body = "";
+    const fetchImpl = (async (_i: RequestInfo | URL, init?: RequestInit) => {
+      body = String(init?.body ?? "");
+      return Response.json({ id: "cs_1", url: "https://checkout.stripe.com/1" });
+    }) as typeof fetch;
+
+    const result = await createCheckoutSession(
+      { customerId: "c1", email: "legacy@x.io", plan: "founding" },
+      fetchImpl,
+    );
+    expect(result.ok).toBe(true);
+    expect(new URLSearchParams(body).get("line_items[0][price]")).toBe(
+      "price_cos",
+    );
+  });
+
+  test("a dedicated founding price still wins when it is set", () => {
+    // The fallback must not override an explicitly configured legacy price.
+    process.env.STRIPE_SECRET_KEY = "sk_test_123";
+    process.env.STRIPE_PRICE_FOUNDING = "price_legacy";
+    process.env.STRIPE_PRICE_CHIEF_OF_STAFF = "price_cos";
+    // Asserted through the same public seam the checkout uses.
+    return createCheckoutSession(
+      { customerId: "c2", email: "legacy2@x.io", plan: "founding" },
+      (async (_i: RequestInfo | URL, init?: RequestInit) => {
+        expect(
+          new URLSearchParams(String(init?.body ?? "")).get(
+            "line_items[0][price]",
+          ),
+        ).toBe("price_legacy");
+        return Response.json({ id: "cs_2", url: "https://checkout.stripe.com/2" });
+      }) as typeof fetch,
+    ).then((r) => {
+      expect(r.ok).toBe(true);
+    });
   });
 });
 
