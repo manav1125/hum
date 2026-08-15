@@ -246,8 +246,37 @@ function PreviewBandHeader({
   );
 }
 
-/** Primary "Fill & build ›" + secondary "Preview" action row (S1 card). */
-function CardActions({ onOpen }: { onOpen: () => void }) {
+/**
+ * The secondary action's label, split per design v29.
+ *
+ * The old label was the single word "Preview", which over-promised on every
+ * type: the destination is the template's detail screen, and for eight of the
+ * ten modes that screen holds inputs and settings and nothing else — no look
+ * at the output. So:
+ *
+ *   - **a real skeleton exists** (Slides, Docs — the templates carrying
+ *     `outline`) → "See the outline", and the detail screen shows it;
+ *   - **everything else** → "What's in it", which describes the inputs and
+ *     settings truthfully and implies no view of the artefact.
+ *
+ * Driven off `template.outline` rather than a mode allow-list on purpose: the
+ * claim is then structurally unable to outrun the data behind it. Adding an
+ * outline to a mode moves its label; there is no third state to keep in sync.
+ */
+function previewActionLabel(template: TemplateDefinition): string {
+  return template.outline && template.outline.length > 0
+    ? "See the outline"
+    : "What's in it";
+}
+
+/** Primary "Fill & build ›" + secondary "See the outline" / "What's in it". */
+function CardActions({
+  template,
+  onOpen,
+}: {
+  template: TemplateDefinition;
+  onOpen: () => void;
+}) {
   return (
     <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
       <span
@@ -283,9 +312,10 @@ function CardActions({ onOpen }: { onOpen: () => void }) {
           padding: "9px 16px",
           fontSize: 13,
           fontWeight: 500,
+          whiteSpace: "nowrap",
         }}
       >
-        Preview
+        {previewActionLabel(template)}
       </span>
     </div>
   );
@@ -1360,7 +1390,7 @@ const cardChrome: React.CSSProperties = {
  * Structured-template card (desktop S1) — the full one-card anatomy: a tinted
  * preview band carrying a serif sample-context + mono field-count chip over the
  * artifact thumbnail, then the serif title, description, ⟡ provenance chip, and
- * an explicit "Fill & build ›" / "Preview" action row. The first card in the
+ * an explicit "Fill & build ›" / secondary action row. The first card in the
  * row renders `active` (blue border + fill), mirroring the design's featured
  * template. The whole card is clickable; the action row makes the primary path
  * explicit and scannable. Opening either lands on the fill-fields form.
@@ -1433,7 +1463,7 @@ function FormTemplateCard({
         </p>
         <div style={{ marginTop: "auto", paddingTop: 12 }}>
           <ProvenanceTag template={template} skillLabel={skillLabel} />
-          <CardActions onOpen={onOpen} />
+          <CardActions template={template} onOpen={onOpen} />
         </div>
       </div>
     </button>
@@ -1443,10 +1473,11 @@ function FormTemplateCard({
 /**
  * Featured template card (mobile S1) — the top structured template rendered
  * large: preview band, title + field-count chip, description, the ⟡ provenance
- * chip, and an explicit primary "Fill & build ›" + secondary "Preview" row.
+ * chip, and an explicit primary "Fill & build ›" + secondary action row.
  * Both buttons open the fill-fields form (which then generates the asset and
  * files it onto its project); the row simply makes that action explicit and
- * scannable on the phone, where the whole-card tap alone is ambiguous.
+ * scannable on the phone, where the whole-card tap alone is ambiguous. The
+ * secondary label names what you'll find there — see `previewActionLabel`.
  */
 function FeaturedTemplateCard({
   template,
@@ -1544,9 +1575,10 @@ function FeaturedTemplateCard({
               fontSize: 13,
               fontWeight: 500,
               cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
-            Preview
+            {previewActionLabel(template)}
           </button>
         </div>
       </div>

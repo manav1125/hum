@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 
 import { CreateView } from "./create-view";
+import { TEMPLATE_DEFINITIONS } from "./create-form-templates";
 
 afterEach(() => {
   cleanup();
@@ -108,3 +109,62 @@ describe("CreateView — client-side elicitation wiring", () => {
   });
 });
 
+/**
+ * v29 split the card's secondary label in two: "See the outline" where a real
+ * skeleton exists (Slides, Docs), "What's in it" everywhere else, because
+ * "outline" over-promised on eight types. The label is derived from
+ * `template.outline`, so these tests pin both halves — the copy, and the data
+ * that entitles the copy to appear.
+ */
+describe("Create — the secondary action names what you'll actually see", () => {
+  /** Every visible label on the surface, trimmed. */
+  function labels(): string[] {
+    return Array.from(document.querySelectorAll("button, span"))
+      .map((el) => el.textContent?.trim() ?? "")
+      .filter(Boolean);
+  }
+
+  test("Slides templates offer the outline; the bare word Preview is gone", () => {
+    renderView();
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("See the outline");
+    expect(labels()).not.toContain("Preview");
+  });
+
+  test("a mode with no skeleton says 'What's in it' instead", () => {
+    renderView();
+    // Images templates produce a picture, not a section list.
+    switchMode("Images");
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("What's in it");
+    expect(text).not.toContain("See the outline");
+  });
+
+  test("only Slides and Docs carry an outline — the label can't outrun the data", () => {
+    const withOutline = TEMPLATE_DEFINITIONS.filter(
+      (t) => (t.outline?.length ?? 0) > 0,
+    );
+    expect(withOutline.length).toBeGreaterThan(0);
+    expect([...new Set(withOutline.map((t) => t.mode))].sort()).toEqual([
+      "docs",
+      "slides",
+    ]);
+    // …and every Slides/Docs template has one, so the split is by mode in
+    // practice as design specified, not a ragged per-template thing.
+    const slidesAndDocs = TEMPLATE_DEFINITIONS.filter(
+      (t) => t.mode === "slides" || t.mode === "docs",
+    );
+    expect(withOutline.length).toBe(slidesAndDocs.length);
+  });
+
+  test("the outline shown is the section list the model is asked for", () => {
+    // One array, two uses. If someone edits the prompt sentence by hand the
+    // sections stop matching and this fails — which is the whole point of
+    // showing a skeleton rather than describing one.
+    for (const t of TEMPLATE_DEFINITIONS) {
+      if (!t.outline?.length) continue;
+      const prompt = t.composePrompt({});
+      expect(prompt).toContain(t.outline.join(", "));
+    }
+  });
+});

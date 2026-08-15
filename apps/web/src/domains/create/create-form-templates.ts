@@ -79,6 +79,19 @@ export interface TemplateDefinition {
    * hint (neutral, no ⟡). Falls back to `files onto {mode skillLabel}`.
    */
   provenance?: { files: string } | { source: string };
+  /**
+   * The ordered sections this template produces — a real skeleton, not a
+   * description of one. Present only where it genuinely exists (Slides and
+   * Docs); every
+   * other mode has inputs and settings and nothing else, which is why the
+   * card's secondary action reads "What's in it" there and "See the outline"
+   * here (design v29: "'outline' over-promises on eight types").
+   *
+   * SINGLE SOURCE OF TRUTH: the same array is joined into `composePrompt`, so
+   * the outline the user reads is literally the section list the model is
+   * told to produce. Never write the sections out twice.
+   */
+  outline?: string[];
 }
 
 /* ----------------------------------------------------------------------- */
@@ -116,6 +129,76 @@ function block(...lines: string[]): string {
   return lines.filter(Boolean).join("\n");
 }
 
+/**
+ * Renders a template's `outline` into its prompt ("Produce slides for: Title,
+ * Problem, …"). Pairing this with `outline:` on the same definition is what
+ * makes the skeleton the card promises and the skeleton the model is asked for
+ * the same object — see `TemplateDefinition.outline`.
+ */
+function sections(lead: string, outline: readonly string[]): string {
+  return `${lead}: ${outline.join(", ")}.`;
+}
+
+/* --- Outlines (Slides + Docs only — the modes with a real skeleton) ------ */
+
+const OUTLINE_INVESTOR_PITCH = [
+  "Title",
+  "Problem",
+  "Solution",
+  "Product",
+  "Market size",
+  "Traction",
+  "Business model",
+  "Competition",
+  "Team",
+  "The funding ask",
+];
+
+const OUTLINE_QBR = [
+  "Executive summary",
+  "KPI scorecard with trend callouts",
+  "Wins",
+  "Misses with root cause",
+  "Customer & revenue highlights",
+  "Risks",
+  "Next-quarter priorities",
+];
+
+const OUTLINE_PRODUCT_LAUNCH = [
+  "Positioning & value prop",
+  "The problem solved",
+  "Key features",
+  "Demo walkthrough",
+  "Pricing & packaging",
+  "Launch timeline",
+  "Go-to-market plan",
+];
+
+const OUTLINE_PRD = [
+  "Overview & problem statement",
+  "Goals and non-goals",
+  "Target users",
+  "User stories",
+  "Functional requirements",
+  "Success metrics",
+  "Risks",
+  "Open questions",
+];
+
+const OUTLINE_BLOG_POST = [
+  "Hook",
+  "Body, with a subheading per key point",
+  "Call to action",
+];
+
+const OUTLINE_ONE_PAGER = [
+  "Context",
+  "The recommendation",
+  "Supporting rationale",
+  "Trade-offs",
+  "Next steps",
+];
+
 /* ----------------------------------------------------------------------- */
 /* Catalog                                                                  */
 /* ----------------------------------------------------------------------- */
@@ -130,6 +213,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     skill: "app-builder",
     sampleContext: "Northwind — Series A",
     provenance: { files: "Close the $500K seed" },
+    outline: OUTLINE_INVESTOR_PITCH,
     inputs: [
       {
         key: "company",
@@ -198,7 +282,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("Raise stage", str(v, "stage")),
         line("The ask", str(v, "ask")),
         "",
-        "Produce slides for: title, problem, solution, product, market size, traction, business model, competition, team, and the funding ask. One clear idea per slide, confident modern visual direction with strong typography. Where I have not given detail, use a bracketed placeholder I can spot at a glance — and never a number, since an invented market size or traction figure reads exactly like a measured one.",
+        sections("Produce slides for", OUTLINE_INVESTOR_PITCH),
+        "One clear idea per slide, confident modern visual direction with strong typography. Where I have not given detail, use a bracketed placeholder I can spot at a glance — and never a number, since an invented market size or traction figure reads exactly like a measured one.",
       ),
   },
   {
@@ -209,6 +294,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     skill: "app-builder",
     sampleContext: "Q3 business review",
     provenance: { source: "Pulls from connected Sheets" },
+    outline: OUTLINE_QBR,
     inputs: [
       {
         key: "team",
@@ -262,7 +348,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("What slipped and why", str(v, "misses")),
         line("Next-quarter priorities", str(v, "priorities")),
         "",
-        "Include: executive summary, a KPI scorecard with trend callouts for each metric above, wins, misses with root cause, customer/revenue highlights, risks, and next-quarter priorities. Clean, data-forward design, one headline per slide. Never invent a figure: where I have not given a number, write a visible blank such as [Q3 revenue — not supplied] and list those gaps on a final slide, so nothing reads as measured that was not.",
+        sections("Include", OUTLINE_QBR),
+        "Clean, data-forward design, one headline per slide. Never invent a figure: where I have not given a number, write a visible blank such as [Q3 revenue — not supplied] and list those gaps on a final slide, so nothing reads as measured that was not.",
       ),
   },
   {
@@ -273,6 +360,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     skill: "app-builder",
     sampleContext: "v2 goes live",
     provenance: { files: "Ship v2" },
+    outline: OUTLINE_PRODUCT_LAUNCH,
     inputs: [
       {
         key: "product",
@@ -326,7 +414,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("Launch date", str(v, "launchDate")),
         line("Pricing / packaging", str(v, "pricing")),
         "",
-        "Cover: positioning & value prop, the problem solved, key features, a demo walkthrough section, pricing/packaging, launch timeline, and the go-to-market plan. Energetic but professional visual direction. Fill gaps with bracketed placeholders I can spot at a glance, and never invent a price or a date.",
+        sections("Cover", OUTLINE_PRODUCT_LAUNCH),
+        "Energetic but professional visual direction. Fill gaps with bracketed placeholders I can spot at a glance, and never invent a price or a date.",
       ),
   },
 
@@ -503,6 +592,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     description: "A PRD structured around your feature.",
     sampleContext: "PRD — v2 launch",
     provenance: { files: "Ship v2" },
+    outline: OUTLINE_PRD,
     skill: "document-editor",
     inputs: [
       {
@@ -558,7 +648,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("Scope", str(v, "scope")),
         line("Success metrics", list(v, "metrics").join(", ")),
         "",
-        "Structure it as: overview & problem statement, goals and non-goals, target users, user stories, functional requirements, success metrics, risks, and open questions. Clear headings; leave editable placeholders where I haven't given detail.",
+        sections("Structure it as", OUTLINE_PRD),
+        "Clear headings; leave editable placeholders where I haven't given detail.",
       ),
   },
   {
@@ -567,6 +658,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     title: "Blog post",
     description: "A drafted article from your topic and angle.",
     skill: "document-editor",
+    outline: OUTLINE_BLOG_POST,
     inputs: [
       {
         key: "topic",
@@ -622,7 +714,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("Key points to cover", list(v, "keyPoints").join(", ")),
         line("Length", str(v, "length") || "Medium (~900 words)"),
         "",
-        "Open with a strong hook, structure the body with clear subheadings that cover the key points, and close with a call to action. Make it genuinely readable, not filler.",
+        sections("Structure it as", OUTLINE_BLOG_POST),
+        "Open with a strong hook and close with a call to action. Make it genuinely readable, not filler.",
       ),
   },
   {
@@ -631,6 +724,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     title: "Strategy one-pager",
     description: "A crisp single-page brief for a decision.",
     skill: "document-editor",
+    outline: OUTLINE_ONE_PAGER,
     inputs: [
       {
         key: "title",
@@ -676,7 +770,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         line("Trade-offs considered", str(v, "tradeoffs")),
         line("Next steps", str(v, "nextSteps")),
         "",
-        "Structure it as: context, the recommendation, supporting rationale, trade-offs, and next steps. Keep it tight and skimmable — it must fit on a single page.",
+        sections("Structure it as", OUTLINE_ONE_PAGER),
+        "Keep it tight and skimmable — it must fit on a single page.",
       ),
   },
 

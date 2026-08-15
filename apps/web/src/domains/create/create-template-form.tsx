@@ -27,6 +27,51 @@ const fieldLabel =
 const controlBase =
   "w-full rounded-lg border bg-[var(--surface-base)] px-3 py-2 text-[14px] text-[var(--text-base)] placeholder:text-[var(--text-dim)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-cue)] focus:border-[var(--accent-cue)]";
 
+/**
+ * The section skeleton this template produces, shown above the fields.
+ *
+ * This is the destination of the card's "See the outline" action, and the
+ * reason that label is allowed to exist: the sections listed here are the
+ * identical array joined into the template's prompt, so what the reader is
+ * shown is what the model is asked for. Renders nothing at all when the
+ * template has no outline — every other mode has inputs and settings and
+ * nothing else, and an empty "Outline" heading would be the exact
+ * aspirational hole this is meant to close.
+ */
+function TemplateOutline({ outline }: { outline?: string[] }) {
+  if (!outline || outline.length === 0) return null;
+  return (
+    <section className="rounded-xl border border-[var(--border-base)] bg-[var(--surface-sunken,var(--surface-base))] p-4">
+      <h2
+        className="mb-2.5 text-[var(--text-dim)]"
+        style={{ fontFamily: MONO, fontSize: 10, letterSpacing: ".08em" }}
+      >
+        OUTLINE · {outline.length} SECTIONS
+      </h2>
+      <ol className="flex flex-col gap-1.5">
+        {outline.map((section, i) => (
+          <li
+            key={section}
+            className="flex items-baseline gap-2.5 text-[13px] text-[var(--text-base)]"
+          >
+            <span
+              className="shrink-0 text-[var(--text-dim)]"
+              style={{ fontFamily: MONO, fontSize: 10 }}
+            >
+              {String(i + 1).padStart(2, "0")}
+            </span>
+            {section}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 text-[12px] text-[var(--text-dim)]">
+        The sections it builds. Your inputs fill them — anything you leave blank
+        comes back as a placeholder, never an invented figure.
+      </p>
+    </section>
+  );
+}
+
 export interface CreateTemplateFormProps {
   template: TemplateDefinition;
   /** Back to the mode's template grid. */
@@ -103,6 +148,8 @@ export function CreateTemplateForm({
           }}
           className="mx-auto flex max-w-2xl flex-col gap-4 pb-6"
         >
+          <TemplateOutline outline={template.outline} />
+
           {template.inputs.map((field) => (
             <FieldControl
               key={field.key}
