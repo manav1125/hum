@@ -12,6 +12,7 @@ metadata:
       - "User wants written content they will iterate on, review, sign, send, or export — use the editor instead of inline markdown"
       - "A file attachment contains a draft or document the user wants to revise — open it in the editor"
       - "User asks for a PDF — a report, invoice, one-pager, or an export of an existing document"
+      - "User asks for a document in a specific file format — Word/.docx (especially 'so I can edit it' or 'to redline'), Excel/.xlsx, an image/PNG to paste somewhere, HTML, or Markdown — export it with document_export or file_create"
       - "User asks for something they will SHOW someone — a proposal, one-pager, pitch, brief, client-facing report, case study, quote, invoice or flyer — build it as a designed PDF with pdf_create(html), never in the Markdown editor"
     avoid-when:
       - "The user wants an interactive app, dashboard, calculator, game, or anything with state or data — use app-builder instead"
@@ -31,7 +32,9 @@ Write and edit long-form documents using the built-in rich text editor. Document
 - **document_open** - Opens an existing document in the editor panel by `surface_id`. Use this when a document exists but isn't visible in the editor — for example after the user switches devices, refreshes the page, or when the editor panel was closed. Fetches the document from storage and sends it to the client.
 - **document_delete** - Deletes a document by `surface_id`. Use to clean up unwanted documents.
 - **document_export_pdf** - Renders an existing document to a polished PDF and delivers it as an in-chat attachment. The share/print/send path.
+- **document_export** - Exports an existing document in any format: `pdf`, `png`, `markdown`, `html`, `docx` (Word), `xlsx` (Excel). See the format table below.
 - **pdf_create** - Builds a standalone PDF from self-contained HTML (or plain markdown) without creating an editable document first. This is the path for every **designed** deliverable — proposal, one-pager, pitch, brief, client report, invoice, flyer. Style it with `{baseDir}/references/DESIGNED_PDF.md`.
+- **file_create** - The non-PDF sibling of `pdf_create`: a standalone `png`, `html`, `markdown`, `docx` or `xlsx` from markdown or self-contained HTML, without an editable document first.
 
 ## FIRST: which path — editor, or designed PDF?
 
@@ -85,6 +88,46 @@ document: finish its content first, then call `document_export_pdf` with its
 `surface_id` — the PDF arrives as an attachment they can download. When a document
 you produced is deliverable-shaped, proactively offer the export: "Want this as a
 PDF?"
+
+## Which export format?
+
+**Choose on what the recipient will DO with the file, not on what sounds
+impressive.** A PDF is the right answer for something final; it is the wrong
+answer for something the other side has to change.
+
+| They will… | Format | Tool |
+| --- | --- | --- |
+| Read it, print it, file it — nothing changes | `pdf` | `document_export_pdf`, or `pdf_create({ html })` for a designed artifact |
+| **Edit or redline it in Word** — contracts, proposals, anything going through legal or a client's review | `docx` | `document_export` / `file_create` |
+| **Re-calculate the numbers** — pricing, budgets, line items, any data table | `xlsx` | `document_export` / `file_create` |
+| **Paste it into Slack, a deck, a doc, a message** — anywhere an image travels better than a file | `png` | `document_export` / `file_create` |
+| Publish it, paste it into a CMS, or send it as an email body | `html` | `document_export` / `file_create` |
+| Take the raw source into their own tooling | `markdown` | `document_export` / `file_create` |
+
+The tells, and they are usually explicit: "so I can edit it", "send me the Word
+version", "put it in a doc" → **docx**. "as a spreadsheet", "in Excel", "can I get
+the pricing in a sheet" → **xlsx**. "screenshot of this", "as an image", "so I can
+drop it in the deck" → **png**.
+
+**docx is the one that wins deals.** When a proposal, quote, statement of work or
+contract is going to a client who will comment on it, offer the Word version in
+the same message as the PDF — a PDF forces them to retype your terms into their
+own document, and that is where your language stops being yours. The export keeps
+real headings, lists, tables and character styles, so track changes works on it.
+
+**xlsx** takes the document's markdown **tables** and writes one sheet per table,
+with currency and percentage cells as real numbers (so `$12,000.00` sums, and
+`35%` is `0.35` formatted as a percent). A document with no tables cannot be
+exported as xlsx — say so and offer another format rather than shipping an empty
+workbook.
+
+**png** renders at 2x by default so it stays sharp when shared. Pass `selector` to
+capture one element instead of the whole page — `selector: "table"` for just the
+pricing table, `selector: ".cover"` for a designed cover. That is the "export this
+one part" path.
+
+Offer more than one when it is obviously useful: a priced proposal is usefully a
+PDF *and* a docx *and* an xlsx of the pricing table. Deliver them in one message.
 
 ## Creating a new document
 
@@ -217,8 +260,13 @@ on **both** paths, editor and PDF:
   `pdf_create({ html })` with the house style instead.
 - **Don't improvise a visual system.** On the designed path, read
   `{baseDir}/references/DESIGNED_PDF.md` and use its tokens and components.
-- **Don't reference anything remote in PDF HTML** — no webfonts, no hosted logos, no
-  CDN scripts. The render blocks the network and they come out blank.
+- **Don't reference anything remote in PDF or PNG HTML** — no webfonts, no hosted
+  logos, no CDN scripts. The render blocks the network and they come out blank.
+- **Don't send a PDF when the user said they need to edit it.** "Can I get this in
+  Word" is a request for `docx`, not for a PDF with an apology.
+- **Don't pass `html` to the docx or xlsx export.** Those are built from the
+  markdown's structure; the tool will refuse rather than embed a picture of the
+  page. Pass the content as markdown.
 - **Don't use `app_create` for blog posts, articles, or written content.** Use `document_create` — apps are for interactive content with state/data.
 - **Don't write the article into the chat response.** Long-form prose goes in the document editor via `document_create`, not in chat and not into a `.md` file in the workspace. Acknowledge what you're doing and stream to the editor.
 - **Don't wait to generate everything before sending.** Stream content in chunks via `document_update` with `mode: "append"` so users see progress in real time.

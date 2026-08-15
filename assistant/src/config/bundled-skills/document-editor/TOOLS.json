@@ -273,6 +273,41 @@
       "execution_target": "host"
     },
     {
+      "name": "document_export",
+      "description": "Export an existing document (by surface_id) as a file in any format, delivered as an in-chat attachment. Pick by what the user will DO with it: \"docx\" when they or a client will EDIT or redline it in Word (contracts, proposals, anything going through review) — the text stays editable; \"xlsx\" to pull the document's tables into a spreadsheet they can re-calculate (pricing, budgets, data); \"png\" for an image to paste into Slack, a deck or a message (optionally one element via `selector`); \"markdown\" for the raw source; \"html\" for a self-contained web page; \"pdf\" for a fixed, final, printable file (document_export_pdf does the same). Finish the document's content first, then export.",
+      "category": "content",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "surface_id": {
+            "type": "string",
+            "description": "The document's surface id (from document_create or <active_documents>)."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["pdf", "png", "markdown", "html", "docx", "xlsx"],
+            "description": "Output format. docx = editable in Word; xlsx = the document's tables as sheets; png = shareable image; pdf = fixed/printable."
+          },
+          "selector": {
+            "type": "string",
+            "description": "PNG only. CSS selector to capture one element (e.g. \"table\") instead of the whole page."
+          },
+          "scale": {
+            "type": "number",
+            "description": "PNG only. Pixel density, 1-4. Default 2 (sharp when shared)."
+          },
+          "width_px": {
+            "type": "number",
+            "description": "PNG only. Page width in CSS pixels. Default 1000."
+          }
+        },
+        "required": ["surface_id", "format"]
+      },
+      "executor": "tools/document-export.ts",
+      "execution_target": "host"
+    },
+    {
       "name": "pdf_create",
       "description": "Create a standalone PDF file from full self-contained HTML (or plain markdown) and deliver it as an in-chat attachment. This is the path for every PRESENTED artifact — proposal, one-pager, pitch, brief, client-facing report, case study, quote, invoice, flyer — which must be built with `html` and the skill's house style (references/DESIGNED_PDF.md), never written in the Markdown editor and exported. Use `markdown` only for a plain text file. For prose the user will iterate on, prefer document_create then document_export_pdf. HTML must be self-contained (no external assets — network is blocked during render).",
       "category": "content",
@@ -308,6 +343,49 @@
         "required": ["title"]
       },
       "executor": "tools/pdf-create.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "file_create",
+      "description": "Create a standalone file — PNG image, HTML page, Markdown, Word .docx or Excel .xlsx — from markdown or self-contained HTML, delivered as an in-chat attachment. The non-PDF sibling of pdf_create; use it when the user names a format or says what they'll do with the file: \"in Word\"/\"so I can edit it\"/\"to redline\" → docx (markdown input, stays editable); \"as a spreadsheet\"/\"in Excel\" → xlsx (markdown input, one sheet per table); \"as an image\"/\"to paste into Slack or a deck\"/\"a screenshot of this\" → png (html or markdown; `selector` captures one element); a web page or email body → html. HTML input works only for png and html, and must be self-contained (the network is blocked during render). For a PDF use pdf_create.",
+      "category": "content",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Used for the filename, and as the document/workbook title."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["png", "html", "markdown", "docx", "xlsx"],
+            "description": "Output format. docx/xlsx/markdown require `markdown` input; png and html accept either."
+          },
+          "markdown": {
+            "type": "string",
+            "description": "Markdown content. Provide exactly one of markdown/html."
+          },
+          "html": {
+            "type": "string",
+            "description": "Full self-contained HTML (your own styling), for png or html only. Provide exactly one of markdown/html."
+          },
+          "selector": {
+            "type": "string",
+            "description": "PNG only. CSS selector to capture one element (e.g. \".cover\") instead of the whole page."
+          },
+          "scale": {
+            "type": "number",
+            "description": "PNG only. Pixel density, 1-4. Default 2 (sharp when shared)."
+          },
+          "width_px": {
+            "type": "number",
+            "description": "PNG only. Page width in CSS pixels. Default 1000."
+          }
+        },
+        "required": ["title", "format"]
+      },
+      "executor": "tools/file-create.ts",
       "execution_target": "host"
     }
   ]
