@@ -553,6 +553,16 @@ async function resolveToolRouter(
  * because the manager TRUNCATES silently past that cap — an agent quietly
  * missing half a toolkit's tools is exactly the class of defect this module
  * exists to stop.
+ *
+ * `defaultRiskLevel` is deliberately NOT written. `McpServerConfigSchema`
+ * defaults it to `"high"`, which is the fail-closed choice: these servers are
+ * provisioned automatically, without the owner reviewing a single tool, and
+ * they reach real third-party accounts (mail, calendar, drive, CRM). Writing
+ * `"low"` here is inert only while the owner's auto-approve threshold sits at
+ * its own default of "none" — the moment they raise it to cut down on
+ * prompting, every auto-provisioned Composio tool silently becomes
+ * auto-approvable. A per-toolkit level may be justified later, but it has to
+ * be argued per toolkit and written down; the blanket override is not.
  */
 function buildServerEntry(
   url: string,
@@ -561,10 +571,6 @@ function buildServerEntry(
   return {
     transport: { type: "streamable-http", url },
     enabled: true,
-    // Matches the owner's working instance. Composio tools still pass through
-    // the normal approval and outbound-send guards; this is the MCP-layer
-    // default, not a bypass.
-    defaultRiskLevel: "low",
     maxTools: Math.max(toolCount, 1),
   };
 }

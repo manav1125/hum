@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { McpServerConfigSchema } from "../config/schemas/mcp.js";
+
 mock.module("../util/logger.js", () => ({
   getLogger: () => ({
     info: () => {},
@@ -295,6 +297,36 @@ describe("provisioning a fresh tester instance", () => {
       if (url.includes("/v3/mcp/")) {
         expect(new URL(url).searchParams.get("user_id")).toBe(OWN_USER);
       }
+    }
+  });
+
+  // These servers are stood up automatically, without the owner reviewing a
+  // single tool, and they reach real third-party accounts. The MCP schema
+  // therefore defaults `defaultRiskLevel` to the fail-closed end, and
+  // provisioning must not quietly walk it back: a weaker level is inert only
+  // while the owner's auto-approve threshold is at its own default, and turns
+  // into blanket auto-approval the moment they raise it. Comparing against the
+  // schema's own default (rather than the literal "high") keeps this test
+  // honest if the schema's fail-closed choice ever moves.
+  test("never provisions a server below the schema's fail-closed risk default", async () => {
+    ownIdentity();
+    const { fetchImpl } = fakeComposio();
+
+    await provisionComposioMcpServers(["gmail", "slack"], { fetchImpl });
+
+    const rank = { low: 0, medium: 1, high: 2 } as const;
+    const schemaDefault = McpServerConfigSchema.parse({
+      transport: { type: "streamable-http", url: "https://example.invalid" },
+    }).defaultRiskLevel;
+
+    const servers = readConfig().mcp?.servers ?? {};
+    expect(Object.keys(servers).length).toBe(3); // router + 2 toolkits
+
+    for (const [key, entry] of Object.entries(servers)) {
+      const effective = McpServerConfigSchema.parse(entry).defaultRiskLevel;
+      expect(`${key}:${rank[effective] >= rank[schemaDefault]}`).toBe(
+        `${key}:true`,
+      );
     }
   });
 
