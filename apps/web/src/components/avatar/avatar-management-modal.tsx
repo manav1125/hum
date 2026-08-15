@@ -12,6 +12,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { ChatAvatar } from "@/components/avatar/chat-avatar";
+import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 import { removeAvatarImage, uploadAvatarImage } from "@/assistant/avatar-api";
 
 interface AvatarManagementModalProps {
@@ -52,15 +53,7 @@ export function AvatarManagementModal({
     }
   }, [open]);
 
-  useEffect(() => {
-    if (open) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = prev;
-      };
-    }
-  }, [open]);
+  useBodyScrollLock(open);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {

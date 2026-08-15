@@ -26,6 +26,7 @@ import {
 import { createPortal } from "react-dom";
 
 import type { ChatDebugEventsApi } from "@/domains/chat/api/debug-api";
+import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 import type { ChatDebugApi } from "@/domains/chat/utils/debug-api";
 import {
   buildFeedbackMailto,
@@ -580,14 +581,7 @@ export function ShareFeedbackModal({
     return () => clearTimeout(t);
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+  useBodyScrollLock(open);
 
   const handleSelectReason = (reason: Reason) => {
     setSelectedReason(reason);
