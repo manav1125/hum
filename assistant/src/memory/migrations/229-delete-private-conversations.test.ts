@@ -1190,4 +1190,66 @@ describe("migrateDeletePrivateConversations", () => {
       countWhere(raw, "attachments", `id = 'conv-standard-attachment'`),
     ).toBe(1);
   });
+
+  /**
+   * Tables the memory-DB split moved out of the main database. This migration
+   * runs at 229, so a fresh install never sees them missing — but an existing
+   * database that has been through 326 does, on every boot, because this
+   * migration is unconditional and uncheckpointed.
+   */
+  const RELOCATED_TO_MEMORY_DB = [
+    "memory_recall_logs",
+    "memory_jobs",
+    "memory_graph_nodes",
+    "memory_graph_edges",
+    "memory_graph_node_edits",
+    "memory_graph_triggers",
+  ];
+
+  test("completes on a database whose memory tables have moved to the memory DB", () => {
+    // Prod aborted at statement three of twenty-five here, every restart, so
+    // the twenty-two deletes after it — messages, attachments, the
+    // conversations themselves — never ran at all.
+    const db = createTestDb();
+    const raw = getSqliteFrom(db);
+
+    bootstrapTables(raw);
+    seedConversation(raw, "conv-private", "private");
+    seedConversation(raw, "conv-standard", "standard");
+    for (const table of RELOCATED_TO_MEMORY_DB) {
+      raw.exec(`DROP TABLE IF EXISTS ${table}`);
+    }
+
+    expect(() => migrateDeletePrivateConversations(db)).not.toThrow();
+
+    // The whole migration ran, not just the statements before the first
+    // relocated table.
+    expect(countWhere(raw, "conversations", `id = 'conv-private'`)).toBe(0);
+    expect(
+      countWhere(raw, "messages", `conversation_id = 'conv-private'`),
+    ).toBe(0);
+    expect(
+      countWhere(raw, "tool_invocations", `conversation_id = 'conv-private'`),
+    ).toBe(0);
+    expect(countWhere(raw, "conversations", `id = 'conv-standard'`)).toBe(1);
+  });
+
+  test("still purges the relocated tables on a database that predates the split", () => {
+    // The guard must not become a licence to skip real work: where these tables
+    // are still in main, their private rows are this migration's to delete.
+    const db = createTestDb();
+    const raw = getSqliteFrom(db);
+
+    bootstrapTables(raw);
+    seedConversation(raw, "conv-private", "private");
+
+    migrateDeletePrivateConversations(db);
+
+    expect(
+      countWhere(raw, "memory_recall_logs", `conversation_id = 'conv-private'`),
+    ).toBe(0);
+    expect(
+      countWhere(raw, "memory_graph_nodes", `scope_id LIKE 'private:%'`),
+    ).toBe(0);
+  });
 });
