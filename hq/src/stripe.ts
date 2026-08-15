@@ -202,16 +202,28 @@ export async function createCheckoutSession(
 
   // Invite discount: mint (or reuse) a promotion code carrying the invite's
   // percentOff and attach it to the session.
+  //
+  // A promo failure ABORTS. It used to fall through and create the session at
+  // full price, which turns "here is your 100%-off invite" into a real bill —
+  // the person was promised free and would have been charged the whole plan,
+  // with nothing anywhere saying the discount had been dropped. That is not a
+  // degraded success, it is the wrong outcome wearing a success's clothes.
+  //
+  // This is reachable, not theoretical: HQ's Stripe key is a RESTRICTED key,
+  // and a restricted key without coupon permission answers
+  // `403 more_permissions_required` to exactly this call. Callers already
+  // handle `{ok:false}` honestly — /redeem returns `checkoutUrl: null` with the
+  // reason — so failing here surfaces the problem instead of billing someone.
   if (params.percentOff && params.percentOff > 0 && params.inviteCode) {
     const promo = await ensurePromotionCode(
       params.inviteCode,
       params.percentOff,
       fetchImpl,
     );
-    if (promo.ok) {
-      form.set("discounts[0][promotion_code]", promo.promotionCodeId);
+    if (!promo.ok) {
+      return { ok: false, reason: `discount_unavailable: ${promo.reason}` };
     }
-    // A promo failure degrades to full price rather than blocking checkout.
+    form.set("discounts[0][promotion_code]", promo.promotionCodeId);
   }
 
   const created = await stripePost("/v1/checkout/sessions", form, fetchImpl);

@@ -246,3 +246,69 @@ describe("checkout session (mock fetch)", () => {
     expect(form.get("metadata[customerId]")).toBe("cust-42");
   });
 });
+
+describe("a promised discount is never silently dropped", () => {
+  /**
+   * Replies 403 to the promotion-code calls and 200 to everything else —
+   * exactly what HQ's RESTRICTED key does today: `GET /v1/coupons` returns
+   * `more_permissions_required`, so a discount cannot be minted.
+   */
+  function restrictedKeyFetch(seen: string[]): typeof fetch {
+    return (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      seen.push(url);
+      if (url.includes("promotion_codes") || url.includes("coupons")) {
+        return Response.json(
+          { error: { code: "more_permissions_required" } },
+          { status: 403 },
+        );
+      }
+      return Response.json({ id: "cs_x", url: "https://checkout.stripe.com/x" });
+    }) as typeof fetch;
+  }
+
+  test("REGRESSION: no checkout session is created at full price", async () => {
+    // The shipped behaviour was to continue without the discount. Someone
+    // handed a 100%-off invite would have been billed the entire plan, with
+    // nothing telling them — or us — that the discount had been dropped.
+    process.env.STRIPE_SECRET_KEY = "rk_test_restricted";
+    process.env.STRIPE_PRICE_FOUNDING = "price_f1";
+    const seen: string[] = [];
+
+    const result = await createCheckoutSession(
+      {
+        customerId: "cust-1",
+        email: "colleague@x.io",
+        plan: "founding",
+        inviteCode: "FREE100",
+        percentOff: 100,
+      },
+      restrictedKeyFetch(seen),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("discount_unavailable");
+    // The decisive assertion: we never reached the endpoint that charges.
+    expect(seen.some((u) => u.includes("/checkout/sessions"))).toBe(false);
+  });
+
+  test("an invite with no discount is unaffected", async () => {
+    // Only a PROMISED discount can be broken. A full-price invite has nothing
+    // to drop, so it must still check out.
+    process.env.STRIPE_SECRET_KEY = "rk_test_restricted";
+    process.env.STRIPE_PRICE_FOUNDING = "price_f1";
+    const seen: string[] = [];
+    const result = await createCheckoutSession(
+      {
+        customerId: "cust-2",
+        email: "full@x.io",
+        plan: "founding",
+        inviteCode: "NODISCOUNT",
+        percentOff: 0,
+      },
+      restrictedKeyFetch(seen),
+    );
+    expect(result.ok).toBe(true);
+    expect(seen.some((u) => u.includes("/checkout/sessions"))).toBe(true);
+  });
+});
