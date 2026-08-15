@@ -102,6 +102,7 @@ import { upgradeBalancedEconomyToMinimaxM3Migration } from "./101-upgrade-balanc
 import { preserveHeartbeatEnabledForExistingWorkspacesMigration } from "./102-preserve-heartbeat-enabled-for-existing-workspaces.js";
 import { disableMemoryV2RouterSeededDefaultMigration } from "./103-disable-memory-v2-router-seeded-default.js";
 import { devendorBalancedEconomyDescriptionMigration } from "./104-devendor-balanced-economy-description.js";
+import { repairUnservableAnthropicCallsiteModelsMigration } from "./105-repair-unservable-anthropic-callsite-models.js";
 import { migrateToWorkspaceVolumeMigration } from "./migrate-to-workspace-volume.js";
 import type { WorkspaceMigration } from "./types.js";
 
@@ -215,4 +216,5 @@ export const WORKSPACE_MIGRATIONS: WorkspaceMigration[] = [
   preserveHeartbeatEnabledForExistingWorkspacesMigration,
   disableMemoryV2RouterSeededDefaultMigration,
   devendorBalancedEconomyDescriptionMigration,
+  repairUnservableAnthropicCallsiteModelsMigration,
 ];
