@@ -322,11 +322,18 @@ export function MobileThreadVoice({
     );
   }
 
+  // `turnNotice` belongs in this list, and its absence was the whole bug: the
+  // notice exists precisely when a turn produced NO answer, so every other
+  // condition here is false at exactly the moment it needs to be seen. The
+  // strip stayed closed and the bar returned silently to Listening — the
+  // failure the notice was written to end, surviving in the phone's default
+  // voice surface while full screen showed it correctly.
   const hasStrip =
     currentUser.length > 0 ||
     currentAssistant.length > 0 ||
     cards.length > 0 ||
     pendingApproval !== null ||
+    turnNotice !== null ||
     state === "thinking";
 
   return (
@@ -364,6 +371,22 @@ export function MobileThreadVoice({
               }}
             >
               Thinking…
+            </div>
+          ) : null}
+          {/* Why the last turn produced no answer. Same words as full screen,
+              in the strip's own register — a quiet line, not an error card:
+              the call is still live and the mic has already re-armed, so this
+              reports what happened rather than demanding anything. */}
+          {turnNotice ? (
+            <div
+              role="status"
+              style={{
+                fontSize: 12.5,
+                lineHeight: 1.45,
+                color: "var(--mv3-micro)",
+              }}
+            >
+              {turnNotice}
             </div>
           ) : null}
           {cards.map((card) => (

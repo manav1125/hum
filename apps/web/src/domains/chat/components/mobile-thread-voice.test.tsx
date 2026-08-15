@@ -164,6 +164,37 @@ describe("what the strip does carry", () => {
 // while the user was typing said nothing at all — and the composer kept showing
 // the live orb chip and the header kept reading "voice active in this chat".
 describe("a dead session cannot pretend to be alive", () => {
+  // The notice exists precisely when a turn produced NO answer — so at the
+  // moment it matters, every other strip condition is false. It shipped
+  // reaching only VoiceFullScreen, which meant the phone's DEFAULT voice
+  // surface still returned silently to Listening: the exact failure the
+  // notice was written to end.
+  test("a turn that produced no answer says so in the compact strip", () => {
+    const view = renderStrip(() => {
+      const s = useLiveVoiceStore.getState();
+      s.setEngine("gemini-live");
+      // A turn opened, produced nothing, and the mic re-armed.
+      s.closeTurn();
+      s.setState("listening");
+      s.noteTurnNotice("I couldn't finish that one — ask me again.");
+    });
+
+    expect(
+      view.queryByText(/couldn't finish that one/),
+    ).not.toBeNull();
+  });
+
+  test("a healthy turn leaves the strip free of any notice", () => {
+    const view = renderStrip(() => {
+      const s = useLiveVoiceStore.getState();
+      s.setEngine("gemini-live");
+      s.closeTurn();
+      s.setState("listening");
+    });
+
+    expect(view.queryByText(/couldn't finish/)).toBeNull();
+    expect(view.queryByText(/ask me again/)).toBeNull();
+  });
   test("the failure is shown even after the ⌨ flip to typing", () => {
     const view = renderStrip(
       () => {
