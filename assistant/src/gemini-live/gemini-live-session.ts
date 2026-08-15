@@ -28,6 +28,7 @@ import type {
 } from "../live-voice/live-voice-session-manager.js";
 import { LiveVoiceSessionStartupError } from "../live-voice/live-voice-session-manager.js";
 import {
+  buildLiveVoiceThreadContext,
   ensureLiveVoiceThread,
   finalizeLiveVoiceThread,
   persistLiveVoiceTurn,
@@ -45,8 +46,9 @@ import {
   GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
   GeminiLiveClient,
   resolveGeminiLiveApiKey,
-  resolveGeminiLiveLanguage,
   resolveGeminiLiveModel,
+  resolveGeminiLivePinnedSpeechLanguage,
+  resolveGeminiLiveSpokenLanguage,
   resolveGeminiLiveVoice,
 } from "./gemini-live-client.js";
 import {
@@ -102,23 +104,38 @@ function clipDeepTaskSummary(summary: string): string {
  * this shapes tone and tool discipline.
  */
 /**
- * The system-instruction line governing spoken language. Mirrors the
- * listening-language setting both engines share (`services.stt.language`):
- * multilingual (the default) tells the model to follow the caller across
- * language switches; a pinned recognition language states it plainly so a
- * short or unclear first utterance is not misdetected as another language.
+ * The system-instruction lines governing spoken language — and, on the
+ * native-audio model class Cue runs, the ONLY thing governing it.
+ *
+ * The previous wording told the model to follow the caller across language
+ * switches while `speechConfig.languageCode` was omitted entirely, so nothing
+ * fixed the output language at all: the spoken voice drifted locale mid-reply
+ * (a single French "Oui." in an English call, replies arriving as bare
+ * fragments). Google's documented remedy for these models is exactly this —
+ * state the output language in the system instruction, in their recommended
+ * emphatic form — and it is also the only place the real requirement can be
+ * expressed: understand everything, speak one language, switch only if asked.
  */
 function languageLine(): string {
-  const pinned = resolveGeminiLiveLanguage();
-  if (!pinned) {
-    return "Reply in the language the caller is speaking; if they switch languages mid-conversation, switch with them without missing a beat.";
-  }
-  return `The caller speaks the language with code "${pinned}". Understand their speech as that language and reply in it, even if a word is unclear.`;
+  const { label, isDefault } = resolveGeminiLiveSpokenLanguage();
+  return [
+    `Speak ${label}. RESPOND IN ${label.toUpperCase()}. YOU MUST RESPOND UNMISTAKABLY IN ${label.toUpperCase()}, in a single consistent accent, for the whole of every reply — never drift into another language or accent partway through a sentence.`,
+    `You understand every language fluently. If they speak to you in another language, or mix words or whole sentences of one into their ${label}, understand it completely and keep answering in ${label}.`,
+    `The one exception: if they ASK you to speak another language, switch to it and stay there until they ask you to switch back.`,
+    ...(isDefault
+      ? []
+      : [`${label} is their chosen language for these calls, so hold to it.`]),
+  ].join(" ");
 }
 
 function buildSystemInstruction(
   timezone?: string,
-  opts?: { personaFragment?: string; briefing?: string },
+  opts?: {
+    personaFragment?: string;
+    briefing?: string;
+    /** Recent tail of the bound conversation; "" on a fresh thread. */
+    threadContext?: string;
+  },
 ): string {
   const hasTz = typeof timezone === "string" && timezone.trim().length > 0;
   const timeLine = hasTz
@@ -128,12 +145,14 @@ function buildSystemInstruction(
   const base = [
     "You are Cue, your user's personal AI chief-of-staff, in a live spoken voice conversation with them right now.",
     "Your name is Cue. Never say you are 'a large language model', never say you were 'trained by Google', and never mention Google or Gemini. If asked what you are, say you are Cue, their AI chief-of-staff. Stay in character as Cue at all times.",
-    "You are speaking with your own owner, who has authorized you. Be warm, concise, and natural — usually one or two sentences.",
+    "You ARE Cue, so always speak about yourself in the first person — never refer to Cue in the third person as if it were someone else. Say 'I'm digging into that', never 'I'm having Cue look into that'. Handing something to a background task is still you doing it, so say so as yourself.",
+    "You are speaking with your own owner, who has authorized you. Be warm, concise, and natural — a sentence or two carries most exchanges. But when they ask you something that genuinely needs explaining, take the several sentences it needs and explain it properly. Short is the default, not a ceiling; a real question deserves a real answer, not a headline.",
     // The selected conversation mode shapes tone (companion / reflective /
     // co-founder). Empty → the base warm-chief-of-staff default.
     ...(persona ? [persona] : []),
     timeLine,
-    "You can take real actions and pull the user's real data with your tools. Quick to-do → add_task. Substantive work (research, drafting, multi-step) → run_deep_task, then tell them you're on it. What's on their plate → get_open_tasks. Current facts, news, or weather → web_search. Anything about the user's own life, work, files, or past conversations → recall_memory before you say you don't know. A lasting fact or preference they just told you → remember. Reminders and automations Cue set → get_schedule; setting one → set_reminder. What's on their Google Calendar — meetings, events, their day or week → get_calendar (get_schedule does NOT show their calendar). Who someone is or how to reach them → find_contact. Replies they're waiting on → get_followups. Their email or messages → check_inbox, then read_messages for one conversation. Never read ids, email addresses, or raw data aloud — speak the human part.",
+    "When they ASK you something, answer it — here, out loud, in the call. Gather what you need first (recall_memory for anything to do with their own life, work, or past conversations; web_search for current facts), then give them the actual answer and your read on it. A question is not a task: never file it away, never hand it off, and never reply that they should ask someone else instead of telling them what you know. If the honest answer is that they need a professional, say what you do know first and then say that too.",
+    "You can take real actions and pull the user's real data with your tools. Quick to-do → add_task. Work they have asked you to DO — research a market, draft a document, run a multi-step job — → run_deep_task, then tell them you're on it. Never reach for run_deep_task to get out of answering a question; it is for doing work, not for deferring an answer. What's on their plate → get_open_tasks. Current facts, news, or weather → web_search. Anything about the user's own life, work, files, or past conversations → recall_memory before you say you don't know. A lasting fact or preference they just told you → remember. Reminders and automations you set for them → get_schedule; setting one → set_reminder. What's on their Google Calendar — meetings, events, their day or week → get_calendar (get_schedule does NOT show their calendar). Who someone is or how to reach them → find_contact. Replies they're waiting on → get_followups. Their email or messages → check_inbox, then read_messages for one conversation. Never read ids, email addresses, or raw data aloud — speak the human part.",
     "When a result is something to LOOK at — options, search results, a list, a table — announce it aloud first in one short sentence (for example: Here's what I found), then call ui_show to put it on screen, and give a one- or two-sentence spoken summary. The card is seen, not spoken: never read it item by item.",
     "For any calendar question, always call get_calendar and answer ONLY from its result — their calendar events are not in your briefing, memory, or messages, and answering from those is making things up. Announce aloud, put the events on screen with ui_show as a list, then give a short spoken summary. If get_calendar says their calendar isn't connected, tell them exactly that and that they can link Google Calendar in Settings → Connectors — never improvise a calendar answer from anything else.",
     "Never claim you have done something unless you actually called the tool for it and it succeeded. If a tool fails, say so in one short sentence and offer a next step. If a tool says it needs approval or isn't permitted, tell them briefly that this one needs their okay in the app — never pretend it happened and never work around it.",
@@ -141,14 +160,18 @@ function buildSystemInstruction(
     "Do not spell things out letter by letter or read punctuation, tool names, or code aloud. Just speak like a helpful person.",
     languageLine(),
   ].join(" ");
-  // Append the session-start context briefing (who the user is + their current
-  // work) so the speech-native model opens the conversation already knowing
-  // them. Empty on a fresh workspace, in which case nothing is appended.
+  // Append, in order: the session-start context briefing (who the user is +
+  // their current work), then the recent tail of the conversation this call is
+  // bound to. Both are empty-by-default (fresh workspace / fresh thread), in
+  // which case nothing is appended. They live in the system instruction rather
+  // than a post-connect injection because the client replays the instruction on
+  // every reconnect — a mid-call drop must not cost the model the thread again.
+  const sections = [base];
   const briefing = opts?.briefing?.trim();
-  if (briefing) {
-    return `${base}\n\n${briefing}`;
-  }
-  return base;
+  if (briefing) sections.push(briefing);
+  const threadContext = opts?.threadContext?.trim();
+  if (threadContext) sections.push(threadContext);
+  return sections.join("\n\n");
 }
 
 export class GeminiLiveSession implements LiveVoiceSession {
@@ -261,6 +284,21 @@ export class GeminiLiveSession implements LiveVoiceSession {
       log.warn({ err }, "live briefing assembly failed; continuing without it");
     }
 
+    // Seed the recent tail of the conversation this call is bound to. Without
+    // it a call opened inside an existing thread starts blind — the model has
+    // the user's world but not the exchange it is standing in the middle of.
+    // Same contract as the briefing: never throws, never blocks, "" on a fresh
+    // voice-initiated thread.
+    let threadContext = "";
+    try {
+      threadContext = buildLiveVoiceThreadContext(this.conversationId);
+    } catch (err) {
+      log.warn(
+        { err },
+        "thread context assembly failed; continuing without it",
+      );
+    }
+
     // Register the bundled skill tools the voice declarations dispatch to
     // (same projection machinery as the cascade's preactivation, refcounted).
     // Best-effort: a failed registration degrades those tools to clean
@@ -282,11 +320,11 @@ export class GeminiLiveSession implements LiveVoiceSession {
       model: resolveGeminiLiveModel(),
       systemInstruction: buildSystemInstruction(
         this.context.startFrame.timezone,
-        { personaFragment: persona.promptFragment, briefing },
+        { personaFragment: persona.promptFragment, briefing, threadContext },
       ),
       tools: GEMINI_LIVE_FUNCTION_DECLARATIONS,
       inputSampleRate: this.inputSampleRate,
-      language: resolveGeminiLiveLanguage(),
+      language: resolveGeminiLivePinnedSpeechLanguage(),
       voice: resolveGeminiLiveVoice(),
       callbacks: {
         onAudio: (pcm) => this.onModelAudio(pcm),
@@ -381,7 +419,14 @@ export class GeminiLiveSession implements LiveVoiceSession {
       attachImage: true,
     });
     log.info(
-      { sessionId: this.context.sessionId, model: resolveGeminiLiveModel() },
+      {
+        sessionId: this.context.sessionId,
+        model: resolveGeminiLiveModel(),
+        // Prod-diagnosable: "voice had no idea what we were talking about" is
+        // answerable from the log line instead of a repro.
+        briefingChars: briefing.length,
+        threadContextChars: threadContext.length,
+      },
       "gemini-live session started",
     );
   }

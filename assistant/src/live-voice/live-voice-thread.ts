@@ -11,6 +11,9 @@
  *      transcript is there to reopen and continue in text.
  *   3. `finalizeLiveVoiceThread` — on hang-up, write a short recap (summary +
  *      any tasks captured) and auto-title the thread from the transcript.
+ *   4. `buildLiveVoiceThreadContext` — the read side of (2): the recent tail of
+ *      an existing thread, so a call started inside a conversation opens
+ *      knowing what was already said in it.
  *
  * All writes are best-effort: a persistence failure must never break the live
  * call. Continuing the thread in text "just works" because it is an ordinary
@@ -22,6 +25,7 @@ import {
   createConversation,
   getConversation,
   getMessages,
+  getMessagesPaginated,
 } from "../memory/conversation-crud.js";
 import { setConversationSurfaced } from "../memory/conversation-crud.js";
 import { queueRegenerateConversationTitle } from "../memory/conversation-title-service.js";
@@ -100,6 +104,85 @@ function messageText(content: string): string {
     // Older/plain content — use as-is.
   }
   return content.trim();
+}
+
+/**
+ * Bounds on the session-start thread recap. Same spirit as `buildLiveBriefing`'s
+ * caps: enough for the model to continue the conversation it is sitting inside,
+ * never enough to slow session start or crowd the realtime context window.
+ */
+const MAX_CONTEXT_MESSAGES = 12;
+const MAX_CONTEXT_CHARS = 2000;
+const MAX_MESSAGE_CHARS = 400;
+
+/**
+ * The recent tail of the conversation this call is bound to, formatted as the
+ * same compact `User:` / `You:` recap the mid-call reconnect note uses.
+ *
+ * Why this exists: a live session's model reasons entirely from its setup-time
+ * system instruction. `buildLiveBriefing` gives it the user's world (memory,
+ * missions, tasks) but nothing about THIS thread — so voice started inside an
+ * existing conversation answered as if the conversation had never happened,
+ * asking "when did it start?" about an injury discussed three messages earlier.
+ * The caller appends this to the system instruction (rather than injecting it
+ * after connect) so it is replayed verbatim on every upstream reconnect.
+ *
+ * Returns "" when there is nothing to seed — a brand-new voice-initiated thread
+ * has no rows yet, and callers treat "" as "append nothing", exactly like an
+ * empty briefing. Never throws: the call must start even if this read fails.
+ *
+ * Only spoken/typed conversation is included. `messageText` keeps `text` blocks
+ * only, so `thinking` blocks and tool-result rows contribute nothing and drop
+ * out — spoken context wants the conversation, not the machinery.
+ */
+export function buildLiveVoiceThreadContext(
+  conversationId: string,
+  opts?: { maxMessages?: number; maxChars?: number },
+): string {
+  try {
+    // No thread yet → a fresh voice-initiated call. Nothing to recap, and no
+    // reason to pay for a query.
+    if (!getConversation(conversationId)) return "";
+    const maxMessages = opts?.maxMessages ?? MAX_CONTEXT_MESSAGES;
+    const maxChars = opts?.maxChars ?? MAX_CONTEXT_CHARS;
+    // Newest `maxMessages` visible rows, returned oldest-first. Paginated (not
+    // `getMessages`) so a long-running thread is a bounded read, not a full
+    // transcript load on the session-start path.
+    const { messages } = getMessagesPaginated(
+      conversationId,
+      maxMessages,
+      undefined,
+      (row) =>
+        (row.role === "user" || row.role === "assistant") &&
+        messageText(row.content).length > 0,
+    );
+    const lines: string[] = [];
+    for (const row of messages) {
+      const text = messageText(row.content);
+      if (!text) continue;
+      const clipped =
+        text.length > MAX_MESSAGE_CHARS
+          ? `${text.slice(0, MAX_MESSAGE_CHARS)}…`
+          : text;
+      lines.push(`${row.role === "assistant" ? "You" : "User"}: ${clipped}`);
+    }
+    if (lines.length === 0) return "";
+    // Trim from the OLDEST end until the recap fits: the most recent exchange
+    // is the one the caller is most likely still talking about.
+    while (lines.length > 1 && lines.join("\n").length > maxChars) {
+      lines.shift();
+    }
+    let body = lines.join("\n");
+    if (body.length > maxChars) body = `${body.slice(0, maxChars)}…`;
+    return [
+      'CONVERSATION SO FAR — this call is continuing a conversation you are already having with them, which may have been in text. Below is its recent tail in order, oldest first; "User:" is them, "You:" is you. Treat it as your own memory of what was just said: refer back to it naturally, and answer follow-ups ("how is this related to what we just spoke about?") from it. Do NOT read it aloud, recap it unprompted, or mention that you were given it.',
+      "",
+      body,
+    ].join("\n");
+  } catch (err) {
+    log.warn({ err, conversationId }, "buildLiveVoiceThreadContext failed");
+    return "";
+  }
 }
 
 function composeRecap(summary: string, taskTitles: string[]): string {

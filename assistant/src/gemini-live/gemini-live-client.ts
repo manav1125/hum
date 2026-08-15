@@ -46,6 +46,7 @@
 import { getConfig } from "../config/loader.js";
 import { credentialKey } from "../security/credential-key.js";
 import { getSecureKeyAsync } from "../security/secure-keys.js";
+import { baseLanguageSubtag } from "../util/language-subtag.js";
 import { getLogger } from "../util/logger.js";
 
 const log = getLogger("gemini-live-client");
@@ -54,13 +55,15 @@ const GEMINI_LIVE_WS_BASE =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
 /**
- * Half-cascade "live" model — the right default for a tool-heavy assistant.
- * The native-audio dialog models (e.g. gemini-2.5-flash-native-audio-*) sound
- * more expressive but have flaky function-call support: they 1007-close
- * ("audio content type not supported for this model configuration") when they
- * speak a preamble, call a tool, then try to speak the result. Cue's whole value
- * is taking actions, so we default to the tool-robust live-preview class.
- * Override per-instance with `CUE_GEMINI_LIVE_MODEL`.
+ * The realtime model Cue speaks through. Override per-instance with
+ * `CUE_GEMINI_LIVE_MODEL`.
+ *
+ * This is a NATIVE-AUDIO model, not a half-cascade one: Google's model page for
+ * it is the migration target from `gemini-2.5-flash-native-audio-preview-*`,
+ * and the "live-preview" suffix is not a half-cascade marker (the documented
+ * half-cascade set is `gemini-live-2.5-flash-preview` and
+ * `gemini-2.0-flash-live-001`). That distinction is load-bearing for speech
+ * config — see {@link resolveGeminiLivePinnedSpeechLanguage}.
  */
 export const DEFAULT_GEMINI_LIVE_MODEL = "models/gemini-3.1-flash-live-preview";
 
@@ -75,26 +78,103 @@ export function resolveGeminiLiveModel(): string {
 }
 
 /**
- * BCP-47 language for speech recognition + synthesis. Without a pinned language
- * Gemini Live auto-detects, and on a short/quiet first utterance it can guess
- * wrong (e.g. transcribe English as Japanese), derailing the whole turn.
- * Override with `CUE_GEMINI_LIVE_LANGUAGE`.
+ * The language Cue SPEAKS, resolved from (in order) `CUE_GEMINI_LIVE_LANGUAGE`,
+ * the shared `services.stt.language` setting, then English.
+ *
+ * ## Why this is a prompt concern and not a config field
+ *
+ * The obvious lever — `generationConfig.speechConfig.languageCode` — is not
+ * available on the native-audio model class Cue defaults to. Google's Live API
+ * docs state that native-audio models choose the language automatically and
+ * "don't support explicitly setting the language code", and an unsupported
+ * value does not degrade quietly: it 1007-closes the session (reported for
+ * `en-GB` and `es-ES`). The documented mechanism for fixing the spoken output
+ * language on these models is the SYSTEM INSTRUCTION, which is also what makes
+ * "understand anything, answer in one language" expressible at all — a config
+ * pin has no way to say that.
+ *
+ * That matters because leaving the output language entirely to auto-detection
+ * is what produced the reported symptom: the voice changing accent/language
+ * mid-reply. Google concedes detection "struggles with heavy accents, similar
+ * languages", and a whole-language flip mid-session is an open report against
+ * this exact model.
+ *
+ * `isDefault` distinguishes "nobody chose" (English, because that is the
+ * everyday call) from a deliberate choice, so the instruction can be worded
+ * with the right firmness in each case.
  */
-export function resolveGeminiLiveLanguage(): string | undefined {
+export interface GeminiLiveSpokenLanguage {
+  /** Configured tag as given, e.g. "en", "hi-IN". */
+  tag: string;
+  /** English display name for the prompt, e.g. "English", "Hindi". */
+  label: string;
+  /** True when nothing was configured and the English default applied. */
+  isDefault: boolean;
+}
+
+/** English display name for a language tag; falls back to the tag itself. */
+function languageLabel(tag: string): string {
+  const base = baseLanguageSubtag(tag) ?? tag;
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(base) ?? base;
+  } catch {
+    return base;
+  }
+}
+
+export function resolveGeminiLiveSpokenLanguage(): GeminiLiveSpokenLanguage {
   const fromEnv = process.env.CUE_GEMINI_LIVE_LANGUAGE?.trim();
-  if (fromEnv) return fromEnv;
-  // Both voice engines read the same listening-language setting. "multi" (the
-  // schema default) means multilingual: return undefined so the setup frame
-  // OMITS `speechConfig.languageCode` — Gemini Live auto-detects language per
-  // utterance when the pin is absent, which is what lets the caller switch
-  // languages mid-conversation. A concrete base code pins recognition; map it
-  // to the regional BCP-47 tag Gemini expects.
-  // Read tolerantly: an stt block without the `language` field means the
+  if (fromEnv) {
+    return { tag: fromEnv, label: languageLabel(fromEnv), isDefault: false };
+  }
+  // Both voice engines read the same listening-language setting. Read
+  // tolerantly: an stt block without the `language` field means the
   // multilingual default, same as an explicit "multi".
-  const stt = getConfig().services.stt as { language?: string };
-  const configured = stt.language?.trim().toLowerCase();
-  if (!configured || configured === "multi") return undefined;
-  return GEMINI_LIVE_LANGUAGE_TAGS[configured] ?? configured;
+  let configured: string | undefined;
+  try {
+    const stt = getConfig().services.stt as { language?: string };
+    configured = stt.language?.trim().toLowerCase();
+  } catch (err) {
+    log.warn({ err }, "gemini-live: stt language unreadable; defaulting to en");
+  }
+  // "multi" (the schema default) describes LISTENING, not speaking: understand
+  // everything, and speak the default. Comprehension is never narrowed here —
+  // the instruction grants it explicitly.
+  if (!configured || configured === "multi") {
+    return { tag: "en", label: "English", isDefault: true };
+  }
+  return {
+    tag: configured,
+    label: languageLabel(configured),
+    isDefault: false,
+  };
+}
+
+/**
+ * The `speechConfig.languageCode` to put on the wire, or undefined to omit it.
+ *
+ * Omitted by default, deliberately. On the default (native-audio) model the
+ * field is unsupported and a value it rejects kills the session at setup —
+ * and because the 1007 fallback retries with ALL optional fields stripped, a
+ * pinned language would silently cost the caller Cue's voice as well.
+ *
+ * The genuine half-cascade models (`gemini-live-2.5-flash-preview`,
+ * `gemini-2.0-flash-live-001`) do honour it, where Google's guidance is to set
+ * it to the language the USER SPEAKS so a short or unclear first utterance is
+ * not misrecognised. Opt in with `CUE_GEMINI_LIVE_PIN_SPEECH_LANGUAGE=1` when
+ * running such a model; the value comes from the same setting as the spoken
+ * language, mapped to the regional tag Gemini expects.
+ */
+export function resolveGeminiLivePinnedSpeechLanguage(): string | undefined {
+  if (process.env.CUE_GEMINI_LIVE_PIN_SPEECH_LANGUAGE?.trim() !== "1") {
+    return undefined;
+  }
+  const spoken = resolveGeminiLiveSpokenLanguage();
+  if (spoken.isDefault) return undefined;
+  const base = baseLanguageSubtag(spoken.tag) ?? spoken.tag;
+  // An already-regional tag ("en-GB") is the caller's explicit choice.
+  if (spoken.tag !== base) return spoken.tag;
+  return GEMINI_LIVE_LANGUAGE_TAGS[base] ?? base;
 }
 
 /**
@@ -404,9 +484,13 @@ export class GeminiLiveClient {
     }
     if (this.minimalSetup) return setup;
     // ── Optional fields below: everything stripped by the 1007 fallback ──
-    // Pin recognition + synthesis language + voice so a short first utterance
-    // can't be auto-detected as the wrong language, and Cue keeps a stable
-    // (female, by default) voice.
+    // Voice selection is supported on every model class, so it is always sent
+    // and gives Cue a stable (female, by default) voice. `languageCode` is
+    // normally absent: it is unsupported on the native-audio default model and
+    // a rejected value 1007s the session — which, because the fallback strips
+    // ALL optional fields, would take the voice down with it. The spoken
+    // language is fixed in the system instruction instead. See
+    // `resolveGeminiLivePinnedSpeechLanguage`.
     if (this.opts.language || this.opts.voice) {
       const speechConfig: Record<string, unknown> = {};
       if (this.opts.language) speechConfig.languageCode = this.opts.language;
