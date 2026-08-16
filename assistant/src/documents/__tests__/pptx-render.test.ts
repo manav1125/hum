@@ -234,6 +234,16 @@ describe("renderMarkdownToPptx", () => {
   });
 });
 
+/** Ten columns of real values — the shape that broke numbers in half. */
+const WIDE_TABLE = `## Pricing
+
+| Workstream | Owner | Region | Stage | Start | Due | Budget | Spent | Remaining | Status |
+| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |
+| Discovery | A. Chen | EMEA | Build | 2026-01-06 | 2026-03-31 | $174,000 | $121,500 | $52,500 | On track |
+| Migration | R. Okafor | AMER | Pilot | 2026-03-01 | 2026-06-30 | $2,300,000 | $1,150,000 | $1,150,000 | On track |
+| Support | L. Moreau | AMER | Live | 2026-06-01 | 2027-05-31 | $412,800 | $34,400 | $378,400 | On track |
+`;
+
 describe("overflow", () => {
   const bullet =
     "A long line of body copy that wraps at least twice on a 16:9 slide because it keeps going well past the width of the content column and then some.";
@@ -279,6 +289,78 @@ describe("overflow", () => {
     expect(withTable.length).toBeGreaterThan(1);
     // A continuation table with no header is a column of unlabelled numbers.
     for (const xml of withTable) expect(xml).toContain(">Qty<");
+  });
+
+  test("splits a table too wide for the canvas across slides, by column", async () => {
+    // The defect this replaced: ten columns on one slide, every one of them
+    // too narrow, so PowerPoint laid out `$174,000` as `$1740` above `00`.
+    // Shrinking the type is the tempting fix and a no-op wearing a success —
+    // 11.5pt against 12pt, on a table nobody could read from a chair either
+    // way. The canvas is the thing there can be more than one of.
+    const deck = await renderMarkdownToPptx(WIDE_TABLE);
+    expect(deck.slideTitles).toContain("Pricing · 1 of 2");
+    expect(deck.slideTitles).toContain("Pricing · 2 of 2");
+
+    const slides = (await slideXml(WIDE_TABLE)).filter((x) =>
+      x.includes("<a:tbl>"),
+    );
+    expect(slides).toHaveLength(2);
+
+    for (const xml of slides) {
+      // The header row and the column that says which row is which are on
+      // every part. Either one missing leaves unlabelled figures.
+      expect(xml).toContain(">Workstream<");
+      expect(xml).toContain(">Discovery<");
+      // Each part spends the whole content column, and no more.
+      const grid = xml.match(/<a:tblGrid>[\s\S]*?<\/a:tblGrid>/)![0];
+      const widths = [...grid.matchAll(/w="(\d+)"/g)].map((m) => Number(m[1]));
+      expect(widths.length).toBeLessThan(10);
+      expect(widths.reduce((a, b) => a + b, 0)).toBeCloseTo(CONTENT_W_EMU, -3);
+    }
+
+    // Every column survives the split, on one part or the other.
+    const all = slides.join("");
+    for (const cell of ["Owner", "Budget", "Status", "$174,000", "2027-05-31"])
+      expect(all).toContain(`>${cell}<`);
+  });
+
+  test("says the split out loud, and offers the document it isn't", async () => {
+    // A seam the reader has to work out for themselves reads as a bug. The
+    // slide titles carry it; this is the sentence Cue says once, in chat.
+    const deck = await renderMarkdownToPptx(WIDE_TABLE);
+    expect(deck.notes).toHaveLength(1);
+    expect(deck.notes[0]).toBe(
+      "Too wide for one slide, so I split it across two — want it as a document instead?",
+    );
+  });
+
+  test("leaves a table that fits alone — no split, no part label, no note", async () => {
+    const fits = `## Revenue\n\n| Region | Q1 | Q2 | Q3 | Q4 | Total |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| EMEA | $174,000 | $181,500 | $196,200 | $210,400 | $762,100 |`;
+    const deck = await renderMarkdownToPptx(fits);
+
+    expect(deck.slideTitles).toEqual(["Revenue"]);
+    expect(deck.notes).toEqual([]);
+
+    const [xml] = await slideXml(fits);
+    const grid = xml!.match(/<a:tblGrid>[\s\S]*?<\/a:tblGrid>/)![0];
+    expect([...grid.matchAll(/w="\d+"/g)]).toHaveLength(6);
+  });
+
+  test("refuses a table whose single row cannot fit, rather than faking one", async () => {
+    // Past the point splitting helps: one row of prose is taller than the
+    // slide, so no arrangement of columns puts it on one. Emitting an
+    // overflowing grid would look like an export and read like a defect.
+    const clause =
+      "The parties agree that no obligation shall survive. ".repeat(40);
+    const markdown = `## Clauses\n\n| Clause | Our position | Their position |\n| --- | --- | --- |\n| Assignment | ${clause} | ${clause} |`;
+    const deck = await renderMarkdownToPptx(markdown);
+
+    expect(deck.notes).toEqual([
+      "This is a document, not a slide — the rows are too wide to read projected.",
+    ]);
+    const [xml] = await slideXml(markdown);
+    expect(xml).not.toContain("<a:tbl>");
+    expect(xml).toContain("too wide to read projected");
   });
 
   test("a table slide never also carries body text, so nothing can overlap it", async () => {

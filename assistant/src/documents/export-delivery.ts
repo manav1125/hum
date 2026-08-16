@@ -154,6 +154,9 @@ export async function renderMarkdownAs(
           // Said explicitly so the model repeats it rather than implying the
           // deck reproduces a designed layout.
           note: "Structural export: real editable text, PowerPoint's own styling — not a copy of a designed layout.",
+          // Already phrased for the reader — a table split across slides, or
+          // one that belongs in a document. Say these to the user as written.
+          ...(deck.notes.length ? { say: deck.notes } : {}),
         },
       };
     }

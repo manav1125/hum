@@ -20,6 +20,12 @@
  * type until the floors fit and apportionment runs at that size. Only past the
  * point where the table would stop being readable does wrapping win.
  *
+ * A slide has a third thing that can give, and it is the one Word does not:
+ * there can be more than one of it. Shrinking type on a slide buys almost
+ * nothing — a deck's table is already near the floor at which a person can read
+ * it from a chair — so `columnGroups` cuts a too-wide table into groups of
+ * columns instead, one per slide. See there.
+ *
  * Units are the caller's: twips for Word, inches for PowerPoint. Every number
  * in and out is in the same unit, so this module never needs to know which.
  */
@@ -198,6 +204,88 @@ export function apportionColumns(
   }
 
   return widths;
+}
+
+/**
+ * The width one column needs before anything of its has to wrap mid-token.
+ *
+ * The same two clamps `fitFontSize` uses apply, and for the same reasons: a
+ * column narrower than {@link WEIGHT_MIN} characters is not a column, and a
+ * lone 300-character URL does not get to set the layout because it will wrap
+ * whatever anyone does about it.
+ */
+export function columnNeed(
+  column: ColumnText,
+  { fontPt, unitsPerPt, padding }: ApportionOptions,
+): number {
+  const chars = Math.max(
+    WEIGHT_MIN,
+    Math.min(widestToken(column), SIZING_TOKEN_CAP),
+  );
+  return chars * fontPt * WIDE_CHAR_ADVANCE * unitsPerPt + padding;
+}
+
+/**
+ * Cut a table too wide for one canvas into groups of columns, one per canvas.
+ *
+ * The first column is repeated at the head of every group. A continuation that
+ * drops it is a block of figures with nothing to say which row is which —
+ * exactly the failure repeating the header row exists to prevent, one axis
+ * over. Carrying it is affordable because {@link columnNeed} caps what any
+ * column may ask for, so the key can never claim more than a sixth of a canvas
+ * this is worth splitting.
+ *
+ * A table that already fits comes back as a single group holding every column,
+ * so callers can run this unconditionally and narrow tables are untouched. Two
+ * columns are never separated: a column beside nothing is not a table, and the
+ * cap means a pair always fits anyway.
+ *
+ * Groups are then evened out rather than left as the greedy pass found them:
+ * the same number of slides either way, and "four, four, one" ends on a slide
+ * carrying a single column beside its key for no reason.
+ */
+export function columnGroups(
+  columns: ColumnText[],
+  total: number,
+  options: ApportionOptions,
+): number[][] {
+  const count = columns.length;
+  if (count === 0) return [];
+
+  const needs = columns.map((column) => columnNeed(column, options));
+  const all = needs.reduce((a, b) => a + b, 0);
+  if (all <= total || count <= 2) return [columns.map((_, i) => i)];
+
+  const keyNeed = needs[0] ?? 0;
+  const rest = columns.map((_, i) => i).filter((i) => i !== 0);
+
+  const greedy: number[][] = [];
+  let group: number[] = [];
+  let used = keyNeed;
+  for (const i of rest) {
+    const need = needs[i] ?? 0;
+    if (group.length && used + need > total) {
+      greedy.push(group);
+      group = [];
+      used = keyNeed;
+    }
+    group.push(i);
+    used += need;
+  }
+  if (group.length) greedy.push(group);
+
+  const per = Math.ceil(rest.length / greedy.length);
+  const even: number[][] = [];
+  for (let at = 0; at < rest.length; at += per)
+    even.push(rest.slice(at, at + per));
+  const evenFits = even.every(
+    (g) =>
+      g.length === 1 ||
+      keyNeed + g.reduce((sum, i) => sum + (needs[i] ?? 0), 0) <= total,
+  );
+
+  const chosen = evenFits && even.length <= greedy.length ? even : greedy;
+  return chosen.map((g) => [0, ...g]);
 }
 
 /**

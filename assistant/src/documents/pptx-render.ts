@@ -20,7 +20,8 @@
  *   means the recipient's own theme, outline view and "Reset Slide" all work.
  * - Overflow is handled by *measuring and splitting*, never by letting content
  *   run off the canvas. See `paginate` — an overflowing slide is the single
- *   most common failure of generated decks.
+ *   most common failure of generated decks. A table too wide for the canvas is
+ *   split the other way too, by column; see `planTable`.
  * - Anything markdown can express but a slide cannot (a remote image) degrades
  *   to labelled text rather than vanishing.
  */
@@ -30,8 +31,8 @@ import type { Token, Tokens } from "marked";
 import { marked } from "marked";
 import pptxgen from "pptxgenjs";
 
-import type { ColumnText } from "./table-columns.js";
-import { apportionColumns } from "./table-columns.js";
+import type { ApportionOptions, ColumnText } from "./table-columns.js";
+import { apportionColumns, columnGroups } from "./table-columns.js";
 
 /**
  * pptxgenjs ships `module.exports = PptxGenJS` — the constructor itself — but
@@ -569,11 +570,13 @@ function splitLine(l: Line, budgetIn: number): Line[] {
 }
 
 /** Rows of a table that fit on one slide, given its estimated row heights. */
-function tableRowHeights(table: TableModel): {
+function tableRowHeights(
+  table: TableModel,
+  widths: number[],
+): {
   header: number;
   rows: number[];
 } {
-  const widths = columnWidths(table);
   const cellLines = (text: string, i: number) => {
     const widthPt = Math.max(0.4, widths[i] ?? 1) * 72 - 18; // less cell margins
     const perLine = Math.max(
@@ -595,6 +598,20 @@ function tableRowHeights(table: TableModel): {
   };
 }
 
+/** The units `table-columns` works in on a slide: inches, at the table size. */
+const TABLE_METRICS: ApportionOptions = {
+  fontPt: PT_TABLE,
+  unitsPerPt: 1 / 72,
+  padding: (2 * CELL_MARGIN_PT) / 72,
+};
+
+function columnTexts(table: TableModel): ColumnText[] {
+  return table.headerText.map((header, i) => ({
+    header,
+    cells: table.rowText.map((r) => r[i] ?? ""),
+  }));
+}
+
 /**
  * Column widths in inches. `apportionColumns` decides the split; see there for
  * why a column's longest unbreakable token, not just its text volume, sets a
@@ -602,15 +619,14 @@ function tableRowHeights(table: TableModel): {
  */
 function columnWidths(table: TableModel): number[] {
   if (table.headerText.length === 0) return [];
-  const columns: ColumnText[] = table.headerText.map((head, i) => ({
-    header: head,
-    cells: table.rowText.map((r) => r[i] ?? ""),
-  }));
-  return apportionColumns(columns, CONTENT_W, {
-    fontPt: PT_TABLE,
-    unitsPerPt: 1 / 72,
-    padding: (2 * CELL_MARGIN_PT) / 72,
-  });
+  return apportionColumns(columnTexts(table), CONTENT_W, TABLE_METRICS);
+}
+
+interface TableSlice {
+  header: Run[][];
+  rows: Run[][][];
+  align: (string | null)[];
+  widths: number[];
 }
 
 interface Page {
@@ -618,13 +634,32 @@ interface Page {
   depth: number;
   /** A page carries either text paragraphs or one table slice, never both. */
   lines: Line[];
-  table?: {
-    header: Run[][];
-    rows: Run[][][];
-    align: (string | null)[];
-    widths: number[];
-  };
+  table?: TableSlice;
+  /** "1 of 3" — set only when a table was split, so the seam is deliberate. */
+  part?: { index: number; count: number };
   continued: boolean;
+}
+
+/** Cue's voice, once, when a table could not simply be laid down as it was. */
+const REFUSAL =
+  "This is a document, not a slide — the rows are too wide to read projected.";
+
+const COUNT_WORDS = [
+  "",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+];
+
+function countWord(n: number): string {
+  return COUNT_WORDS[n] ?? String(n);
 }
 
 /**
@@ -634,9 +669,15 @@ interface Page {
  * stack of paragraphs: a native pptx table is positioned absolutely, so any
  * error in the text height estimate above it would put the grid on top of the
  * prose. Keeping them apart makes the geometry exact instead of approximate.
+ *
+ * The notes come back with the pages because a split is a decision the deck
+ * cannot state on its own: the slides show the seam, and the note is what says
+ * out loud that it was deliberate and what the alternative is.
  */
-function paginate(list: Section[]): Page[] {
+function paginate(list: Section[]): { pages: Page[]; notes: string[] } {
   const pages: Page[] = [];
+  const wideSplits: number[] = [];
+  let refused = false;
 
   for (const section of list) {
     let continued = false;
@@ -662,8 +703,23 @@ function paginate(list: Section[]): Page[] {
     for (const chunk of section.chunks) {
       if (chunk.kind === "table") {
         flushText();
-        for (const slice of sliceTable(chunk.table))
-          push({ lines: [], table: slice });
+        const plan = planTable(chunk.table);
+        if (plan.refused) {
+          refused = true;
+          push({
+            lines: [line([{ text: REFUSAL, italic: true }], { color: MUTED })],
+          });
+          continue;
+        }
+        if (plan.splitWide) wideSplits.push(plan.slices.length);
+        const count = plan.slices.length;
+        plan.slices.forEach((slice, i) =>
+          push({
+            lines: [],
+            table: slice,
+            ...(count > 1 ? { part: { index: i + 1, count } } : {}),
+          }),
+        );
         continue;
       }
 
@@ -684,16 +740,27 @@ function paginate(list: Section[]): Page[] {
     if (!continued) push({ lines: [] });
   }
 
-  return pages;
+  const notes: string[] = [];
+  if (wideSplits.length === 1)
+    notes.push(
+      `Too wide for one slide, so I split it across ${countWord(wideSplits[0] ?? 0)} — want it as a document instead?`,
+    );
+  else if (wideSplits.length > 1)
+    notes.push(
+      "Several tables were too wide for one slide, so I split each across more than one — want this as a document instead?",
+    );
+  if (refused) notes.push(REFUSAL);
+
+  return { pages, notes };
 }
 
 /** Split a table into per-slide slices, repeating the header row on each. */
-function sliceTable(table: TableModel): NonNullable<Page["table"]>[] {
+function sliceRows(table: TableModel): TableSlice[] {
   const widths = columnWidths(table);
-  const heights = tableRowHeights(table);
+  const heights = tableRowHeights(table, widths);
   const budget = BODY_H - heights.header;
 
-  const slices: NonNullable<Page["table"]>[] = [];
+  const slices: TableSlice[] = [];
   let rows: Run[][][] = [];
   let used = 0;
 
@@ -709,6 +776,76 @@ function sliceTable(table: TableModel): NonNullable<Page["table"]>[] {
   }
   slices.push({ header: table.header, rows, align: table.align, widths });
   return slices;
+}
+
+/** The columns named by `group`, as a table in their own right. */
+function subTable(table: TableModel, group: number[]): TableModel {
+  return {
+    header: group.map((i) => table.header[i] ?? []),
+    rows: table.rows.map((row) => group.map((i) => row[i] ?? [])),
+    align: group.map((i) => table.align[i] ?? null),
+    headerText: group.map((i) => table.headerText[i] ?? ""),
+    rowText: table.rowText.map((row) => group.map((i) => row[i] ?? "")),
+  };
+}
+
+/** Whether every row of this column group still fits between title and edge. */
+function groupFits(table: TableModel): boolean {
+  const heights = tableRowHeights(table, columnWidths(table));
+  const budget = BODY_H - heights.header;
+  return heights.rows.every((h) => h <= budget);
+}
+
+/** The narrowest split that still says which row is which: key plus one. */
+function narrowestGroups(count: number): number[][] {
+  if (count <= 2) return [Array.from({ length: count }, (_, i) => i)];
+  return Array.from({ length: count - 1 }, (_, k) => [0, k + 1]);
+}
+
+interface TablePlan {
+  slices: TableSlice[];
+  /** Split by column across slides, not merely by row. */
+  splitWide: boolean;
+  /** No arrangement of columns puts one row on a slide legibly. */
+  refused: boolean;
+}
+
+/**
+ * Decide how a table becomes slides.
+ *
+ * Two lengths have to fit and only one of them is negotiable by apportionment.
+ * A table wider than the canvas is cut into groups of columns
+ * (`columnGroups`), each group its own run of slides, each repeating the header
+ * row and the first column. Shrinking the type instead is the tempting answer
+ * and the wrong one: a deck's table is already at the size a person can read
+ * from a chair, so the few points there are to give buy nothing and cost the
+ * only thing the slide was for.
+ *
+ * Height is what decides when splitting has stopped helping. A row taller than
+ * the body of a slide cannot be placed at all, and the one lever left is fewer
+ * columns beside it — so the plan falls back to the narrowest split there is,
+ * and if a row still will not fit, this is prose in a grid and belongs in a
+ * document. That case refuses rather than emitting a slide nobody can read.
+ */
+function planTable(table: TableModel): TablePlan {
+  if (table.headerText.length === 0)
+    return { slices: [], splitWide: false, refused: false };
+
+  const columns = columnTexts(table);
+  let groups = columnGroups(columns, CONTENT_W, TABLE_METRICS);
+
+  if (!groups.every((g) => groupFits(subTable(table, g)))) {
+    const narrow = narrowestGroups(columns.length);
+    if (narrow.length > groups.length) groups = narrow;
+    if (!groups.every((g) => groupFits(subTable(table, g))))
+      return { slices: [], splitWide: false, refused: true };
+  }
+
+  return {
+    slices: groups.flatMap((g) => sliceRows(subTable(table, g))),
+    splitWide: groups.length > 1,
+    refused: false,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -837,6 +974,11 @@ export interface RenderedDeck {
   bytes: Buffer;
   slideCount: number;
   slideTitles: string[];
+  /**
+   * What the deck cannot say for itself, in Cue's voice — a table split across
+   * slides, or one that belongs in a document. Empty for an ordinary deck.
+   */
+  notes: string[];
 }
 
 /**
@@ -861,7 +1003,7 @@ export async function renderMarkdownToPptx(
   // A title slide is only prepended when the content doesn't already open with
   // an h1 — otherwise every deck gets its name twice.
   const titleSlide = opts.title && !opensWithH1 ? opts.title : undefined;
-  const pages = paginate(
+  const { pages, notes } = paginate(
     sections(tokens, titleSlide ? "Overview" : (opts.title ?? "Overview")),
   );
 
@@ -901,7 +1043,14 @@ export async function renderMarkdownToPptx(
 
   for (const page of pages) {
     const slide = pptx.addSlide();
-    const heading = page.continued ? `${page.title} (cont.)` : page.title;
+    // A split table names its part in the title. "(cont.)" says only that
+    // something came before; "1 of 3" says how much is still to come, which is
+    // what a reader looking at half a table needs to know.
+    const heading = page.part
+      ? `${page.title} · ${page.part.index} of ${page.part.count}`
+      : page.continued
+        ? `${page.title} (cont.)`
+        : page.title;
     slideTitles.push(heading);
 
     slide.addText(
@@ -974,5 +1123,6 @@ export async function renderMarkdownToPptx(
     bytes: await repairPackage(Buffer.from(raw)),
     slideCount: slideTitles.length,
     slideTitles,
+    notes,
   };
 }

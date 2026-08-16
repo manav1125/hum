@@ -11,6 +11,8 @@ import { describe, expect, test } from "bun:test";
 
 import {
   apportionColumns,
+  columnGroups,
+  columnNeed,
   type ColumnText,
   fitFontSize,
   longestToken,
@@ -185,6 +187,65 @@ describe("fitFontSize", () => {
       cells: ["1234567890123456"],
     }));
     expect(fitFontSize(absurd, CONTENT_WIDTH, OPTS)).toBe(6);
+  });
+});
+
+describe("columnGroups", () => {
+  /** A slide's content column, in inches, at the deck's 12pt table type. */
+  const SLIDE = 8.9;
+  const SLIDE_OPTS = { fontPt: 12, unitsPerPt: 1 / 72, padding: 10 / 72 };
+
+  test("leaves a table that fits as one group, so narrow tables are untouched", () => {
+    expect(columnGroups(REVENUE, SLIDE, SLIDE_OPTS)).toEqual([[0, 1, 2, 3, 4]]);
+    expect(columnGroups([], SLIDE, SLIDE_OPTS)).toEqual([]);
+  });
+
+  test("cuts a ten-column table into groups that each fit the slide", () => {
+    const groups = columnGroups(WIDE, SLIDE, SLIDE_OPTS);
+    expect(groups.length).toBeGreaterThan(1);
+
+    for (const group of groups) {
+      const width = group.reduce(
+        (sum, i) => sum + columnNeed(WIDE[i]!, SLIDE_OPTS),
+        0,
+      );
+      expect(width).toBeLessThanOrEqual(SLIDE);
+    }
+  });
+
+  test("repeats the first column on every group and loses no other one", () => {
+    const groups = columnGroups(WIDE, SLIDE, SLIDE_OPTS);
+    // Without the key column a continuation is a block of figures with nothing
+    // to say which row is which — the same failure as a missing header row.
+    for (const group of groups) expect(group[0]).toBe(0);
+
+    const seen = new Set(groups.flat());
+    expect([...seen].sort((a, b) => a - b)).toEqual(WIDE.map((_, i) => i));
+  });
+
+  test("evens the groups out rather than leaving an orphan last slide", () => {
+    const groups = columnGroups(WIDE, SLIDE, SLIDE_OPTS);
+    const sizes = groups.map((g) => g.length);
+    expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+  });
+
+  test("cannot be made to claim more than a sixth of the slide for the key", () => {
+    // The reason repeating the first column is affordable at all: whatever is
+    // in it, `columnNeed` caps what it may ask for. A prose key column asks for
+    // the same width as a sixteen-character one.
+    const prose = {
+      header: "Summary",
+      cells: ["antidisestablishmentarianism-and-then-some-more-besides"],
+    };
+    expect(columnNeed(prose, SLIDE_OPTS)).toBeLessThan(SLIDE / 5);
+  });
+
+  test("never separates a two-column table — a lone column is not a table", () => {
+    const pair: ColumnText[] = [
+      { header: "Clause", cells: ["Assignment"] },
+      { header: "Position", cells: ["x".repeat(400)] },
+    ];
+    expect(columnGroups(pair, SLIDE, SLIDE_OPTS)).toEqual([[0, 1]]);
   });
 });
 
