@@ -330,6 +330,44 @@ describe("provisioning a fresh tester instance", () => {
     }
   });
 
+  test("leaves an existing entry's risk level alone — normalizing is migration 106's job", async () => {
+    // The boundary this pins is deliberate, not an oversight. Provisioning
+    // skips server keys that already exist, so it CANNOT clear a stale "low"
+    // written before the fix — that is what workspace migration 106 is for.
+    //
+    // Do not "fix" this by normalizing here. Provisioning returns early when
+    // Composio credentials are missing or lapsed, so it would miss exactly the
+    // instances worth reaching; and unlike a once-only migration it runs
+    // repeatedly, so it would overwrite a level the owner set deliberately
+    // every time it ran.
+    ownIdentity();
+    const { fetchImpl } = fakeComposio();
+    writeConfig({
+      mcp: {
+        servers: {
+          composio_gmail: {
+            transport: {
+              type: "streamable-http",
+              url: "https://existing.invalid",
+            },
+            enabled: true,
+            maxTools: 20,
+            defaultRiskLevel: "low",
+          },
+        },
+      },
+    });
+
+    await provisionComposioMcpServers(["gmail"], { fetchImpl });
+
+    const gmail = (readConfig().mcp?.servers ?? {}).composio_gmail as
+      | { defaultRiskLevel?: string; transport?: { url?: string } }
+      | undefined;
+    // Untouched, url included — the whole entry was skipped, not rewritten.
+    expect(gmail?.defaultRiskLevel).toBe("low");
+    expect(gmail?.transport?.url).toBe("https://existing.invalid");
+  });
+
   test("is idempotent — a second run adds nothing and does not reload", async () => {
     ownIdentity();
     const { fetchImpl } = fakeComposio();
