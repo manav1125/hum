@@ -17,7 +17,7 @@ import { Notice } from "@vellumai/design-library/components/notice";
 import { Tag, type TagTone } from "@vellumai/design-library/components/tag";
 import { Toggle } from "@vellumai/design-library/components/toggle";
 
-import { TrustRuleFormModal } from "@/domains/settings/components/trust-rules/trust-rule-form-modal";
+import { TrustRuleFormModal } from "@/components/trust-rules/trust-rule-form-modal";
 
 function isDefaultRule(rule: TrustRuleItem): boolean {
   return rule.origin === "default" && !rule.userModified;

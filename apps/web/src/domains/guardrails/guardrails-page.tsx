@@ -57,6 +57,7 @@ import { Mv3LedgerPage } from "@/mobile-v3/you/ledger-page";
 import { Mv3RulesPage } from "@/mobile-v3/you/rules-page";
 import { AutonomyLedgerBand } from "@/domains/guardrails/autonomy-ledger-panel";
 import { ValveBand } from "@/domains/guardrails/valve-band";
+import { TrustRulesModal } from "@/components/trust-rules/trust-rules-modal";
 import {
   Mv3AgentScopesScreen,
   Mv3GuardrailsBar,
@@ -402,6 +403,22 @@ function GuardrailsBody({
         />
       </Band>
       {/*
+        Per-tool rules. Checkpoints above say "always ask about this kind of
+        action"; these say what one named tool is worth on its own — the only
+        way to grant or revoke a single tool without moving a threshold that
+        covers everything at that risk level. They live here rather than in
+        Settings because Guardrails is the one surface that decides what Cue
+        may do unattended, and two surfaces disagreeing about that is the
+        disagreement this app cannot afford.
+      */}
+      <Band
+        label="TOOL RULES"
+        sub="What one specific tool is allowed to do"
+        isMobile={isMobile}
+      >
+        <ToolRulesBand assistantId={assistantId} />
+      </Band>
+      {/*
         Door 3 of the volume valve (design V2). It sits directly under
         CHECKPOINTS because it answers the same shape of question — what
         reaches you, versus what Cue asks before doing — and above AGENT
@@ -667,6 +684,67 @@ function Band({
         {right ? <span style={{ marginLeft: "auto" }}>{right}</span> : null}
       </div>
       {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Band · TOOL RULES
+// ---------------------------------------------------------------------------
+
+/**
+ * The entry point to per-tool trust rules.
+ *
+ * The rule list, editor and create form already exist as a modal; what was
+ * missing was any route to them — the Settings card that used to hold it was
+ * retired when Guardrails became the single place that decides what Cue may
+ * do unattended, and nothing took its place. Without this, a tool that never
+ * raises a permission prompt (a browser write, which the interactive
+ * threshold already auto-approves) could not be given a rule at all.
+ */
+function ToolRulesBand({ assistantId }: { assistantId: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <p
+        style={{
+          fontSize: 12.5,
+          color: C.t2,
+          margin: "0 0 12px",
+          maxWidth: 620,
+        }}
+      >
+        A rule sets what one named tool is worth on its own — so a single tool
+        can run unattended, or always stop for you, without changing anything
+        else at the same risk level.
+      </p>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 7,
+          border: `1.5px dashed color-mix(in srgb, ${C.blue} 40%, transparent)`,
+          background: "transparent",
+          borderRadius: 12,
+          padding: 12,
+          color: C.blueS,
+          fontSize: 12.5,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+      >
+        Manage tool rules
+      </button>
+      {open && (
+        <TrustRulesModal
+          assistantId={assistantId}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </div>
   );
 }

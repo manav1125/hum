@@ -33,7 +33,7 @@ mock.module("@/lib/trust-rules-api", () => ({
 }));
 
 const { TrustRuleFormModal } =
-  await import("@/domains/settings/components/trust-rules/trust-rule-form-modal");
+  await import("@/components/trust-rules/trust-rule-form-modal");
 
 afterEach(() => {
   cleanup();
