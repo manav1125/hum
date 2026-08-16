@@ -359,13 +359,13 @@ export interface CreateGalleryOverlayProps {
   /** Whether an active Brand Kit exists (enables the "In your brand" toggle). */
   hasBrand: boolean;
   /**
-   * The active brand's display name.
+   * The active brand's display name, when one is known.
    *
-   * NOT CURRENTLY RENDERED. The intent was to personalize the brand toggle
-   * and preview the way `create-view` does (`In {brandName} ✓`), but the
-   * gallery still hard-codes "In your brand" and "previewing your content".
-   * `create-view` passes a real value, so wiring it up is a copy change, not
-   * a plumbing one. Kept on the interface so those call sites stay valid.
+   * Names the brand toggle — "In Northwind" rather than "In your brand" — the
+   * way `create-view` already does. Nullable on purpose and not merely for
+   * safety: `hasBrand` can be true while the name is still null, and the
+   * toggle falls back to "In your brand" in that case rather than rendering a
+   * guess at what the brand is called.
    */
   brandName?: string | null;
   /** Initial brand-toggle state. */
@@ -381,6 +381,7 @@ export interface CreateGalleryOverlayProps {
 export function CreateGalleryOverlay({
   mode,
   hasBrand,
+  brandName,
   initialInBrand = true,
   onConfirm,
   onTakeAiDirection,
@@ -805,6 +806,7 @@ export function CreateGalleryOverlay({
                 on={inBrand}
                 onChange={setInBrand}
                 compact={isMobile}
+                brandName={brandName}
               />
             </span>
           ) : null}
@@ -902,10 +904,13 @@ function BrandToggle({
   on,
   onChange,
   compact,
+  brandName,
 }: {
   on: boolean;
   onChange: (v: boolean) => void;
   compact?: boolean;
+  /** Names the brand when known; falls back to "your brand" when it is not. */
+  brandName?: string | null;
 }) {
   return (
     <button
@@ -923,7 +928,9 @@ function BrandToggle({
         whiteSpace: "nowrap",
       }}
     >
-      {!compact ? <span>In your brand</span> : null}
+      {!compact ? (
+        <span>In {brandName ? brandName : "your brand"}</span>
+      ) : null}
       <span
         aria-hidden
         style={{
