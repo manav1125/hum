@@ -279,6 +279,9 @@ function CornerFidelityBadge({
           position: "absolute",
           top: 8,
           right: 8,
+          // Above the card's full-bleed select button (z 1) so this chip keeps
+          // its own taps and stays a control in its own right.
+          zIndex: 2,
           ...cornerChipBase,
           ...tone,
           cursor: "pointer",
@@ -1088,16 +1091,42 @@ function SlideCard({
   };
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
+    // The card is a plain container, NOT a button: the fidelity toggle below
+    // renders buttons of its own, and a button inside a button is invalid DOM
+    // that browsers flatten however they like — the toggle stopped being
+    // reliably reachable or operable by keyboard and screen reader. The select
+    // affordance is instead a full-bleed overlay button that is a SIBLING of
+    // the fidelity control, so both are real, separately focusable controls.
+    // `isolation` keeps the two z-indexes below scoped to this card.
+    <div
       onMouseEnter={coarsePointer ? undefined : () => setPreview(true)}
       onMouseLeave={coarsePointer ? undefined : () => setPreview(false)}
       onTouchStart={coarsePointer ? onTouchStart : undefined}
       onTouchEnd={coarsePointer ? onTouchEnd : undefined}
       onTouchCancel={coarsePointer ? onTouchEnd : undefined}
-      style={cardFrame(selected)}
+      style={{ ...cardFrame(selected), isolation: "isolate" }}
     >
+      {/* The select affordance. Rendered FIRST so it is the card's first tab
+          stop and the first thing a screen reader meets — then the fidelity
+          toggle — matching the visual reading order. It paints above the
+          artwork (z 1) so the whole card stays clickable, while the fidelity
+          control sits above it (z 2) and keeps its own clicks. */}
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        aria-label={`Use the ${t.name} template`}
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          background: "transparent",
+          border: "none",
+          padding: 0,
+          margin: 0,
+          cursor: "pointer",
+        }}
+      />
       {/* MOBILE (round-4 frame 59): selection reads as the blue border +
           glow + the footer CTA naming the pick; the check circle would
           collide with the corner fidelity chip. Desktop keeps it. */}
@@ -1164,7 +1193,17 @@ function SlideCard({
           {t.name}
         </span>
         {!isMobile ? (
-          <span style={{ flexShrink: 0, display: "inline-flex" }}>
+          // Lifted above the full-bleed select button so its own buttons stay
+          // clickable; `position: relative` only makes the z-index apply and
+          // does not move it.
+          <span
+            style={{
+              flexShrink: 0,
+              display: "inline-flex",
+              position: "relative",
+              zIndex: 2,
+            }}
+          >
             <FidelityBadge
               fidelity={t.fidelity}
               mode={fidelityMode}
@@ -1173,7 +1212,7 @@ function SlideCard({
           </span>
         ) : null}
       </span>
-    </button>
+    </div>
   );
 }
 

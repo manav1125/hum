@@ -6,7 +6,8 @@
  * the light/busy slide artwork dominating the library).
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import {
   CreateGalleryOverlay,
@@ -88,5 +89,111 @@ describe("CreateGalleryOverlay — the brand toggle", () => {
   test("no toggle at all when there is no brand", () => {
     open({ hasBrand: false, brandName: null });
     expect(document.body.textContent).not.toContain("In your brand");
+  });
+});
+
+/**
+ * A slides card used to be one big <button> with the EXACT/INSPIRED toggle's
+ * own buttons nested inside it. Browsers flatten nested interactive elements
+ * however they please, which cost keyboard users the toggle: it was not
+ * reliably focusable or operable, and the card announced as a single control.
+ * The card is now a container with the select affordance and the fidelity
+ * toggle as SIBLING buttons.
+ */
+describe("CreateGalleryOverlay — the slides card is not one big button", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  function openSlides() {
+    return render(
+      <CreateGalleryOverlay
+        mode="slides"
+        hasBrand={false}
+        onConfirm={() => {}}
+        onTakeAiDirection={() => {}}
+        onClose={() => {}}
+      />,
+    );
+  }
+
+  test("no interactive element is nested inside another", () => {
+    openSlides();
+    expect(document.querySelectorAll("button button").length).toBe(0);
+    expect(document.querySelectorAll("a button, button a").length).toBe(0);
+  });
+
+  test("select and fidelity are separate, independently reachable controls", () => {
+    openSlides();
+    const selects = Array.from(
+      document.querySelectorAll<HTMLElement>("button[aria-label^='Use the ']"),
+    );
+    expect(selects.length).toBeGreaterThan(0);
+
+    const fidelity = Array.from(
+      document.querySelectorAll<HTMLElement>("button"),
+    ).filter((b) => b.textContent === "EXACT" || b.textContent === "INSPIRED");
+    expect(fidelity.length).toBeGreaterThan(0);
+
+    // Neither contains the other — so tabbing reaches both, and each is its
+    // own control to a screen reader.
+    for (const f of fidelity) {
+      for (const s of selects) {
+        expect(s.contains(f)).toBe(false);
+        expect(f.contains(s)).toBe(false);
+      }
+    }
+
+    // Within a card the select affordance comes first in DOM order, so the
+    // tab order matches the reading order: pick the template, then adjust it.
+    const card = selects[0]!.parentElement!;
+    const inCard = Array.from(card.querySelectorAll<HTMLElement>("button"));
+    expect(inCard[0]).toBe(selects[0]);
+    expect(inCard.length).toBeGreaterThan(1);
+  });
+
+  /**
+   * The point of the change: a keyboard user must be able to walk to a card,
+   * then to its EXACT/INSPIRED toggle, and operate it. (Chrome's own flattening
+   * of the old nested markup is exactly what made this unreliable.)
+   */
+  test("the keyboard reaches the card, then its fidelity toggle, and works it", async () => {
+    const user = userEvent.setup();
+    openSlides();
+    document.querySelector<HTMLInputElement>("input")!.focus();
+
+    await user.tab();
+    const select = document.activeElement as HTMLElement;
+    expect(select.getAttribute("aria-label")).toMatch(/^Use the /);
+
+    await user.tab();
+    expect(document.activeElement?.textContent).toBe("EXACT");
+
+    await user.tab();
+    const inspired = document.activeElement as HTMLElement;
+    expect(inspired.textContent).toBe("INSPIRED");
+    // Not the active fidelity yet…
+    expect(inspired.style.background).not.toContain("mv1-blue");
+
+    await user.keyboard("{Enter}");
+    // …and pressing it from the keyboard switches the mode.
+    expect(
+      (document.activeElement as HTMLElement).style.background,
+    ).toContain("mv1-blue");
+
+    // The select affordance still works from the keyboard too.
+    select.focus();
+    await user.keyboard("{Enter}");
+    expect(select.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("clicking a card still selects its template", () => {
+    openSlides();
+    const first = document.querySelector<HTMLElement>(
+      "button[aria-label^='Use the ']",
+    )!;
+    expect(first.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(first);
+    expect(first.getAttribute("aria-pressed")).toBe("true");
   });
 });
