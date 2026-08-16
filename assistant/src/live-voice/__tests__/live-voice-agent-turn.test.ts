@@ -494,3 +494,89 @@ describe("LiveVoiceSession tool activity", () => {
     expect(frames.some((f) => f.type === "tool_activity")).toBe(false);
   });
 });
+
+/**
+ * The `activity` frame: the model's own label for what the turn is doing, for
+ * surfaces the OS draws (Lock Screen, Dynamic Island) that cannot map a tool
+ * name to words themselves. Opted into separately from `tool_activity`, and
+ * sent only when the model actually wrote a label.
+ */
+describe("LiveVoiceSession activity label", () => {
+  const startVoiceTurnTouchingATool = (input: Record<string, unknown>) =>
+    mock(async (options: VoiceTurnOptions) => {
+      options.callbacks?.tool_use_start?.({
+        type: "tool_use_start",
+        conversationId: options.conversationId,
+        toolUseId: "tool-1",
+        toolName: "web_search",
+        input,
+      } as Parameters<NonNullable<VoiceTurnCallbacks["tool_use_start"]>>[0]);
+      options.callbacks?.message_complete?.({
+        type: "message_complete",
+        conversationId: options.conversationId,
+        messageId: "assistant-message-1",
+      });
+      return { turnId: "bridge-turn-1", abort: mock() };
+    });
+
+  const runTurn = async (
+    startFrame: LiveVoiceClientStartFrame,
+    input: Record<string, unknown>,
+  ) => {
+    const { frames, session, transcriber } = createSessionHarness({
+      startFrame,
+      startVoiceTurn: startVoiceTurnTouchingATool(input),
+    });
+    await session.start();
+    transcriber.emit({ type: "final", text: "what does acme charge" });
+    await session.handleClientFrame({ type: "ptt_release" });
+    await waitFor(() => frames.some((f) => f.type === "thinking"));
+    await flushAsyncCallbacks();
+    return frames;
+  };
+
+  test("the ready frame advertises the capability", async () => {
+    const frames = await runTurn(START_FRAME, { query: "acme pricing" });
+    expect(frames.find((f) => f.type === "ready")).toMatchObject({
+      type: "ready",
+      activity: true,
+    });
+  });
+
+  test("a client that opted in gets the label the model wrote", async () => {
+    const frames = await runTurn(
+      { ...START_FRAME, activity: true },
+      { query: "acme pricing", activity: "Looking up Acme's pricing" },
+    );
+    expect(frames.find((f) => f.type === "activity")).toMatchObject({
+      type: "activity",
+      text: "Looking up Acme's pricing",
+    });
+  });
+
+  test("no frame when the model wrote no label", async () => {
+    const frames = await runTurn(
+      { ...START_FRAME, activity: true },
+      { query: "acme pricing" },
+    );
+    expect(frames.some((f) => f.type === "activity")).toBe(false);
+  });
+
+  test("a client that only asked for tool_activity gets no prose", async () => {
+    const frames = await runTurn(
+      { ...START_FRAME, toolActivity: true },
+      { query: "acme pricing", activity: "Looking up Acme's pricing" },
+    );
+    expect(frames.some((f) => f.type === "tool_activity")).toBe(true);
+    expect(frames.some((f) => f.type === "activity")).toBe(false);
+  });
+
+  test("a client that only asked for activity gets no raw tool name", async () => {
+    const frames = await runTurn(
+      { ...START_FRAME, activity: true },
+      { query: "acme pricing", activity: "Looking up Acme's pricing" },
+    );
+    expect(frames.some((f) => f.type === "activity")).toBe(true);
+    expect(frames.some((f) => f.type === "tool_activity")).toBe(false);
+  });
+});

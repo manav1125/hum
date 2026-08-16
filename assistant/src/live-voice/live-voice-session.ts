@@ -219,6 +219,7 @@ import {
   type LiveVoiceUtteranceEndServerFrame,
 } from "./protocol.js";
 import { synthesizeLiveVoiceSession } from "./synthesize-live-voice-session.js";
+import { composeTurnActivityLabel } from "./turn-activity-label.js";
 import { resolveVoicePersona } from "./voice-personas.js";
 
 const log = getLogger("live-voice-session");
@@ -747,6 +748,13 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
    * and would treat it as an unparseable — and therefore fatal — payload.
    */
   private readonly toolActivity: boolean;
+  /**
+   * Whether THIS client asked for `activity` frames — the model-authored
+   * label for surfaces the OS draws (Lock Screen, Dynamic Island). Separate
+   * from {@link toolActivity} because they are different contracts; see the
+   * `activity` field on the start frame.
+   */
+  private readonly activityLabels: boolean;
   /** Base control prompt composed with the selected persona/mode (tone). */
   private readonly voiceControlPrompt: string;
   private readonly fullDuplexIdleTimeoutMs: number;
@@ -980,6 +988,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       context.startFrame.conversationId ?? context.sessionId;
     this.fullDuplex = context.startFrame.fullDuplex === true;
     this.toolActivity = context.startFrame.toolActivity === true;
+    this.activityLabels = context.startFrame.activity === true;
     // Compose the selected conversation mode (companion / reflective /
     // cofounder) onto the base control prompt. Absent/unknown → companion,
     // whose fragment is the base warm default, so behaviour is unchanged.
@@ -1155,6 +1164,11 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         // an older daemon rejects the frame with a session-fatal
         // `unknown_type`, so silence here keeps the camera hidden.
         attachImage: true,
+        // Capability advertise: this daemon can send `activity` frames. It
+        // still only sends them to a client that asked on the start frame —
+        // this tells a client the frame exists at all, so "this daemon is too
+        // old" is distinguishable from "this turn had nothing to say".
+        activity: true,
       });
     } catch (err) {
       if (err instanceof LiveVoiceSessionStartupError) {
@@ -3234,10 +3248,12 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
               turnId,
             });
           },
-          // The tool this turn is actually touching, by its real name, so the
-          // call screen can say what it is doing while it thinks instead of
-          // showing an unattributed wait. Gated on the client having asked for
-          // the frame type (see `toolActivity` on the start frame) and on the
+          // What this turn is touching, in the two shapes different surfaces
+          // need: `tool_activity` carries the real tool name for a surface
+          // with its own copy table, `activity` carries the model's own label
+          // for a surface the OS draws. Each is gated on the client having
+          // asked for that frame type (see `toolActivity` and `activity` on
+          // the start frame) and on the
           // same forwarding guard as the text deltas, so a barged-in turn
           // cannot leave a stale activity on screen.
           tool_use_start: (msg) => {
@@ -3254,13 +3270,23 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
                 );
               }
             }
-            if (!this.toolActivity) return;
             if (!this.isForwardingAssistantText(token)) return;
-            void this.sendFrame({
-              type: "tool_activity",
-              turnId,
-              toolName: msg.toolName,
-            });
+            if (this.toolActivity) {
+              void this.sendFrame({
+                type: "tool_activity",
+                turnId,
+                toolName: msg.toolName,
+              });
+            }
+            // The model-authored label, for clients that asked for it. Sent
+            // only when the model actually wrote one: no label is a truthful
+            // answer, an invented one is not.
+            if (this.activityLabels) {
+              const text = composeTurnActivityLabel(msg.input);
+              if (text !== undefined) {
+                void this.sendFrame({ type: "activity", turnId, text });
+              }
+            }
           },
         },
         // Mid-call approvals (design v37 §W2): the bridge left a

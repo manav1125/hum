@@ -28,6 +28,7 @@ const _LIVE_VOICE_SERVER_FRAME_TYPES = [
   "archived",
   "card",
   "tool_activity",
+  "activity",
   "minimize_room",
   "approval_pending",
   "approval_resolved",
@@ -137,6 +138,19 @@ export interface LiveVoiceClientStartFrame {
    * makes that impossible: silence is the old behaviour, exactly.
    */
   readonly toolActivity?: boolean;
+  /**
+   * Opt in to `activity` server frames — a ready-to-render label for what the
+   * turn is doing, for surfaces that cannot map a tool name to words (the iOS
+   * Lock Screen, the Dynamic Island).
+   *
+   * A separate flag from `toolActivity` rather than a widening of it, because
+   * they are different contracts and a client can want exactly one: a surface
+   * with its own copy table wants the raw name and would rather show nothing
+   * than the model's phrasing; a surface the OS draws for it can only use the
+   * phrase. Same capability-flag reasoning as `toolActivity` — a client that
+   * never asks keeps the old protocol byte for byte.
+   */
+  readonly activity?: boolean;
   /**
    * Turn-detection mode for the session. Absent means "manual" (push-to-talk,
    * exactly today's behavior). "server_vad" opts the session into server-side
@@ -270,6 +284,15 @@ export interface LiveVoiceReadyServerFrame extends LiveVoiceServerFrameBase {
    * means "no camera".
    */
   readonly attachImage?: true;
+  /**
+   * Capability advertise: this daemon can send the `activity` server frame.
+   * A client that wants it still has to ask for it on the `start` frame — the
+   * advertisement exists so a client can tell "this daemon has no such frame"
+   * apart from "this turn had nothing to say", which are different silences
+   * and would otherwise look identical. Absent (older daemons) means the frame
+   * will never arrive however the client asks.
+   */
+  readonly activity?: true;
 }
 
 export interface LiveVoiceBusyServerFrame extends LiveVoiceServerFrameBase {
@@ -444,6 +467,40 @@ export interface LiveVoiceToolActivityServerFrame extends LiveVoiceServerFrameBa
 }
 
 /**
+ * A ready-to-render label for what this turn is doing, for surfaces that
+ * cannot map a tool name to words themselves — the iOS Lock Screen and the
+ * Dynamic Island, which are handed a string by the OS and draw it.
+ *
+ * This does NOT contradict the no-prose rule on `tool_activity` above. That
+ * rule bans the *daemon* from inventing a phrase for a tool. The text here is
+ * never invented: it is the `activity` string the model wrote on the tool call
+ * itself, and when the model wrote none, no frame is sent at all (see
+ * `turn-activity-label.ts`). A surface therefore gets three distinguishable
+ * outcomes — a real label, no label but a tool name via `tool_activity`, or
+ * neither — and never a confident guess.
+ *
+ * Sent only to clients that set `activity` on the `start` frame, and only on
+ * the cascade engine, for the same reasons as `tool_activity`. The text is
+ * secret-redacted and length-capped before it leaves, because a lock screen
+ * renders it to whoever is looking at the phone.
+ *
+ * The web client's protocol mirror deliberately does NOT carry this frame.
+ * That surface draws its own copy from `tool_activity` via
+ * `tool-activity-words.ts`, whose whole premise is that the words come from a
+ * real tool name or are not shown at all; feeding it model prose would undo
+ * that. It never asks for this frame, so it never receives one, and its
+ * parser classifies the unknown type as ignorable. The divergence between the
+ * two frame-type lists is the design, not drift.
+ */
+export interface LiveVoiceActivityServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "activity";
+  /** The turn this label belongs to, so a stale label can be cleared. */
+  readonly turnId: string;
+  /** Human-readable, model-authored, redacted, capped. Never empty. */
+  readonly text: string;
+}
+
+/**
  * Ask the client to demote the call room (the full-screen overlay) so the
  * screen behind it — a surface this turn showed, or a pending approval card —
  * is visible while the call continues.
@@ -573,6 +630,7 @@ export type LiveVoiceServerFrame =
   | LiveVoiceArchivedServerFrame
   | LiveVoiceCardServerFrame
   | LiveVoiceToolActivityServerFrame
+  | LiveVoiceActivityServerFrame
   | LiveVoiceMinimizeRoomServerFrame
   | LiveVoiceApprovalPendingServerFrame
   | LiveVoiceApprovalResolvedServerFrame
@@ -596,6 +654,7 @@ export type LiveVoiceServerFramePayload =
   | WithoutSeq<LiveVoiceArchivedServerFrame>
   | WithoutSeq<LiveVoiceCardServerFrame>
   | WithoutSeq<LiveVoiceToolActivityServerFrame>
+  | WithoutSeq<LiveVoiceActivityServerFrame>
   | WithoutSeq<LiveVoiceMinimizeRoomServerFrame>
   | WithoutSeq<LiveVoiceApprovalPendingServerFrame>
   | WithoutSeq<LiveVoiceApprovalResolvedServerFrame>
@@ -879,6 +938,15 @@ function validateStartFrame(
     );
   }
 
+  if ("activity" in value && typeof value.activity !== "boolean") {
+    return protocolError(
+      "invalid_field",
+      "start frame field activity must be a boolean",
+      "activity",
+      "start",
+    );
+  }
+
   if (
     "turnDetection" in value &&
     !isLiveVoiceTurnDetectionMode(value.turnDetection)
@@ -941,6 +1009,7 @@ function validateStartFrame(
       // anything else to the default rather than rejecting the session.
       ...(isVoicePersonaId(value.persona) ? { persona: value.persona } : {}),
       ...(value.toolActivity === true ? { toolActivity: true } : {}),
+      ...(value.activity === true ? { activity: true } : {}),
       ...(isLiveVoiceTurnDetectionMode(value.turnDetection)
         ? { turnDetection: value.turnDetection }
         : {}),

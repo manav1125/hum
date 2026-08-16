@@ -460,6 +460,100 @@ describe("tool_activity is opt-in on the wire", () => {
   });
 });
 
+/**
+ * `activity` carries the model's own label for surfaces the OS draws (Lock
+ * Screen, Dynamic Island). It is a SEPARATE opt-in from `tool_activity`
+ * because the two carry different contracts — a raw tool name versus a
+ * phrase — and a client can legitimately want one and refuse the other.
+ * Pinned here so a later widening of `toolActivity` cannot quietly start
+ * pushing model prose at a surface that asked only for names.
+ */
+describe("activity is opt-in on the wire, independently of tool_activity", () => {
+  const audio = {
+    mimeType: "audio/pcm",
+    sampleRate: 16000,
+    channels: 1,
+  } as const;
+
+  test("a client that asks has its request preserved", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, activity: true }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.frame).toEqual({ type: "start", audio, activity: true });
+  });
+
+  test("asking for tool_activity does not opt into activity", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, toolActivity: true }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("activity" in result.frame).toBe(false);
+  });
+
+  test("asking for activity does not opt into tool_activity", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, activity: true }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("toolActivity" in result.frame).toBe(false);
+  });
+
+  test("an explicit false is not opted in", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, activity: false }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("activity" in result.frame).toBe(false);
+  });
+
+  test("a non-boolean is rejected rather than coerced", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({ type: "start", audio, activity: "yes" }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.field).toBe("activity");
+  });
+
+  test("the frame sequences like any other server frame", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    const frame: LiveVoiceServerFrame = sequencer.next({
+      type: "activity",
+      turnId: "turn-1",
+      text: "Checking your calendar",
+    });
+    expect(frame).toEqual({
+      type: "activity",
+      turnId: "turn-1",
+      text: "Checking your calendar",
+      seq: 1,
+    });
+  });
+
+  test("ready frames advertise the capability", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    expect(
+      sequencer.next({
+        type: "ready",
+        sessionId: "session-1",
+        conversationId: "conversation-1",
+        activity: true,
+      }),
+    ).toEqual({
+      type: "ready",
+      sessionId: "session-1",
+      conversationId: "conversation-1",
+      activity: true,
+      seq: 1,
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Server VAD (V-1a): turnDetection opt-in, tuning bounds, update_config,
 // and the new server frames.
