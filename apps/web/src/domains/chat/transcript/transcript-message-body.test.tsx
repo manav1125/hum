@@ -126,6 +126,7 @@ import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
 import type { DisplayMessage, Surface } from "@/domains/chat/types/types";
 
 import { TranscriptMessageBody } from "@/domains/chat/transcript/transcript-message-body";
+import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 
 const noop = () => {};
 
@@ -246,9 +247,7 @@ describe("TranscriptMessageBody", () => {
       />,
     );
 
-    const bubble = container.querySelector(
-      ".bg-\\[var\\(--surface-lift\\)\\]",
-    );
+    const bubble = container.querySelector(".bg-\\[var\\(--surface-lift\\)\\]");
     expect(bubble).not.toBeNull();
     expect(bubble!.getAttribute("data-voice-turn")).toBe("true");
   });
@@ -270,9 +269,7 @@ describe("TranscriptMessageBody", () => {
     );
 
     // Collapsed: pill present, injected prompt hidden, no user bubble.
-    const row = container.querySelector(
-      "[data-testid='task-run-context-row']",
-    );
+    const row = container.querySelector("[data-testid='task-run-context-row']");
     expect(row).not.toBeNull();
     const pill = row!.querySelector("button");
     expect(pill).not.toBeNull();
@@ -304,9 +301,7 @@ describe("TranscriptMessageBody", () => {
       />,
     );
 
-    const bubble = container.querySelector(
-      ".bg-\\[var\\(--surface-lift\\)\\]",
-    );
+    const bubble = container.querySelector(".bg-\\[var\\(--surface-lift\\)\\]");
     expect(bubble).not.toBeNull();
     expect(bubble!.hasAttribute("data-voice-turn")).toBe(false);
   });
@@ -1055,3 +1050,116 @@ function taskProgressSurface(surfaceId: string): Surface {
     },
   };
 }
+
+/**
+ * On a phone there is no hover, so the message action row is reachable only
+ * through the tap-to-reveal on the bubble. That makes this the single entry
+ * point on the device the assistant is used from most — and the only way to
+ * reach "Summarize up to here" and the bookmark toggle at all. Nothing else
+ * covered it, so a change to `handleBubbleClick` could have removed the
+ * feature from mobile without a single test going red.
+ */
+describe("TranscriptMessageBody touch reveal", () => {
+  const coarsePointer = <T,>(run: () => T): T => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: mock((query: string) => ({
+        matches: query === "(pointer: coarse)",
+        media: query,
+        onchange: null,
+        addListener: mock(() => {}),
+        removeListener: mock(() => {}),
+        addEventListener: mock(() => {}),
+        removeEventListener: mock(() => {}),
+        dispatchEvent: mock(() => false),
+      })),
+    });
+    try {
+      return run();
+    } finally {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      });
+    }
+  };
+
+  const renderAssistantRow = () =>
+    render(
+      <TranscriptMessageBody
+        message={{
+          id: "touch-1",
+          role: "assistant",
+          contentBlocks: [textBlock("the answer")],
+          timestamp: 1_000,
+        }}
+        onSurfaceAction={noop}
+        onSummarizeUpToHere={() => {}}
+        onForkConversation={() => {}}
+      />,
+    );
+
+  test("tapping the body reveals the action row on a coarse pointer", () => {
+    useClientFeatureFlagStore.setState({ summarizeUpToHere: true });
+    coarsePointer(() => {
+      const { container, getByTestId } = renderAssistantRow();
+
+      expect(container.querySelector('[data-revealed="true"]')).toBeNull();
+
+      fireEvent.click(getByTestId("markdown"));
+
+      expect(container.querySelector('[data-revealed="true"]')).not.toBeNull();
+      expect(
+        container.querySelector('button[title="Summarize up to here"]'),
+      ).not.toBeNull();
+      expect(
+        container.querySelector('button[title="Fork from here"]'),
+      ).not.toBeNull();
+    });
+  });
+
+  test("tapping again hides it", () => {
+    useClientFeatureFlagStore.setState({ summarizeUpToHere: true });
+    coarsePointer(() => {
+      const { container, getByTestId } = renderAssistantRow();
+
+      fireEvent.click(getByTestId("markdown"));
+      fireEvent.click(getByTestId("markdown"));
+
+      expect(container.querySelector('[data-revealed="true"]')).toBeNull();
+    });
+  });
+
+  test("a fine pointer does not latch the row open — it hovers", () => {
+    useClientFeatureFlagStore.setState({ summarizeUpToHere: true });
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: mock((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: mock(() => {}),
+        removeListener: mock(() => {}),
+        addEventListener: mock(() => {}),
+        removeEventListener: mock(() => {}),
+        dispatchEvent: mock(() => false),
+      })),
+    });
+    try {
+      const { container, getByTestId } = renderAssistantRow();
+      fireEvent.click(getByTestId("markdown"));
+      expect(container.querySelector('[data-revealed="true"]')).toBeNull();
+    } finally {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+});
