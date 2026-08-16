@@ -43,6 +43,19 @@ const log = getLogger("db-async-query");
  */
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
+/**
+ * How long the CLI subprocess waits for a contended write lock before giving
+ * up. The daemon holds these databases open and writes to them continuously,
+ * so a subprocess arriving mid-write must wait rather than fail — the CLI's own
+ * default is zero, which is what made a prune fail outright on prod.
+ *
+ * Well under {@link DEFAULT_TIMEOUT_MS}: this bounds the wait for a single lock
+ * acquisition, not the statement, so it should expire long before the
+ * wall-clock cap and leave a real deadlock still detectable rather than
+ * masked behind an hour of waiting.
+ */
+const CLI_BUSY_TIMEOUT_MS = 30_000;
+
 export type AsyncSqliteBackend = "sqlite3-cli" | "in-process-blocking";
 
 export interface AsyncSqliteResult {
@@ -132,6 +145,20 @@ async function runViaCli(
     stdout: "pipe",
     stderr: "pipe",
   });
+
+  // Wait for the write lock rather than failing the instant it is contended.
+  //
+  // This subprocess opens a database the daemon already holds open and writes
+  // to continuously. The sqlite3 CLI's own busy timeout is ZERO, so any write
+  // in flight on the daemon's connection made the whole statement fail
+  // immediately with "database is locked (5)" — observed on prod as a
+  // recurring ERROR from the activation-log prune, which then simply did not
+  // run that cycle. Nothing retried it; the next scheduled run raced again.
+  //
+  // Deliberately prepended to the caller's SQL rather than passed as a flag:
+  // it then applies to every statement in the batch, and to every caller of
+  // this path, which is where the missing wait actually belongs.
+  proc.stdin.write(`PRAGMA busy_timeout = ${CLI_BUSY_TIMEOUT_MS};\n`);
 
   // Write the SQL and close stdin so sqlite3 sees EOF and exits.
   proc.stdin.write(sql + "\n");

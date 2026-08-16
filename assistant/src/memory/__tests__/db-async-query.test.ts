@@ -162,4 +162,38 @@ describe("runAsyncSqlite", () => {
     },
     60_000,
   );
+
+  test.skipIf(!sqlite3Available)(
+    "waits for a write lock the daemon is holding instead of failing",
+    async () => {
+      // The subprocess opens a database the daemon already holds open and
+      // writes to continuously. sqlite3's own busy timeout is ZERO, so a write
+      // in flight made the whole statement fail instantly with
+      // "database is locked (5)". On prod that surfaced as a recurring ERROR
+      // from the activation-log prune, which then simply did not run — nothing
+      // retried, and the next scheduled run raced again.
+      const sqlite = getSqlite();
+      sqlite.exec(
+        "CREATE TABLE IF NOT EXISTS busy_probe (id INTEGER PRIMARY KEY)",
+      );
+
+      // Hold the write lock, exactly as a mid-write daemon would.
+      sqlite.exec("BEGIN IMMEDIATE");
+      const releaseAfterMs = 750;
+      const releaser = setTimeout(() => sqlite.exec("COMMIT"), releaseAfterMs);
+
+      const startMs = Date.now();
+      const result = await runAsyncSqlite(
+        "INSERT INTO busy_probe (id) VALUES (1);",
+      );
+      const elapsedMs = Date.now() - startMs;
+      clearTimeout(releaser);
+
+      // Waited for the lock and then succeeded, rather than returning the
+      // instant it found the database contended.
+      expect(`ok:${result.ok} err:${result.error ?? ""}`).toBe("ok:true err:");
+      expect(elapsedMs).toBeGreaterThanOrEqual(releaseAfterMs - 100);
+    },
+    30_000,
+  );
 });
