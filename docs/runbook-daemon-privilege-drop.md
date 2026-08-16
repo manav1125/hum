@@ -228,6 +228,25 @@ rather than something a runtime command grants itself.
   the write. Regression cover:
   `gateway/src/__tests__/config-file-atomic-ownership.test.ts`.
 
+**BLOCKING — Qdrant does not start under the drop.** `qdrant-manager.ts` sets
+`QDRANT__STORAGE__STORAGE_PATH` but not `QDRANT__STORAGE__SNAPSHOTS_PATH`, and
+Qdrant's default for the latter is the *relative* `./snapshots`, resolved
+against the daemon's cwd — `/app/assistant`, root-owned 0755. As uid 1001,
+Qdrant dies with `PermissionDenied` on `./snapshots/tmp`, retries three times,
+and then the daemon **carries on running** with `memory features will be
+unavailable`, because subsystem failures must never block startup. `/healthz`
+stays 200 throughout, so nothing external notices.
+
+This is not hypothetical: `/app/assistant/snapshots` already exists root-owned
+on the prod machine, created by prod's own root-run Qdrant. The failure fires on
+the first boot after the flip. Fixed by pinning the snapshots path under the
+(chowned) storage directory. **Do not enable the flag on an image built before
+that fix.**
+
+The `cwd=/app/assistant` entry below was previously filed here as latent and not
+blocking. That was wrong — it is the same root cause as the Qdrant failure, and
+it is what blocks the drop.
+
 **Verified latent, not blocking** — these did not fire because the paths already
 exist on prod's volume and are owned by 1001, but they would bite a fresh
 workspace or a later gateway write:

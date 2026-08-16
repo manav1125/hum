@@ -114,6 +114,16 @@ export class QdrantManager {
         QDRANT__SERVICE__GRPC_PORT: "0", // disable gRPC
         QDRANT__TELEMETRY_DISABLED: "true",
         QDRANT__STORAGE__STORAGE_PATH: this.storagePath,
+        // Pin snapshots next to storage. Qdrant's default is the RELATIVE
+        // `./snapshots`, resolved against the daemon's cwd — which in the
+        // container is `/app/assistant`, root-owned 0755. That is writable
+        // only because the daemon currently runs as root; the moment it drops
+        // to uid 1001, Qdrant fails to start with PermissionDenied on
+        // `./snapshots/tmp`, and because subsystem failures must never block
+        // startup, the daemon carries on serving 200s with memory features
+        // silently unavailable. Anchoring the path to the storage directory,
+        // which the entrypoint chowns, keeps it writable under either identity.
+        QDRANT__STORAGE__SNAPSHOTS_PATH: join(this.storagePath, "snapshots"),
         QDRANT__LOG_LEVEL: "WARN",
       },
       stdout: "ignore",
