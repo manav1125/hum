@@ -11,9 +11,14 @@
  * A wrapped sentence is fine. A wrapped number is a different number. So
  * proportional sizing is kept, but every column also gets a floor: enough
  * width for its longest unbreakable run of characters, funded by the columns
- * that have width to spare. When the floors cannot all be paid the table stays
- * within its total and the shortfall is shared — an impossible ask must never
- * produce a table wider than the page.
+ * that have width to spare.
+ *
+ * When the floors cannot all be paid out of the page, sharing the shortfall
+ * only spreads the damage — every numeric column ends up a little too narrow,
+ * which is the same broken number in more places. There are two things that
+ * can give, and the page is not one of them, so `fitFontSize` shrinks the
+ * type until the floors fit and apportionment runs at that size. Only past the
+ * point where the table would stop being readable does wrapping win.
  *
  * Units are the caller's: twips for Word, inches for PowerPoint. Every number
  * in and out is in the same unit, so this module never needs to know which.
@@ -29,6 +34,19 @@ const WEIGHT_MAX = 40;
  * whole layout.
  */
 const FLOOR_CAP = 1.5;
+
+/**
+ * The longest token that gets a vote in choosing the table's font size.
+ *
+ * Every value a reader would notice being cut in half — a date, a currency
+ * figure, an eight-digit total — is shorter than this. Beyond it lies the
+ * long tail of URLs and hashes, and letting one of those drag the whole table
+ * down to six points would be a worse answer than letting it wrap.
+ */
+const SIZING_TOKEN_CAP = 16;
+
+/** Below this the table is unreadable, so wrapping becomes the lesser evil. */
+const MIN_FONT_PT = 6;
 
 export interface ColumnText {
   /** The header cell's plain text. */
@@ -81,6 +99,43 @@ function widestToken(column: ColumnText): number {
     if (token > longest) longest = token;
   }
   return longest;
+}
+
+/**
+ * The largest font size, at or below `fontPt`, at which every column can still
+ * hold its longest unbreakable token on one line.
+ *
+ * Apportionment alone cannot save a table whose columns need more width than
+ * the page has. Scaling the floors down to fit is what produces `$1,450.0`
+ * above `0` — the table obeys the page and lies about the number. A human
+ * given the same page and the same ten columns does the obvious thing instead:
+ * makes the table's type smaller. So does this.
+ *
+ * Padding shrinks with the type, because it is spacing rather than content;
+ * at ten columns the margins alone were claiming a fifth of the page.
+ */
+export function fitFontSize(
+  columns: ColumnText[],
+  total: number,
+  { fontPt, unitsPerPt, padding }: ApportionOptions,
+): number {
+  if (columns.length === 0) return fontPt;
+
+  const tokens = columns.reduce(
+    (sum, column) => sum + Math.min(widestToken(column), SIZING_TOKEN_CAP),
+    0,
+  );
+
+  // Width needed is linear in the font size — text and padding both scale — so
+  // the largest size that fits is a division, not a search.
+  const perPt =
+    tokens * WIDE_CHAR_ADVANCE * unitsPerPt +
+    (columns.length * padding) / fontPt;
+  if (perPt <= 0) return fontPt;
+
+  const fits = total / perPt;
+  if (fits >= fontPt) return fontPt;
+  return Math.max(MIN_FONT_PT, Math.floor(fits * 10) / 10);
 }
 
 /**

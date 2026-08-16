@@ -39,7 +39,11 @@ import type { Token, Tokens } from "marked";
 import { marked } from "marked";
 
 import type { ColumnText } from "./table-columns.js";
-import { apportionColumns, roundToTotal } from "./table-columns.js";
+import {
+  apportionColumns,
+  fitFontSize,
+  roundToTotal,
+} from "./table-columns.js";
 
 const FONT_BODY = "Calibri";
 const FONT_MONO = "Consolas";
@@ -79,6 +83,8 @@ interface RunStyle {
   code?: boolean;
   /** Carries Word's built-in `Hyperlink` character style onto the run. */
   link?: boolean;
+  /** Word's half-points. Set only where a table has been sized down to fit. */
+  halfPt?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +200,7 @@ function runOptions(text: string, style: RunStyle) {
     italics: style.italics,
     strike: style.strike,
     font: style.code ? FONT_MONO : FONT_BODY,
+    ...(style.halfPt ? { size: style.halfPt } : {}),
     ...(style.code
       ? { shading: { type: ShadingType.CLEAR, fill: "F2F4F8" } }
       : {}),
@@ -417,22 +424,11 @@ function listItemParagraphs(
  * `apportionColumns` decides the split; see there for why a column's longest
  * unbreakable token, not just its text volume, sets a floor.
  */
-function columnWidths(token: Tokens.Table, contentWidth: number): number[] {
-  if (token.header.length === 0) return [];
-
-  const columns: ColumnText[] = token.header.map((cell, i) => ({
+function columnsOf(token: Tokens.Table): ColumnText[] {
+  return token.header.map((cell, i) => ({
     header: cell.text,
     cells: token.rows.map((row) => row[i]?.text ?? ""),
   }));
-
-  return roundToTotal(
-    apportionColumns(columns, contentWidth, {
-      fontPt: BODY_PT,
-      unitsPerPt: PT,
-      padding: CELL_PAD_LEFT + CELL_PAD_RIGHT,
-    }),
-    contentWidth,
-  );
 }
 
 function tableOf(token: Tokens.Table, contentWidth: number): Table {
@@ -444,11 +440,38 @@ function tableOf(token: Tokens.Table, contentWidth: number): Table {
         ? AlignmentType.CENTER
         : AlignmentType.LEFT;
 
-  const widths = columnWidths(token, contentWidth);
+  const columns = columnsOf(token);
+  const basePadding = CELL_PAD_LEFT + CELL_PAD_RIGHT;
+
+  // Choose the type size before the widths: a wide table that cannot hold its
+  // values at 11pt is not a width problem to be apportioned around, it is a
+  // table that has to be set smaller.
+  const fontPt = fitFontSize(columns, contentWidth, {
+    fontPt: BODY_PT,
+    unitsPerPt: PT,
+    padding: basePadding,
+  });
+  const scale = fontPt / BODY_PT;
+  const padLeft = Math.round(CELL_PAD_LEFT * scale);
+  const padRight = Math.round(CELL_PAD_RIGHT * scale);
+  const halfPt = fontPt === BODY_PT ? undefined : Math.round(fontPt * 2);
+
+  const widths = columns.length
+    ? roundToTotal(
+        apportionColumns(columns, contentWidth, {
+          fontPt,
+          unitsPerPt: PT,
+          padding: padLeft + padRight,
+        }),
+        contentWidth,
+      )
+    : [];
+
   const cellWidth = (i: number) => ({
     size: widths[i] ?? Math.floor(contentWidth / Math.max(1, widths.length)),
     type: WidthType.DXA,
   });
+  const margins = cellMargins(padLeft, padRight, scale);
 
   const headerRow = new TableRow({
     tableHeader: true,
@@ -457,11 +480,11 @@ function tableOf(token: Tokens.Table, contentWidth: number): Table {
         new TableCell({
           width: cellWidth(i),
           shading: { type: ShadingType.CLEAR, fill: "EEF1F7" },
-          margins: cellMargins(),
+          margins,
           children: [
             new Paragraph({
               alignment: alignmentAt(i),
-              children: inlineRuns(cell.tokens, { bold: true }),
+              children: inlineRuns(cell.tokens, { bold: true, halfPt }),
             }),
           ],
         }),
@@ -475,11 +498,11 @@ function tableOf(token: Tokens.Table, contentWidth: number): Table {
           const cell = row[i];
           return new TableCell({
             width: cellWidth(i),
-            margins: cellMargins(),
+            margins,
             children: [
               new Paragraph({
                 alignment: alignmentAt(i),
-                children: cell ? inlineRuns(cell.tokens) : [],
+                children: cell ? inlineRuns(cell.tokens, { halfPt }) : [],
               }),
             ],
           });
@@ -495,13 +518,9 @@ function tableOf(token: Tokens.Table, contentWidth: number): Table {
   });
 }
 
-function cellMargins() {
-  return {
-    top: 60,
-    bottom: 60,
-    left: CELL_PAD_LEFT,
-    right: CELL_PAD_RIGHT,
-  };
+function cellMargins(left: number, right: number, scale: number) {
+  const vertical = Math.round(60 * scale);
+  return { top: vertical, bottom: vertical, left, right };
 }
 
 // ---------------------------------------------------------------------------

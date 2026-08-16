@@ -106,6 +106,46 @@ describe("renderMarkdownToDocx", () => {
     expect(widths.reduce((a, b) => a + b, 0)).toBe(9026);
   });
 
+  test("sets a wide table smaller rather than breaking its numbers", async () => {
+    // Opening the export in Word is what caught this: at 11pt these ten
+    // columns cannot all hold their values, and the grid Word honours laid
+    // `$1,450.00` out as `$1,450.0` above `0`. A wrapped sentence is fine; a
+    // wrapped number is a different number, so the type gives way instead.
+    const wide = `| Workstream | Owner | Start | End | Effort | Rate | Budget | Spent | Remaining | Status |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Discovery and stakeholder alignment | R. Vance | 2026-01-05 | 2026-02-13 | 120 | $1,450.00 | $174000 | $166750 | $7250 | On track |
+| Cutover | M. Duarte | 2026-07-01 | 2026-07-31 | 60 | $1,600.00 | $96000 | $0 | $96000 | Not started |
+`;
+    const xml = await documentXml(wide);
+    const grid = xml.match(/<w:tblGrid>[\s\S]*?<\/w:tblGrid>/)?.[0] ?? "";
+    const widths = [...grid.matchAll(/w:w="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(widths).toHaveLength(10);
+    expect(widths.reduce((a, b) => a + b, 0)).toBe(9026);
+
+    // The runs inside the table carry an explicit size below the 22 half-point
+    // body default; without it the columns above cannot hold their values.
+    const sizes = [...xml.matchAll(/<w:sz w:val="(\d+)"\/>/g)].map((m) =>
+      Number(m[1]),
+    );
+    const tableSize = Math.min(...sizes);
+    expect(tableSize).toBeLessThan(22);
+    expect(tableSize).toBeGreaterThanOrEqual(12);
+
+    // Every column can hold its longest unbreakable run at that size.
+    const charWidth = (tableSize / 2) * 0.56 * 20;
+    const padding = 2 * Math.round(100 * (tableSize / 2 / 11));
+    const longest = [10, 6, 10, 6, 6, 9, 7, 7, 9, 7];
+    widths.forEach((width, i) => {
+      expect(width - padding).toBeGreaterThanOrEqual(longest[i]! * charWidth);
+    });
+  });
+
+  test("leaves a table that already fits at the document's body size", async () => {
+    const xml = await documentXml(MARKDOWN);
+    const table = xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/)?.[0] ?? "";
+    expect(table).not.toContain("<w:sz ");
+  });
+
   test("keeps the markdown column alignment on the table cells", async () => {
     const xml = await documentXml(MARKDOWN);
     expect(xml).toContain('<w:jc w:val="right"/>');

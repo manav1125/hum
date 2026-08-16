@@ -12,6 +12,7 @@ import { describe, expect, test } from "bun:test";
 import {
   apportionColumns,
   type ColumnText,
+  fitFontSize,
   longestToken,
   roundToTotal,
 } from "../table-columns.js";
@@ -115,6 +116,75 @@ describe("apportionColumns", () => {
 
   test("handles a table with no columns", () => {
     expect(apportionColumns([], CONTENT_WIDTH, OPTS)).toEqual([]);
+  });
+});
+
+/** The ten-column table Word was still breaking numbers in, at 11pt. */
+const WIDE: ColumnText[] = [
+  {
+    header: "Workstream",
+    cells: ["Discovery and stakeholder alignment", "Build", "Cutover"],
+  },
+  { header: "Owner", cells: ["R. Vance", "K. Osei", "M. Duarte"] },
+  { header: "Start", cells: ["2026-01-05", "2026-02-16", "2026-07-01"] },
+  { header: "End", cells: ["2026-02-13", "2026-06-30", "2026-07-31"] },
+  { header: "Effort (days)", cells: ["120", "480", "60"] },
+  { header: "Rate", cells: ["$1,450.00", "$1,250.00", "$1,600.00"] },
+  { header: "Budget", cells: ["$174000", "$600000", "$96000"] },
+  { header: "Spent", cells: ["$166750", "$412500", "$0"] },
+  { header: "Remaining", cells: ["$7250", "$187500", "$96000"] },
+  { header: "Status", cells: ["On track", "At risk", "Not started"] },
+];
+
+describe("fitFontSize", () => {
+  test("leaves a table that already fits at the size it was given", () => {
+    expect(fitFontSize(REVENUE, CONTENT_WIDTH, OPTS)).toBe(FONT_PT);
+    expect(fitFontSize([], CONTENT_WIDTH, OPTS)).toBe(FONT_PT);
+  });
+
+  test("sets a table smaller rather than breaking its numbers", () => {
+    // Opening the export in Word showed the real defect: at 11pt these ten
+    // columns cannot all hold their values, so apportionment scaled the floors
+    // down and Word laid out `$1,450.00` as `$1,450.0` above `0`. The page
+    // cannot grow, so the type has to shrink.
+    const pt = fitFontSize(WIDE, CONTENT_WIDTH, OPTS);
+    expect(pt).toBeLessThan(FONT_PT);
+    expect(pt).toBeGreaterThan(6);
+
+    // At the fitted size every floor is payable, so no column is starved.
+    const scale = pt / FONT_PT;
+    const padding = Math.round(PADDING * scale);
+    const widths = apportionColumns(WIDE, CONTENT_WIDTH, {
+      fontPt: pt,
+      unitsPerPt: 20,
+      padding,
+    });
+    const charWidth = pt * 0.56 * 20;
+    WIDE.forEach((column, i) => {
+      const longest = Math.max(
+        longestToken(column.header),
+        ...column.cells.map(longestToken),
+      );
+      expect(widths[i]! - padding).toBeGreaterThanOrEqual(longest * charWidth);
+    });
+  });
+
+  test("does not shrink the whole table to chase one URL", () => {
+    // A 300-character token is going to wrap whatever we do, and letting it
+    // set the type size would make the readable columns unreadable too.
+    const withUrl: ColumnText[] = [
+      { header: "Link", cells: ["https://" + "a".repeat(300)] },
+      { header: "Note", cells: ["short"] },
+    ];
+    expect(fitFontSize(withUrl, CONTENT_WIDTH, OPTS)).toBe(FONT_PT);
+  });
+
+  test("never goes below the readable floor", () => {
+    const absurd: ColumnText[] = Array.from({ length: 40 }, (_, i) => ({
+      header: `column${i}`,
+      cells: ["1234567890123456"],
+    }));
+    expect(fitFontSize(absurd, CONTENT_WIDTH, OPTS)).toBe(6);
   });
 });
 
