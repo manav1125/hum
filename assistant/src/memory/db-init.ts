@@ -165,6 +165,7 @@ import {
   migrateMemoryGraphImageRefs,
   migrateMemoryItemSupersession,
   migrateMemoryJobOutcome,
+  migrateMemoryNodeInjectionEvents,
   migrateMemoryRecallLogsQueryContext,
   migrateMemoryRetrospectiveRememberedLog,
   migrateMemoryRetrospectiveState,
@@ -625,6 +626,9 @@ export function initializeDb(): void {
     migrateMoveMemoryTelemetryLogsToMemoryDb,
     migrateMoveMemoryV3TablesToMemoryDb,
     migrateMoveMemoryJobsToMemoryDb,
+    // 329 creates a NEW memory-DB table (no main-side original), so it runs
+    // after the relocation block rather than inside it.
+    migrateMemoryNodeInjectionEvents,
   ];
 
   // Run each migration step, catching and logging individual failures so one

@@ -52,6 +52,7 @@ import {
   type ResolvedImage,
   resolveInjectionImages,
 } from "./injection.js";
+import { recordNodeInjectionEvents } from "./node-injection-events.js";
 import { loadContextMemory, retrieveForTurn } from "./retriever.js";
 import type { RetrievalMetrics } from "./types.js";
 
@@ -613,6 +614,19 @@ export class ConversationGraphMemory {
     this.tracker.add(result.nodes.map((n) => n.node.id));
     this.tracker.add(result.serendipityNodes.map((n) => n.node.id));
 
+    // Lifetime "applied N times" counter. Recorded here rather than off the
+    // tracker's own log because that log is pruned on compaction — see
+    // `node-injection-events.ts`. Re-registration after compaction
+    // (`reinjectCachedMemory` / `retrackCachedNodes`) is deliberately NOT
+    // counted: the model was already looking at those nodes.
+    recordNodeInjectionEvents(
+      [
+        ...result.nodes.map((n) => n.node.id),
+        ...result.serendipityNodes.map((n) => n.node.id),
+      ],
+      Date.now(),
+    );
+
     // Assemble context block
     const contextBlock = assembleContextBlock(result.nodes, {
       serendipityNodes: result.serendipityNodes,
@@ -771,6 +785,10 @@ export class ConversationGraphMemory {
 
     // Track new nodes
     this.tracker.add(result.nodes.map((n) => n.node.id));
+    recordNodeInjectionEvents(
+      result.nodes.map((n) => n.node.id),
+      Date.now(),
+    );
 
     const injectionBlock = assembleInjectionBlock(result.nodes);
     if (!injectionBlock) {

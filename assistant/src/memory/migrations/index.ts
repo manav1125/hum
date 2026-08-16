@@ -321,6 +321,7 @@ export { migrateMoveMemoryGraphClusterToMemoryDb } from "./325-move-memory-graph
 export { migrateMoveMemoryTelemetryLogsToMemoryDb } from "./326-move-memory-telemetry-logs-to-memory-db.js";
 export { migrateMoveMemoryV3TablesToMemoryDb } from "./327-move-memory-v3-tables-to-memory-db.js";
 export { migrateMoveMemoryJobsToMemoryDb } from "./328-move-memory-jobs-to-memory-db.js";
+export { migrateMemoryNodeInjectionEvents } from "./329-memory-node-injection-events.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

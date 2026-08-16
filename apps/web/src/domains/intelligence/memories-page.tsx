@@ -778,7 +778,13 @@ function RailContent({
     typeof memory.confidence === "number" ? memory.confidence.toFixed(2) : "—";
   const reinforcement = memory.reinforcementCount ?? 0;
   const source = sourceTypeLabel(memory.sourceType);
-  const recalled = memory.accessCount ?? 0;
+  // How many times this memory was actually applied to a turn. The daemon
+  // sends null when it has no record, and a zero is NOT the same claim as
+  // "never useful" — counting only began when the injection-event log
+  // landed. So this renders as nothing rather than as "applied 0 times".
+  const applied = memory.accessCount ?? 0;
+  const appliedText =
+    applied === 1 ? "applied once" : `applied ${applied} times`;
   const firstSeen = Number.isFinite(memory.firstSeenAt)
     ? formatFriendlyDate(new Date(memory.firstSeenAt))
     : null;
@@ -851,7 +857,9 @@ function RailContent({
             marginTop: 4,
           }}
         >
-          {confText} · reinforced {reinforcement}×
+          {reinforcement > 0
+            ? `${confText} · reinforced ${reinforcement}×`
+            : confText}
         </div>
       </div>
 
@@ -886,13 +894,13 @@ function RailContent({
           {firstSeen ? <div>· first seen {firstSeen}</div> : null}
           {lastSeen ? <div>· last seen {lastSeen}</div> : null}
           {reinforcement > 0 ? <div>· reinforced {reinforcement}×</div> : null}
-          {recalled > 0 ? <div>· recalled {recalled}×</div> : null}
+          {applied > 0 ? <div>· {appliedText}</div> : null}
           {!source &&
           !memory.scopeLabel &&
           !firstSeen &&
           !lastSeen &&
           reinforcement === 0 &&
-          recalled === 0 ? (
+          applied === 0 ? (
             <div>No source signals recorded.</div>
           ) : null}
         </div>

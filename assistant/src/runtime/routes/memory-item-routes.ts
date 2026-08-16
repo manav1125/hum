@@ -31,6 +31,7 @@ import {
   generateSparseEmbedding,
   getMemoryBackendStatus,
 } from "../../memory/embedding-backend.js";
+import { countNodeInjections } from "../../memory/graph/node-injection-events.js";
 import {
   createNode,
   deleteNode,
@@ -116,10 +117,19 @@ function splitContent(content: string): { subject: string; statement: string } {
 
 /**
  * Map a graph node to the client's MemoryItemPayload shape.
+ *
+ * `appliedCount` is the node's lifetime injection count from
+ * `memory_node_injection_events`, passed in by the caller so a listed page
+ * costs one grouped read rather than one per row. It is `undefined` when
+ * nothing has been recorded for this node — which the surface renders as
+ * NOTHING, never as "applied 0 times". The count only began when migration
+ * 329 landed, so a zero means "we have no record", not "this memory is
+ * useless", and the two must not look alike.
  */
 function nodeToPayload(
   node: MemoryNode,
   scopeLabel: string | null = null,
+  appliedCount?: number,
 ): Record<string, unknown> {
   const { subject, statement } = splitContent(node.content);
   return {
@@ -146,8 +156,12 @@ function nodeToPayload(
     scopeId: node.scopeId,
     scopeLabel,
 
+    // How many times this memory was actually applied. Null — not 0 — when
+    // there is no record, so the surface can omit the line rather than print
+    // a zero that would read as a verdict.
+    accessCount: appliedCount != null && appliedCount > 0 ? appliedCount : null,
+
     // Legacy fields — not applicable to graph nodes
-    accessCount: null,
     verificationState: null,
     lastUsedAt: null,
     supersedes: null,
@@ -381,9 +395,10 @@ async function handleListMemoryItems(queryParams: Record<string, string>) {
       const idOrder = new Map(pageIds.map((id, i) => [id, i]));
       rows.sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
 
+      const applied = countNodeInjections(rows.map((r) => r.id));
       const items = rows.map((row) => {
         const node = rowToNode(row);
-        return nodeToPayload(node);
+        return nodeToPayload(node, null, applied.get(node.id));
       });
 
       return { items, total, kindCounts: semanticKindCounts };
@@ -447,9 +462,10 @@ async function handleListMemoryItems(queryParams: Record<string, string>) {
     .offset(offsetParam)
     .all();
 
+  const applied = countNodeInjections(rows.map((r) => r.id));
   const items = rows.map((row) => {
     const node = rowToNode(row);
-    return nodeToPayload(node);
+    return nodeToPayload(node, null, applied.get(node.id));
   });
 
   return { items, total, kindCounts };
@@ -460,7 +476,9 @@ function handleGetMemoryItem(id: string) {
   if (!node) {
     throw new NotFoundError("Memory item not found");
   }
-  return { item: nodeToPayload(node) };
+  return {
+    item: nodeToPayload(node, null, countNodeInjections([id]).get(id)),
+  };
 }
 
 async function handleCreateMemoryItem(body: Record<string, unknown>) {
@@ -642,7 +660,11 @@ async function handleUpdateMemoryItem(
     throw new NotFoundError("Memory item not found after update");
   }
 
-  return { item: nodeToPayload(updated) };
+  // Carry the applied count through an edit — editing the wording of a
+  // memory does not un-apply it, so the line must not vanish on save.
+  return {
+    item: nodeToPayload(updated, null, countNodeInjections([id]).get(id)),
+  };
 }
 
 function handleDeleteMemoryItem(id: string) {
