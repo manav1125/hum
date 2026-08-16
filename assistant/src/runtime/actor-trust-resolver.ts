@@ -11,6 +11,8 @@
  * - `unknown`: sender has no matching contact or no identity could be established.
  */
 
+import type { TrustClass } from "@vellumai/service-contracts/trust";
+
 import type { ChannelId } from "../channels/types.js";
 import {
   findContactByAddress,
@@ -31,30 +33,19 @@ export type { TrustContext } from "../daemon/trust-context.js";
 // ---------------------------------------------------------------------------
 
 /**
- * Trust classification for an inbound actor.
- *
- * - `'guardian'`: The sender matches the active guardian binding for this
- *   (assistant, channel). Guardians have full control-plane access and
- *   self-approve tool invocations.
- * - `'trusted_contact'`: The sender is an active contact with a channel
- *   (not the guardian). Trusted contacts can invoke tools but require
- *   guardian approval for sensitive operations.
- * - `'unknown'`: The sender has no contact record, no identity could be
- *   established, or the sender is an inactive/revoked contact. Unknown
- *   actors are fail-closed with no escalation path.
+ * The trust class union and the rank-based admission-floor comparison now
+ * live in `@vellumai/service-contracts/trust`, so the gateway compares against
+ * the same ordering rather than re-deriving it from `{status, role}`. Re-
+ * exported here because this module is where the classes are *produced* and
+ * where most of the daemon already imports them from.
  */
-export type TrustClass = "guardian" | "trusted_contact" | "unknown";
-
-/** Returns `true` for actors that are not fully trusted (i.e. not the guardian). */
-export function isUntrustedTrustClass(
-  trustClass: TrustClass | undefined,
-): boolean {
-  return (
-    trustClass === "trusted_contact" ||
-    trustClass === "unknown" ||
-    trustClass === undefined
-  );
-}
+export {
+  isUntrustedTrustClass,
+  meetsAdmissionFloor,
+  TRUST_CLASS_RANK,
+  type TrustClass,
+  trustClassRank,
+} from "@vellumai/service-contracts/trust";
 
 /**
  * Fully resolved trust context from the actor trust resolver.

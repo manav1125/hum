@@ -6,6 +6,7 @@
  *
  *   - `@vellumai/service-contracts/credential-rpc`  — transport, RPC, handles, grants, rendering, error
  *   - `@vellumai/service-contracts/trust-rules`     — trust-rule types and parsing helpers
+ *   - `@vellumai/service-contracts/trust`           — trust classes and the admission-floor comparison
  *   - `@vellumai/service-contracts/twilio-ingress`  — shared Twilio ingress config constants
  *   - `@vellumai/service-contracts/ingress`         — shared public ingress URL helpers
  *
@@ -25,5 +26,6 @@ export * from "./grants.js";
 export * from "./rpc.js";
 export * from "./rendering.js";
 export * from "./trust-rules.js";
+export * from "./trust.js";
 export * from "./ingress.js";
 export * from "./twilio-ingress.js";

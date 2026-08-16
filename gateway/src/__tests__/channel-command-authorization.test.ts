@@ -118,6 +118,63 @@ describe("authorizeChannelCommand", () => {
     },
   );
 
+  /**
+   * The gate's allow half is an admission floor against the shared
+   * `TrustClass` rank, not a bare status-string test. These pin the two
+   * things that would otherwise drift silently: that a non-guardian active
+   * contact is admitted (raising the floor to `guardian` would lock the owner's
+   * own contacts out of `/new`), and that a below-floor denial still says
+   * which status caused it.
+   */
+  test("a guardian-role contact whose channel is not active is still denied", async () => {
+    // Role does not rescue status: the classifier maps any non-active row to
+    // `unknown`, which clears no floor.
+    mockQuery.mockResolvedValue([{ status: "revoked", role: "guardian" }]);
+    const { logger } = makeLogger();
+
+    const decision = await authorizeChannelCommand({
+      sourceChannel: "telegram",
+      actorExternalId: "67890",
+      command: "new",
+      logger,
+    });
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe("status_revoked");
+  });
+
+  test("a below-floor denial logs the class that put them there", async () => {
+    mockQuery.mockResolvedValue([{ status: "blocked", role: "contact" }]);
+    const { logger, infoMock } = makeLogger();
+
+    await authorizeChannelCommand({
+      sourceChannel: "telegram",
+      actorExternalId: "67890",
+      command: "new",
+      logger,
+    });
+
+    expect(infoMock.mock.calls[0][0]).toMatchObject({
+      decision: "deny",
+      reason: "status_blocked",
+      trustClass: "unknown",
+    });
+  });
+
+  test("a null role is an ordinary active contact, not a denial", async () => {
+    mockQuery.mockResolvedValue([{ status: "active", role: null }]);
+    const { logger } = makeLogger();
+
+    const decision = await authorizeChannelCommand({
+      sourceChannel: "telegram",
+      actorExternalId: "67890",
+      command: "new",
+      logger,
+    });
+
+    expect(decision).toEqual({ allowed: true, reason: "active_contact" });
+  });
+
   test("denies when the store lookup throws (fail closed)", async () => {
     mockQuery.mockRejectedValue(new Error("IPC socket unavailable"));
     const { logger, infoMock } = makeLogger();

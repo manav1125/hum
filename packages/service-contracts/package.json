@@ -10,6 +10,7 @@
     "./ingress": "./src/ingress.ts",
     "./twilio-ingress": "./src/twilio-ingress.ts",
     "./trust-rules": "./src/trust-rules.ts",
+    "./trust": "./src/trust.ts",
     "./handles": "./src/handles.ts",
     "./grants": "./src/grants.ts",
     "./rpc": "./src/rpc.ts",

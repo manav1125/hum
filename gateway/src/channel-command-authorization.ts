@@ -15,15 +15,35 @@
  * - missing/empty actor id                                     → DENY
  * - lookup error, timeout, or unreachable store                → DENY
  *
+ * The allow half of that table is expressed as an admission floor against the
+ * shared `TrustClass` rank rather than as a bare `status === "active"` string
+ * test. Both services were classifying the same `contact_channels` rows
+ * independently, which is the setup for a floor raised on one side and not the
+ * other — and that particular mistake admits everyone rather than nobody, so
+ * it does not announce itself. The floor here is `trusted_contact`: an active
+ * contact, guardian or not, exactly as before.
+ *
  * Denials are intentionally silent on the channel: callers must not send a
  * rejection reply (a reply would be a membership oracle). Every denial is
  * logged at info with structured fields instead.
  */
 
+import {
+  meetsAdmissionFloor,
+  type TrustClass,
+} from "@vellumai/service-contracts/trust";
 import type { Logger } from "pino";
 
 import { assistantDbQuery } from "./db/assistant-db-proxy.js";
 import { canonicalizeInboundIdentity } from "./verification/identity.js";
+
+/**
+ * The bar an actor must clear to run a gateway-terminal channel command.
+ * Deliberately `trusted_contact`, not `guardian`: this gate has always
+ * admitted any active contact, and raising it here would silently change who
+ * can run `/new`.
+ */
+const ADMISSION_FLOOR: TrustClass = "trusted_contact";
 
 /** Hard ceiling on the contact lookup — a slow store must deny, not allow. */
 const LOOKUP_TIMEOUT_MS = 5000;
@@ -98,6 +118,17 @@ async function lookupActorChannel(
 }
 
 /**
+ * Classify a contact-channel row into the shared trust vocabulary. Mirrors
+ * the assistant's own classifier (`actor-trust-resolver.ts`): an active row is
+ * `guardian` when the contact holds that role and `trusted_contact`
+ * otherwise; anything not active is `unknown`, which clears no floor.
+ */
+function classifyActorRow(row: ActorChannelRow): TrustClass {
+  if (row.status !== "active") return "unknown";
+  return row.role === "guardian" ? "guardian" : "trusted_contact";
+}
+
+/**
  * Decide whether an actor may run a gateway-terminal channel command.
  *
  * Fail closed: only a positively identified active contact (which includes
@@ -149,10 +180,16 @@ export async function authorizeChannelCommand(params: {
 
   if (row === LOOKUP_TIMED_OUT) return deny("lookup_timeout");
   if (row === null) return deny("unknown_actor");
-  if (row.status !== "active") return deny(`status_${row.status}`);
+
+  const trustClass = classifyActorRow(row);
+  if (!meetsAdmissionFloor(trustClass, ADMISSION_FLOOR)) {
+    // Keep the status in the reason: "below the floor" is the decision, but
+    // which status put them there is what makes the log line diagnosable.
+    return deny(`status_${row.status}`, { trustClass });
+  }
 
   return {
     allowed: true,
-    reason: row.role === "guardian" ? "guardian" : "active_contact",
+    reason: trustClass === "guardian" ? "guardian" : "active_contact",
   };
 }
