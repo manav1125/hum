@@ -28,6 +28,7 @@ import { getConfig } from "../config/loader.js";
 import { findDisplayTurnEndIndex } from "../conversations/message-consolidation.js";
 import { conversationMetadataSyncTag } from "../daemon/message-types/sync.js";
 import type { TrustContext } from "../daemon/trust-context.js";
+import { isUnfinalizedTurnRow } from "../daemon/turn-recovery-markers.js";
 import { clearAllConversationIds } from "../home/feed-writer.js";
 import {
   forkEverInjected,
@@ -940,10 +941,25 @@ export function forkConversation(params: {
   const preserveSourceCompactionState =
     copyBoundaryIndex >= visibleWindowStartIndex;
 
-  const messagesToCopy =
+  // A fork taken while the source is mid-turn must not copy the turn's
+  // unfinished assistant row. The fork is a new conversation that will never
+  // run that turn, so nothing would ever write the copy's content: it stays a
+  // permanently empty bubble, and the `turnInFlight` marker it inherited
+  // claims a turn is live in a conversation where none ever was — which the
+  // next boot sweep would report as an interruption that never happened.
+  // Slice first so the compaction-window indices above keep addressing source
+  // positions, then drop the unfinalized tail.
+  const messagesToCopy = (
     copyBoundaryIndex >= 0
       ? sourceMessages.slice(0, copyBoundaryIndex + 1)
-      : ([] as MessageRow[]);
+      : ([] as MessageRow[])
+  ).filter((message) => !isUnfinalizedTurnRow(message));
+
+  if (messagesToCopy.length === 0) {
+    throw new UserError(
+      `Conversation ${conversationId} has no finished messages to fork`,
+    );
+  }
 
   // Inherit the history-strip marker only when the fork boundary is at-or-
   // after the strip event. Pre-strip forks branch from history that pre-

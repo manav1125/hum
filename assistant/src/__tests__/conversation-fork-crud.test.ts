@@ -590,6 +590,79 @@ describe("forkConversation", () => {
     );
   });
 
+  test("skips the in-flight assistant row when forking mid-turn", async () => {
+    const source = createConversation("Mid-turn thread");
+    const question = await addMessage(source.id, "user", "What is the plan?", {
+      skipIndexing: true,
+    });
+    // The row a live turn reserved: partially streamed, still marked in
+    // flight, and finalized later by the source turn. Nothing in the fork
+    // would ever finish it.
+    const inFlight = await addMessage(source.id, "assistant", "Let me ch", {
+      metadata: { turnInFlight: true },
+      skipIndexing: true,
+    });
+
+    const fork = forkConversation({ conversationId: source.id });
+    const forkMessages = getMessages(fork.id);
+
+    expect(forkMessages).toHaveLength(1);
+    expect(forkMessages[0]?.role).toBe("user");
+    expect(forkMessages[0]?.content).toBe("What is the plan?");
+    // Lineage points at the last finished row, not the abandoned one.
+    expect(fork.forkParentMessageId).toBe(question.id);
+    expect(
+      forkMessages.some(
+        (message) =>
+          parseMetadata(message.metadata) &&
+          (parseMetadata(message.metadata) as Record<string, unknown>)
+            .forkSourceMessageId === inFlight.id,
+      ),
+    ).toBe(false);
+  });
+
+  test("skips a reserved assistant row that never received content", async () => {
+    const source = createConversation("Reserved row thread");
+    await addMessage(source.id, "user", "Go", { skipIndexing: true });
+    // `reserveMessage` writes "[]" — the pre-marker shape of the same state.
+    await addMessage(source.id, "assistant", "[]", { skipIndexing: true });
+
+    const forkMessages = getMessages(
+      forkConversation({ conversationId: source.id }).id,
+    );
+
+    expect(forkMessages.map((message) => message.content)).toEqual(["Go"]);
+  });
+
+  test("rejects a fork whose every copyable row is still unfinished", async () => {
+    const source = createConversation("All in flight");
+    await addMessage(source.id, "assistant", "[]", { skipIndexing: true });
+
+    expect(() => forkConversation({ conversationId: source.id })).toThrow(
+      `Conversation ${source.id} has no finished messages to fork`,
+    );
+  });
+
+  test("still copies a finished assistant row that merely quotes the marker", async () => {
+    const source = createConversation("Quoting thread");
+    await addMessage(source.id, "user", "Explain the marker", {
+      skipIndexing: true,
+    });
+    await addMessage(
+      source.id,
+      "assistant",
+      'The row carries "turnInFlight": true while streaming.',
+      { skipIndexing: true },
+    );
+
+    const forkMessages = getMessages(
+      forkConversation({ conversationId: source.id }).id,
+    );
+
+    expect(forkMessages).toHaveLength(2);
+    expect(forkMessages[1]?.content).toContain("turnInFlight");
+  });
+
   test("relinks copied attachments into the fork and syncs disk view", async () => {
     const source = createConversation("Attachment thread");
     await addMessage(source.id, "user", "Please review this image", {

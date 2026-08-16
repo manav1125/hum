@@ -63,15 +63,14 @@ import {
 import { getLogger } from "../util/logger.js";
 import {
   INTERRUPTED_METADATA_KEY,
+  isUnfinalizedTurnRow,
+  RESERVED_EMPTY_CONTENT,
   TURN_IN_FLIGHT_METADATA_KEY,
 } from "./turn-recovery-markers.js";
 
 const log = getLogger("turn-recovery");
 
 export { INTERRUPTED_METADATA_KEY, TURN_IN_FLIGHT_METADATA_KEY };
-
-/** Reserved-but-never-written row body (see `reserveMessage`). */
-const RESERVED_EMPTY_CONTENT = "[]";
 
 /** Stable fallback used to unstick a dead "Generating title..." placeholder. */
 const UNTITLED_FALLBACK_TITLE = "Untitled Conversation";
@@ -252,8 +251,8 @@ function isOrphanedInFlightRow(row: {
     }
   }
   if (meta[INTERRUPTED_METADATA_KEY] === true) return false;
-  if (meta[TURN_IN_FLIGHT_METADATA_KEY] === true) return true;
-  return row.content === RESERVED_EMPTY_CONTENT;
+  // The query already restricted to assistant rows.
+  return isUnfinalizedTurnRow({ ...row, role: "assistant", metadata: meta });
 }
 
 /**
