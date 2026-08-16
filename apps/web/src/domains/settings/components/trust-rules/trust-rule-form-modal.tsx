@@ -9,11 +9,28 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { updateTrustRule } from "@/lib/trust-rules-api";
+import { addTrustRule, updateTrustRule } from "@/lib/trust-rules-api";
 import type { TrustRuleItem, TrustRuleRisk } from "@/types/trust-rules";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { Input } from "@vellumai/design-library/components/input";
 import { Notice } from "@vellumai/design-library/components/notice";
+
+/**
+ * Pattern that scopes a rule to a whole tool instead of to one selector
+ * inside it. The browser tools have no command, path or URL to scope on, so
+ * this is the only pattern that governs them.
+ */
+const WHOLE_TOOL_PATTERN = "*";
+
+/**
+ * Tools that have no risk classifier: a rule about them is always whole-tool,
+ * so the form fixes the pattern to `*` rather than asking for one.
+ */
+const WHOLE_TOOL_ONLY = new Set([
+  "browser_click",
+  "browser_type",
+  "browser_press_key",
+]);
 
 const TOOL_OPTIONS = [
   "bash",
@@ -22,6 +39,9 @@ const TOOL_OPTIONS = [
   "file_edit",
   "web_fetch",
   "skill_load",
+  "browser_click",
+  "browser_type",
+  "browser_press_key",
 ];
 
 const RISK_OPTIONS: {
@@ -40,7 +60,8 @@ const RISK_OPTIONS: {
 
 export interface TrustRuleFormModalProps {
   assistantId: string;
-  existingRule: TrustRuleItem;
+  /** Omit to create a new rule; pass a rule to edit its risk and description. */
+  existingRule?: TrustRuleItem;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -51,17 +72,19 @@ export function TrustRuleFormModal({
   onClose,
   onSaved,
 }: TrustRuleFormModalProps) {
+  const isCreating = existingRule === undefined;
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [tool, setTool] = useState(existingRule.tool);
-  const [pattern, setPattern] = useState(existingRule.pattern);
-  const [risk, setRisk] = useState<TrustRuleRisk>(existingRule.risk);
+  const [tool, setTool] = useState(existingRule?.tool ?? TOOL_OPTIONS[0]);
+  const [pattern, setPattern] = useState(existingRule?.pattern ?? "");
+  const [risk, setRisk] = useState<TrustRuleRisk>(existingRule?.risk ?? "low");
   const [description, setDescription] = useState(
-    existingRule.description ?? "",
+    existingRule?.description ?? "",
   );
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const trimmedPattern = pattern.trim();
+  const isWholeToolOnly = isCreating && WHOLE_TOOL_ONLY.has(tool);
+  const trimmedPattern = isWholeToolOnly ? WHOLE_TOOL_PATTERN : pattern.trim();
   const canSave = trimmedPattern.length > 0 && !submitting;
 
   const handleSubmit = useCallback(
@@ -73,10 +96,19 @@ export function TrustRuleFormModal({
       setSubmitting(true);
       setErrorMessage(null);
       try {
-        await updateTrustRule(assistantId, existingRule.id, {
-          risk,
-          description: resolvedDescription,
-        });
+        if (existingRule) {
+          await updateTrustRule(assistantId, existingRule.id, {
+            risk,
+            description: resolvedDescription,
+          });
+        } else {
+          await addTrustRule(assistantId, {
+            tool,
+            pattern: trimmedPattern,
+            risk,
+            description: resolvedDescription,
+          });
+        }
         onSaved();
       } catch (err) {
         setErrorMessage(
@@ -128,7 +160,7 @@ export function TrustRuleFormModal({
             id="trust-rule-form-title"
             className="text-title-medium text-[var(--content-default)]"
           >
-            Edit Trust Rule
+            {isCreating ? "New Trust Rule" : "Edit Trust Rule"}
           </h2>
           <button
             type="button"
@@ -157,7 +189,7 @@ export function TrustRuleFormModal({
               <Dropdown
                 value={tool}
                 onChange={setTool}
-                disabled
+                disabled={!isCreating}
                 options={TOOL_OPTIONS.map((option) => ({
                   value: option,
                   label: option,
@@ -166,14 +198,21 @@ export function TrustRuleFormModal({
             </div>
           </div>
 
-          <Input
-            label="Pattern"
-            type="text"
-            value={pattern}
-            onChange={(e) => setPattern(e.target.value)}
-            placeholder="e.g., git *"
-            disabled
-          />
+          {isWholeToolOnly ? (
+            <Notice tone="info">
+              This rule covers every use of <code>{tool}</code>. It changes
+              nothing else — other tools keep the permissions they have today.
+            </Notice>
+          ) : (
+            <Input
+              label="Pattern"
+              type="text"
+              value={pattern}
+              onChange={(e) => setPattern(e.target.value)}
+              placeholder="e.g., git *"
+              disabled={!isCreating}
+            />
+          )}
 
           <div>
             <span className="block text-body-medium-default text-[var(--content-default)]">

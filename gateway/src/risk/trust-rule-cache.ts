@@ -1,5 +1,31 @@
 import { TrustRuleStore, type TrustRule } from "../db/trust-rule-store.js";
 
+/**
+ * Pattern that scopes a rule to an ENTIRE tool rather than to one selector
+ * inside it.
+ *
+ * Every other pattern dialect names something *within* a tool — a command
+ * (`git push`), a path, a URL, a skill id. Tools that have no risk classifier
+ * (browser, computer-use, MCP and connector tools) expose no such selector to
+ * scope on, so `*` is the only way to write a rule about them at all.
+ *
+ * It is deliberately NOT a glob: {@link TrustRuleCache.findWholeToolOverride}
+ * matches it literally, and no other lookup path treats `*` as a wildcard. A
+ * rule with this pattern therefore governs exactly one tool — the one named in
+ * its `tool` column — and can never spread to a tool the user did not name.
+ */
+export const WHOLE_TOOL_PATTERN = "*";
+
+/**
+ * Whether a rule was authored by the user, as opposed to seeded from the
+ * command registry. Only user-authored rules may override a classifier —
+ * shipping a seeded default that silently widened a tool is exactly the
+ * failure this guard exists to prevent.
+ */
+function isUserAuthored(rule: TrustRule | null | undefined): rule is TrustRule {
+  return !!rule && (rule.userModified || rule.origin === "user_defined");
+}
+
 // ---------------------------------------------------------------------------
 // Cache class
 // ---------------------------------------------------------------------------
@@ -115,6 +141,19 @@ class TrustRuleCache {
     const toolMap = this.rules.get(tool);
     if (!toolMap) return null;
     return toolMap.get(pattern) ?? toolMap.get(`${tool}:${pattern}`) ?? null;
+  }
+
+  /**
+   * Look up a user-authored whole-tool rule ({@link WHOLE_TOOL_PATTERN}) for a
+   * tool that has no risk classifier and therefore no selector to scope on.
+   *
+   * Returns `null` for a seeded default, so this path can only ever reflect a
+   * rule the user created. Unlike {@link findToolOverride} there is no
+   * prefix-dialect fallback: `*` is written the same way by every client.
+   */
+  findWholeToolOverride(tool: string): TrustRule | null {
+    const rule = this.rules.get(tool)?.get(WHOLE_TOOL_PATTERN);
+    return isUserAuthored(rule) ? rule : null;
   }
 
   /**

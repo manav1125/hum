@@ -76,6 +76,7 @@ export function TrustRulesModal({
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingRule, setEditingRule] = useState<TrustRuleItem | null>(null);
+  const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [ruleToDelete, setRuleToDelete] = useState<TrustRuleItem | null>(null);
   const [showAllDefaults, setShowAllDefaults] = useState(false);
 
@@ -186,6 +187,12 @@ export function TrustRulesModal({
                 onChange={setShowAllDefaults}
                 label="Show all defaults"
               />
+              <Button
+                variant="outlined"
+                onClick={() => setIsCreatingRule(true)}
+              >
+                Add rule
+              </Button>
               <Button variant="outlined" onClick={onClose}>
                 Done
               </Button>
@@ -206,8 +213,8 @@ export function TrustRulesModal({
               <div className="flex h-48 flex-col items-center justify-center gap-2 px-6 text-[var(--content-tertiary)]">
                 <ShieldCheck className="h-8 w-8" />
                 <p className="max-w-xs text-center text-body-medium-lighter">
-                  No trust rules yet. Rules are created when you classify
-                  actions from permission prompts.
+                  No trust rules yet. Add one here, or create one by classifying
+                  an action from a permission prompt.
                 </p>
               </div>
             ) : (
@@ -276,6 +283,17 @@ export function TrustRulesModal({
           onClose={() => setEditingRule(null)}
           onSaved={() => {
             setEditingRule(null);
+            void loadRules();
+          }}
+        />
+      )}
+
+      {isCreatingRule && (
+        <TrustRuleFormModal
+          assistantId={assistantId}
+          onClose={() => setIsCreatingRule(false)}
+          onSaved={() => {
+            setIsCreatingRule(false);
             void loadRules();
           }}
         />

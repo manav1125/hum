@@ -32,8 +32,24 @@ import {
   deriveShellActionKeys,
 } from "../risk/shell-identity.js";
 import { skillLoadRiskClassifier } from "../risk/skill-risk-classifier.js";
+import { getTrustRuleCache } from "../risk/trust-rule-cache.js";
+import type { TrustRule } from "../db/trust-rule-store.js";
 import { webRiskClassifier } from "../risk/web-risk-classifier.js";
 import type { IpcRoute } from "./server.js";
+
+/**
+ * The user's whole-tool rule for a classifier-less tool, or `null` when they
+ * have not written one. Fails closed on an uninitialized cache: no override,
+ * so the tool keeps its registry risk.
+ */
+function findWholeToolOverride(tool: string): TrustRule | null {
+  try {
+    return getTrustRuleCache().findWholeToolOverride(tool);
+  } catch {
+    // Cache not initialized — no override.
+    return null;
+  }
+}
 
 // ── Zod schema ──────────────────────────────────────────────────────────────
 
@@ -537,6 +553,26 @@ export async function handleClassifyRisk(
 
     // ── Unknown tool — use registry default risk level if provided ──────
     default: {
+      // A tool with no classifier has no sub-selector to scope a rule on
+      // (no command, no path, no URL), so the only rule that can govern it
+      // is a whole-tool rule: pattern WHOLE_TOOL_PATTERN. Consulting it here
+      // is what lets a user grant or revoke one specific classifier-less
+      // tool — e.g. `browser_click` for unattended runs — without moving
+      // any threshold and without touching any other tool.
+      //
+      // As in the file/web/skill/schedule classifiers, only rules the user
+      // explicitly authored apply; a seeded default can never widen a tool
+      // this way.
+      const override = findWholeToolOverride(tool);
+      if (override) {
+        return {
+          risk: override.risk,
+          reason: override.description,
+          scopeOptions: [],
+          matchType: "user_rule",
+        };
+      }
+
       return {
         risk: params.registryDefaultRisk ?? "medium",
         reason: `Unknown tool: ${tool}`,
