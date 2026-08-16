@@ -17,6 +17,7 @@ interface McpServerEntry {
     url?: string;
     command?: string;
     args?: string[];
+    env?: Record<string, string>;
   };
   enabled: boolean;
   defaultRiskLevel: string;
@@ -86,6 +87,12 @@ function printServerEntry(entry: McpServerEntry): void {
         entry.transport.args ?? []
       ).join(" ")}`,
     );
+    // Names only — these routinely hold API tokens, and `mcp list` output
+    // ends up in bug reports and screen shares.
+    const envKeys = Object.keys(entry.transport.env ?? {});
+    if (envKeys.length > 0) {
+      log.info(`    Env:       ${envKeys.join(", ")}`);
+    }
   } else if (entry.transport && "url" in entry.transport) {
     log.info(`    URL:       ${entry.transport.url}`);
   }
@@ -233,6 +240,10 @@ Examples:
         .option("-c, --command <cmd>", "Command to run (for stdio)")
         .option("-a, --args <args...>", "Command arguments (for stdio)")
         .option(
+          "-e, --env <KEY=VALUE...>",
+          "Environment variables for the server process (for stdio)",
+        )
+        .option(
           "-r, --risk <level>",
           "Default risk level: low, medium, or high",
           "high",
@@ -249,6 +260,12 @@ Transport-specific requirements:
   sse               Requires --url pointing to the SSE endpoint
   streamable-http   Requires --url pointing to the HTTP endpoint
 
+The --env flag sets environment variables on the spawned stdio process, given
+as KEY=VALUE pairs. The server process inherits the daemon's environment and
+these are layered on top. Values are written to config.json in plain text, so
+prefer pointing the server at a credential it can fetch itself over pasting a
+secret here.
+
 The --risk flag sets the default risk level for all tools from this server
 (defaults to "high" if not specified). The server starts enabled unless
 --disabled is passed.
@@ -258,6 +275,7 @@ existing server first with "assistant mcp remove <name>".
 
 Examples:
   $ assistant mcp add my-server -t stdio -c npx -a my-mcp-server
+  $ assistant mcp add bridge -t stdio -c node -a bridge.js -e API_TOKEN=abc123
   $ assistant mcp add remote-api -t streamable-http -u https://api.example.com/mcp -r medium
   $ assistant mcp add legacy-sse -t sse -u https://old.example.com/events --disabled`,
         )
@@ -269,10 +287,27 @@ Examples:
               url?: string;
               command?: string;
               args?: string[];
+              env?: string[];
               risk: string;
               disabled?: boolean;
             },
           ) => {
+            let env: Record<string, string> | undefined;
+            for (const pair of opts.env ?? []) {
+              // Split on the first "=" only — values routinely contain them
+              // (base64 padding, query strings, connection URLs).
+              const eq = pair.indexOf("=");
+              if (eq <= 0) {
+                log.error(
+                  `Invalid --env entry "${pair}". Expected KEY=VALUE with a non-empty key.`,
+                );
+                process.exitCode = 1;
+                return;
+              }
+              env ??= {};
+              env[pair.slice(0, eq)] = pair.slice(eq + 1);
+            }
+
             const result = await cliIpcCall<{ added: true }>(
               "internal_mcp_add",
               {
@@ -282,6 +317,7 @@ Examples:
                   url: opts.url,
                   command: opts.command,
                   args: opts.args,
+                  env,
                   risk: opts.risk,
                   disabled: opts.disabled,
                 },

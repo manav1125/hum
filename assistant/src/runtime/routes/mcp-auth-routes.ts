@@ -221,15 +221,17 @@ async function handleMcpAdd({
 }: {
   body?: Record<string, unknown>;
 }): Promise<{ added: true }> {
-  const { name, transportType, url, command, args, risk, disabled } = body as {
-    name: string;
-    transportType: string;
-    url?: string;
-    command?: string;
-    args?: string[];
-    risk?: string;
-    disabled?: boolean;
-  };
+  const { name, transportType, url, command, args, env, risk, disabled } =
+    body as {
+      name: string;
+      transportType: string;
+      url?: string;
+      command?: string;
+      args?: string[];
+      env?: Record<string, string>;
+      risk?: string;
+      disabled?: boolean;
+    };
 
   const riskLevel = risk ?? "high";
   if (!["low", "medium", "high"].includes(riskLevel)) {
@@ -244,7 +246,15 @@ async function handleMcpAdd({
       if (!command) {
         throw new BadRequestError("--command is required for stdio transport");
       }
-      transport = { type: "stdio", command, args: args ?? [] };
+      // `env` is optional and only set when non-empty: the transport schema
+      // treats an absent env as "inherit the daemon's environment", which is
+      // what a server that needs no extra variables wants.
+      transport = {
+        type: "stdio",
+        command,
+        args: args ?? [],
+        ...(env && Object.keys(env).length > 0 && { env }),
+      };
       break;
     case "sse":
     case "streamable-http":
@@ -408,6 +418,7 @@ export const ROUTES: RouteDefinition[] = [
       url: z.string().optional(),
       command: z.string().optional(),
       args: z.array(z.string()).optional(),
+      env: z.record(z.string(), z.string()).optional(),
       risk: z.string().optional(),
       disabled: z.boolean().optional(),
     }),

@@ -25726,6 +25726,12 @@ paths:
                   type: array
                   items:
                     type: string
+                env:
+                  type: object
+                  propertyNames:
+                    type: string
+                  additionalProperties:
+                    type: string
                 risk:
                   type: string
                 disabled:

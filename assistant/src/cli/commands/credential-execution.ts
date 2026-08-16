@@ -22,6 +22,7 @@ import {
 } from "@vellumai/service-contracts/credential-rpc";
 import type { Command } from "commander";
 
+import { getCesDisabled } from "../../config/env-registry.js";
 import { getConfig } from "../../config/loader.js";
 import {
   type CesClient,
@@ -65,6 +66,20 @@ async function acquireCesClient(): Promise<{
   client: CesClient;
   cleanup: () => Promise<void>;
 }> {
+  // Deployments that ship no CES sidecar (the single-container cloud image)
+  // set VELLUM_DISABLE_CES. Without this guard the process manager goes
+  // looking for a `credential-executor` binary that was never built into the
+  // image and the command hangs instead of failing — and because each
+  // invocation is a fresh ~110MB bun runtime, a handful of them will exhaust
+  // a small instance's memory and take the whole daemon down with it.
+  if (getCesDisabled()) {
+    throw new Error(
+      "CES is disabled on this deployment (VELLUM_DISABLE_CES). " +
+        "Credential grants and the CES audit log are unavailable here; " +
+        "credentials are served from the encrypted file store instead.",
+    );
+  }
+
   const pm = createCesProcessManager({ assistantConfig: getConfig() });
   const transport = await pm.start();
   const client = createCesClient(transport);

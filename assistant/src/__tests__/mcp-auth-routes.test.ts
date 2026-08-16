@@ -200,4 +200,62 @@ describe("mcp-auth-routes", () => {
       expect(result).toEqual({ ok: true });
     });
   });
+
+  describe("POST internal/mcp/add", () => {
+    function addedTransport(name: string) {
+      const servers = mockConfig.mcp.servers as Record<
+        string,
+        { transport: Record<string, unknown> }
+      >;
+      return servers[name]?.transport;
+    }
+
+    test("stdio: env is written onto the transport", async () => {
+      await findRoute("internal_mcp_add").handler({
+        body: {
+          name: "atlas-bridge",
+          transportType: "stdio",
+          command: "node",
+          args: ["bridge.js"],
+          env: { ATLAS_BRIDGE_SECRET: "s3cret", ATLAS_ENV: "production" },
+        },
+      });
+
+      expect(addedTransport("atlas-bridge")).toEqual({
+        type: "stdio",
+        command: "node",
+        args: ["bridge.js"],
+        env: { ATLAS_BRIDGE_SECRET: "s3cret", ATLAS_ENV: "production" },
+      });
+    });
+
+    test("stdio: env is omitted entirely when not supplied", async () => {
+      await findRoute("internal_mcp_add").handler({
+        body: {
+          name: "plain-server",
+          transportType: "stdio",
+          command: "npx",
+        },
+      });
+
+      const transport = addedTransport("plain-server");
+      // Absent (not `env: {}`) — the schema reads a missing env as "inherit
+      // the daemon environment", which is what a no-env server wants.
+      expect(transport).not.toHaveProperty("env");
+      expect(transport).toEqual({ type: "stdio", command: "npx", args: [] });
+    });
+
+    test("stdio: an empty env object does not add an env key", async () => {
+      await findRoute("internal_mcp_add").handler({
+        body: {
+          name: "empty-env-server",
+          transportType: "stdio",
+          command: "npx",
+          env: {},
+        },
+      });
+
+      expect(addedTransport("empty-env-server")).not.toHaveProperty("env");
+    });
+  });
 });

@@ -1,13 +1,22 @@
 import { describe, expect, jest, mock, test } from "bun:test";
 
+// `mock.module` mutates a process-global registry, so a factory that lists
+// exports by hand deletes every export it does not name — for every file that
+// runs after this one. Spread the real module and override only the seams
+// these tests drive. See assistant/CLAUDE.md.
+const actualSecureKeys = await import("../security/secure-keys.js");
+const actualEnvRegistry = await import("../config/env-registry.js");
+
 // Mock secure-keys so McpOAuthProvider doesn't try to access the credential store
 mock.module("../security/secure-keys.js", () => ({
+  ...actualSecureKeys,
   getSecureKeyAsync: jest.fn().mockResolvedValue(null),
   setSecureKeyAsync: jest.fn().mockResolvedValue(true),
   deleteSecureKeyAsync: jest.fn().mockResolvedValue("deleted"),
 }));
 
 mock.module("../config/env-registry.js", () => ({
+  ...actualEnvRegistry,
   getDebugStdoutLogs: () => false,
   getIsContainerized: () => false,
   getIsPlatform: () => false,
