@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   capEscalationBridge,
   classifyFrontDoorLeading,
+  createFrontDoorStreamGate,
   ESCALATE_VERDICT_TOKEN,
   escalatedContinuationRule,
   ESCALATION_CONTINUATION_CONTENT,
@@ -304,6 +305,131 @@ describe("classifyFrontDoorLeading", () => {
     // marker holdback owns that; classification only guards verdicts.
     expect(classifyFrontDoorLeading("[ASK_GUARDIAN: x]", true)).toBe("answer");
     expect(classifyFrontDoorLeading("[2]", true)).toBe("answer");
+  });
+});
+
+describe("createFrontDoorStreamGate", () => {
+  /** Feed `deltas` through a gate and return what it released, in order. */
+  function release(
+    deltas: string[],
+    opts?: { holdEnabled?: boolean; finish?: boolean },
+  ): string[] {
+    const gate = createFrontDoorStreamGate(opts?.holdEnabled === true);
+    const out = deltas
+      .map((delta) => gate.push(delta))
+      .filter((chunk) => chunk.length > 0);
+    if (opts?.finish !== false) {
+      const trailing = gate.finish();
+      if (trailing.length > 0) {
+        out.push(trailing);
+      }
+    }
+    return out;
+  }
+
+  test("an answer passes through delta by delta", () => {
+    expect(release(["It is ", "Tuesday."])).toEqual(["It is ", "Tuesday."]);
+  });
+
+  test("leading text held while the verdict was pending is not lost", () => {
+    // "[" alone could still become the escalate token, so the gate holds it;
+    // the next delta disproves the token and the whole prefix comes out.
+    expect(release(["[", "A] is the option."])).toEqual(["[A] is the option."]);
+  });
+
+  test("an escalation releases the capped bridge and nothing else", () => {
+    expect(
+      release([
+        ESCALATE_VERDICT_TOKEN,
+        " Let me check your calendar.",
+        " rambling past the cap",
+      ]),
+    ).toEqual(["Let me check your calendar."]);
+  });
+
+  test("a verdict token split across deltas still never escapes", () => {
+    expect(release(["[", "1", "] One moment.", " more"])).toEqual([
+      "One moment.",
+    ]);
+  });
+
+  test("a too-short bridge releases nothing, matching the audio-only fallback", () => {
+    // Under MIN_SPOKEN_BRIDGE_CHARS the session discards the model's bridge
+    // and plays a canned fallback with no caption and no persisted row, so
+    // releasing the capped text would show words the caller never heard.
+    expect(release([ESCALATE_VERDICT_TOKEN, " ok"])).toEqual([]);
+    expect(release([ESCALATE_VERDICT_TOKEN, " ."])).toEqual([]);
+  });
+
+  test("a bridge at the spoken threshold is still released", () => {
+    // The boundary belongs to the spoken side: the session speaks anything
+    // that is not BELOW the threshold, so the gate must release it too.
+    expect(release([ESCALATE_VERDICT_TOKEN, " Sure."])).toEqual(["Sure."]);
+  });
+
+  test("a bridge with no terminator is released by finish", () => {
+    const gate = createFrontDoorStreamGate(false);
+    expect(gate.push("[1] Let me check")).toBe("");
+    expect(gate.finish()).toBe("Let me check");
+  });
+
+  test("a bridge is dropped when the leg never finishes (cancellation)", () => {
+    expect(release(["[1] Let me check"], { finish: false })).toEqual([]);
+  });
+
+  test("a hold verdict releases nothing", () => {
+    expect(release([HOLD_VERDICT_TOKEN], { holdEnabled: true })).toEqual([]);
+    // Nor does anything the discarded leg kept generating afterwards.
+    expect(
+      release([HOLD_VERDICT_TOKEN, " and then some", " more"], {
+        holdEnabled: true,
+      }),
+    ).toEqual([]);
+  });
+
+  test("the hold token is ordinary text on a leg that was never taught it", () => {
+    // A non-speculative leg's prompt has no hold branch, so its output must
+    // not be swallowed by a token it could only have parroted. The shared
+    // marker holdback still strips the token itself, exactly as the spoken
+    // path does.
+    expect(release([`${HOLD_VERDICT_TOKEN} is the index.`])).toEqual([
+      " is the index.",
+    ]);
+  });
+
+  test("a stray verdict token later in an answer never reaches a subscriber", () => {
+    // The leg classified as an answer, so the gate is past the verdict — but
+    // the spoken path strips markers for the whole leg, and so must this one,
+    // or the hub would render a token the caller never heard and the teardown
+    // hygiene pass would then silently rewrite it away.
+    const released = release([
+      "It is Tuesday",
+      ` ${ESCALATE_VERDICT_TOKEN}`,
+      ".",
+    ]);
+    expect(released.join("")).toBe("It is Tuesday .");
+    expect(released.join("")).not.toContain(ESCALATE_VERDICT_TOKEN);
+  });
+
+  test("nothing more escapes after the bridge is released", () => {
+    const gate = createFrontDoorStreamGate(false);
+    expect(gate.push("[1] One moment.")).toBe("One moment.");
+    expect(gate.push(" and a leaked continuation")).toBe("");
+    expect(gate.finish()).toBe("");
+  });
+
+  test("finish is idempotent and releases nothing twice", () => {
+    const gate = createFrontDoorStreamGate(false);
+    expect(gate.push("[1] Let me check")).toBe("");
+    expect(gate.finish()).toBe("Let me check");
+    expect(gate.finish()).toBe("");
+    expect(gate.push(" more")).toBe("");
+  });
+
+  test("a leg that only ever produced a verdict prefix releases nothing", () => {
+    // "[" never resolved into a verdict, so it is not speech — the spoken
+    // path holds it too and the leg ends silent.
+    expect(release(["["])).toEqual([]);
   });
 });
 

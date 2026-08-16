@@ -6,10 +6,7 @@ import {
   type TurnDetectorConfig,
 } from "../calls/media-turn-detector.js";
 import { sanitizeForTts } from "../calls/tts-text-sanitizer.js";
-import {
-  isIncompleteControlMarkerTail,
-  stripInternalSpeechMarkers,
-} from "../calls/voice-control-protocol.js";
+import { createControlMarkerHoldback } from "../calls/voice-control-protocol.js";
 import type {
   VoiceApprovalOutcome,
   VoicePendingApprovalEvent,
@@ -262,45 +259,6 @@ const BARGE_IN_MAX_TOLERATED_SILENCE_RATIO = 4;
 // not a user message and never renders as a transcript bubble.
 function buildInterruptionMergeNote(interruptedRequest: string): string {
   return `The user interrupted your previous, unfinished reply. Their earlier request was: "${interruptedRequest}". Treat their current message as a continuation of that request and address both together, or stay silent if they only want you to stop.`;
-}
-
-/**
- * Control-marker hygiene for one model leg's delta stream, shared by the
- * front-door answer stage and the escalated leg. The returned flush forwards
- * the stripped (stripInternalSpeechMarkers) prefix of `raw` that has not been
- * emitted yet and cannot contain a still-streaming control marker: the flush
- * stops at the first "[" whose tail is an incomplete marker
- * (isIncompleteControlMarkerTail) and holds from there until a later delta
- * completes or disproves it; `force` (leg completion) emits the held tail so
- * real text that merely resembles a marker prefix is not dropped. The scan
- * runs forward from the emitted boundary — not from the last "[" — so
- * brackets INSIDE a streaming marker body (a JSON array or "]"-bearing string
- * in ASK_GUARDIAN_APPROVAL) can neither mask the marker's start nor pass as
- * its terminator. Markers are stripped, never acted on.
- */
-function createControlMarkerHoldback(
-  emit: (chunk: string) => void,
-): (raw: string, opts?: { force?: boolean }) => void {
-  let emitted = 0;
-  return (raw, opts) => {
-    let safeEnd = raw.length;
-    if (opts?.force !== true) {
-      for (
-        let i = raw.indexOf("[", emitted);
-        i !== -1;
-        i = raw.indexOf("[", i + 1)
-      ) {
-        if (isIncompleteControlMarkerTail(raw.slice(i))) {
-          safeEnd = i;
-          break;
-        }
-      }
-    }
-    if (safeEnd > emitted) {
-      emit(stripInternalSpeechMarkers(raw.slice(emitted, safeEnd)));
-      emitted = safeEnd;
-    }
-  };
 }
 
 // Duration (ms) of PCM16 mono audio: 2 bytes per sample.
@@ -2939,7 +2897,10 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
    * On the escalate verdict the post-verdict stream buffers into the capped
    * bridge and `escalateTurn` starts a second "escalated" leg that shares
    * this same ActiveAssistantTurn. The persisted assistant row is reduced to
-   * the capped bridge by the bridge's teardown transcript-hygiene pass.
+   * the capped bridge by the bridge's teardown transcript-hygiene pass, and
+   * the shared conversation-hub broadcast releases the same capped bridge
+   * through the bridge's front-door stream gate, so no verdict token reaches
+   * a hub subscriber (web chat, passive devices) mid-turn either.
    */
   private async startAssistantLeg(
     activeTurn: ActiveAssistantTurn,
@@ -3149,10 +3110,15 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
             if (leg.frontDoor && current.escalationHandedOff) return;
             // A held "[…"-tail that never completed a marker is real text —
             // force-flush it before assistantCompleted closes the TTS buffer
-            // so it is spoken and emitted rather than dropped.
+            // so it is spoken and emitted rather than dropped. A front-door
+            // leg qualifies only once its verdict resolved to `answer`: a leg
+            // still `deciding` holds nothing but an unresolved verdict prefix
+            // (never speech), and the bridging/handed-off stages returned
+            // above. The hub gate's `finish()` releases on exactly this rule,
+            // so the socket frames and the hub broadcast end on the same text.
             if (
               useHoldback &&
-              !leg.frontDoor &&
+              (!leg.frontDoor || frontDoorStage === "answer") &&
               msg.type === "message_complete"
             ) {
               flushLegText(rawText, { force: true });

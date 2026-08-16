@@ -27,6 +27,7 @@
  */
 
 import {
+  createControlMarkerHoldback,
   ESCALATE_VERDICT_TOKEN,
   HOLD_VERDICT_TOKEN,
   stripInternalSpeechMarkers,
@@ -173,6 +174,131 @@ export function classifyFrontDoorLeading(
     return "pending";
   }
   return "answer";
+}
+
+/**
+ * Verdict-first gate over ONE front-door leg's delta stream: fed the leg's
+ * raw deltas in order, it releases only the text the caller actually heard.
+ *
+ * A front-door leg's raw output is a control plane before it is speech — its
+ * leading tokens are the hold / escalate / answer verdict — so anything
+ * downstream of the model that shows a person text must read the stream
+ * through this gate, not verbatim. `LiveVoiceSession.startAssistantLeg` runs
+ * the same classification inline for the socket frames and TTS; this is the
+ * same protocol packaged for the conversation-hub broadcast, which serves
+ * every other surface (web chat, passive devices).
+ *
+ * `push` returns the text released by that delta — the empty string while
+ * the gate is holding. `finish` is called when the leg completes normally
+ * and releases a bridge that stopped short of a sentence terminator; a leg
+ * that is cancelled instead spoke nothing past what `push` already released,
+ * so it simply never calls `finish`.
+ */
+export interface FrontDoorStreamGate {
+  push(deltaText: string): string;
+  finish(): string;
+}
+
+/**
+ * Build a {@link FrontDoorStreamGate}. `holdEnabled` mirrors
+ * {@link classifyFrontDoorLeading}: true only for speculative (unified
+ * front-door) legs, whose decision rule is the only one that teaches the
+ * hold token. A leg that was never taught it must not have its output
+ * swallowed by a token it could only have parroted.
+ *
+ * The three verdicts release differently, matching what the caller hears:
+ *
+ * - `hold`: the leg is discarded and its reserved row deleted, so nothing is
+ *   ever released.
+ * - `escalate`: the only spoken text is the capped holding phrase, released
+ *   in one piece once the bridge is complete — exactly what
+ *   {@link capEscalationBridge} yields, so the released text, the audio and
+ *   the persisted row agree. The verdict token and anything streamed past
+ *   the cap are dropped. A bridge shorter than
+ *   {@link MIN_SPOKEN_BRIDGE_CHARS} releases nothing at all: the session
+ *   substitutes an audio-only canned fallback for it and deletes the row, so
+ *   there is no displayed text for the gate to agree with.
+ * - `answer`: the leg's output IS the reply, so it flows through the same
+ *   control-marker holdback the spoken path uses ({@link
+ *   createControlMarkerHoldback}) — including the leading text held back
+ *   while the verdict was still pending. That shared holdback is what makes
+ *   a stray verdict token later in an answer unable to reach a subscriber
+ *   either: the live gate strips it, and so does this one.
+ */
+export function createFrontDoorStreamGate(
+  holdEnabled: boolean,
+): FrontDoorStreamGate {
+  let raw = "";
+  let stage: "deciding" | "answer" | "bridging" | "done" = "deciding";
+  let bridgeRaw = "";
+  // Answer-stage releases accumulate here for the duration of one push, so
+  // the gate's synchronous return value stays one string per delta.
+  let pendingAnswerText = "";
+  const flushAnswerText = createControlMarkerHoldback((chunk) => {
+    pendingAnswerText += chunk;
+  });
+  const takeAnswerText = (opts?: { force?: boolean }): string => {
+    flushAnswerText(raw, opts);
+    const released = pendingAnswerText;
+    pendingAnswerText = "";
+    return released;
+  };
+
+  const releaseBridge = (): string => {
+    stage = "done";
+    const capped = capEscalationBridge(bridgeRaw);
+    // Below the spoken threshold the session throws the model's bridge away
+    // and plays a canned fallback that is audio-only, deleting the row
+    // rather than persisting a phrase the model never really produced (see
+    // `usesFallbackBridge` in `live-voice-session.ts`). Releasing the capped
+    // text here would put words on a subscriber's screen that the caller
+    // never heard — the same spoken/displayed divergence this gate exists to
+    // prevent.
+    return capped.length < MIN_SPOKEN_BRIDGE_CHARS ? "" : capped;
+  };
+
+  return {
+    push(deltaText: string): string {
+      raw += deltaText;
+      if (stage === "done") {
+        return "";
+      }
+      if (stage === "bridging") {
+        bridgeRaw += deltaText;
+        return isEscalationBridgeComplete(bridgeRaw) ? releaseBridge() : "";
+      }
+      if (stage === "deciding") {
+        const verdict = classifyFrontDoorLeading(raw.trimStart(), holdEnabled);
+        if (verdict === "pending") {
+          return "";
+        }
+        if (verdict === "hold") {
+          stage = "done";
+          return "";
+        }
+        if (verdict === "escalate") {
+          stage = "bridging";
+          bridgeRaw = raw.trimStart().slice(ESCALATE_VERDICT_TOKEN.length);
+          return isEscalationBridgeComplete(bridgeRaw) ? releaseBridge() : "";
+        }
+        stage = "answer";
+      }
+      return takeAnswerText();
+    },
+    finish(): string {
+      if (stage === "bridging") {
+        return releaseBridge();
+      }
+      // An answer leg's held "[…" tail never completed a marker, so it is
+      // real text: release it rather than strand it, exactly as the spoken
+      // path's forced flush does at leg completion. A leg still `deciding`
+      // produced nothing but an unresolved verdict prefix — never speech.
+      const trailing =
+        stage === "answer" ? takeAnswerText({ force: true }) : "";
+      stage = "done";
+      return trailing;
+    },
+  };
 }
 
 /**

@@ -1784,6 +1784,46 @@ describe("unified front-door endpointing", () => {
     expect(countType(h.frames, "thinking")).toBe(1);
     expect(countType(h.frames, "utterance_end")).toBe(1);
   });
+
+  test("a front-door answer's held bracket tail is released at leg completion", async () => {
+    // The marker holdback parks at a "[" that could still become a control
+    // marker. On an ANSWER leg that bracket turned out to be real text, so
+    // completion must release it rather than strand it — this is the same
+    // rule the hub-stream gate's `finish()` follows, which is what keeps the
+    // socket frames and the conversation-hub broadcast on the same text.
+    const starter = makeVerdictTurnStarter([
+      ["The last element is at index ["],
+    ]);
+    const h = createHarness({
+      startVoiceTurn: starter.startVoiceTurn,
+      frontDoor: {},
+    });
+
+    await startWithPartial(h, "which index is last");
+    await sendAudio(h.session, LOUD_CHUNK);
+    await waitFor(() => h.frames.some((frame) => frame.type === "tts_done"));
+
+    expect(spokenDeltaText(h.frames)).toBe("The last element is at index [");
+  });
+
+  test("a front-door leg that produced only an unresolved verdict prefix speaks nothing", async () => {
+    // "[" alone never classified, so it is not speech: the leg ends silent
+    // rather than emitting a stray bracket. The hub gate matches (its
+    // `finish()` releases nothing while still `deciding`).
+    const starter = makeVerdictTurnStarter([["["]]);
+    const h = createHarness({
+      startVoiceTurn: starter.startVoiceTurn,
+      frontDoor: {},
+    });
+
+    await startWithPartial(h, "hello wor");
+    await sendAudio(h.session, LOUD_CHUNK);
+    await waitFor(() => starter.calls.length === 1);
+    await flushAsyncCallbacks();
+    await flushAsyncCallbacks();
+
+    expect(spokenDeltaText(h.frames)).toBe("");
+  });
 });
 
 describe("transcriber re-arm retry", () => {

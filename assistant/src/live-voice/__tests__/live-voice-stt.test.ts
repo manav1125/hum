@@ -126,6 +126,11 @@ describe("LiveVoiceSession STT", () => {
         turnDetection: "manual",
         // The cascade accepts mid-call camera photos.
         attachImage: true,
+        // …and narrates the turn's activity in words (Lock Screen / island).
+        // Capabilities are advertised on `ready`, never version-gated: an
+        // unrecognized server frame is ignored by the client, so a new frame
+        // is only safe to send once the client has said it understands it.
+        activity: true,
       },
     ]);
   });

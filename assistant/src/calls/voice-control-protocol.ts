@@ -258,3 +258,51 @@ export function isIncompleteControlMarkerTail(tail: string): boolean {
   }
   return false;
 }
+
+/**
+ * Control-marker hygiene for one model leg's delta stream. The returned
+ * flush forwards the stripped ({@link stripInternalSpeechMarkers}) prefix of
+ * `raw` that has not been emitted yet and cannot contain a still-streaming
+ * control marker: the flush stops at the first "[" whose tail is an
+ * incomplete marker ({@link isIncompleteControlMarkerTail}) and holds from
+ * there until a later delta completes or disproves it; `force` (leg
+ * completion) emits the held tail so real text that merely resembles a
+ * marker prefix is not dropped. The scan runs forward from the emitted
+ * boundary — not from the last "[" — so brackets INSIDE a streaming marker
+ * body (a JSON array or "]"-bearing string in ASK_GUARDIAN_APPROVAL) can
+ * neither mask the marker's start nor pass as its terminator. Markers are
+ * stripped, never acted on.
+ *
+ * Callers pass the leg's FULL accumulated raw text on every call (not the
+ * individual delta): the holdback tracks its own emitted boundary, which is
+ * what lets a held tail be re-examined once more text arrives.
+ *
+ * Shared so every surface that shows a leg's text to a person — the
+ * live-voice client frames and TTS (`live-voice-session.ts`) and the
+ * conversation-hub broadcast (`voice-session-bridge.ts`) — renders the same
+ * characters. Two copies of this rule would be two different transcripts.
+ */
+export function createControlMarkerHoldback(
+  emit: (chunk: string) => void,
+): (raw: string, opts?: { force?: boolean }) => void {
+  let emitted = 0;
+  return (raw, opts) => {
+    let safeEnd = raw.length;
+    if (opts?.force !== true) {
+      for (
+        let i = raw.indexOf("[", emitted);
+        i !== -1;
+        i = raw.indexOf("[", i + 1)
+      ) {
+        if (isIncompleteControlMarkerTail(raw.slice(i))) {
+          safeEnd = i;
+          break;
+        }
+      }
+    }
+    if (safeEnd > emitted) {
+      emit(stripInternalSpeechMarkers(raw.slice(emitted, safeEnd)));
+      emitted = safeEnd;
+    }
+  };
+}

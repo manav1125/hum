@@ -214,10 +214,13 @@ deletes; the copy takes the column default `finalized=1`, so crash recovery neve
 ### 3. Voice front door — unblock, then decide — **S now, L later**
 
 **What:** two separable things that the 08-11 doc conflated.
-- *Now (S):* the **front-door hub-stream gate** (upstream `5650163a17` concept) is **not implemented**
-  [tree]. It is the stated precondition for ever flipping `liveVoice.frontDoor.enabled`; without it,
-  verdict tokens render in web and passive transcripts. Until it exists the flag is not merely off, it is
-  **unflippable** — so the front-door code we already carry is dead weight.
+- *Now (S):* the **front-door hub-stream gate** (upstream `5650163a17` concept) — **DONE 2026-08-16**
+  [tree]. It was the stated precondition for ever flipping `liveVoice.frontDoor.enabled`; without it,
+  verdict tokens rendered in web and passive transcripts, so the flag was not merely off but
+  **unflippable**. Now built as `createFrontDoorStreamGate` in `assistant/src/calls/voice-triage-escalate.ts`,
+  wired into the hub broadcast at `assistant/src/calls/voice-session-bridge.ts` (`broadcastLegEvent`).
+  The flag is **still off** — what remains before flipping is real-device QA on endpointing feel and
+  escalation-bridge audio, which is a judgement call, not a defect.
 - *Later (L):* the actual re-platform. Upstream `92f668a1f5` **deletes `live-voice/front-decision.ts`**
   [up] — the file our flag-off `frontModel.semanticEndpointing`/`spokenAcks` layer is built on. Take
   `92f668a1f5` + migration 142 **as one unit or not at all**; merging around it strands our layer.
@@ -386,6 +389,8 @@ the attention on the two places where our own tree is quietly costing us.
 ## What I would do, in order
 
 **1. Close the voice front door — decide, do not defer again (item 3).**
+*Status 2026-08-16: the gate is built and the flag is now flippable (see item 3). What is still owed is
+the flip decision itself, plus the "later (L)" re-platform call at the next voice sync.*
 This is the single biggest waste in the tree. We carry a built, flag-off front-model layer that cannot be
 turned on (the hub-stream gate does not exist), built on a design upstream has now **deleted the file
 for**. Every voice sweep since 07-21 has re-litigated it. Two honest options: build the hub-stream gate

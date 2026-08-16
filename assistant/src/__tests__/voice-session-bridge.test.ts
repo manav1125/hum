@@ -2167,6 +2167,245 @@ describe("voice-session-bridge front-door legs", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Front-door hub-stream gate
+//
+// The front-door leg's raw stream is a control plane: its leading tokens are
+// the routing verdict, not speech. The conversation-hub broadcast (web chat,
+// passive devices) must never carry those tokens, and must still carry every
+// word of real assistant content — an over-broad filter would leave the
+// shared transcript silent or truncated, which is worse than the leak it
+// fixes. These assert on what actually leaves the daemon: the messages a real
+// hub subscriber receives, not an internal flag.
+// ---------------------------------------------------------------------------
+
+describe("front-door hub stream gate", () => {
+  /**
+   * Run one voice leg to completion with `deltas` streamed through the agent
+   * loop, and return every message the hub published for that conversation.
+   */
+  async function runLegCollectingHub(
+    conversationId: string,
+    turnOverrides: Partial<VoiceTurnOptions>,
+    deltas: string[],
+    finalEvent:
+      | "message_complete"
+      | "generation_cancelled" = "message_complete",
+  ): Promise<ServerMessage[]> {
+    const published: ServerMessage[] = [];
+    const subscription = assistantEventHub.subscribe({
+      type: "process",
+      filter: { conversationId },
+      callback: (event) => {
+        published.push(event.message);
+      },
+    });
+    try {
+      const leg = makeVoiceLegSession(conversationId);
+      injectDeps(() => leg.session);
+      await startVoiceTurn(makeLegTurnOptions(conversationId, turnOverrides));
+      await waitForCondition(() => leg.getLoopOptions() !== undefined);
+
+      const reserved = await reserveMessage(conversationId, "assistant");
+      leg.emit({
+        type: "assistant_turn_start",
+        messageId: reserved.id,
+        conversationId,
+      });
+      for (const text of deltas) {
+        leg.emit({
+          type: "assistant_text_delta",
+          text,
+          messageId: reserved.id,
+          conversationId,
+        });
+      }
+      leg.emit(
+        finalEvent === "message_complete"
+          ? { type: "message_complete", messageId: reserved.id, conversationId }
+          : ({ type: "generation_cancelled", conversationId } as ServerMessage),
+      );
+      leg.release();
+      await waitForCondition(() => leg.loopSettled());
+      // The hub publishes off a promise chain, so a broadcast costs a few
+      // microtask hops before it reaches a subscriber.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      subscription.dispose();
+    }
+    return published;
+  }
+
+  /** The text of every `assistant_text_delta` a hub subscriber received. */
+  function deltaTexts(published: ServerMessage[]): string[] {
+    return published
+      .filter(
+        (msg): msg is ServerMessage & { type: "assistant_text_delta" } =>
+          msg.type === "assistant_text_delta",
+      )
+      .map((msg) => msg.text);
+  }
+
+  test("an escalating leg broadcasts only the capped bridge, never the verdict token", async () => {
+    const conversation = createConversation("hub gate escalate");
+    const published = await runLegCollectingHub(
+      conversation.id,
+      { routingLeg: "front-door" },
+      ["[1]", " Let me check your calendar.", " weak answer past the cap"],
+    );
+
+    expect(deltaTexts(published)).toEqual(["Let me check your calendar."]);
+    expect(deltaTexts(published).join("")).not.toContain("[1]");
+  });
+
+  test("a hold verdict broadcasts nothing at all", async () => {
+    const conversation = createConversation("hub gate hold");
+    const published = await runLegCollectingHub(
+      conversation.id,
+      { routingLeg: "front-door", unifiedVerdict: true },
+      ["[0]", " the caller kept talking so this is never spoken"],
+    );
+
+    expect(deltaTexts(published)).toEqual([]);
+  });
+
+  test("a front-door answer reaches the hub in full", async () => {
+    const conversation = createConversation("hub gate answer");
+    const published = await runLegCollectingHub(
+      conversation.id,
+      { routingLeg: "front-door" },
+      ["It is ", "Tuesday", ", and it is sunny."],
+    );
+
+    expect(deltaTexts(published).join("")).toBe(
+      "It is Tuesday, and it is sunny.",
+    );
+  });
+
+  test("an answer that merely opens with a bracket is released in full", async () => {
+    const conversation = createConversation("hub gate bracket answer");
+    const published = await runLegCollectingHub(
+      conversation.id,
+      { routingLeg: "front-door" },
+      ["[", "A] is the option to pick."],
+    );
+
+    expect(deltaTexts(published).join("")).toBe("[A] is the option to pick.");
+  });
+
+  test("a leg that completes mid-bridge broadcasts what it handed off with", async () => {
+    const conversation = createConversation("hub gate mid-bridge");
+    const published = await runLegCollectingHub(
+      conversation.id,
+      { routingLeg: "front-door" },
+      ["[1] Let me check"],
+    );
+
+    expect(deltaTexts(published)).toEqual(["Let me check"]);
+  });
+
+  test("a leg cancelled mid-bridge never hands off, so it broadcasts nothing", async () => {
+    const conversation = createConversation("hub gate cancelled bridge");
+    const published = await runLegCollectingHub(
+      conversation.id,
+      { routingLeg: "front-door" },
+      ["[1] Let me check"],
+      "generation_cancelled",
+    );
+
+    expect(deltaTexts(published)).toEqual([]);
+  });
+
+  test("the escalated continuation streams to the hub untouched", async () => {
+    // The leg that produces the real answer is never gated: its deltas are
+    // assistant speech from the first token.
+    const conversation = createConversation("hub gate escalated leg");
+    const published = await runLegCollectingHub(
+      conversation.id,
+      {
+        routingLeg: "escalated",
+        spokenEscalationBridge: "Let me check your calendar.",
+        content: ESCALATION_CONTINUATION_CONTENT,
+      },
+      ["Your next meeting ", "is at four."],
+    );
+
+    expect(deltaTexts(published)).toEqual([
+      "Your next meeting ",
+      "is at four.",
+    ]);
+  });
+
+  test("the flag-off path is byte-identical: an un-routed leg broadcasts the very same objects", async () => {
+    // This is what protects the daily driver while the flag sits off. With
+    // `liveVoice.frontDoor.enabled` false the session never sets `routingLeg`,
+    // so no gate is constructed and every event reaches the hub by object
+    // identity — not merely equal text, the same object.
+    const conversation = createConversation("hub gate flag off");
+    const emitted: ServerMessage[] = [];
+    const published: ServerMessage[] = [];
+    const subscription = assistantEventHub.subscribe({
+      type: "process",
+      filter: { conversationId: conversation.id },
+      callback: (event) => {
+        published.push(event.message);
+      },
+    });
+    try {
+      const leg = makeVoiceLegSession(conversation.id);
+      injectDeps(() => leg.session);
+      await startVoiceTurn(makeLegTurnOptions(conversation.id));
+      await waitForCondition(() => leg.getLoopOptions() !== undefined);
+
+      const reserved = await reserveMessage(conversation.id, "assistant");
+      const events: ServerMessage[] = [
+        {
+          type: "assistant_turn_start",
+          messageId: reserved.id,
+          conversationId: conversation.id,
+        },
+        // Text a gate would have swallowed or rewritten, proving the un-routed
+        // path does neither.
+        {
+          type: "assistant_text_delta",
+          text: "[1] not a verdict here",
+          messageId: reserved.id,
+          conversationId: conversation.id,
+        },
+        {
+          type: "assistant_text_delta",
+          text: " [0] nor here",
+          messageId: reserved.id,
+          conversationId: conversation.id,
+        },
+        {
+          type: "message_complete",
+          messageId: reserved.id,
+          conversationId: conversation.id,
+        },
+      ];
+      for (const event of events) {
+        emitted.push(event);
+        leg.emit(event);
+      }
+      leg.release();
+      await waitForCondition(() => leg.loopSettled());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      subscription.dispose();
+    }
+
+    expect(deltaTexts(published)).toEqual([
+      "[1] not a verdict here",
+      " [0] nor here",
+    ]);
+    // Object identity: the un-routed path does not even copy the event.
+    for (const event of emitted) {
+      expect(published).toContain(event);
+    }
+  });
+});
+
 describe("cutFrontDoorContentAtVerdict", () => {
   test("null for a clean front-door answer (nothing to rewrite)", () => {
     expect(

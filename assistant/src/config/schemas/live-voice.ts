@@ -229,8 +229,14 @@ export const LiveVoiceFrontDoorConfigSchema = z
   .object({
     enabled: z
       .boolean({ error: "liveVoice.frontDoor.enabled must be a boolean" })
-      // Ships OFF: the flip-on gate is real-device QA (endpointing feel,
-      // escalation bridge audio). Fail-open everywhere once enabled.
+      // Ships OFF, but it is now genuinely FLIPPABLE: the structural
+      // blocker — a front-door leg's verdict tokens reaching the shared
+      // conversation hub, and so the web/passive transcripts — is closed by
+      // `createFrontDoorStreamGate` (calls/voice-triage-escalate.ts), wired
+      // into the hub broadcast in calls/voice-session-bridge.ts. What is
+      // left before flipping is a judgement call, not a defect: real-device
+      // QA on endpointing feel and escalation-bridge audio. Fail-open
+      // everywhere once enabled.
       .default(false)
       .describe(
         "Unified voice front door: speculative answer dispatch at the silence boundary, with the leg's leading token as the endpointing verdict and triage-and-escalate routing. server_vad sessions only. Ships OFF pending real-device QA.",
