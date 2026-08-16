@@ -22,6 +22,7 @@ import { revokeScopedApprovalGrantsForContext } from "../memory/scoped-approval-
 import { DAEMON_INTERNAL_ASSISTANT_ID } from "../runtime/assistant-scope.js";
 import { computeToolApprovalDigest } from "../security/tool-approval-digest.js";
 import { getCatalogProvider } from "../tts/provider-catalog.js";
+import { ReasoningTagFilter } from "../tts/reasoning-tag-filter.js";
 import type { TtsProvider, TtsProviderId } from "../tts/types.js";
 import { getLogger } from "../util/logger.js";
 import { createStreamingEntry } from "./audio-store.js";
@@ -602,6 +603,12 @@ export class CallController {
     let ttsBuffer = "";
     let fullResponseText = "";
 
+    // Reasoning models whose provider leaks chain-of-thought onto the content
+    // channel would otherwise be read aloud verbatim. The filter is applied
+    // only to the TTS feed: `fullResponseText` keeps every raw delta, so
+    // persistence, the transcript and post-turn marker detection are unchanged.
+    const reasoningFilter = new ReasoningTagFilter();
+
     // When using the synthesized path, we accumulate all text and synthesize
     // the complete response at the end of the turn (better prosody).
     let synthesizedTextBuffer = "";
@@ -658,7 +665,9 @@ export class CallController {
       const onTextDelta = (text: string): void => {
         if (!this.isCurrentRun(runVersion)) return;
         fullResponseText += text;
-        ttsBuffer += text;
+        const speakable = reasoningFilter.push(text);
+        if (speakable.length === 0) return;
+        ttsBuffer += speakable;
         ttsBuffer = stripInternalSpeechMarkers(ttsBuffer);
         flushSafeText();
       };
@@ -718,7 +727,9 @@ export class CallController {
     await turnComplete;
     if (!this.isCurrentRun(runVersion)) return fullResponseText;
 
-    // Final sweep: strip any remaining control markers from the buffer
+    // Final sweep: release any partial tag the filter was holding (it never
+    // became one), then strip remaining control markers from the buffer.
+    ttsBuffer += reasoningFilter.flush();
     ttsBuffer = stripInternalSpeechMarkers(ttsBuffer);
     if (ttsBuffer.length > 0) {
       emitSafeChunk(ttsBuffer);

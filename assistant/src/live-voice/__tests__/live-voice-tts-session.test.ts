@@ -274,6 +274,50 @@ describe("LiveVoiceSession TTS", () => {
     expect(frames.some((frame) => frame.type === "tts_done")).toBe(false);
   });
 
+  test("never speaks a leaked reasoning span, but still shows it on screen", async () => {
+    let callbacks: VoiceTurnCallbacks | undefined;
+    const ttsTexts: string[] = [];
+    const startVoiceTurn = mock(async (options: VoiceTurnOptions) => {
+      callbacks = options.callbacks;
+      return { turnId: "bridge-turn-1", abort: mock() };
+    });
+    const streamTtsAudio = mock(async (options: LiveVoiceTtsOptions) => {
+      ttsTexts.push(options.text);
+      options.onAudioChunk(makeTtsChunk(`audio:${options.text}`));
+      return makeTtsResult(options.text);
+    });
+    const { frames, session } = createSessionHarness({
+      startVoiceTurn,
+      streamTtsAudio,
+    });
+
+    await startReleasedTurn(session);
+    // Split mid-tag on purpose: a delta boundary inside `<think` is exactly
+    // where a non-stateful strip would let the tag through.
+    callbacks?.assistant_text_delta?.(makeTextDelta("<thin"));
+    callbacks?.assistant_text_delta?.(
+      makeTextDelta("k>The user wants the time.</think>It is three."),
+    );
+    callbacks?.message_complete?.(makeMessageComplete());
+    await waitFor(() => frames.some((frame) => frame.type === "tts_done"));
+
+    // Speech carries the answer only — no tag, no inner monologue.
+    const spoken = ttsTexts.join("");
+    expect(spoken).toBe("It is three.");
+    expect(spoken).not.toContain("think");
+    expect(spoken).not.toContain("The user wants");
+
+    // The raw deltas still reach the client verbatim: the filter suppresses
+    // speech, it does not edit the transcript.
+    const onScreen = frames
+      .filter((frame) => frame.type === "assistant_text_delta")
+      .map((frame) => (frame as { text: string }).text)
+      .join("");
+    expect(onScreen).toBe(
+      "<think>The user wants the time.</think>It is three.",
+    );
+  });
+
   test("reports TTS errors without cancelling the persisted assistant text turn", async () => {
     let callbacks: VoiceTurnCallbacks | undefined;
     const abort = mock();

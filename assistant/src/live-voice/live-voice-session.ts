@@ -162,6 +162,7 @@ import type {
   SttProviderId,
   SttStreamServerEvent,
 } from "../stt/types.js";
+import { ReasoningTagFilter } from "../tts/reasoning-tag-filter.js";
 import { extractSpeakableSegments } from "../tts/speakable-segments.js";
 import { hasLocalizedEntry } from "../util/language-subtag.js";
 import { pickAckPhrase } from "./ack-phrases.js";
@@ -583,6 +584,13 @@ interface ActiveAssistantTurn {
   ttsDone: boolean;
   finalized: boolean;
   ttsBuffer: string;
+  /**
+   * Per-turn state for stripping leaked `<think>` spans from the speech feed.
+   * Scoped to the turn so an unclosed span can never mute the next one. Only
+   * TTS is filtered — `assistant_text_delta` frames, the transcript and
+   * persistence all keep the raw text.
+   */
+  ttsReasoningFilter: ReasoningTagFilter;
   /**
    * A non-empty speakable segment from the model reached the TTS queue —
    * gates the eager first-segment flush that trades clause quality for
@@ -2802,6 +2810,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       ttsDone: false,
       finalized: false,
       ttsBuffer: "",
+      ttsReasoningFilter: new ReasoningTagFilter(),
       ttsSegmentEnqueued: false,
       ttsJobs: [],
       ttsQueue: Promise.resolve(),
@@ -3490,7 +3499,10 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     const activeTurn = this.activeAssistantTurn;
     if (activeTurn?.token !== token || activeTurn.assistantCompleted) return;
 
-    activeTurn.ttsBuffer += text;
+    const speakable = activeTurn.ttsReasoningFilter.push(text);
+    if (speakable.length === 0) return;
+
+    activeTurn.ttsBuffer += speakable;
     this.flushTtsBuffer(token, false);
   }
 
@@ -3558,6 +3570,12 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private flushTtsBuffer(token: symbol, force: boolean): void {
     const activeTurn = this.activeAssistantTurn;
     if (activeTurn?.token !== token) return;
+
+    // A forced flush is a leg boundary (turn completion, or the escalation
+    // hand-off): the stream that could have completed a held partial tag has
+    // ended, so release it rather than strand it, and start the next leg with
+    // a clean span state.
+    if (force) activeTurn.ttsBuffer += activeTurn.ttsReasoningFilter.flush();
 
     if (!this.streamTtsAudio) {
       activeTurn.ttsBuffer = "";
