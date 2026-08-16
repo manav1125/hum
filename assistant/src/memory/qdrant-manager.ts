@@ -26,6 +26,47 @@ const READYZ_POLL_INTERVAL_MS = 200;
 const READYZ_TIMEOUT_MS = 30_000;
 const SHUTDOWN_GRACE_MS = 5_000;
 
+/**
+ * The environment and working directory Qdrant is launched with.
+ *
+ * Extracted from `start()` so the one invariant that matters here can be
+ * asserted without a real binary or a real spawn: **every path Qdrant is given
+ * must be absolute.** Qdrant resolves an unset path against its own cwd, and
+ * the daemon's cwd in the container is `/app/assistant` — root-owned 0755.
+ * That was harmless only while the daemon ran as root. Under the privilege
+ * drop, the relative default for snapshots became
+ *
+ *     Failed to remove snapshots temp directory at ./snapshots/tmp:
+ *     Os { code: 13, kind: PermissionDenied }
+ *
+ * Qdrant exited, and because the daemon must never block startup on a
+ * subsystem failure, it carried on serving healthy responses with memory
+ * silently unavailable.
+ */
+export function buildQdrantSpawnOptions(config: {
+  host: string;
+  port: number;
+  storagePath: string;
+}): { env: Record<string, string>; cwd: string } {
+  return {
+    env: {
+      QDRANT__SERVICE__HOST: config.host,
+      QDRANT__SERVICE__HTTP_PORT: String(config.port),
+      QDRANT__SERVICE__GRPC_PORT: "0", // disable gRPC
+      QDRANT__TELEMETRY_DISABLED: "true",
+      QDRANT__STORAGE__STORAGE_PATH: config.storagePath,
+      // Anchored to the storage directory, which the container entrypoint
+      // chowns to the daemon's uid, so it stays writable under either identity.
+      QDRANT__STORAGE__SNAPSHOTS_PATH: join(config.storagePath, "snapshots"),
+      QDRANT__LOG_LEVEL: "WARN",
+    },
+    // Belt to those braces: any cwd-relative path we have NOT enumerated then
+    // lands under storage too, rather than in a directory the daemon may not
+    // be able to write to.
+    cwd: config.storagePath,
+  };
+}
+
 export interface QdrantManagerConfig {
   url: string;
   storagePath?: string;
@@ -105,27 +146,20 @@ export class QdrantManager {
       "Starting Qdrant",
     );
 
+    // Qdrant creates the storage directory itself, but it has to exist BEFORE
+    // the spawn because it is also the child's cwd.
+    mkdirSync(this.storagePath, { recursive: true });
+
+    const { env, cwd } = buildQdrantSpawnOptions({
+      host: this.host,
+      port: this.port,
+      storagePath: this.storagePath,
+    });
+
     const proc = Bun.spawn({
       cmd: [spawnPath],
-      env: {
-        ...process.env,
-        QDRANT__SERVICE__HOST: this.host,
-        QDRANT__SERVICE__HTTP_PORT: String(this.port),
-        QDRANT__SERVICE__GRPC_PORT: "0", // disable gRPC
-        QDRANT__TELEMETRY_DISABLED: "true",
-        QDRANT__STORAGE__STORAGE_PATH: this.storagePath,
-        // Pin snapshots next to storage. Qdrant's default is the RELATIVE
-        // `./snapshots`, resolved against the daemon's cwd — which in the
-        // container is `/app/assistant`, root-owned 0755. That is writable
-        // only because the daemon currently runs as root; the moment it drops
-        // to uid 1001, Qdrant fails to start with PermissionDenied on
-        // `./snapshots/tmp`, and because subsystem failures must never block
-        // startup, the daemon carries on serving 200s with memory features
-        // silently unavailable. Anchoring the path to the storage directory,
-        // which the entrypoint chowns, keeps it writable under either identity.
-        QDRANT__STORAGE__SNAPSHOTS_PATH: join(this.storagePath, "snapshots"),
-        QDRANT__LOG_LEVEL: "WARN",
-      },
+      env: { ...process.env, ...env },
+      cwd,
       stdout: "ignore",
       stderr: "pipe",
     });
