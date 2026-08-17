@@ -29,14 +29,59 @@ import type { WorkspaceMigration } from "./types.js";
  * pointed at real accounts. A migration runs once at startup on every
  * instance regardless of credentials.
  *
- * ## Why it is inert today, and why that is not a reason to skip it
+ * ## CORRECTION: this was NOT inert, and the claim that it was caused an outage
  *
- * Nothing auto-approves while the owner's threshold sits at its own default of
- * `"none"` (Strict) — `auto_approve_thresholds` is empty on a fresh instance
- * and the reader defaults to `"none"`. So this changes no behaviour on the day
- * it runs. It closes a trap: the moment an owner raises their threshold to cut
- * down on prompting, every stale-`"low"` Composio tool becomes auto-approvable
- * without them having done anything to make it so.
+ * This docblock originally said the migration changed no behaviour on the day
+ * it ran, because "the owner's threshold sits at its own default of `none`
+ * (Strict)". **That was false**, and it was the reasoning that let a blanket
+ * change ship without anyone checking what it would deny.
+ *
+ * An empty `auto_approve_thresholds` table does not mean Strict. It means no
+ * row exists, so the gateway falls back to `GLOBAL_DEFAULTS` in
+ * `gateway/src/ipc/threshold-handlers.ts`, which are per execution context:
+ *
+ *     interactive: "medium"   autonomous: "low"   headless: "none"
+ *
+ * Only headless is Strict. A conversation auto-approves up to medium and a
+ * background run up to low, on a fresh instance, with nothing configured. So
+ * dropping these servers to the schema's fail-closed `"high"` put every
+ * Composio tool above BOTH live thresholds at once, and a `high` that cannot
+ * be prompted in an unattended or voice session is a denial.
+ *
+ * The owner's `tool_invocations` show the flip exactly — the same connectors,
+ * before and after this migration ran on 2026-08-16:
+ *
+ *     2026-08-12   low    allow    42        2026-08-16   high   denied   1
+ *     2026-08-15   low    allow     5        2026-08-17   high   denied   2
+ *
+ * Calendar, Gmail, Drive and Slack all went from working to denied in voice
+ * and in background runs. Reading a calendar is not a risk anyone accepted;
+ * it is what the blanket cost.
+ *
+ * ## Why this is still not reverted
+ *
+ * Removing the blanket `"low"` was right. The mistake was the *blanket*, and
+ * it was wrong in both directions: one number per SERVER cannot be correct for
+ * both `GMAIL_FETCH_EMAILS` and `GMAIL_SEND_EMAIL`. Set low it auto-approved
+ * sending; set high it denied reading.
+ *
+ * Risk for these tools no longer comes from this field at all. It is derived
+ * per operation, from the verb in the tool name, in
+ * `gateway/src/risk/connector-risk-classifier.ts` — reads and drafts low,
+ * modifications medium, send/delete/publish/pay high, and anything the
+ * taxonomy does not recognise high. Deleting the field here leaves a
+ * normalized instance in the shape a freshly provisioned one has, which is
+ * what that classifier expects to see.
+ *
+ * The trap this migration closes is real and remains closed: with the field
+ * present at `"low"`, an owner raising their threshold would have made every
+ * Composio tool on the instance auto-approvable — including the ones that
+ * send — without them having done anything to make it so.
+ *
+ * The lesson, since it cost a working connector surface: a claim that a
+ * security change is inert is a claim about a live value, and live values are
+ * to be read, not derived from what a default "should" be. The threshold was
+ * two IPC handlers away.
  *
  * ## Why only `"low"`, only `composio` keys, and only once
  *

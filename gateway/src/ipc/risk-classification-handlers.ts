@@ -15,6 +15,10 @@ import {
   bashRiskClassifier,
   getWrappedProgramWithArgs,
 } from "../risk/bash-risk-classifier.js";
+import {
+  classifyConnectorTool,
+  isConnectorTool,
+} from "../risk/connector-risk-classifier.js";
 import { DEFAULT_COMMAND_REGISTRY } from "../risk/command-registry/index.js";
 import { generateDirectoryScopeOptions } from "../risk/directory-scope.js";
 import {
@@ -570,6 +574,37 @@ export async function handleClassifyRisk(
           reason: override.description,
           scopeOptions: [],
           matchType: "user_rule",
+        };
+      }
+
+      // ── MCP / connector tools: risk follows the verb ────────────────────
+      // For these, and only these, the derived risk REPLACES
+      // `registryDefaultRisk` rather than being combined with it. That value
+      // is the tool's MCP server's `defaultRiskLevel`, which describes where
+      // the tool came from, not what it does — and since the schema default
+      // is a fail-closed `"high"`, combining (taking the max) would pin every
+      // connector at high and change nothing at all.
+      //
+      // The escape hatch is unchanged and sits above: a whole-tool trust rule
+      // the user authored still wins over anything derived here, in both
+      // directions. Someone who wants one connector read denied, or one
+      // unrecognised operation allowed, writes the rule and it holds.
+      //
+      // Interaction with the autonomy classifier: unchanged, and independent.
+      // That model asks *what category of act* this is (send / money / delete
+      // / publish / contact) and the owner's per-category mode decides ask vs
+      // auto BEFORE any threshold is consulted. This decides *how risky* the
+      // operation is, which the threshold then reads. They agree on the
+      // dangerous cases by construction — `GMAIL_SEND_EMAIL` is class `send`
+      // (→ ask) and risk high (→ above every default threshold) — and neither
+      // can rescue what the other stops.
+      if (isConnectorTool(tool)) {
+        const assessment = classifyConnectorTool(tool);
+        return {
+          risk: assessment.riskLevel,
+          reason: assessment.reason,
+          scopeOptions: assessment.scopeOptions,
+          matchType: assessment.matchType,
         };
       }
 

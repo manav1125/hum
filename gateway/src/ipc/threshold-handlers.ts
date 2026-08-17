@@ -17,7 +17,19 @@ import {
 } from "../db/schema.js";
 import type { IpcRoute } from "./server.js";
 
-const GLOBAL_DEFAULTS = {
+/**
+ * What every instance auto-approves up to when nobody has configured a
+ * threshold — i.e. when `auto_approve_thresholds` holds no row, which is the
+ * state a fresh instance is in and the state Manav's production instance is
+ * still in.
+ *
+ * Exported because "an unset threshold means Strict" is a mistake that has
+ * already been made in writing and shipped (see the correction in
+ * `assistant/src/workspace/migrations/106-*`). It does not mean Strict. Only
+ * `headless` is. Tests that reason about what a given risk level will do
+ * should read these values rather than restate them.
+ */
+export const GLOBAL_DEFAULTS = {
   interactive: "medium",
   autonomous: "low",
   headless: "none",
