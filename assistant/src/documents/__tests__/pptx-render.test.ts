@@ -244,6 +244,29 @@ const WIDE_TABLE = `## Pricing
 | Support | L. Moreau | AMER | Live | 2026-06-01 | 2027-05-31 | $412,800 | $34,400 | $378,400 | On track |
 `;
 
+/** Prose in a grid: three columns fit the canvas, but no row fits a glance. */
+const OURS =
+  "Assignment is permitted on written notice to the other party, and the obligation to give that notice survives termination of this agreement for two further years.";
+const THEIRS =
+  "Assignment requires prior written consent, not to be unreasonably withheld, and any purported assignment without it is void from the moment it is made.";
+const LONG_ROWS = `## Clauses
+
+| Clause | Our position | Their position |
+| --- | --- | --- |
+| Assignment | ${OURS} | ${THEIRS} |
+| Termination | ${THEIRS} | ${OURS} |
+`;
+
+/** Past twice the glance: one row is the whole slide, and still gets drawn. */
+const ESSAY =
+  "The parties acknowledge that the services are provided on a best-efforts basis, that no service level is warranted beyond those set out in Schedule 2, and that any remedy for a failure to meet a service level is limited to the service credits described there, which are the sole and exclusive remedy available, whether the claim is framed in contract, in tort, or otherwise.";
+const DOCUMENT_ROWS = `## Clauses
+
+| Clause | Our position | Their position |
+| --- | --- | --- |
+| Service levels | ${ESSAY} | ${ESSAY} |
+`;
+
 describe("overflow", () => {
   const bullet =
     "A long line of body copy that wraps at least twice on a 16:9 slide because it keeps going well past the width of the content column and then some.";
@@ -346,21 +369,92 @@ describe("overflow", () => {
     expect([...grid.matchAll(/w="\d+"/g)]).toHaveLength(6);
   });
 
-  test("refuses a table whose single row cannot fit, rather than faking one", async () => {
-    // Past the point splitting helps: one row of prose is taller than the
-    // slide, so no arrangement of columns puts it on one. Emitting an
-    // overflowing grid would look like an export and read like a defect.
+  test("still emits the grid when the rows are too long, and says so", async () => {
+    // The defect this replaced: the exporter emitted a sentence where the table
+    // should have been, so the owner asked for a deck and got a paragraph. A
+    // recommendation that withholds the work makes them start over — the one
+    // outcome of the three that cannot be salvaged. Best-effort split *and* the
+    // note, with the document offer live.
+    const deck = await renderMarkdownToPptx(LONG_ROWS);
+
+    expect(deck.notes).toEqual([
+      "I laid this out as a table, though these rows are really too long for slides. Want it as a document?",
+    ]);
+    const slides = (await slideXml(LONG_ROWS)).filter((x) =>
+      x.includes("<a:tbl>"),
+    );
+    expect(slides).toHaveLength(1);
+    // Every column is present and holding its own text: nothing was dropped in
+    // exchange for the note.
+    for (const cell of ["Clause", "Our position", "Their position"])
+      expect(slides[0]).toContain(`>${cell}<`);
+    expect(slides[0]).toContain("survives termination of this agreement");
+  });
+
+  test("firms the same note up when one row fills a slide by itself", async () => {
+    // One threshold, three temperatures. This row is past twice the glance, so
+    // it is no longer "long for a slide" — it is a slide. The grid is emitted
+    // all the same.
+    const deck = await renderMarkdownToPptx(DOCUMENT_ROWS);
+
+    expect(deck.notes).toEqual([
+      "A single row here fills a slide on its own — this is a document, not a deck. I laid it out anyway. Want it as one?",
+    ]);
+    const slides = (await slideXml(DOCUMENT_ROWS)).filter((x) =>
+      x.includes("<a:tbl>"),
+    );
+    expect(slides.length).toBeGreaterThan(0);
+  });
+
+  test("refuses only a cell bigger than a slide of its own", async () => {
+    // The single case where "recommend, don't refuse" has nothing to recommend
+    // with: fewer columns is splitting's only lever, and one cell alone on the
+    // whole canvas has already had it pulled all the way. A grid here would be
+    // a picture of text falling off a slide.
     const clause =
       "The parties agree that no obligation shall survive. ".repeat(40);
     const markdown = `## Clauses\n\n| Clause | Our position | Their position |\n| --- | --- | --- |\n| Assignment | ${clause} | ${clause} |`;
     const deck = await renderMarkdownToPptx(markdown);
 
     expect(deck.notes).toEqual([
-      "This is a document, not a slide — the rows are too wide to read projected.",
+      "One cell here is bigger than a whole slide, so there is no split that helps — " +
+        "this is a document, not a deck. Want it as one?",
     ]);
     const [xml] = await slideXml(markdown);
     expect(xml).not.toContain("<a:tbl>");
-    expect(xml).toContain("too wide to read projected");
+    expect(xml).toContain("bigger than a whole slide");
+  });
+
+  test("measures the laid-out row, not the characters in it", async () => {
+    // Two rows of the same length, one comfortable and one an essay. Ten short
+    // columns split into two slides and read fine; three columns carrying the
+    // same 430 characters are past a glance. A character count cannot tell
+    // those two apart, which is the whole reason the threshold moved.
+    const word = "obligation ";
+    const fill = (n: number) =>
+      word
+        .repeat(Math.ceil(n / word.length))
+        .slice(0, n)
+        .trim();
+    const grid = (cols: number, chars: number) => {
+      const head = Array.from({ length: cols }, (_, i) => `Col ${i + 1}`);
+      const rule = head.map(() => "---");
+      const row = Array.from({ length: cols }, () => fill(chars));
+      return `## Probe\n\n| ${head.join(" | ")} |\n| ${rule.join(" | ")} |\n| ${row.join(" | ")} |\n`;
+    };
+    const rowLength = (markdown: string) =>
+      markdown.split("\n").filter((l) => l.startsWith("|"))[2]!.length;
+
+    const wide = grid(10, 40);
+    const narrow = grid(3, 140);
+    expect(Math.abs(rowLength(wide) - rowLength(narrow))).toBeLessThan(5);
+
+    expect((await renderMarkdownToPptx(wide)).notes[0]).toBe(
+      "Too wide for one slide, so I split it across two — want it as a document instead?",
+    );
+    expect((await renderMarkdownToPptx(narrow)).notes[0]).toContain(
+      "really too long for slides",
+    );
   });
 
   test("a table slide never also carries body text, so nothing can overlap it", async () => {

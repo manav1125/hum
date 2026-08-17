@@ -569,25 +569,46 @@ function splitLine(l: Line, budgetIn: number): Line[] {
   return out.length ? out : [l];
 }
 
+/**
+ * The size a table on a slide has to be set at to be *read* rather than
+ * squinted at — 24px, which is 18pt at 96dpi.
+ *
+ * It is deliberately not {@link PT_TABLE}. Twelve points is the size at which a
+ * grid still physically fits a canvas; eighteen is the size at which a person
+ * two metres from a screen takes a row in at a glance. The exporter lays tables
+ * out at the first and judges them at the second, because "does it fit" and "is
+ * it still a table" are different questions and only the second one decides
+ * whether this content wanted a document all along.
+ */
+const LEGIBLE_PT = 18;
+
+/**
+ * How tall one row may be before it stops being a row.
+ *
+ * A table is a thing you scan. The moment a single row needs more than half the
+ * canvas, the reader is reading a paragraph that happens to have borders — the
+ * eye has to travel further down one record than across the whole table, and
+ * the shape has stopped doing the work a table exists to do.
+ */
+const GLANCE_H = BODY_H / 2;
+
 /** Rows of a table that fit on one slide, given its estimated row heights. */
 function tableRowHeights(
   table: TableModel,
   widths: number[],
+  fontPt = PT_TABLE,
 ): {
   header: number;
   rows: number[];
 } {
   const cellLines = (text: string, i: number) => {
     const widthPt = Math.max(0.4, widths[i] ?? 1) * 72 - 18; // less cell margins
-    const perLine = Math.max(
-      6,
-      Math.floor(widthPt / (PT_TABLE * CHAR_ADVANCE)),
-    );
+    const perLine = Math.max(6, Math.floor(widthPt / (fontPt * CHAR_ADVANCE)));
     return wrappedLineCount(text, perLine);
   };
   const rowHeight = (cells: string[]) =>
     (Math.max(...cells.map((t, i) => cellLines(t, i)), 1) *
-      PT_TABLE *
+      fontPt *
       LINE_SPACING +
       10) /
     72;
@@ -640,9 +661,36 @@ interface Page {
   continued: boolean;
 }
 
-/** Cue's voice, once, when a table could not simply be laid down as it was. */
+/**
+ * How firmly the deck has to say that this content wanted a document.
+ *
+ * One measure decides all three — how tall the tallest laid-out row is against
+ * {@link GLANCE_H} — so they are three temperatures of one honest sentence
+ * rather than three rules that can disagree. `width` is a table that split
+ * cleanly and reads fine; `long` is past the glance; `document` is a row that
+ * fills a whole slide by itself.
+ */
+type Temperature = "none" | "width" | "long" | "document";
+
+const FIRMNESS: Record<Temperature, number> = {
+  none: 0,
+  width: 1,
+  long: 2,
+  document: 3,
+};
+
+/**
+ * The one thing the exporter still declines to draw: a cell bigger than the
+ * slide it would have to live on.
+ *
+ * Everywhere else a recommendation is enough, because a split deck plus a
+ * truthful note leaves the owner with work they can use. Here there is no split
+ * to make — one cell alone, given the whole canvas at a readable size, still
+ * runs off it — so a grid would be a picture of text falling off a slide.
+ */
 const REFUSAL =
-  "This is a document, not a slide — the rows are too wide to read projected.";
+  "One cell here is bigger than a whole slide, so there is no split that helps — " +
+  "this is a document, not a deck. Want it as one?";
 
 const COUNT_WORDS = [
   "",
@@ -676,7 +724,11 @@ function countWord(n: number): string {
  */
 function paginate(list: Section[]): { pages: Page[]; notes: string[] } {
   const pages: Page[] = [];
-  const wideSplits: number[] = [];
+  const flagged: {
+    temperature: Temperature;
+    split: boolean;
+    slides: number;
+  }[] = [];
   let refused = false;
 
   for (const section of list) {
@@ -711,8 +763,13 @@ function paginate(list: Section[]): { pages: Page[]; notes: string[] } {
           });
           continue;
         }
-        if (plan.splitWide) wideSplits.push(plan.slices.length);
         const count = plan.slices.length;
+        if (plan.temperature !== "none")
+          flagged.push({
+            temperature: plan.temperature,
+            split: plan.splitWide,
+            slides: count,
+          });
         plan.slices.forEach((slice, i) =>
           push({
             lines: [],
@@ -741,17 +798,66 @@ function paginate(list: Section[]): { pages: Page[]; notes: string[] } {
   }
 
   const notes: string[] = [];
-  if (wideSplits.length === 1)
+  const first = flagged[0];
+  if (flagged.length === 1 && first)
+    notes.push(tableNote(first.temperature, first.split, first.slides));
+  else if (flagged.length > 1)
     notes.push(
-      `Too wide for one slide, so I split it across ${countWord(wideSplits[0] ?? 0)} — want it as a document instead?`,
-    );
-  else if (wideSplits.length > 1)
-    notes.push(
-      "Several tables were too wide for one slide, so I split each across more than one — want this as a document instead?",
+      manyTablesNote(
+        flagged.reduce(
+          (worst, f) =>
+            FIRMNESS[f.temperature] > FIRMNESS[worst] ? f.temperature : worst,
+          "none" as Temperature,
+        ),
+      ),
     );
   if (refused) notes.push(REFUSAL);
 
   return { pages, notes };
+}
+
+/**
+ * The same sentence at three temperatures.
+ *
+ * Every one of them ends in the document offer, because the note exists to hand
+ * the owner the better shape — not to apologise for the one they got. The deck
+ * is already in their hands either way; what changes across the three is only
+ * how strongly Cue says that the deck was the wrong container.
+ */
+function tableNote(
+  temperature: Temperature,
+  split: boolean,
+  slides: number,
+): string {
+  const across = `Too wide for one slide, so I split it across ${countWord(slides)}`;
+  switch (temperature) {
+    case "width":
+      return `${across} — want it as a document instead?`;
+    case "long":
+      return split
+        ? `${across} — though these rows are really too long for slides. Want it as a document?`
+        : "I laid this out as a table, though these rows are really too long for slides. Want it as a document?";
+    case "document":
+      return split
+        ? `${across}, but a single row fills a slide on its own — this is a document, not a deck. Want it as one?`
+        : "A single row here fills a slide on its own — this is a document, not a deck. I laid it out anyway. Want it as one?";
+    default:
+      return "";
+  }
+}
+
+/** The same three temperatures when more than one table wanted saying. */
+function manyTablesNote(temperature: Temperature): string {
+  switch (temperature) {
+    case "width":
+      return "Several tables were too wide for one slide, so I split each across more than one — want this as a document instead?";
+    case "long":
+      return "Several tables were too wide for one slide, and their rows are really too long for slides. Want this as a document?";
+    case "document":
+      return "Several tables here have rows that fill a slide on their own — this is a document, not a deck. I laid them out anyway. Want it as one?";
+    default:
+      return "";
+  }
 }
 
 /** Split a table into per-slide slices, repeating the header row on each. */
@@ -802,12 +908,55 @@ function narrowestGroups(count: number): number[][] {
   return Array.from({ length: count - 1 }, (_, k) => [0, k + 1]);
 }
 
+/**
+ * Whether one cell, given a whole slide to itself, still overflows it.
+ *
+ * The full content width, everything below the title, and nothing else on the
+ * canvas — laid out at the size a slide's text has to be to be read. There is
+ * no arrangement of columns that beats giving a cell the entire slide, so a
+ * cell that loses here loses everywhere, and that is the one case with nothing
+ * to emit.
+ *
+ * One header row is still charged for. A body cell never appears without the
+ * heading that says what it is, so "a slide of its own" is the slide minus that
+ * row, not the bare canvas.
+ */
+function cellFitsAlone(text: string): boolean {
+  const perLine = Math.max(
+    6,
+    Math.floor((CONTENT_W * 72 - 18) / (LEGIBLE_PT * CHAR_ADVANCE)),
+  );
+  const rowHeight = (lines: number) =>
+    (lines * LEGIBLE_PT * LINE_SPACING + 10) / 72;
+  return rowHeight(wrappedLineCount(text, perLine)) <= BODY_H - rowHeight(1);
+}
+
+/**
+ * The tallest row of a plan, as a multiple of {@link GLANCE_H}.
+ *
+ * Measured on the laid-out row — the group's own apportioned column widths, at
+ * {@link LEGIBLE_PT} — rather than on how much text the row contains. The same
+ * 1,400 characters is a comfortable row across five columns and an essay in
+ * one, and no count of characters can tell those two apart.
+ */
+function glanceRatio(table: TableModel, groups: number[][]): number {
+  let tallest = 0;
+  for (const group of groups) {
+    const sub = subTable(table, group);
+    const heights = tableRowHeights(sub, columnWidths(sub), LEGIBLE_PT);
+    for (const h of heights.rows) if (h > tallest) tallest = h;
+  }
+  return tallest / GLANCE_H;
+}
+
 interface TablePlan {
   slices: TableSlice[];
   /** Split by column across slides, not merely by row. */
   splitWide: boolean;
-  /** No arrangement of columns puts one row on a slide legibly. */
+  /** A cell too big for a slide of its own: nothing to split, nothing to emit. */
   refused: boolean;
+  /** How firmly the note says a document would have been the better shape. */
+  temperature: Temperature;
 }
 
 /**
@@ -821,30 +970,58 @@ interface TablePlan {
  * from a chair, so the few points there are to give buy nothing and cost the
  * only thing the slide was for.
  *
- * Height is what decides when splitting has stopped helping. A row taller than
- * the body of a slide cannot be placed at all, and the one lever left is fewer
- * columns beside it — so the plan falls back to the narrowest split there is,
- * and if a row still will not fit, this is prose in a grid and belongs in a
- * document. That case refuses rather than emitting a slide nobody can read.
+ * Height decides how firmly the deck says a document would have been better,
+ * and it says so *with* the slides rather than instead of them. A refusal that
+ * emits only a sentence is the one outcome where the owner's work has to be
+ * redone from scratch: they asked for a deck, so they get a deck, plus the note
+ * that this content wanted a different shape. See {@link glanceRatio} for the
+ * measure and {@link tableNote} for the three temperatures it picks between.
+ *
+ * The single exception is a cell larger than a slide of its own. Fewer columns
+ * beside it is the only lever splitting has, and that lever has already been
+ * pulled all the way — so there is nothing to emit, and that alone refuses.
  */
 function planTable(table: TableModel): TablePlan {
-  if (table.headerText.length === 0)
-    return { slices: [], splitWide: false, refused: false };
+  const none = {
+    slices: [],
+    splitWide: false,
+    refused: false,
+    temperature: "none" as const,
+  };
+  if (table.headerText.length === 0) return none;
+
+  const everyCell = [table.headerText, ...table.rowText].flat();
+  if (!everyCell.every(cellFitsAlone))
+    return { ...none, refused: true, slices: [] };
 
   const columns = columnTexts(table);
   let groups = columnGroups(columns, CONTENT_W, TABLE_METRICS);
 
+  // Placement, not legibility: a group whose rows overrun the canvas at the
+  // size they are actually drawn gets fewer columns, so the grid stays on the
+  // slide. Past the narrowest split there is no further lever — and a cell that
+  // survived `cellFitsAlone` always has room there — so this never refuses.
   if (!groups.every((g) => groupFits(subTable(table, g)))) {
     const narrow = narrowestGroups(columns.length);
     if (narrow.length > groups.length) groups = narrow;
-    if (!groups.every((g) => groupFits(subTable(table, g))))
-      return { slices: [], splitWide: false, refused: true };
   }
 
+  const ratio = glanceRatio(table, groups);
+  const splitWide = groups.length > 1;
   return {
     slices: groups.flatMap((g) => sliceRows(subTable(table, g))),
-    splitWide: groups.length > 1,
+    splitWide,
     refused: false,
+    // Above one, a row no longer fits in a glance. Above two it no longer fits
+    // on a slide at all — one record has become the whole canvas.
+    temperature:
+      ratio > 2
+        ? "document"
+        : ratio > 1
+          ? "long"
+          : splitWide
+            ? "width"
+            : "none",
   };
 }
 
