@@ -26,6 +26,8 @@ import type { WatcherItem } from "../provider-types.js";
 let requests: Array<{ path: string; query: Record<string, string> }> = [];
 /** Channel IDs `users.conversations` reports the bot as a member of. */
 let memberChannels: string[] | null = [];
+/** How many memberships the fake returns per page (Slack's real cap is 200). */
+let membershipPageSize = 1000;
 /** Per-channel `conversations.history` responses. */
 let historyByChannel: Record<string, unknown> = {};
 /** Which credential services `resolveOAuthConnection` was asked for. */
@@ -53,10 +55,22 @@ const fakeConnection = {
       if (memberChannels === null) {
         return { status: 200, headers: {}, body: { ok: false, error: "boom" } };
       }
+      // Slack pages this endpoint. Serve `membershipPageSize` at a time so a
+      // provider that ignores `next_cursor` sees only the first slice —
+      // which is exactly how a real account in 200+ channels got its
+      // configured channels silently classified as "not a member".
+      const start = req.query?.cursor ? Number(req.query.cursor) : 0;
+      const end = start + membershipPageSize;
+      const page = memberChannels.slice(start, end);
+      const more = end < memberChannels.length;
       return {
         status: 200,
         headers: {},
-        body: { ok: true, channels: memberChannels.map((id) => ({ id })) },
+        body: {
+          ok: true,
+          channels: page.map((id) => ({ id })),
+          ...(more ? { response_metadata: { next_cursor: String(end) } } : {}),
+        },
       };
     }
     if (req.path === "/conversations.history") {
@@ -90,6 +104,7 @@ const { slackProvider } = await import("../providers/slack.js");
 afterEach(() => {
   requests = [];
   memberChannels = [];
+  membershipPageSize = 1000;
   historyByChannel = {};
   resolvedServices = [];
   failingServices = new Set();
@@ -332,9 +347,7 @@ describe("slackProvider.fetchNew — message filtering", () => {
     historyByChannel = {
       C_A: {
         ok: true,
-        messages: [
-          msg({ ts: "700.000100", text: "x".repeat(40_000) }),
-        ],
+        messages: [msg({ ts: "700.000100", text: "x".repeat(40_000) })],
       },
     };
 
@@ -366,5 +379,73 @@ describe("slackProvider.fetchNew — credential resolution", () => {
     );
 
     expect(resolvedServices).toEqual(["slack", "slack_channel"]);
+  });
+});
+
+// ── Membership paging ─────────────────────────────────────────────────
+
+describe("slackProvider membership paging", () => {
+  // The failure this pins was silent and total: an identity in more than one
+  // page of channels had every configured channel classified "not a member",
+  // so the watcher reported healthy, polled nothing, raised no error, and the
+  // owner simply never saw their messages.
+  test("a channel on a later membership page is polled, not skipped", async () => {
+    membershipPageSize = 2;
+    memberChannels = ["C_A", "C_B", "C_C", "C_TARGET"];
+    historyByChannel["C_TARGET"] = { ok: true, messages: [msg()] };
+
+    const result = await slackProvider.fetchNew(
+      "slack",
+      watermark("1723459000.000000"),
+      { channels: ["C_TARGET"] },
+      "w1",
+    );
+
+    expect(result.items.map((i: WatcherItem) => i.payload.channel)).toEqual([
+      "C_TARGET",
+    ]);
+    // It had to walk past the first page to learn the membership.
+    const membershipCalls = requests.filter(
+      (r) => r.path === "/users.conversations",
+    );
+    expect(membershipCalls.length).toBe(2);
+    expect(membershipCalls[1].query.cursor).toBe("2");
+  });
+
+  test("stops at the end of the cursor chain rather than looping", async () => {
+    membershipPageSize = 2;
+    memberChannels = ["C_A", "C_B", "C_TARGET"];
+    historyByChannel["C_TARGET"] = { ok: true, messages: [msg()] };
+
+    await slackProvider.fetchNew(
+      "slack",
+      watermark("1723459000.000000"),
+      { channels: ["C_TARGET"] },
+      "w1",
+    );
+
+    expect(
+      requests.filter((r) => r.path === "/users.conversations").length,
+    ).toBe(2);
+  });
+
+  test("a membership walk past the page ceiling attempts the channel instead of skipping it", async () => {
+    // Better to ask Slack and let `not_in_channel` answer than to trust a
+    // set we know is incomplete — an unknown membership must not read as
+    // "not a member".
+    membershipPageSize = 1;
+    memberChannels = Array.from({ length: 40 }, (_, i) => `C_${i}`);
+    historyByChannel["C_TARGET"] = { ok: true, messages: [msg()] };
+
+    const result = await slackProvider.fetchNew(
+      "slack",
+      watermark("1723459000.000000"),
+      { channels: ["C_TARGET"] },
+      "w1",
+    );
+
+    expect(result.items.map((i: WatcherItem) => i.payload.channel)).toEqual([
+      "C_TARGET",
+    ]);
   });
 });

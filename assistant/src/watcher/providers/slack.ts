@@ -174,7 +174,9 @@ async function slackGet(
   if (resp.status < 200 || resp.status >= 300) {
     const body =
       typeof resp.body === "string" ? resp.body : JSON.stringify(resp.body);
-    throw new Error(`Slack ${method} HTTP ${resp.status}: ${truncate(body, 200)}`);
+    throw new Error(
+      `Slack ${method} HTTP ${resp.status}: ${truncate(body, 200)}`,
+    );
   }
   const body =
     typeof resp.body === "string"
@@ -184,34 +186,62 @@ async function slackGet(
 }
 
 /**
+ * Pages of `users.conversations` to walk. Slack caps a page at 200 (well
+ * under 1000 in practice), so this reaches ~2000 memberships — enough for a
+ * long-standing account in a busy workspace, and bounded so a paging bug on
+ * either side cannot spin a poll forever.
+ */
+const MEMBERSHIP_MAX_PAGES = 10;
+
+/**
  * The channels the bot is a member of, or null when Slack would not say.
  *
  * Null is "unknown", not "none": the caller falls back to attempting each
  * configured channel and treating `not_in_channel` as the membership answer,
  * so a transient failure here degrades gracefully instead of silencing the
  * watcher.
+ *
+ * The membership set must be COMPLETE or absent — a partial one is worse than
+ * none, because the caller reads it as authoritative and skips every
+ * configured channel it does not contain. A single unpaginated page silently
+ * did that to any identity in more than 200 channels: the watcher reported
+ * healthy, polled nothing, and logged no error, because "not in the first
+ * page" is indistinguishable from "not a member". So follow the cursor, and
+ * if the walk is cut short by the page ceiling, return null rather than a
+ * truncated set the caller would trust.
  */
 async function fetchMemberChannelIds(
   connection: OAuthConnection,
 ): Promise<Set<string> | null> {
   try {
-    const body = await slackGet(connection, "users.conversations", {
-      types: "public_channel,private_channel",
-      exclude_archived: "true",
-      limit: "200",
-    });
-    if (body.ok !== true) {
-      log.debug(
-        { error: body.error },
-        "Slack: users.conversations returned ok=false",
-      );
-      return null;
-    }
     const ids = new Set<string>();
-    for (const channel of body.channels ?? []) {
-      if (typeof channel?.id === "string" && channel.id) ids.add(channel.id);
+    let cursor = "";
+    for (let page = 0; page < MEMBERSHIP_MAX_PAGES; page++) {
+      const body = await slackGet(connection, "users.conversations", {
+        types: "public_channel,private_channel",
+        exclude_archived: "true",
+        limit: "200",
+        ...(cursor ? { cursor } : {}),
+      });
+      if (body.ok !== true) {
+        log.debug(
+          { error: body.error, page },
+          "Slack: users.conversations returned ok=false",
+        );
+        return null;
+      }
+      for (const channel of body.channels ?? []) {
+        if (typeof channel?.id === "string" && channel.id) ids.add(channel.id);
+      }
+      cursor = body.response_metadata?.next_cursor ?? "";
+      if (!cursor) return ids;
     }
-    return ids;
+    log.warn(
+      { pages: MEMBERSHIP_MAX_PAGES, seen: ids.size },
+      "Slack: membership listing exceeded the page ceiling — treating membership " +
+        "as unknown so configured channels are attempted rather than skipped",
+    );
+    return null;
   } catch (err) {
     log.debug({ err: String(err) }, "Slack: users.conversations failed");
     return null;
@@ -238,7 +268,10 @@ function isWatchableMessage(msg: SlackHistoryMessage): boolean {
   return Boolean(msg.user);
 }
 
-function messageToItem(channelId: string, msg: SlackHistoryMessage): WatcherItem {
+function messageToItem(
+  channelId: string,
+  msg: SlackHistoryMessage,
+): WatcherItem {
   const ts = msg.ts ?? "";
   // Capped at the source as well as in the engine: Slack allows message
   // bodies up to 40k characters, far beyond any other field this provider
