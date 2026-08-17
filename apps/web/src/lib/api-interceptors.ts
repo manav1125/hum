@@ -33,21 +33,12 @@ import { client as platformClient } from "@/generated/api/client.gen";
 import { client as authClient } from "@/generated/auth/client.gen";
 import { client as daemonClient } from "@/generated/daemon/client.gen";
 import { ensureCsrfCookie, getCsrfToken } from "@/lib/auth/csrf";
-import { isGatewayAuthEnabled } from "@/lib/auth/gateway-session";
-import {
-  isLocalMode,
-  isPlatformDisabled,
-  remintGatewayTokenOnce,
-} from "@/lib/local-mode";
-import { hardNavigate } from "@/lib/auth/hard-navigate";
+import { retryWithRemintedGatewayToken } from "@/lib/auth/gateway-retry";
+import { isLocalMode, isPlatformDisabled } from "@/lib/local-mode";
 import {
   getSelfHostedActorToken,
   getSelfHostedIngressUrl,
 } from "@/lib/self-hosted/connection";
-import {
-  clearSelfHostMode,
-  isSelfHostMode,
-} from "@/lib/self-hosted/cue-self-host";
 import { PLATFORM_FEATURES_DISABLED_ABORT_REASON } from "@/lib/platform-features-abort";
 import { getClientRegistrationHeaders } from "@/lib/telemetry/client-identity";
 import { getDeviceId } from "@/runtime/device-id";
@@ -257,31 +248,24 @@ export const daemonRequestInterceptor = createInterceptor({
 });
 
 /**
- * Header that marks a request already retried with a freshly minted gateway
- * token, so a second 401 (the new token is genuinely unauthorized, not just
- * stale) falls through instead of looping.
- */
-const GATEWAY_RETRY_HEADER = "X-Cue-Gw-Retry";
-
-/**
  * Daemon-only response interceptor. Two jobs:
  *
  *   1. Fire the unreachable bus on gateway-class errors (502/503/504 — the
  *      request reached the platform/gateway but not the runtime pod).
  *
- *   2. Self-heal a stale-token 401. A gateway restart rotates its signing key,
- *      which invalidates the cached gateway token's signature while it stays
- *      time-valid — so nothing re-mints it and every authed request 401s
- *      ("Failed to load …" everywhere). On the first 401 of a self-hosted
- *      gateway request we re-mint once (single-flight + cooldown) and, for
- *      idempotent reads, transparently retry with the fresh token so the
- *      original query recovers without a visible error. Non-idempotent methods
- *      (whose body the first fetch already consumed) only re-mint, so the
- *      *next* request succeeds; the current one surfaces its 401.
+ *   2. Self-heal a stale-token 401 via {@link retryWithRemintedGatewayToken}:
+ *      re-mint once (single-flight + cooldown) and, for idempotent reads,
+ *      transparently retry with the fresh token so the original query recovers
+ *      without a visible error. Non-idempotent methods (whose body the first
+ *      fetch already consumed) only re-mint, so the *next* request succeeds;
+ *      the current one surfaces its 401.
  *
  * No URL filtering: every daemon SDK request targets the assistant runtime by
  * definition. Not installed on platform/auth clients (a Django 401/502 is a
- * different failure domain).
+ * different failure domain). Note the generated client runs response
+ * interceptors on `client.request` only — never on `client.sse.*` — so the
+ * events stream reaches the same recovery by calling
+ * {@link retryWithRemintedGatewayToken} directly.
  */
 export async function daemonUnreachableInterceptor(
   response: Response,
@@ -292,44 +276,10 @@ export async function daemonUnreachableInterceptor(
     return response;
   }
 
-  if (
-    response.status !== 401 ||
-    !isGatewayAuthEnabled() ||
-    request.headers.has(GATEWAY_RETRY_HEADER)
-  ) {
-    return response;
-  }
+  if (response.status !== 401) return response;
 
-  const reminted = await remintGatewayTokenOnce();
-  if (!reminted) return response;
-
-  const token = getSelfHostedActorToken();
-  const isIdempotent = request.method === "GET" || request.method === "HEAD";
-  if (!token || !isIdempotent) return response;
-
-  const retried = new Request(request, {
-    headers: new Headers(request.headers),
-  });
-  retried.headers.set("Authorization", `Bearer ${token}`);
-  retried.headers.set(GATEWAY_RETRY_HEADER, "1");
-  try {
-    const retriedResponse = await fetch(retried);
-    // A freshly re-minted token that STILL 401s is not a stale-signature race —
-    // the durable actor token behind it has been revoked or the instance's
-    // signing key rotated. In self-host mode nothing else can recover from
-    // that: the boot path would keep re-deriving a gateway token from the dead
-    // actor token, so the install is bricked on a permanent "Failed to load"
-    // with no way back to the Connect screen. Clearing sends the user somewhere
-    // they can act (paste a fresh magic link) instead of leaving 50-100 people
-    // to be recovered by hand.
-    if (retriedResponse.status === 401 && isSelfHostMode()) {
-      clearSelfHostMode();
-      hardNavigate("/");
-    }
-    return retriedResponse;
-  } catch {
-    return response;
-  }
+  const retried = await retryWithRemintedGatewayToken(request);
+  return retried ?? response;
 }
 
 daemonClient.interceptors.request.use(daemonRequestInterceptor);

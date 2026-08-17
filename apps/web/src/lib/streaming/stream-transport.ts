@@ -9,6 +9,7 @@
 
 import { client } from "@/generated/api/client.gen";
 import type { AssistantEventEnvelope } from "@vellumai/assistant-api";
+import { retryWithRemintedGatewayToken } from "@/lib/auth/gateway-retry";
 import { parseAssistantEvent } from "@/lib/streaming/event-parser";
 import { normalizeSSEPayload } from "@/lib/streaming/sse-payload";
 import { toError } from "@/utils/to-error";
@@ -221,6 +222,16 @@ export function subscribeEvents(
   // instance. Mirrors the terminal-status handling in use-doctor-sse.ts.
   let authRejected = false;
   let authRejectedStatus: number | null = null;
+  // Spent by the first 401 this subscription sees. A stale gateway token — the
+  // signature rotates under a gateway restart while the token stays time-valid —
+  // is recoverable, and REST calls through the daemon SDK already recover from
+  // it; the stream used to be the one transport that could not, so a rotation
+  // left it permanently auth-rejected while every other request self-healed.
+  // Exactly one re-mint + replay is allowed, and only for the first 401: a
+  // budget that refilled on success would let a flapping gateway trickle auth
+  // failures into the per-IP limiter indefinitely, which is the lockout this
+  // whole terminal-status guard exists to prevent.
+  let remintAttempted = false;
   // Each connect() attempt owns its own AbortController so the
   // idle-watchdog can interrupt a single attempt without poisoning
   // subsequent reconnects (sharing one controller across attempts
@@ -306,8 +317,23 @@ export function subscribeEvents(
           // The SDK surfaces a non-OK status as a generic stream error, which
           // is indistinguishable from a network drop — so latch the status
           // here, where the real Response is visible, and let reconnect() stop.
+          //
+          // Before latching a 401, spend the one re-mint this subscription is
+          // allowed: a rotated signing key makes the cached token 401 even
+          // though the user is perfectly authorized, and the replay with a
+          // fresh token recovers the stream in place. 403 is not re-minted —
+          // that is an authorization decision, and no token fixes it.
           fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
-            const response = await globalThis.fetch(input, init);
+            const request =
+              input instanceof Request && !init
+                ? input
+                : new Request(input, init);
+            let response = await globalThis.fetch(request);
+            if (response.status === 401 && !remintAttempted && !cancelled) {
+              remintAttempted = true;
+              const replayed = await retryWithRemintedGatewayToken(request);
+              if (replayed) response = replayed;
+            }
             if (TERMINAL_STREAM_AUTH_STATUSES.has(response.status)) {
               authRejected = true;
               authRejectedStatus = response.status;

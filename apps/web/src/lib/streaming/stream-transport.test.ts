@@ -28,8 +28,57 @@ mock.module("@/lib/streaming/reconnect-cursor", () => ({
   getReconnectCursor: () => mockReconnectCursor,
 }));
 
+// ---------------------------------------------------------------------------
+// Gateway-token re-mint seam.
+//
+// The real `retryWithRemintedGatewayToken` is exercised — only its leaf
+// dependencies (the mint itself, the token slot, the self-host flag) are
+// stubbed, so the wiring between the stream transport and the shared recovery
+// path is under test rather than mocked away.
+//
+// Defaults are the "no gateway auth" world, which is what every pre-existing
+// test in this file assumes; the re-mint describe opts in explicitly.
+// ---------------------------------------------------------------------------
+
+let gatewayAuthEnabled = false;
+mock.module("@/lib/auth/gateway-session", () => ({
+  isGatewayAuthEnabled: () => gatewayAuthEnabled,
+}));
+
+let remintCallCount = 0;
+/** Consumed in order by successive re-mint calls; empty means "always true". */
+let remintOutcomes: boolean[] = [];
+mock.module("@/lib/local-mode", () => ({
+  remintGatewayTokenOnce: async () => {
+    remintCallCount++;
+    return remintOutcomes.length > 0 ? (remintOutcomes.shift() ?? false) : true;
+  },
+}));
+
+let selfHostedActorToken: string | null = "fresh-gateway-token";
+mock.module("@/lib/self-hosted/connection", () => ({
+  getSelfHostedActorToken: () => selfHostedActorToken,
+}));
+
+let selfHostMode = false;
+let clearSelfHostModeCalls = 0;
+mock.module("@/lib/self-hosted/cue-self-host", () => ({
+  isSelfHostMode: () => selfHostMode,
+  clearSelfHostMode: () => {
+    clearSelfHostModeCalls++;
+  },
+}));
+
+const hardNavigateTargets: string[] = [];
+mock.module("@/lib/auth/hard-navigate", () => ({
+  hardNavigate: (target: string) => {
+    hardNavigateTargets.push(target);
+  },
+}));
+
 import { getLifecycleDiagnosticsEvents } from "@/lib/diagnostics";
 import {
+  isStreamAuthRejection,
   subscribeEvents,
   type StreamReconnectCause,
 } from "@/lib/streaming/stream-transport";
@@ -1053,6 +1102,33 @@ describe("subscribeEvents auth rejection", () => {
     });
   }
 
+  test("a 401 without gateway auth is terminal immediately — nothing to re-mint", async () => {
+    // Complement to the loop above: with no gateway-auth mint available the
+    // recovery path bows out without a single extra request, so the 401 latches
+    // on the first response exactly as before.
+    let fetchCallCount = 0;
+    remintCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response("nope", { status: 401 });
+    }) as unknown as typeof fetch;
+
+    const stream = subscribeEvents(
+      "asst-1",
+      () => {},
+      mock(() => {}),
+      { idleTimeoutMs: 5_000, reconnectBaseDelayMs: 10 },
+    );
+
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      expect(fetchCallCount).toBe(1);
+      expect(remintCallCount).toBe(0);
+    } finally {
+      stream.cancel();
+    }
+  });
+
   test("a 500 still reconnects — only auth statuses are terminal", async () => {
     // Guards the other direction: this must not become "never retry anything".
     let fetchCallCount = 0;
@@ -1074,6 +1150,268 @@ describe("subscribeEvents auth rejection", () => {
     try {
       await new Promise((r) => setTimeout(r, 200));
       expect(fetchCallCount).toBeGreaterThan(1);
+    } finally {
+      stream.cancel();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stale gateway token: the stream recovers the same way REST calls do.
+//
+// A gateway restart rotates its signing key, which invalidates the cached
+// gateway token's signature while it stays time-valid. Daemon REST calls
+// self-heal (re-mint + replay) and silently succeed; the SSE stream used to
+// have no path to a re-mint at all, so it latched auth-rejected on the very
+// first 401. Every remount then opened a fresh subscription that 401'd once —
+// bursts of ~95 rejections/minute, past the gateway's 10-in-60s per-IP limiter,
+// locking the user out of their own instance. It also meant confirmation_request
+// events never arrived and approvals never rendered.
+// ---------------------------------------------------------------------------
+describe("subscribeEvents stale-token re-mint", () => {
+  let originalFetch: typeof fetch;
+  let originalDocument: unknown;
+
+  const RETRY_HEADER = "X-Cue-Gw-Retry";
+
+  /** A 200 SSE response that emits one frame and then holds the line open. */
+  const openStreamResponse = (): Response =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(": ping\n\n"));
+          // Stay open — no close, no error.
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    originalDocument = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = {
+      cookie: "csrftoken=test",
+    };
+    gatewayAuthEnabled = true;
+    remintCallCount = 0;
+    remintOutcomes = [];
+    selfHostedActorToken = "fresh-gateway-token";
+    selfHostMode = false;
+    clearSelfHostModeCalls = 0;
+    hardNavigateTargets.length = 0;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    gatewayAuthEnabled = false;
+    if (originalDocument === undefined) {
+      delete (globalThis as { document?: unknown }).document;
+    } else {
+      (globalThis as { document?: unknown }).document = originalDocument;
+    }
+  });
+
+  test("a single 401 re-mints once and replays the subscription with the fresh token", async () => {
+    const attempts: Array<{ auth: string | null; retry: string | null }> = [];
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      fetchCallCount++;
+      const request = input as Request;
+      attempts.push({
+        auth: request.headers.get("Authorization"),
+        retry: request.headers.get(RETRY_HEADER),
+      });
+      // Only the first attempt carries the rotated-signature token.
+      if (fetchCallCount === 1) {
+        return new Response("stale signature", { status: 401 });
+      }
+      return openStreamResponse();
+    }) as unknown as typeof fetch;
+
+    const onError = mock(() => {});
+    const onStreamOpen = mock(() => {});
+    const stream = subscribeEvents("asst-1", () => {}, onError, {
+      idleTimeoutMs: 5_000,
+      // Long backoff: any request beyond the in-place replay would have to be a
+      // reconnect, and would land outside the window below.
+      reconnectBaseDelayMs: 10_000,
+      onStreamOpen,
+    });
+
+    try {
+      await new Promise((r) => setTimeout(r, 150));
+
+      // Exactly one mint for one 401 — not one per reconnect attempt.
+      expect(remintCallCount).toBe(1);
+      // The original request plus its replay, and nothing more.
+      expect(fetchCallCount).toBe(2);
+      expect(attempts[1]?.auth).toBe("Bearer fresh-gateway-token");
+      // The replay is marked so a 401 on it can never trigger another re-mint.
+      expect(attempts[1]?.retry).toBe("1");
+      // The stream is genuinely live again — this is the whole point: without
+      // it, confirmation_request events never arrive and runs sit "Working".
+      expect(onStreamOpen).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      stream.cancel();
+    }
+  });
+
+  test("a second 401 latches auth-rejected and stops reconnecting", async () => {
+    // A freshly minted token that still 401s is a genuinely dead credential.
+    // Retrying it only feeds the per-IP auth-failure limiter, so the transport
+    // must stop dead and tell the caller it was an auth rejection.
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response("unauthorized", { status: 401 });
+    }) as unknown as typeof fetch;
+
+    const errors: Error[] = [];
+    const stream = subscribeEvents(
+      "asst-1",
+      () => {},
+      (err) => {
+        errors.push(err);
+      },
+      { idleTimeoutMs: 5_000, reconnectBaseDelayMs: 10 },
+    );
+
+    try {
+      await new Promise((r) => setTimeout(r, 250));
+
+      // One original + one replay. The short backoff above means a regression
+      // to reconnect-on-401 would show up as extra calls inside this window.
+      expect(fetchCallCount).toBe(2);
+      expect(remintCallCount).toBe(1);
+      expect(errors.length).toBeGreaterThanOrEqual(1);
+      // Typed so an outer reopen loop stops too, rather than re-opening a
+      // subscription that will 401 again.
+      expect(isStreamAuthRejection(errors[0])).toBe(true);
+
+      const countAfterGiveUp = fetchCallCount;
+      await new Promise((r) => setTimeout(r, 150));
+      expect(fetchCallCount).toBe(countAfterGiveUp);
+    } finally {
+      stream.cancel();
+    }
+  });
+
+  test("a 403 is never re-minted — no token fixes an authorization refusal", async () => {
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response("forbidden", { status: 403 });
+    }) as unknown as typeof fetch;
+
+    const stream = subscribeEvents(
+      "asst-1",
+      () => {},
+      mock(() => {}),
+      { idleTimeoutMs: 5_000, reconnectBaseDelayMs: 10 },
+    );
+
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      expect(fetchCallCount).toBe(1);
+      expect(remintCallCount).toBe(0);
+    } finally {
+      stream.cancel();
+    }
+  });
+
+  test("a storm of concurrent subscriptions cannot become a storm of mints", async () => {
+    // Twenty remounted subscriptions all 401ing in the same second is the
+    // observed shape of this bug. The mint is single-flight + cooldown-gated,
+    // so all but the first caller are told "skipped" — and a skipped mint must
+    // NOT be replayed, or the cooldown would buy nothing. Each subscription
+    // gets at most one mint call: no loops, no per-reconnect re-asking.
+    remintOutcomes = [true, false, false];
+
+    let fetchCallCount = 0;
+    let replayCount = 0;
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      fetchCallCount++;
+      const request = input as Request;
+      if (request.headers.get(RETRY_HEADER) === "1") {
+        replayCount++;
+        return openStreamResponse();
+      }
+      return new Response("stale signature", { status: 401 });
+    }) as unknown as typeof fetch;
+
+    const streams = ["asst-a", "asst-b", "asst-c"].map((id) =>
+      subscribeEvents(
+        id,
+        () => {},
+        () => {},
+        { idleTimeoutMs: 5_000, reconnectBaseDelayMs: 10_000 },
+      ),
+    );
+
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+
+      // One ask per subscription, never more.
+      expect(remintCallCount).toBe(3);
+      // Only the caller that actually won the mint replays; the two that were
+      // told "cooling down" surface their 401 and stop.
+      expect(replayCount).toBe(1);
+      expect(fetchCallCount).toBe(4);
+    } finally {
+      for (const stream of streams) stream.cancel();
+    }
+  });
+
+  test("a re-mint with no resulting token does not replay", async () => {
+    // The mint reported success but left the token slot empty (a mid-flight
+    // bootstrap). Replaying with no Authorization header would just burn
+    // another auth failure against the limiter.
+    selfHostedActorToken = null;
+
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response("unauthorized", { status: 401 });
+    }) as unknown as typeof fetch;
+
+    const stream = subscribeEvents(
+      "asst-1",
+      () => {},
+      mock(() => {}),
+      { idleTimeoutMs: 5_000, reconnectBaseDelayMs: 10 },
+    );
+
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      expect(remintCallCount).toBe(1);
+      expect(fetchCallCount).toBe(1);
+    } finally {
+      stream.cancel();
+    }
+  });
+
+  test("a replay that still 401s in self-host mode routes the user back to Connect", async () => {
+    // The durable actor token behind the mint is revoked or the signing key
+    // rotated: re-deriving forever would brick the install on a permanent
+    // "Failed to load" with no way back to a screen the user can act on.
+    selfHostMode = true;
+
+    globalThis.fetch = mock(
+      async () => new Response("unauthorized", { status: 401 }),
+    ) as unknown as typeof fetch;
+
+    const stream = subscribeEvents(
+      "asst-1",
+      () => {},
+      mock(() => {}),
+      { idleTimeoutMs: 5_000, reconnectBaseDelayMs: 10 },
+    );
+
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      expect(clearSelfHostModeCalls).toBe(1);
+      expect(hardNavigateTargets).toEqual(["/"]);
     } finally {
       stream.cancel();
     }
