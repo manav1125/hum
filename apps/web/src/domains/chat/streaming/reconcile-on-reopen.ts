@@ -52,6 +52,13 @@ export interface ReconcileOnReopenDeps {
   conversationId: string;
   /** Reconcile the active conversation against the server transcript. */
   reconcileActive: () => Promise<ReconcileActiveConversationResult>;
+  /**
+   * Reconcile pending approvals/secrets against the daemon. Separate from
+   * `reconcileActive`, which only catches the transcript up: an approval
+   * announced while the stream was down is not a message, so without this a
+   * reconnect leaves the run blocked on a prompt that never renders.
+   */
+  reconcileInteractions: () => Promise<void>;
   /** Start the reconciliation loop on a given epoch. */
   startReconciliationLoop: (epoch: number) => void;
 }
@@ -78,6 +85,14 @@ export function createReconcileOnReopen(
         cause,
       });
       if (cause === "fresh" || cause === "anchor") return;
+      // Every non-fresh reopen re-asks what is pending. `"resume"` is the
+      // visibility-driven cause, so this covers returning to a backgrounded
+      // app as well as transport recovery — the two ways a client ends up
+      // holding a stale view of an approval. `"fresh"` is excluded because
+      // the history-load path already restores interactions.
+      // `restorePendingInteractions` swallows its own failures, so there is
+      // nothing here to reject.
+      void deps.reconcileInteractions();
       if (cause === "watchdog" || cause === "error") {
         void runTransportRecoveryReconcile(deps, epoch, cause);
         return;

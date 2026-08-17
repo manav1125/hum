@@ -29,18 +29,13 @@ import { recordServerSeq } from "@/lib/streaming/server-seq";
 import { getLocalSeq, recordLocalSeq } from "@/lib/streaming/local-seq";
 import { anchorColdStartReplay } from "@/lib/streaming/cold-anchor";
 import { summarizeDisplayMessages } from "@/domains/chat/utils/diagnostics";
-import { useConversationStore } from "@/stores/conversation-store";
 import { useInteractionStore } from "@/domains/chat/interaction-store";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
 import type { SubagentStatus } from "@vellumai/assistant-api";
 
-import {
-  parsePendingSecretState,
-  parsePendingConfirmationData,
-} from "@/domains/chat/utils/send-message-utils";
+import { restorePendingInteractions } from "@/domains/chat/utils/restore-pending-interactions";
 import type { AssistantStateKind } from "@/domains/chat/types";
-import { getPendingInteractions } from "@/domains/chat/api/interactions";
 import { fetchSurfaceContent } from "@/domains/chat/api/surfaces";
 import {
   useHistoryPagination,
@@ -296,45 +291,7 @@ export function useConversationHistory({
     }
 
     // Restore pending interactions (secrets, confirmations).
-    const requestedConversationId = activeConversationId;
-    void (async () => {
-      try {
-        const interactions = await getPendingInteractions(
-          assistantId,
-          requestedConversationId,
-        );
-        if (
-          useConversationStore.getState().activeConversationId !==
-          requestedConversationId
-        ) {
-          return;
-        }
-        const parsed_secret = interactions.pendingSecret
-          ? parsePendingSecretState(
-              interactions.pendingSecret as Record<string, unknown>,
-            )
-          : null;
-        if (parsed_secret) {
-          useInteractionStore.getState().showSecret(parsed_secret);
-        }
-        if (
-          interactions.pendingConfirmation &&
-          !useInteractionStore.getState().pendingConfirmation
-        ) {
-          const { state } = parsePendingConfirmationData(
-            interactions.pendingConfirmation as Record<string, unknown>,
-          );
-          useInteractionStore.getState().showConfirmation(state);
-        }
-        if (!interactions.pendingSecret && !interactions.pendingConfirmation) {
-          useConversationStore
-            .getState()
-            .removeAttentionConversationId(requestedConversationId);
-        }
-      } catch {
-        // Keep attention key on failure.
-      }
-    })();
+    void restorePendingInteractions(assistantId, activeConversationId);
   }, [
     pagination.isSuccess,
     pagination.dataUpdatedAt,

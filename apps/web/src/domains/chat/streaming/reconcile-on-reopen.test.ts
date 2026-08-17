@@ -53,6 +53,7 @@ const makeDeps = (
     assistantId: string;
     conversationId: string;
     reconcileActive: () => Promise<ReconcileActiveConversationResult>;
+    reconcileInteractions: () => Promise<void>;
     startReconciliationLoop: (epoch: number) => void;
   }> = {},
 ) => {
@@ -60,13 +61,17 @@ const makeDeps = (
     override.reconcileActive ?? mock(async () => makeReconcileResult());
   const startReconciliationLoop =
     override.startReconciliationLoop ?? mock(() => {});
+  const reconcileInteractions =
+    override.reconcileInteractions ?? mock(async () => {});
   return {
     reconcileActive,
+    reconcileInteractions,
     startReconciliationLoop,
     deps: {
       assistantId: override.assistantId ?? "asst-1",
       conversationId: override.conversationId ?? "conv-1",
       reconcileActive,
+      reconcileInteractions,
       startReconciliationLoop,
     },
   };
@@ -108,6 +113,45 @@ describe("reconcile-on-reopen — gating", () => {
       "sse_stream_opened",
       expect.objectContaining({ cause: "fresh" }),
     );
+  });
+});
+
+describe("reconcile-on-reopen — pending interactions", () => {
+  // An approval announced while the stream was down is not a message, so
+  // reconcileActive alone leaves the run blocked on a prompt that never
+  // renders — the shape behind "chat frozen, refresh the web app to see the
+  // intervention".
+  test.each(["resume", "debug", "watchdog", "error"] as const)(
+    "%s cause: re-asks the daemon what is pending",
+    (cause) => {
+      const { deps, reconcileInteractions } = makeDeps();
+      const handler = createReconcileOnReopen(deps);
+
+      handler.handleSseOpened({ assistantId: "asst-1", cause });
+
+      expect(reconcileInteractions).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test.each(["fresh", "anchor"] as const)(
+    "%s cause: leaves interactions to the history-load path",
+    (cause) => {
+      const { deps, reconcileInteractions } = makeDeps();
+      const handler = createReconcileOnReopen(deps);
+
+      handler.handleSseOpened({ assistantId: "asst-1", cause });
+
+      expect(reconcileInteractions).not.toHaveBeenCalled();
+    },
+  );
+
+  test("ignores opens for a different assistant", () => {
+    const { deps, reconcileInteractions } = makeDeps();
+    const handler = createReconcileOnReopen(deps);
+
+    handler.handleSseOpened({ assistantId: "asst-OTHER", cause: "resume" });
+
+    expect(reconcileInteractions).not.toHaveBeenCalled();
   });
 });
 

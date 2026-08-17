@@ -33,6 +33,7 @@ import {
 } from "@/domains/chat/streaming/reachability-burst-limiter";
 import { createReconcileOnReopen } from "@/domains/chat/streaming/reconcile-on-reopen";
 import { createSseEventConsumer } from "@/domains/chat/streaming/sse-event-consumer";
+import { restorePendingInteractions } from "@/domains/chat/utils/restore-pending-interactions";
 import { endTurn } from "@/domains/chat/turn-coordinator";
 import { isSending, useTurnStore } from "@/domains/chat/turn-store";
 import { useBusSubscription } from "@/hooks/use-bus-subscription";
@@ -250,6 +251,8 @@ export function useEventStream({
       assistantId,
       conversationId: activeConversationId,
       reconcileActive: () => reconcileActiveConversationRef.current(),
+      reconcileInteractions: () =>
+        restorePendingInteractions(assistantId, activeConversationId),
       startReconciliationLoop: (epoch) =>
         startReconciliationLoopRef.current(epoch),
     });

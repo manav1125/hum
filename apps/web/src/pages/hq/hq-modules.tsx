@@ -49,6 +49,27 @@ export { useNextMove };
 export type { NextMove };
 
 /**
+ * True when a failed card action was rejected because the thing it acts on no
+ * longer exists — most often a `/v1/confirm` for an approval the daemon has
+ * already resolved, swept, or lost across a restart (pending interactions are
+ * held in memory only).
+ *
+ * The generated client throws the parsed error *body*, not a Response, so
+ * there is no HTTP status to read here — `{ error: { code } }` from
+ * `httpError()` is the discriminator that actually survives the throw.
+ */
+function isMissingApproval(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "error" in err &&
+    typeof (err as { error?: unknown }).error === "object" &&
+    (err as { error: { code?: unknown } }).error !== null &&
+    (err as { error: { code?: unknown } }).error.code === "NOT_FOUND"
+  );
+}
+
+/**
  * The emphasized focus card that sits atop Needs-you. Blue 1.5px border +
  * soft blue-washed gradient (light: #F5F8FF→#fff; dark: the same recipe via
  * color-mix on the theme tokens). Actions come from the daemon move itself.
@@ -81,6 +102,18 @@ export function NextMoveCard({
       void queryClient.invalidateQueries({
         queryKey: nextMoveQueryKey(assistantId),
       }),
+    onError: (err) => {
+      // A 404 means the daemon has no record of this approval — it was
+      // answered somewhere else, swept, or lost when the daemon restarted
+      // (pending interactions are held in memory). The card is describing a
+      // decision that no longer exists, so refetch to clear it rather than
+      // leaving a button whose only outcome is another 404.
+      if (isMissingApproval(err)) {
+        void queryClient.invalidateQueries({
+          queryKey: nextMoveQueryKey(assistantId),
+        });
+      }
+    },
   });
 
   if (!move.hasMove) return null;
@@ -198,7 +231,9 @@ export function NextMoveCard({
       {act.isError ? (
         // Previously there was no error branch at all, so a 400 from /v1/confirm
         // read as success: the button re-enabled, the card stayed, and the user
-        // had no way to know their approval never landed.
+        // had no way to know their approval never landed. A 404 needs its own
+        // wording — the approval is gone, so "try again" is advice that cannot
+        // ever work, and the run it was blocking has to be picked up again.
         <div
           role="alert"
           style={{
@@ -207,7 +242,9 @@ export function NextMoveCard({
             color: C.dangerText,
           }}
         >
-          That didn’t go through. Try again, or open the thread to decide there.
+          {isMissingApproval(act.error)
+            ? "This approval is no longer waiting — it was already answered, or the run ended before you got here. Open the thread to see where it stopped."
+            : "That didn’t go through. Try again, or open the thread to decide there."}
         </div>
       ) : null}
     </div>
