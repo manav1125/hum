@@ -82,7 +82,12 @@ import { CueRing, CueRingHero, type OrbitChip } from "../cue-ring";
 import { EmptyOrbit } from "../empty-orbit";
 import { GlassCard } from "../glass-card";
 import { DismissX, dismissLeave, useDismissTask } from "../undo-toast";
-import { cornerChromeProps } from "../corner-chrome";
+import {
+  CORNER_CHROME_BAND,
+  CORNER_CHROME_GAP,
+  CORNER_CHROME_TOP,
+  cornerChromeProps,
+} from "../corner-chrome";
 import {
   cardBody,
   cardTitle,
@@ -460,9 +465,8 @@ function NeedsYouV3({
 
   const shown = capDeck(stack);
   const capped = isCapped(count);
-  const hiddenReview = review.length - shown.filter((s) =>
-    s.key.startsWith("review:"),
-  ).length;
+  const hiddenReview =
+    review.length - shown.filter((s) => s.key.startsWith("review:")).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1047,7 +1051,16 @@ export function Mv3Today({
   const navigate = useNavigate();
   // The fixed ☰ / avatar buttons land on the eyebrow row; this is the row's
   // half of that arrangement. See `corner-chrome.ts`.
-  const cornerChrome = cornerChromeProps(useLocation().pathname, "row");
+  const pathname = useLocation().pathname;
+  const cornerChrome = cornerChromeProps(pathname, "row");
+  /**
+   * The empty-orbit takeover's half of the same arrangement.
+   *
+   * The ritual slot now rides above that takeover (v44 R5), and unlike the
+   * eyebrow it is a full-width card — nothing about it reads correctly between
+   * two fixed buttons, so it takes the `band` reserve and starts below them.
+   */
+  const cornerChromeBand = cornerChromeProps(pathname, "band");
   const scrollRef = useRef<HTMLDivElement>(null);
   const eyebrowRowRef = useRef<HTMLDivElement>(null);
   const greetingRef = useRef<HTMLDivElement>(null);
@@ -1242,9 +1255,61 @@ export function Mv3Today({
 
   if (orbitEmpty && !paused.isLoading) {
     // Keep the undo pill alive if dismissing the last card emptied the orbit.
+    //
+    // The ritual slot rides ABOVE the takeover rather than being hidden by it
+    // (design v44 R5, overturning our suppression). *"The first morning is
+    // arguably exactly when a ritual should introduce itself"* — and hiding it
+    // here would have cost the best moment in onboarding, the one time Cue can
+    // show rather than say. The condition is enforced where it belongs, in
+    // `pickRitualFace`: a fresh instance with nothing watched has no brief to
+    // introduce, `ritual` is `null`, and this state renders exactly as before.
+    if (!ritual) {
+      return (
+        <>
+          <EmptyOrbit />
+          {toastNode}
+        </>
+      );
+    }
     return (
       <>
-        <EmptyOrbit />
+        <div
+          data-mv3
+          data-slot="mv3-empty-orbit-with-ritual"
+          style={{
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            background: "var(--mv3-bg)",
+            color: "var(--mv3-text)",
+            fontFamily: "var(--mv3-font)",
+          }}
+        >
+          <div
+            {...cornerChromeBand}
+            style={{
+              flexShrink: 0,
+              // Clear the fixed ☰ / avatar buttons entirely rather than share
+              // their row: this is a full-width card, and nothing about a card
+              // reads correctly between two floating buttons. The whole band —
+              // the buttons' own offset, their height, and a gap — comes from
+              // `corner-chrome.ts`, so moving the chrome moves this with it.
+              paddingTop: `calc(${SAFE_TOP} + ${
+                CORNER_CHROME_TOP + CORNER_CHROME_BAND + CORNER_CHROME_GAP
+              }px)`,
+              paddingLeft: 16,
+              paddingRight: 16,
+            }}
+          >
+            <Mv3RitualSlot face={ritual} />
+          </div>
+          {/* The takeover keeps the rest of the screen; it centres its own
+              content inside whatever height is left, so the card above it
+              costs the mark a little room rather than pushing it off. */}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <EmptyOrbit />
+          </div>
+        </div>
         {toastNode}
       </>
     );

@@ -141,18 +141,52 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("composeMorningBriefCopy", () => {
-  test("finished + review items compose the two-part line", () => {
-    const copy = composeMorningBriefCopy({
+  /** Non-null assertion with a message, so a `null` copy fails legibly. */
+  function copyOf(
+    input: Parameters<typeof composeMorningBriefCopy>[0],
+  ): NonNullable<ReturnType<typeof composeMorningBriefCopy>> {
+    const copy = composeMorningBriefCopy(input);
+    if (!copy) throw new Error("expected a push, got none");
+    return copy;
+  }
+
+  test("the push is the sentence, and the ask is the line under it", () => {
+    // Design v44 N2. What this replaces — "3 finished overnight · 1 needs your
+    // OK" — was true and read like a system report; the sentence is the thing
+    // worth waking someone for, and it is the SAME sentence the ritual slot
+    // renders at the top of Today.
+    const copy = copyOf({
       overnight: items(3, 1),
       ask: reviewAsk,
+      by: "10:30",
     });
-    expect(copy.title).toBe("Your morning brief is ready");
-    expect(copy.body).toBe("3 finished overnight · 1 needs your OK");
+    expect(copy.title).toBe("While you slept, Cue finished three things.");
+    expect(copy.body).toBe("One needs you before 10:30.");
   });
 
-  test("all quiet gets the calm variant", () => {
-    const copy = composeMorningBriefCopy({ overnight: [], ask: null });
-    expect(copy.body).toBe("All quiet overnight — your day's ready.");
+  test("one thing reads singular, and past twelve the numeral returns", () => {
+    expect(copyOf({ overnight: items(1, 0), ask: null }).title).toBe(
+      "While you slept, Cue finished one thing.",
+    );
+    expect(copyOf({ overnight: items(13, 0), ask: null }).title).toBe(
+      "While you slept, Cue finished 13 things.",
+    );
+  });
+
+  test("no deadline on file: the line stops after 'you'", () => {
+    // The count is the fact; the time is a courtesy only extended when the day
+    // actually carries one. Inventing a time would be the exact vagueness the
+    // ruling forbids, wearing a number.
+    const copy = copyOf({ overnight: items(0, 1), ask: null });
+    expect(copy.body).toBe("One needs you.");
+  });
+
+  test("the quiet night still fires, with no second line", () => {
+    // A push that only ever arrives with news teaches the owner that silence
+    // means broken.
+    const copy = copyOf({ overnight: [], ask: null });
+    expect(copy.title).toBe("All quiet overnight.");
+    expect(copy.body).toBe("");
   });
 
   // REGRESSION: this push said "All quiet overnight — your day's ready." on a
@@ -160,73 +194,68 @@ describe("composeMorningBriefCopy", () => {
   // state inside the window, and `gatherOvernight` only returns items that
   // did — so every count was legitimately zero and the copy read the absence
   // of movement as an absence of work. A quiet night is not a clear day.
-  test("standing work overrides the calm variant", () => {
-    const copy = composeMorningBriefCopy({
+  test("standing work overrides the calm sentence", () => {
+    const copy = copyOf({
       overnight: [],
       ask: null,
       standingNeedsYou: 7,
     });
-    expect(copy.body).toBe("Nothing new overnight · 7 still need your OK");
-    expect(copy.body).not.toContain("All quiet");
+    expect(copy.title).toBe("Nothing finished overnight.");
+    expect(copy.title).not.toContain("All quiet");
+    expect(copy.body).toBe("Seven need you.");
   });
 
   test("a single standing item reads singular", () => {
-    const copy = composeMorningBriefCopy({
-      overnight: [],
-      ask: null,
-      standingNeedsYou: 1,
-    });
-    expect(copy.body).toBe("Nothing new overnight · 1 still needs your OK");
+    const copy = copyOf({ overnight: [], ask: null, standingNeedsYou: 1 });
+    expect(copy.body).toBe("One needs you.");
   });
 
-  test("overnight activity still wins — standing work does not double-count", () => {
+  test("overnight activity still wins the sentence, and standing work keeps the ask", () => {
     // The seven standing items INCLUDE anything that also moved overnight, so
-    // reporting both would count the same item twice. Movement is the more
-    // specific story and keeps the line.
-    const copy = composeMorningBriefCopy({
+    // the window's own count is preferred when it has one. Movement is the more
+    // specific story and keeps the sentence; the ask below it is not dropped.
+    const copy = copyOf({
       overnight: items(2, 0),
       ask: null,
       standingNeedsYou: 7,
     });
-    expect(copy.body).toBe("2 finished overnight");
+    expect(copy.title).toBe("While you slept, Cue finished two things.");
+    expect(copy.body).toBe("Seven need you.");
   });
 
-  test("genuinely nothing waiting still gets the calm variant", () => {
-    const copy = composeMorningBriefCopy({
-      overnight: [],
-      ask: null,
-      standingNeedsYou: 0,
-    });
-    expect(copy.body).toBe("All quiet overnight — your day's ready.");
-  });
-
-  test("done-only night omits the OK part", () => {
-    const copy = composeMorningBriefCopy({ overnight: items(2, 0), ask: null });
-    expect(copy.body).toBe("2 finished overnight");
+  test("genuinely nothing waiting still gets the calm sentence", () => {
+    const copy = copyOf({ overnight: [], ask: null, standingNeedsYou: 0 });
+    expect(copy.title).toBe("All quiet overnight.");
+    expect(copy.body).toBe("");
   });
 
   test("a pending approval counts on top of review items", () => {
-    const copy = composeMorningBriefCopy({
-      overnight: items(0, 2),
-      ask: approvalAsk,
-    });
-    expect(copy.body).toBe("3 need your OK");
+    const copy = copyOf({ overnight: items(0, 2), ask: approvalAsk });
+    expect(copy.body).toBe("Three need you.");
   });
 
   test("a review ask older than the window still counts once", () => {
-    const copy = composeMorningBriefCopy({
-      overnight: items(1, 0),
-      ask: reviewAsk,
-    });
-    expect(copy.body).toBe("1 finished overnight · 1 needs your OK");
+    const copy = copyOf({ overnight: items(1, 0), ask: reviewAsk });
+    expect(copy.title).toBe("While you slept, Cue finished one thing.");
+    expect(copy.body).toBe("One needs you.");
   });
 
   test("review ask is not double-counted against windowed review items", () => {
-    const copy = composeMorningBriefCopy({
-      overnight: items(0, 1),
-      ask: reviewAsk,
-    });
-    expect(copy.body).toBe("1 needs your OK");
+    const copy = copyOf({ overnight: items(0, 1), ask: reviewAsk });
+    expect(copy.body).toBe("One needs you.");
+  });
+
+  test("figures that cannot be computed produce NO push at all", () => {
+    // Design's N2 caveat: a serif sentence is not licence to be vague. The
+    // previous shape failed the standing read to zero, which let an outage
+    // send "All quiet overnight" over an unknown amount of waiting work.
+    expect(
+      composeMorningBriefCopy({
+        overnight: [],
+        ask: null,
+        standingNeedsYou: null,
+      }),
+    ).toBeNull();
   });
 });
 
@@ -333,8 +362,13 @@ describe("sendMorningBriefPush", () => {
     expect(signal.sourceChannel).toBe("assistant_tool");
     expect(signal.dedupeKey).toBe("morning-brief:2026-07-18");
     expect(signal.contextPayload).toMatchObject({
-      requestedTitle: "Your morning brief is ready",
-      requestedMessage: "1 finished overnight · 1 needs your OK",
+      // Two lines, in design's order: the sentence, then the one ask.
+      // (The awaiting-review item is the brief's ask, so `buildMorningBrief`
+      // drops it from the overnight list — which is why "one thing" finished
+      // and one thing needs them, rather than the double-count the push used
+      // to produce by assembling the payload itself.)
+      requestedTitle: "While you slept, Cue finished one thing.",
+      requestedMessage: "One needs you.",
       preferredChannels: ["platform"],
       deepLinkMetadata: {
         kind: "morning_brief",
@@ -345,11 +379,14 @@ describe("sendMorningBriefPush", () => {
     expect(signal.attentionHints.urgency).toBe("medium");
   });
 
-  test("all-quiet day emits the honest calm line", async () => {
+  test("all-quiet day still fires, as one line", async () => {
     await sendMorningBriefPush("2026-07-18");
-    expect(
-      (emitted[0].contextPayload as Record<string, unknown>).requestedMessage,
-    ).toBe("All quiet overnight — your day's ready.");
+    const payload = emitted[0].contextPayload as Record<string, unknown>;
+    expect(payload.requestedMessage).toBe("All quiet overnight.");
+    // No second line — and therefore no `requestedTitle`, because an empty
+    // `requestedMessage` would drop straight out of the pipeline's
+    // deterministic pass-through and hand our copy to the LLM to rewrite.
+    expect(payload.requestedTitle).toBeUndefined();
   });
 
   test("pipeline dedupe (daemon restarted after sending) reports handled", async () => {
@@ -379,7 +416,7 @@ describe("sendMorningBriefPush", () => {
     await sendMorningBriefPush("2026-07-18");
     expect(apnsAlerts).toHaveLength(1);
     expect(apnsAlerts[0]).toMatchObject({
-      title: "Your morning brief is ready",
+      title: "All quiet overnight.",
       collapseId: "brief-2026-07-18",
       threadId: "cue-morning-brief",
       data: { kind: "morning_brief", path: MORNING_BRIEF_PATH },

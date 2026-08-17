@@ -12,8 +12,11 @@ import { beforeEach, describe, expect, test } from "bun:test";
 
 import {
   dismissRitual,
+  hasSeenBrief,
+  markFirstBriefMorning,
   markRitualRead,
   periodKey,
+  readFirstBriefMorning,
   readRitualProgress,
 } from "./ritual-progress";
 
@@ -88,5 +91,38 @@ describe("what it remembers", () => {
       read: false,
       dismissed: false,
     });
+  });
+});
+
+describe("has this owner met a brief before (R5)", () => {
+  test("no brief yet: false, and nothing stored", () => {
+    expect(readFirstBriefMorning()).toBeNull();
+    expect(hasSeenBrief(at(19))).toBe(false);
+  });
+
+  test("the first morning belongs to the first brief; the next one is ordinary", () => {
+    markFirstBriefMorning(at(19, 7));
+    // Still the same morning — the exception design granted is a morning, not
+    // a tap, so it survives closing the app and coming back at 10.
+    expect(hasSeenBrief(at(19, 10))).toBe(false);
+    expect(hasSeenBrief(at(20, 7))).toBe(true);
+  });
+
+  test("the stamp never moves forward", () => {
+    markFirstBriefMorning(at(19));
+    markFirstBriefMorning(at(25));
+    expect(readFirstBriefMorning()).toBe("2026-08-19");
+    expect(hasSeenBrief(at(25))).toBe(true);
+  });
+
+  test("a daily prune cannot take it — it lives outside the period namespace", () => {
+    // `prune` deletes every key under `cue.mv3.ritual.brief.` except the
+    // current period. A fact whose whole job is to outlive its day must not
+    // sit in there, or Cue re-introduces itself every morning forever.
+    markFirstBriefMorning(at(19));
+    dismissRitual("brief", at(19));
+    markRitualRead("brief", at(20));
+    dismissRitual("brief", at(21));
+    expect(readFirstBriefMorning()).toBe("2026-08-19");
   });
 });

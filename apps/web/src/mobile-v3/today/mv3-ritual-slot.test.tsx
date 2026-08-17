@@ -28,6 +28,9 @@ function face(over: Partial<RitualSlotInput> = {}) {
     now: at(19, 7), // Wednesday morning
     brief: { done: 4, needsYou: 1, by: "10:30" },
     weekly: { moved: 9, slipped: 2 },
+    intake: { read: 41, yours: 12 },
+    sources: 6,
+    hasSeenBrief: true,
     briefProgress: { read: false, dismissed: false },
     weeklyProgress: { read: false, dismissed: false },
     briefHref: "/assistant/brief",
@@ -38,6 +41,27 @@ function face(over: Partial<RitualSlotInput> = {}) {
 
 function draw(node: React.ReactElement) {
   return render(<MemoryRouter>{node}</MemoryRouter>);
+}
+
+/**
+ * A sub-line whose emphasis splits it across nodes.
+ *
+ * Testing Library's default text matcher joins only an element's DIRECT text
+ * children, so a line with a `<b>` in the middle of it is invisible to
+ * `getByText("the whole sentence")`. That is a property of the matcher, not of
+ * the DOM — the owner reads one sentence — so the assertion reads the whole
+ * sentence too.
+ */
+function line(container: HTMLElement, expected: string): HTMLElement {
+  const el = Array.from(container.querySelectorAll("div")).find(
+    (d) => d.textContent === expected,
+  );
+  if (!el) {
+    throw new Error(
+      `no line reading "${expected}" — saw: ${container.textContent}`,
+    );
+  }
+  return el as HTMLElement;
 }
 
 describe("the brief face", () => {
@@ -61,12 +85,114 @@ describe("the brief face", () => {
     const slot = container.querySelector('[data-slot="mv3-ritual"]');
     expect((slot as HTMLElement).style.borderColor).toContain("61, 110, 232");
     const cta = screen.getByText("Read it · 2 min");
-    expect((cta as HTMLElement).style.background).toContain("--mv3-accent-fill");
+    expect((cta as HTMLElement).style.background).toContain(
+      "--mv3-accent-fill",
+    );
   });
 
   test("with nothing waiting there is no amber at all", () => {
     draw(<Mv3RitualSlot face={face({ brief: { done: 2, needsYou: 0 } })} />);
     expect(screen.queryByText(/needs? you/)).toBeNull();
+  });
+});
+
+describe("the all-quiet face (R3)", () => {
+  const quiet = () => face({ brief: { done: 0, needsYou: 0 } });
+
+  test("renders no primary verb — the sentence is the brief", () => {
+    draw(<Mv3RitualSlot face={quiet()} />);
+    expect(screen.getByText("All quiet overnight.")).toBeTruthy();
+    // Not a button anywhere except "Dismiss": a verb here would send the owner
+    // to an empty room, which is the tap "omit rather than fake" is about.
+    const buttons = screen.getAllByRole("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]!.textContent).toBe("Dismiss");
+    expect(screen.getByText("Nothing to read this morning")).toBeTruthy();
+    expect(screen.queryByText("Read it · 2 min")).toBeNull();
+    expect(screen.queryByText("Later")).toBeNull();
+  });
+
+  test("names what was watched, with the emphasis design draws", () => {
+    const { container } = draw(<Mv3RitualSlot face={quiet()} />);
+    const sub = line(
+      container,
+      "Nothing arrived, nothing needs you. Cue was watching — 6 sources, no movement.",
+    );
+    // The clause that separates a quiet night from a broken pipeline is the
+    // one carrying the weight.
+    expect(container.querySelector("b")?.textContent).toBe("Cue was watching");
+    // It states a fact about watching, not an ask. No amber.
+    expect(sub.style.color).not.toContain("amber");
+  });
+
+  test("still wears the ritual's blue, one step down", () => {
+    const { container } = draw(<Mv3RitualSlot face={quiet()} />);
+    const slot = container.querySelector(
+      '[data-slot="mv3-ritual"]',
+    ) as HTMLElement;
+    expect(slot.style.border).toContain("61, 110, 232");
+    // Dimmer than the eventful card — the ritual is no less real, the night
+    // just was less busy.
+    expect(slot.style.border).toContain(".32");
+  });
+
+  test("Dismiss records the ritual as done", () => {
+    draw(<Mv3RitualSlot face={quiet()} />);
+    fireEvent.click(screen.getByText("Dismiss"));
+    expect(readRitualProgress("brief", new Date()).dismissed).toBe(true);
+  });
+});
+
+describe("the first-brief face (R5)", () => {
+  const first = () => face({ hasSeenBrief: false });
+
+  test("introduces itself with the figures it measured", () => {
+    const { container } = draw(<Mv3RitualSlot face={first()} />);
+    expect(screen.getByText("YOUR FIRST BRIEF")).toBeTruthy();
+    expect(
+      screen.getByText("One night in, and I've read 41 things."),
+    ).toBeTruthy();
+    expect(
+      line(
+        container,
+        "Twelve looked like yours. This is what every morning looks like now.",
+      ),
+    ).toBeTruthy();
+    expect(container.querySelector("b")?.textContent).toBe(
+      "This is what every morning looks like now.",
+    );
+    expect(screen.getByText("Read it · 2 min")).toBeTruthy();
+  });
+
+  test("is the loudest the card ever gets — and only this once", () => {
+    const { container } = draw(<Mv3RitualSlot face={first()} />);
+    const slot = container.querySelector(
+      '[data-slot="mv3-ritual"]',
+    ) as HTMLElement;
+    expect(slot.dataset.tone).toBe("first");
+    expect(slot.style.borderWidth).toBe("1.5px");
+
+    cleanup();
+    const ordinary = draw(<Mv3RitualSlot face={face()} />);
+    const after = ordinary.container.querySelector(
+      '[data-slot="mv3-ritual"]',
+    ) as HTMLElement;
+    expect(after.dataset.tone).toBe("ordinary");
+    expect(after.style.borderWidth).toBe("1px");
+  });
+
+  test("nothing watched yet renders NOTHING — the takeover keeps the screen", () => {
+    const { container } = draw(
+      <Mv3RitualSlot
+        face={face({
+          hasSeenBrief: false,
+          intake: { read: 0, yours: 0 },
+          sources: 0,
+        })}
+      />,
+    );
+    expect(container.querySelector('[data-slot="mv3-ritual"]')).toBeNull();
+    expect(container.textContent).toBe("");
   });
 });
 

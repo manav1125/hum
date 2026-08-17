@@ -28,6 +28,14 @@
  * the surface. A ritual you have done stops asking; it does not disappear
  * mid-morning and leave you wondering whether you imagined it.
  *
+ * **A brief with nothing in it still has a face (R3).** The all-quiet card
+ * drops the primary verb — there is nothing to read, so the sentence is the
+ * brief — and says what was watched instead, because "6 sources, no movement"
+ * is the whole difference between a quiet night and a broken pipeline.
+ *
+ * **And the first one says so (R5).** One morning, once, the card wears the
+ * heavier border and reports what a night of watching actually produced.
+ *
  * Anything this component cannot say honestly, it does not render at all —
  * `useRitualSlot` returns `null` and nothing sits at the top of Today. See
  * `ritual-slot.ts` for that decision; it is the whole reason this is a
@@ -47,11 +55,32 @@ const serif = "'Instrument Serif', Georgia, serif";
  * The blue wash is a THIRD GROUND, not the canvas and not a card (D2's
  * addendum). Text on it therefore takes the `-text` legs, which are measured
  * against both grounds, rather than a hex picked to match the frame.
+ *
+ * Three strengths, all the same hue, all read off the pack's inline styles:
+ *
+ *   - `WASH` — the ordinary invitation.
+ *   - `QUIET` — the all-quiet face, one step down. A night in which nothing
+ *     happened should press slightly less on the eye than one in which four
+ *     things did; the hue does not change, because the ritual is no less real.
+ *   - `FIRST` — the introduction, one step up and the only 1.5px border in the
+ *     component. It is loud exactly once, ever.
  */
 const WASH = {
   backgroundImage:
     "linear-gradient(155deg, rgba(61,110,232,.17), rgba(61,110,232,.05))",
   border: "1px solid rgba(61,110,232,.42)",
+} as const;
+
+const QUIET = {
+  backgroundImage:
+    "linear-gradient(155deg, rgba(61,110,232,.14), rgba(61,110,232,.04))",
+  border: "1px solid rgba(61,110,232,.32)",
+} as const;
+
+const FIRST = {
+  backgroundImage:
+    "linear-gradient(155deg, rgba(61,110,232,.2), rgba(61,110,232,.05))",
+  border: "1.5px solid rgba(61,110,232,.45)",
 } as const;
 
 /** The dated microlabel — mono, 8.5px, +0.12em, accent. */
@@ -122,13 +151,18 @@ export function Mv3RitualSlot({
     );
   }
 
+  // Which of the three washes this face wears. The all-quiet face is the one
+  // with no verb; the first is the one design bought back from suppression.
+  const wash = face.tone === "first" ? FIRST : face.cta === null ? QUIET : WASH;
+
   return (
     <div
       data-slot="mv3-ritual"
       data-ritual={face.kind}
+      data-tone={face.tone}
       style={{
         position: "relative",
-        ...WASH,
+        ...wash,
         borderRadius: 18,
         padding: "13px 14px",
         ...style,
@@ -181,40 +215,63 @@ export function Mv3RitualSlot({
             fontSize: 11.5,
             lineHeight: 1.5,
             marginTop: 6,
-            // Amber ONLY when the sub-line is the needs-you fact. The weekly's
-            // sub-line is a description of the surface, and description does
-            // not get to wear the colour that means "answer me".
+            // Amber ONLY when the sub-line IS the needs-you fact. Every other
+            // sub-line — the weekly's description of its own pager, the first
+            // brief's "this is what every morning looks like now", the quiet
+            // night's account of what was watched — describes rather than
+            // asks, and description does not get to wear the colour that
+            // means "answer me". The face says which; the view does not guess.
             color:
-              face.needsYou > 0
+              face.subTone === "amber"
                 ? "var(--mv3-amber-text)"
                 : "var(--mv3-pill-text)",
           }}
         >
-          {face.sub}
+          {face.sub.map((seg, i) =>
+            seg.strong ? (
+              <b key={i} style={{ color: "var(--mv3-text)", fontWeight: 600 }}>
+                {seg.text}
+              </b>
+            ) : (
+              seg.text
+            ),
+          )}
         </div>
       ) : null}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11 }}>
-        <button
-          type="button"
-          className="cue-pressable"
-          onClick={open}
-          style={{
-            flex: 1,
-            background: "var(--mv3-accent-fill)",
-            color: "var(--mv3-accent-on-fill)",
-            border: "none",
-            borderRadius: 11,
-            padding: 10,
-            fontSize: 12.5,
-            fontWeight: 600,
-            fontFamily: "inherit",
-            cursor: "pointer",
-            WebkitTapHighlightColor: "transparent",
-          }}
-        >
-          {face.cta}
-        </button>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11 }}
+      >
+        {face.cta === null ? (
+          /* R3's all-quiet face has NO primary verb — there is nothing to
+             read, so the sentence is the brief. The note stands where the
+             button would, so the row keeps its shape and the card does not
+             read as one that lost its button. */
+          <span style={{ flex: 1, fontSize: 11, color: "var(--mv3-muted)" }}>
+            {face.note}
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="cue-pressable"
+            onClick={open}
+            style={{
+              flex: 1,
+              background: "var(--mv3-accent-fill)",
+              color: "var(--mv3-accent-on-fill)",
+              border: "none",
+              borderRadius: 11,
+              padding: 10,
+              fontSize: 12.5,
+              fontWeight: 600,
+              fontFamily: "inherit",
+              cursor: "pointer",
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            {face.cta}
+          </button>
+        )}
         <button
           type="button"
           className="cue-pressable"
@@ -226,14 +283,18 @@ export function Mv3RitualSlot({
             background: "none",
             border: "none",
             fontSize: 11,
-            color: "var(--mv3-muted)",
+            // "Dismiss" is the only control on the all-quiet face, so it takes
+            // the accent the pack gives it there; beside a primary verb it
+            // stays muted and secondary.
+            color:
+              face.cta === null ? "var(--mv3-accent-text)" : "var(--mv3-muted)",
             padding: "6px 4px",
             fontFamily: "inherit",
             cursor: "pointer",
             WebkitTapHighlightColor: "transparent",
           }}
         >
-          Later
+          {face.dismiss}
         </button>
       </div>
     </div>

@@ -156,6 +156,66 @@ function prune(s: Storage, kind: RitualKind, keep: string): void {
   for (const key of stale) s.removeItem(key);
 }
 
+/* ------------------------------------------------------------------------- */
+/* R5 — has this owner met a brief before?                                    */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * The date of the first morning a brief was shown to this owner.
+ *
+ * Design's R5 is "one extra boolean (*has this owner seen a brief before*),
+ * not a new state machine" — and a date IS that boolean, with the one thing a
+ * bare flag cannot carry: *when*. The "first brief" face is owed a whole
+ * morning, so it has to survive the owner reading it, closing the app and
+ * coming back an hour later; a flag set on first render would take the face
+ * away mid-morning, and a flag set on read would leave it up all week for
+ * somebody who never opened it. Storing the day answers both.
+ *
+ * It sits OUTSIDE the `cue.mv3.ritual.<kind>.` namespace on purpose: `prune`
+ * deletes every key under that prefix except the current period, which is
+ * exactly what must not happen to a fact whose whole job is to outlive its day.
+ */
+const FIRST_BRIEF_KEY = `${PREFIX}first-brief`;
+
+/** The stored morning, or `null` if no brief has ever been shown here. */
+export function readFirstBriefMorning(): string | null {
+  const s = store();
+  if (!s) return null;
+  try {
+    return s.getItem(FIRST_BRIEF_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record that today is the morning the first brief was shown. Idempotent — a
+ * second call on a later day must not move the stamp forward, or the
+ * introduction would replay every time the deck happened to look new.
+ */
+export function markFirstBriefMorning(now: Date = new Date()): void {
+  const s = store();
+  if (!s) return;
+  try {
+    if (s.getItem(FIRST_BRIEF_KEY)) return;
+    s.setItem(FIRST_BRIEF_KEY, dateKey(now));
+  } catch {
+    // A store that will not take the stamp re-introduces Cue tomorrow. A small
+    // and rather charming failure compared with throwing out of Today.
+    return;
+  }
+  announce();
+}
+
+/**
+ * R5's boolean. False on a brand-new instance AND for the whole of the first
+ * morning itself — that morning belongs to the "first brief" face.
+ */
+export function hasSeenBrief(now: Date = new Date()): boolean {
+  const first = readFirstBriefMorning();
+  return first !== null && first !== dateKey(now);
+}
+
 /** They opened it — from the slot, from the ⋯ archive, or from the push. */
 export function markRitualRead(kind: RitualKind, now: Date = new Date()): void {
   write(kind, now, { read: true });

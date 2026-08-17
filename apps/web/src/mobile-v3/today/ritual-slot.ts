@@ -25,9 +25,21 @@
  * **Never both at once.** The brief owns the morning; the weekly owns Friday
  * from noon and persists, unread, through the weekend. Those windows overlap
  * on Saturday and Sunday morning, which is why priority is stated once, here,
- * rather than emerging from render order: **before 11:00 the brief wins.**
- * (Design's own frame is labelled `SATURDAY · YOUR BRIEF`, which is that rule
- * drawn.)
+ * rather than emerging from render order: **when two windows overlap, the
+ * narrower one wins.** Design generalised the old "before 11:00 the brief
+ * wins" tiebreak into that rule, so there is no per-day special case to keep
+ * in step — perishability decides, and the brief's eleven hours are always
+ * more perishable than the weekly's sixty. (Design's own frame is labelled
+ * `SATURDAY · YOUR BRIEF`, which is that rule drawn.)
+ *
+ * **Suppressed until something has actually been watched (R5).** The slot used
+ * to be hidden entirely under Today's not-set-up takeover. Design overturned
+ * that — *"the first morning is arguably exactly when a ritual should
+ * introduce itself"* — with a condition: a fresh instance with nothing
+ * connected has no brief, so the takeover keeps the screen, and the slot
+ * returns on **the first morning after a night with real intake**, which is a
+ * different trigger from "not empty". That is one extra boolean (*has this
+ * owner seen a brief before*), not a second state machine.
  *
  * **No state colour is spent.** Both faces are brand blue. A ritual being due
  * is an invitation, not a state — so amber stays free for "needs you", both
@@ -53,6 +65,18 @@ import type { MorningBrief } from "../brief/use-morning-brief";
 export const BRIEF_UNTIL_HOUR = 11;
 /** Friday's weekly opens at noon ("Friday from noon"). */
 export const WEEKLY_FROM_HOUR = 12;
+
+/**
+ * How wide each window is, in hours — the ONLY input to the tiebreak.
+ *
+ * Design's rule is general: **when two time windows overlap, the narrower one
+ * wins**, because the narrower one is the more perishable. Stating the widths
+ * is what makes that a rule rather than an ordering: nobody has to remember
+ * that Saturday is special, and moving either boundary moves the tiebreak with
+ * it instead of silently disagreeing with it.
+ */
+export const BRIEF_WINDOW_HOURS = BRIEF_UNTIL_HOUR; // midnight → 11:00
+export const WEEKLY_WINDOW_HOURS = 24 - WEEKLY_FROM_HOUR + 48; // Fri noon → Mon
 
 /** Morning — the brief's window, and the half of the overlap the brief owns. */
 export function isBriefWindow(now: Date): boolean {
@@ -130,6 +154,74 @@ export function briefSentence(input: {
 }
 
 /**
+ * A sub-line, in pieces, because design's pack emphasises a clause inside two
+ * of them ("**Cue was watching**", "**This is what every morning looks like
+ * now.**") and an emphasis in the middle of a sentence cannot survive a plain
+ * string. Segments rather than markup: the model still says only what the
+ * words are and which one carries the weight; the view spends the pixels.
+ */
+export interface RitualSubSegment {
+  text: string;
+  strong?: true;
+}
+
+/** One plain segment — the shape almost every sub-line has. */
+function plain(text: string): RitualSubSegment[] {
+  return [{ text }];
+}
+
+/**
+ * The all-quiet brief's sub-line (R3).
+ *
+ * Design's ruling corrects their own spec: **omit-rather-than-fake governs
+ * *absent* data, not *uneventful* data.** "Nothing happened" is a finding, and
+ * a valuable one — so it renders, and it renders with **what was watched**,
+ * because "6 sources, no movement" is the entire difference between a quiet
+ * night and a broken pipeline.
+ *
+ * The watched clause is dropped when the source count could not be read, or
+ * when it is zero. That is not the vagueness rule biting: "Cue was watching"
+ * over an unreadable or empty watcher list is precisely the false reassurance
+ * the clause exists to prevent, and a claim we cannot stand behind is absent
+ * data. (A count of zero cannot reach the ordinary path anyway — nothing
+ * watched means nothing was read, and R5's gate has already returned `null`.)
+ */
+export function quietSub(sources: number | null): RitualSubSegment[] {
+  const opening = "Nothing arrived, nothing needs you.";
+  if (sources === null || sources <= 0) return plain(opening);
+  return [
+    { text: `${opening} ` },
+    { text: "Cue was watching", strong: true },
+    {
+      text: ` — ${sources} ${sources === 1 ? "source" : "sources"}, no movement.`,
+    },
+  ];
+}
+
+/**
+ * The first brief's sentence (R5) — the one morning Cue gets to say what it is.
+ *
+ * Composed from the real intake count and nothing else. Design is explicit
+ * that the figures are the point: *"every other onboarding surface promises
+ * and this one reports"*, and a promise wearing a number it did not measure is
+ * the worst of both. `pickRitualFace` will not reach this function without a
+ * count, so the face physically cannot render around a missing figure.
+ */
+export function firstBriefSentence(read: number): string {
+  return `One night in, and I've read ${spell(read)} ${
+    read === 1 ? "thing" : "things"
+  }.`;
+}
+
+/** "Twelve looked like yours. **This is what every morning looks like now.**" */
+export function firstBriefSub(yours: number): RitualSubSegment[] {
+  return [
+    { text: `${cap(spell(yours))} looked like yours. ` },
+    { text: "This is what every morning looks like now.", strong: true },
+  ];
+}
+
+/**
  * The amber line under the brief's sentence — the ONE place the slot spends a
  * state colour, and it spends it on "needs you", never on "a ritual is due".
  *
@@ -168,9 +260,7 @@ export function weeklySentence(input: {
       ? "Nothing moved."
       : `${cap(spell(moved))} ${moved === 1 ? "thing" : "things"} moved.`;
   const second =
-    slipped === 0
-      ? "Nothing slipped."
-      : `${cap(spell(slipped))} slipped.`;
+    slipped === 0 ? "Nothing slipped." : `${cap(spell(slipped))} slipped.`;
   return `${first} ${second}`;
 }
 
@@ -184,17 +274,38 @@ export type RitualKind = "brief" | "weekly";
 export interface RitualOpenFace {
   state: "open";
   kind: RitualKind;
-  /** "SATURDAY · YOUR BRIEF" / "THIS WEEK · READY". */
+  /**
+   * `"first"` is the one-time introduction R5 buys back; everything else is
+   * `"ordinary"`. It is a tone, not a state: the same card, the same model,
+   * one boolean's worth of difference in what it is allowed to say.
+   */
+  tone: "ordinary" | "first";
+  /** "SATURDAY · YOUR BRIEF" / "YOUR FIRST BRIEF" / "THIS WEEK · READY". */
   label: string;
   /** The weekly's right-hand "4 beats". The brief carries a live dot instead. */
   trailing: string | null;
   sentence: string;
-  /** Under the sentence. Amber only when `needsYou` says so. */
-  sub: string | null;
+  /** Under the sentence, in pieces so an emphasised clause survives. */
+  sub: RitualSubSegment[] | null;
+  /**
+   * Whether the sub-line is the needs-you fact (amber) or a description
+   * (muted). Stated rather than inferred from `needsYou`, because the first
+   * brief's sub-line is a description on a morning that may well have a
+   * needs-you count behind it.
+   */
+  subTone: "muted" | "amber";
   /** How many things are waiting on the owner — the ONLY amber in the slot. */
   needsYou: number;
-  /** "Read it · 2 min" / "Look back · 3 min". */
-  cta: string;
+  /**
+   * "Read it · 2 min" / "Look back · 3 min", or **`null` on the all-quiet
+   * face**: there is nothing to read, so the sentence *is* the brief and a
+   * verb would be sending the owner to an empty room (R3).
+   */
+  cta: string | null;
+  /** What stands where the verb would be. Present exactly when `cta` is null. */
+  note: string | null;
+  /** The secondary control's word — "Later", or "Dismiss" with no verb beside it. */
+  dismiss: string;
   href: string;
 }
 
@@ -241,12 +352,34 @@ export interface WeeklyFacts {
   slipped: number;
 }
 
+/**
+ * What arrived overnight — R5's two figures, and R5's trigger.
+ *
+ * `null` while the read is in flight or after it failed, for the same reason
+ * `BriefFacts` is nullable: zeros here would introduce a brand-new owner to
+ * Cue with "I've read no things", which is worse than saying nothing at all.
+ *
+ * Deliberately separate from `sources` below. They are wanted on different
+ * mornings — the intake figures exactly once, the source count on every quiet
+ * one — and folding them into a single object is how the all-quiet face lost
+ * its watched clause the first time this was built.
+ */
+export interface BriefIntake {
+  /** Everything that arrived in the window — "I've read 41 things". */
+  read: number;
+  /** The ones Cue decided were the owner's — "Twelve looked like yours". */
+  yours: number;
+}
+
 /** "10:30" from an ISO time, in the owner's locale. */
 export function timeLabel(iso: string | undefined): string | undefined {
   if (!iso) return undefined;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return undefined;
-  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 /**
@@ -285,6 +418,22 @@ export interface RitualSlotInput {
   now: Date;
   brief: BriefFacts | null;
   weekly: WeeklyFacts | null;
+  /** What arrived overnight (R5). `null` when it could not be read. */
+  intake: BriefIntake | null;
+  /**
+   * Live watched sources (R3's "6 sources"). `null` when the watcher list
+   * could not be read — never zero-by-default, because "0 sources, no
+   * movement" on a healthy morning reads as a broken pipeline.
+   */
+  sources: number | null;
+  /**
+   * R5's one extra boolean: has this owner met a brief on a previous morning?
+   *
+   * False on a brand-new instance AND on the very first morning after intake —
+   * which is exactly the morning the "first brief" face is for. It flips the
+   * day after, and every face is ordinary from then on.
+   */
+  hasSeenBrief: boolean;
   briefProgress: RitualProgress;
   weeklyProgress: RitualProgress;
   /** Routes, injected so this file never imports the app's router. */
@@ -298,15 +447,73 @@ function briefLabel(now: Date): string {
 }
 
 function openBrief(input: RitualSlotInput, facts: BriefFacts): RitualOpenFace {
-  return {
-    state: "open",
-    kind: "brief",
+  const quiet = facts.done === 0 && facts.needsYou === 0;
+  const base = {
+    state: "open" as const,
+    kind: "brief" as const,
+    tone: "ordinary" as const,
     label: briefLabel(input.now),
     trailing: null,
     sentence: briefSentence(facts),
-    sub: briefNeedsYouLine({ needsYou: facts.needsYou, by: facts.by }),
     needsYou: facts.needsYou,
+    href: input.briefHref,
+  };
+
+  // R3 — the all-quiet face. No primary verb, because there is nothing to
+  // read; and it names what was watched, because that clause is what tells a
+  // quiet night apart from a broken pipeline.
+  if (quiet) {
+    return {
+      ...base,
+      sub: quietSub(input.sources),
+      subTone: "muted",
+      cta: null,
+      note: "Nothing to read this morning",
+      dismiss: "Dismiss",
+    };
+  }
+
+  const needsYouLine = briefNeedsYouLine({
+    needsYou: facts.needsYou,
+    by: facts.by,
+  });
+  return {
+    ...base,
+    sub: needsYouLine ? plain(needsYouLine) : null,
+    subTone: needsYouLine ? "amber" : "muted",
     cta: "Read it · 2 min",
+    note: null,
+    dismiss: "Later",
+  };
+}
+
+/**
+ * R5's exception — the one brief that gets to say what it is.
+ *
+ * Reached only when real intake exists, so both figures in the sentence are
+ * measured. It reports rather than promises, which is why design granted it
+ * the exception it denies every other onboarding surface.
+ */
+function firstBrief(
+  input: RitualSlotInput,
+  intake: BriefIntake,
+): RitualOpenFace {
+  return {
+    state: "open",
+    kind: "brief",
+    tone: "first",
+    label: "YOUR FIRST BRIEF",
+    trailing: null,
+    sentence: firstBriefSentence(intake.read),
+    sub: firstBriefSub(intake.yours),
+    // The line is a description of what mornings are now, not an ask — so it
+    // does not take the colour that means "answer me", however many things
+    // happen to be waiting behind it.
+    subTone: "muted",
+    needsYou: input.brief?.needsYou ?? 0,
+    cta: "Read it · 2 min",
+    note: null,
+    dismiss: "Later",
     href: input.briefHref,
   };
 }
@@ -318,6 +525,7 @@ function openWeekly(
   return {
     state: "open",
     kind: "weekly",
+    tone: "ordinary",
     label: "THIS WEEK · READY",
     // The weekly's pager has four beats and always has; the count is the
     // format, not a metric, so it is safe to state without a source.
@@ -325,16 +533,25 @@ function openWeekly(
     sentence: weeklySentence(facts),
     // Beat four IS the autonomy question — a fact about the surface, which is
     // why it survives a week with no numbers in it.
-    sub: "And one question about what Cue should handle alone.",
+    sub: plain("And one question about what Cue should handle alone."),
+    subTone: "muted",
     needsYou: 0,
     cta: "Look back · 3 min",
+    note: null,
+    dismiss: "Later",
     href: input.weeklyHref,
   };
 }
 
 function collapsed(kind: RitualKind, href: string): RitualCollapsedFace {
   return kind === "brief"
-    ? { state: "collapsed", kind, label: "TODAY'S BRIEF", cta: "Read it ›", href }
+    ? {
+        state: "collapsed",
+        kind,
+        label: "TODAY'S BRIEF",
+        cta: "Read it ›",
+        href,
+      }
     : {
         state: "collapsed",
         kind,
@@ -354,20 +571,35 @@ export function pickRitualFace(input: RitualSlotInput): RitualFace | null {
   const briefDue = isBriefWindow(input.now) && input.brief !== null;
   const weeklyDue = isWeeklyWindow(input.now) && input.weekly !== null;
 
-  // Never both. The morning belongs to the brief even on a weekend, which is
-  // why this is one branch and not two independent renders.
-  if (briefDue) {
-    const done = input.briefProgress.read || input.briefProgress.dismissed;
-    return done
-      ? collapsed("brief", input.briefHref)
-      : openBrief(input, input.brief!);
-  }
-  if (weeklyDue) {
-    const done = input.weeklyProgress.read || input.weeklyProgress.dismissed;
-    return done
-      ? collapsed("weekly", input.weeklyHref)
-      : openWeekly(input, input.weekly!);
-  }
+  // Never both, and the choice is the general rule rather than an ordering:
+  // of the windows that are open, the NARROWER one wins. On a Saturday
+  // morning that is the brief (eleven hours) over the weekly (sixty).
+  const open = [
+    briefDue ? { kind: "brief" as const, hours: BRIEF_WINDOW_HOURS } : null,
+    weeklyDue ? { kind: "weekly" as const, hours: WEEKLY_WINDOW_HOURS } : null,
+  ].filter((w): w is { kind: RitualKind; hours: number } => w !== null);
   // Nothing due, or nothing behind what is. Nothing sits there empty.
-  return null;
+  if (open.length === 0) return null;
+  const winner = open.reduce((a, b) => (b.hours < a.hours ? b : a));
+
+  if (winner.kind === "brief") {
+    const done = input.briefProgress.read || input.briefProgress.dismissed;
+    if (done) return collapsed("brief", input.briefHref);
+
+    // R5. Before this owner has ever met a brief, the slot stays quiet until
+    // Cue has actually watched a night — a fresh instance with nothing
+    // connected has no brief to introduce, and Today's not-set-up takeover
+    // keeps the screen. `read > 0` is the trigger: intake exists, which is a
+    // different and stricter thing than the deck not being empty.
+    if (!input.hasSeenBrief) {
+      if (!input.intake || input.intake.read <= 0) return null;
+      return firstBrief(input, input.intake);
+    }
+    return openBrief(input, input.brief!);
+  }
+
+  const done = input.weeklyProgress.read || input.weeklyProgress.dismissed;
+  return done
+    ? collapsed("weekly", input.weeklyHref)
+    : openWeekly(input, input.weekly!);
 }

@@ -286,6 +286,114 @@ const STATE = new URLSearchParams(globalThis.location?.search ?? "").get(
   "state",
 );
 
+/* ----------------------------- ritual-slot states -------------------------- */
+
+/**
+ * The ritual slot's four faces, driven from here because two of them are
+ * decided by things a fixture alone cannot reach: the clock (`?at=`) and
+ * device-local storage.
+ *
+ *   `?state=ritual-first`     — the first morning after a night with intake.
+ *   `?state=ritual-orbit`     — the same first morning, but every lane is still
+ *                               empty, so the slot has to ride ABOVE the
+ *                               not-set-up takeover rather than be hidden by
+ *                               it. This is the case R5 was overturned for.
+ *   `?state=ritual-quiet`     — a night in which nothing arrived.
+ *   `?state=ritual-untouched` — a fresh instance: the takeover keeps the
+ *                               screen, and the slot renders nothing at all.
+ *   `?state=ritual`           — an ordinary morning with work behind it.
+ *
+ * Pair any of them with `?at=2026-08-19T07:34` so the brief's window is open.
+ */
+const RITUAL_STATE = STATE?.startsWith("ritual") ? STATE : null;
+/** A fresh instance: nothing watched, nothing in any lane. */
+const RITUAL_UNTOUCHED = RITUAL_STATE === "ritual-untouched";
+/** Intake happened, but nothing has reached a lane yet — the takeover state. */
+const RITUAL_ORBIT = RITUAL_STATE === "ritual-orbit";
+/** Every lane empty and no live source: what puts `EmptyOrbit` on the screen. */
+const RITUAL_EMPTY_DECK = RITUAL_UNTOUCHED || RITUAL_ORBIT;
+/** Nothing arrived overnight, but Cue was watching. */
+const RITUAL_QUIET = RITUAL_STATE === "ritual-quiet";
+/** This owner has never met a brief before. */
+const RITUAL_FIRST =
+  RITUAL_STATE === "ritual-first" || RITUAL_UNTOUCHED || RITUAL_ORBIT;
+
+/**
+ * "Has this owner seen a brief before" is device-local (design R4), so the
+ * harness has to write it rather than serve it. Installed at module scope for
+ * the same reason the clock pin is: the hook reads storage on its first
+ * render, and an effect would land after that render had already decided.
+ */
+if (RITUAL_STATE) {
+  try {
+    if (RITUAL_FIRST) localStorage.removeItem("cue.mv3.ritual.first-brief");
+    else localStorage.setItem("cue.mv3.ritual.first-brief", "2026-08-01");
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("cue.mv3.ritual.brief.")) localStorage.removeItem(key);
+    }
+  } catch {
+    // A storage-less preview shows the first-brief face. Acceptable.
+  }
+}
+
+/**
+ * Six LIVE sources, plus one disabled and one failing — because a watcher that
+ * EXISTS is not a watcher that WORKS, and "6 sources, no movement" may only
+ * count the ones that could have moved. An untouched instance has none, which
+ * is what puts `EmptyOrbit` on the screen with nothing above it; the
+ * `ritual-orbit` state has the same zero LIVE count for the honest reason —
+ * a night's intake landed and this morning the watcher is failing.
+ */
+const RITUAL_SOURCES = RITUAL_EMPTY_DECK
+  ? []
+  : [
+      ...Array.from({ length: 6 }, (_, i) => ({
+        id: `rw-${i}`,
+        name: `Source ${i + 1}`,
+        providerId: "gmail",
+        enabled: true,
+        pollIntervalMs: 900_000,
+        intakeMode: "came_in",
+        watermark: null,
+        status: "ok",
+        lastPollAt: Date.now() - 4 * 60_000,
+        lastError: null,
+        configJson: null,
+        credentialService: "gmail",
+        health: "ok",
+      })),
+      {
+        id: "rw-off",
+        name: "Paused source",
+        providerId: "slack",
+        enabled: false,
+        pollIntervalMs: 300_000,
+        intakeMode: "came_in",
+        watermark: null,
+        status: "paused",
+        lastPollAt: null,
+        lastError: null,
+        configJson: null,
+        credentialService: "slack",
+        health: "unknown",
+      },
+      {
+        id: "rw-bad",
+        name: "Broken source",
+        providerId: "github",
+        enabled: true,
+        pollIntervalMs: 300_000,
+        intakeMode: "came_in",
+        watermark: null,
+        status: "error",
+        lastPollAt: Date.now() - 90 * 60_000,
+        lastError: "401 from GitHub",
+        configJson: null,
+        credentialService: "github",
+        health: "reauth",
+      },
+    ];
+
 /* ------------------------- pre-run assessment states ----------------------- */
 
 /**
@@ -457,7 +565,8 @@ const CONTACT_MEMORY = [
   {
     id: "cm-4",
     contactId: "c-2",
-    statement: "Decides the renewal, and cares about per-seat pricing above all",
+    statement:
+      "Decides the renewal, and cares about per-seat pricing above all",
     kind: "fact",
     source: "from_conversation",
     sourceRef: null,
@@ -948,38 +1057,41 @@ const FIXTURES: [RegExp, () => unknown][] = [
   // The watcher/playbook routes answer with bare arrays, not envelopes.
   [
     /\/watchers\/list$/,
-    () => [
-      {
-        id: "w-1",
-        name: "Contracts inbox — unsigned older than 5 days",
-        providerId: "gmail",
-        enabled: true,
-        pollIntervalMs: 900_000,
-        intakeMode: "came_in",
-        watermark: null,
-        status: "ok",
-        lastPollAt: NOW - 6 * MIN,
-        lastError: null,
-        configJson: null,
-        credentialService: "gmail",
-        health: "ok",
-      },
-      {
-        id: "w-2",
-        name: "Finance Slack channel",
-        providerId: "slack",
-        enabled: false,
-        pollIntervalMs: 300_000,
-        intakeMode: "came_in",
-        watermark: null,
-        status: "reauth",
-        lastPollAt: NOW - 3 * 60 * MIN,
-        lastError: "The workspace revoked the token — reconnect Slack.",
-        configJson: null,
-        credentialService: "slack",
-        health: "reauth",
-      },
-    ],
+    () =>
+      RITUAL_STATE
+        ? RITUAL_SOURCES
+        : [
+            {
+              id: "w-1",
+              name: "Contracts inbox — unsigned older than 5 days",
+              providerId: "gmail",
+              enabled: true,
+              pollIntervalMs: 900_000,
+              intakeMode: "came_in",
+              watermark: null,
+              status: "ok",
+              lastPollAt: NOW - 6 * MIN,
+              lastError: null,
+              configJson: null,
+              credentialService: "gmail",
+              health: "ok",
+            },
+            {
+              id: "w-2",
+              name: "Finance Slack channel",
+              providerId: "slack",
+              enabled: false,
+              pollIntervalMs: 300_000,
+              intakeMode: "came_in",
+              watermark: null,
+              status: "reauth",
+              lastPollAt: NOW - 3 * 60 * MIN,
+              lastError: "The workspace revoked the token — reconnect Slack.",
+              configJson: null,
+              credentialService: "slack",
+              health: "reauth",
+            },
+          ],
   ],
   [/\/watchers\/providers$/, () => []],
   [
@@ -1028,10 +1140,7 @@ const FIXTURES: [RegExp, () => unknown][] = [
   ],
   // Per contact, so the harness shows all four "what Cue has learned"
   // outcomes side by side instead of one of them four times.
-  [
-    /\/contacts\/c-1\/memory$/,
-    () => ({ ok: true, memory: CONTACT_MEMORY }),
-  ],
+  [/\/contacts\/c-1\/memory$/, () => ({ ok: true, memory: CONTACT_MEMORY })],
   [
     /\/contacts\/c-2\/memory$/,
     () => ({ ok: true, memory: [CONTACT_MEMORY[3]] }),
@@ -1099,20 +1208,38 @@ const FIXTURES: [RegExp, () => unknown][] = [
   ],
   [
     /\/arrivals\/summary$/,
-    () => ({
-      since: NOW - 7 * DAY,
-      until: NOW,
-      windowHours: 168,
-      arrived: 415,
-      filed: 166,
-      kept: 249,
-      reversed: 0,
-      topFiledReasons: [
-        { reason: "newsletter from a mailing list", count: 88 },
-        { reason: "automated build notification", count: 41 },
-        { reason: "receipt from a no-reply sender", count: 22 },
-      ],
-    }),
+    () =>
+      // The ritual states read ONE NIGHT, not the Watching page's week — the
+      // first-brief face says "one night in", so it has to be counted over
+      // one. Zeroes on an untouched instance, which is precisely why the slot
+      // stays silent there rather than introducing Cue with "no things".
+      RITUAL_STATE
+        ? {
+            since: NOW - 24 * 60 * MIN,
+            until: NOW,
+            windowHours: 24,
+            bound: "trailing_window",
+            timeZone: null,
+            arrived: RITUAL_UNTOUCHED ? 0 : 41,
+            filed: RITUAL_UNTOUCHED ? 0 : 29,
+            kept: RITUAL_UNTOUCHED ? 0 : 12,
+            reversed: 0,
+            topFiledReasons: [],
+          }
+        : {
+            since: NOW - 7 * DAY,
+            until: NOW,
+            windowHours: 168,
+            arrived: 415,
+            filed: 166,
+            kept: 249,
+            reversed: 0,
+            topFiledReasons: [
+              { reason: "newsletter from a mailing list", count: 88 },
+              { reason: "automated build notification", count: 41 },
+              { reason: "receipt from a no-reply sender", count: 22 },
+            ],
+          },
   ],
   [
     /\/arrivals\/comprehension\/health$/,
@@ -1161,7 +1288,10 @@ const FIXTURES: [RegExp, () => unknown][] = [
       ],
     }),
   ],
-  [/\/acts\/summary$/, () => ({ acts: 61, reversed: 2, estMinutesSaved: 420, byAgent: [] })],
+  [
+    /\/acts\/summary$/,
+    () => ({ acts: 61, reversed: 2, estMinutesSaved: 420, byAgent: [] }),
+  ],
   [
     /\/usage\/totals$/,
     () => ({
@@ -1203,66 +1333,79 @@ const FIXTURES: [RegExp, () => unknown][] = [
     // looking like it was previewing a populated one. A fixture in the wrong
     // shape is worse than a missing one: the surface renders, so nobody looks.
     /\/brief\/morning$/,
-    () => ({
-      generatedAt: new Date(NOW).toISOString(),
-      since: new Date(NOW - 24 * 60 * MIN).toISOString(),
-      overnight: [
-        {
-          id: "ov-1",
-          title: "Drafted the Northwind renewal reply",
-          project: "Northwind",
-          agent: "Ops",
-          state: "done",
-          kind: "work_item",
-          completedAt: new Date(NOW - 5 * 60 * MIN).toISOString(),
-        },
-        {
-          id: "ov-2",
-          title: "Reconciled the September invoices",
-          state: "done",
-          kind: "work_item",
-          completedAt: new Date(NOW - 4 * 60 * MIN).toISOString(),
-        },
-        {
-          id: "ov-3",
-          title: "Swept the inbox",
-          state: "done",
-          kind: "inbox_cleanup",
-          counts: { archived: 41, drafted: 3, keptImportant: 6 },
-          completedAt: new Date(NOW - 3 * 60 * MIN).toISOString(),
-        },
-        {
-          id: "ov-4",
-          title: "Built the Q3 partner deck outline",
-          state: "done",
-          kind: "work_item",
-          completedAt: new Date(NOW - 2 * 60 * MIN).toISOString(),
-        },
-      ],
-      ask: {
-        id: "ask-1",
-        kind: "approval",
-        title: "Send the Northwind renewal reply",
-        project: "Northwind",
-        actions: [
-          {
-            id: "ok",
-            label: "Approve",
-            kind: "approve",
-            endpoint: "/v1/x",
-            method: "POST",
+    () =>
+      // An all-quiet night is a payload with NOTHING in it, not a missing
+      // payload — the whole of R3. Omit-rather-than-fake governs absent data;
+      // it has nothing to say about uneventful data.
+      RITUAL_QUIET || RITUAL_UNTOUCHED
+        ? {
+            generatedAt: new Date(NOW).toISOString(),
+            since: new Date(NOW - 24 * 60 * MIN).toISOString(),
+            overnight: [],
+            ask: null,
+            day: [],
+            calendarAvailable: true,
+          }
+        : {
+            generatedAt: new Date(NOW).toISOString(),
+            since: new Date(NOW - 24 * 60 * MIN).toISOString(),
+            overnight: [
+              {
+                id: "ov-1",
+                title: "Drafted the Northwind renewal reply",
+                project: "Northwind",
+                agent: "Ops",
+                state: "done",
+                kind: "work_item",
+                completedAt: new Date(NOW - 5 * 60 * MIN).toISOString(),
+              },
+              {
+                id: "ov-2",
+                title: "Reconciled the September invoices",
+                state: "done",
+                kind: "work_item",
+                completedAt: new Date(NOW - 4 * 60 * MIN).toISOString(),
+              },
+              {
+                id: "ov-3",
+                title: "Swept the inbox",
+                state: "done",
+                kind: "inbox_cleanup",
+                counts: { archived: 41, drafted: 3, keptImportant: 6 },
+                completedAt: new Date(NOW - 3 * 60 * MIN).toISOString(),
+              },
+              {
+                id: "ov-4",
+                title: "Built the Q3 partner deck outline",
+                state: "done",
+                kind: "work_item",
+                completedAt: new Date(NOW - 2 * 60 * MIN).toISOString(),
+              },
+            ],
+            ask: {
+              id: "ask-1",
+              kind: "approval",
+              title: "Send the Northwind renewal reply",
+              project: "Northwind",
+              actions: [
+                {
+                  id: "ok",
+                  label: "Approve",
+                  kind: "approve",
+                  endpoint: "/v1/x",
+                  method: "POST",
+                },
+              ],
+            },
+            day: [
+              {
+                title: "Pipeline review",
+                kind: "event",
+                time: new Date(new Date().setHours(10, 30, 0, 0)).toISOString(),
+              },
+            ],
+            calendarAvailable: true,
           },
-        ],
-      },
-      day: [
-        {
-          title: "Pipeline review",
-          kind: "event",
-          time: new Date(new Date().setHours(10, 30, 0, 0)).toISOString(),
-        },
-      ],
-      calendarAvailable: true,
-    }),
   ],
   [
     // `acts` is a NUMBER on this route. The generic fallback body answers
@@ -1380,7 +1523,9 @@ const Mv3AllWork = lazy(() =>
   })),
 );
 const Mv3CueScreen = lazy(() =>
-  import("@/mobile-v3/you/cue-screen").then((m) => ({ default: m.Mv3CueScreen })),
+  import("@/mobile-v3/you/cue-screen").then((m) => ({
+    default: m.Mv3CueScreen,
+  })),
 );
 const Mv3AgentsPage = lazy(() =>
   import("@/mobile-v3/you/agents-page").then((m) => ({
@@ -1557,28 +1702,50 @@ const SCREENS: Screen[] = [
       <Mv3Today
         assistantId={ASSISTANT_ID}
         userName="Manav"
-        move={{
-          hasMove: true,
-          itemId: "wi-2",
-          kind: "work_item",
-          headline: "Reconcile the September invoices with the bank export",
-          reasoning:
-            "Two rows still need a human call and the close is Friday.",
-          actions: [
-            { id: "a1", label: "Review", kind: "open_thread" },
-            { id: "a2", label: "Snooze", kind: "snooze" },
-          ],
-        }}
-        review={
-          TODAY_ITEMS.filter((i) => i.status === "awaiting_review") as any
+        move={
+          RITUAL_EMPTY_DECK
+            ? ({ hasMove: false } as any)
+            : {
+                hasMove: true,
+                itemId: "wi-2",
+                kind: "work_item",
+                headline:
+                  "Reconcile the September invoices with the bank export",
+                reasoning:
+                  "Two rows still need a human call and the close is Friday.",
+                actions: [
+                  { id: "a1", label: "Review", kind: "open_thread" },
+                  { id: "a2", label: "Snooze", kind: "snooze" },
+                ],
+              }
         }
-        running={TODAY_ITEMS.filter((i) => i.status === "running") as any}
-        cameIn={TODAY_ITEMS.filter((i) => i.status === "pending") as any}
-        done={TODAY_ITEMS.filter((i) => i.status === "done") as any}
+        review={
+          RITUAL_EMPTY_DECK
+            ? []
+            : (TODAY_ITEMS.filter((i) => i.status === "awaiting_review") as any)
+        }
+        running={
+          RITUAL_EMPTY_DECK
+            ? []
+            : (TODAY_ITEMS.filter((i) => i.status === "running") as any)
+        }
+        cameIn={
+          RITUAL_EMPTY_DECK
+            ? []
+            : (TODAY_ITEMS.filter((i) => i.status === "pending") as any)
+        }
+        done={
+          RITUAL_EMPTY_DECK
+            ? []
+            : (TODAY_ITEMS.filter((i) => i.status === "done") as any)
+        }
         doneError={false}
         reviewError={false}
         glanceCount={
-          TODAY_ITEMS.filter((i) => i.status === "awaiting_review").length + 1
+          RITUAL_EMPTY_DECK
+            ? 0
+            : TODAY_ITEMS.filter((i) => i.status === "awaiting_review").length +
+              1
         }
         missions={[]}
         missionsError={false}
@@ -1589,7 +1756,9 @@ const SCREENS: Screen[] = [
         waiting={[]}
         schedules={[]}
         schedulesError={false}
-        watchingCount={2}
+        // Zero on an untouched instance is what puts `EmptyOrbit` on the
+        // screen — the state R5's condition is about.
+        watchingCount={RITUAL_EMPTY_DECK ? 0 : 2}
         heartbeatRuns={1851}
         degraded={false}
       />
@@ -1807,7 +1976,9 @@ const SCREENS: Screen[] = [
   },
   {
     // The SECONDARY door to the two rituals (v43 R1). The primary one is the
-    // slot at the top of Today — pin the clock with `?at=` to see its faces.
+    // slot at the top of Today — pin the clock with `?at=` to see its faces,
+    // and add `&state=ritual-first|ritual-quiet|ritual-untouched|ritual` for
+    // the two R3/R5 faces, the suppressed instance, and an ordinary morning.
     key: "rituals",
     label: "Briefs & reviews (archive)",
     entry: "/assistant/rituals",
