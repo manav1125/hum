@@ -449,6 +449,34 @@ function clip(text: string): string {
   return `${text.slice(0, RESULT_CLIP_CHARS)}… (truncated)`;
 }
 
+/**
+ * The permission checker's non-interactive denial, verbatim enough to
+ * recognise: a live-voice session declares `isInteractive: false`, so any tool
+ * whose risk sits above the user's background auto-approve threshold is denied
+ * outright rather than prompting a surface that cannot answer.
+ *
+ * This is not a hypothetical. On 2026-08-17 the model asked for the user's
+ * calendar, the checker denied
+ * `mcp__composio_googlecalendar__GOOGLECALENDAR_EVENTS_LIST` for exactly this
+ * reason, and the raw denial went to the model as free text — which it read
+ * out as "I can't reach your Google Calendar, you can fix that in Settings
+ * under Connectors". The calendar was connected and working; the sentence sent
+ * the user to fix something that was not broken.
+ */
+const PERMISSION_DENIED_PATTERN =
+  /Permission denied: tool .* requires user approval|no interactive client is connected/i;
+
+/**
+ * What the model should say instead. Phrased as an instruction because that is
+ * how this bridge talks to the model everywhere else, and because the failure
+ * mode being closed is the model INVENTING a cause for an error it does not
+ * understand.
+ */
+const NEEDS_APPROVAL_ERROR =
+  "This action needs the user's approval, and an approval prompt cannot be shown during a voice call, " +
+  "so it did NOT run and you have no result. Tell them briefly that this one needs their okay in the app. " +
+  "Do NOT say anything is disconnected, unavailable or empty — you do not know that — and do not guess the answer.";
+
 /** Map a ToolExecutionResult onto the `{ ok, … }` shape the model reads. */
 function fromToolResult(result: ToolExecutionResult): Record<string, unknown> {
   const content =
@@ -456,6 +484,9 @@ function fromToolResult(result: ToolExecutionResult): Record<string, unknown> {
       ? result.content
       : JSON.stringify(result.content);
   if (result.isError) {
+    if (PERMISSION_DENIED_PATTERN.test(content)) {
+      return { ok: false, error: NEEDS_APPROVAL_ERROR };
+    }
     return { ok: false, error: clip(content) };
   }
   return { ok: true, result: clip(content) };
@@ -671,6 +702,13 @@ async function executeGetCalendar(
       ? result.content
       : JSON.stringify(result.content);
   if (result.isError) {
+    // Approval is checked FIRST because the denial text talks about a
+    // connection too ("no interactive client is connected"): today it slips
+    // past the not-connected pattern by one word, and one loosened alternative
+    // there would silently turn every denial into "your calendar is broken".
+    if (PERMISSION_DENIED_PATTERN.test(content)) {
+      return { ok: false, error: NEEDS_APPROVAL_ERROR };
+    }
     if (CALENDAR_CONNECTION_ERROR_PATTERN.test(content)) {
       return { ok: false, error: CALENDAR_NOT_CONNECTED_ERROR };
     }

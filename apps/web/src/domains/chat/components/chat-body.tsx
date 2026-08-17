@@ -147,6 +147,27 @@ export interface ChatBodyProps {
   conversationTitle?: string | null;
 
   /**
+   * The conversation a voice call started from here should be BOUND to —
+   * including one the server has not materialized yet.
+   *
+   * `composerProps.conversationId` cannot serve: it is looked up in the
+   * server's conversation list, so on a thread whose first message has not
+   * been sent it is `undefined`, and a fresh chat is where the app lands by
+   * default. The consequence was not a missing binding but a wrong one: the
+   * daemon falls back to the session id, so every call from the home canvas
+   * minted its own orphan thread — two calls thirty seconds apart produced two
+   * separate conversations, neither of them the one on screen, and the
+   * thread-context the model is given read a conversation with no history in
+   * it. Text send has always used this same (draft) id and the daemon
+   * materializes the thread under it, so passing it here simply makes voice
+   * land where typing already lands.
+   *
+   * Falls back to `composerProps.conversationId`; `null`/`undefined` on both
+   * means there is genuinely no thread to join and the call may open one.
+   */
+  voiceConversationId?: string | null;
+
+  /**
    * Optional conversation-starter chip grid rendered inside the max-width
    * wrapper directly below the composer. Visible only on the empty state;
    * the parent passes `undefined` once messages arrive. Rendered as a
@@ -207,6 +228,7 @@ export function ChatBody({
   channelFooterSlot,
   readonlyBannerSlot,
   conversationTitle,
+  voiceConversationId,
   startersSlot,
 }: ChatBodyProps) {
   const isEmptyState = scrollAreaProps.showEmptyState;
@@ -229,7 +251,12 @@ export function ChatBody({
   // App-editing side panels never pass `onEnterVoiceMode`, so neither
   // appears there.
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
-  const { assistantId, conversationId } = composerProps;
+  const { assistantId } = composerProps;
+  // Which conversation a call from here belongs to — the draft-aware id when
+  // the parent supplies one, otherwise the server-materialized one. See
+  // {@link ChatBodyProps.voiceConversationId}: taking the server-side id alone
+  // sent every call from an unsent thread into a conversation of its own.
+  const conversationId = voiceConversationId ?? composerProps.conversationId;
   const usesCallLadder =
     variant === "main" && !!assistantId && !!conversationId;
   const handleEnterVoiceMode = useCallback(() => {
@@ -367,7 +394,7 @@ export function ChatBody({
       </div>
       {voiceOverlayOpen && (
         <InChatVoiceOverlay
-          conversationId={composerProps.conversationId}
+          conversationId={conversationId}
           onExit={handleExitVoiceMode}
         />
       )}

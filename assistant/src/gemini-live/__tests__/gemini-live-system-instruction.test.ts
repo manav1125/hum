@@ -139,6 +139,8 @@ mock.module("../gemini-live-client.js", () => ({
 }));
 
 const { createGeminiLiveSession } = await import("../gemini-live-session.js");
+const { GEMINI_LIVE_FUNCTION_DECLARATIONS } =
+  await import("../gemini-live-tools.js");
 
 initializeDb();
 
@@ -393,6 +395,46 @@ describe("gemini-live answer-vs-file routing rules", () => {
       .filter((sentence) => !/\bnever\b/i.test(sentence));
 
     expect(offenders).toEqual([]);
+  });
+
+  test("the tools really are on the wire, not merely defined", async () => {
+    // Asked about his calendar and his email in one prod call, the model
+    // answered both without a single tool call in the audit table — which read
+    // as "the declarations never reached Google". They did (the calendar call
+    // is in the daemon log, denied by the permission checker); the audit table
+    // simply does not cover this engine. This asserts the thing that was
+    // merely assumed: the declarations are IN the serialized setup frame, by
+    // name, under the field Gemini reads them from.
+    await startSessionOn("conv-tools-on-wire");
+    const tools = sockets[0]!.setup().tools as
+      | Array<{ functionDeclarations?: Array<{ name: string }> }>
+      | undefined;
+    const names = tools?.[0]?.functionDeclarations?.map((d) => d.name) ?? [];
+
+    expect(names).toContain("get_calendar");
+    expect(names).toContain("check_inbox");
+    expect(names).toContain("read_messages");
+    expect(names).toContain("web_search");
+    // The schema budget is enforced elsewhere on the declarations array; what
+    // matters here is that nothing between it and the socket drops any.
+    expect(names).toHaveLength(GEMINI_LIVE_FUNCTION_DECLARATIONS.length);
+  });
+
+  test("email questions get the same mandatory-tool rule the calendar has", async () => {
+    // Same prod call, the half that was invention rather than denial: "I've
+    // pulled up your message inboxes, but it looks like you're all caught up"
+    // — a completed action and a claim about his inbox, with no tool call
+    // behind either. The general honesty rule was already in this prompt and
+    // did not hold. The difference between the two questions was that the
+    // calendar had a named, mandatory tool and mail did not.
+    const text = await instruction();
+
+    expect(text).toContain("always call check_inbox first");
+    expect(text).toContain("answer ONLY from its result");
+    expect(text).toContain("all caught up");
+    // And the general rule now binds the words, not only the deeds — the
+    // sentence that lied was a claim, not an action.
+    expect(text).toContain("This binds the words you SAY");
   });
 });
 

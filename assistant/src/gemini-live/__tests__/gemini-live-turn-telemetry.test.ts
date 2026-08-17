@@ -92,6 +92,25 @@ mock.module("../../live-voice/synthesize-live-voice-session.js", () => ({
   synthesizeLiveVoiceSession: async () => ({ newTaskTitles: [] }),
 }));
 
+/**
+ * Tool execution is replaced wholesale: what is under test is whether a call
+ * LEAVES A TRACE, not what the tools do (that is gemini-live-tools.test.ts).
+ * `toolResponses` is the script each test sets before driving `onToolCall`.
+ */
+let toolResponses: Record<string, unknown> = {};
+const toolsActual = await import("../gemini-live-tools.js");
+mock.module("../gemini-live-tools.js", () => ({
+  ...toolsActual,
+  executeGeminiLiveFunctionCall: async (call: {
+    id?: string;
+    name: string;
+  }) => ({
+    ...(call.id !== undefined ? { id: call.id } : {}),
+    name: call.name,
+    response: toolResponses[call.name] ?? { ok: true, result: "fine" },
+  }),
+}));
+
 const { createGeminiLiveSession } = await import("../gemini-live-session.js");
 
 async function startSession() {
@@ -116,6 +135,15 @@ function audioChunk(): Buffer {
 
 function find(event: string): LogRecord | undefined {
   return logs.find((entry) => entry.fields.event === event);
+}
+
+/**
+ * The client hands tool calls to the session fire-and-forget (`onToolCall:
+ * (calls) => void this.onToolCall(calls)`), so the returned value cannot be
+ * awaited — yield the loop until the execution and its logging have settled.
+ */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 beforeEach(() => {
@@ -238,6 +266,109 @@ describe("gemini-live turn telemetry", () => {
         .filter((e) => e.fields.event === "complete")
         .map((e) => e.fields.turn),
     ).toEqual([1, 2, 3]);
+    session.close("client_closed" as never);
+  });
+
+  test("the wait a caller feels is reported separately from how long the reply ran", async () => {
+    // `sinceFirstAudioMs` on a completed turn is the LENGTH of the answer —
+    // 566 KB of 24 kHz audio logged 11,955 ms and was read as a twelve-second
+    // stall. The number that means what that one looked like it meant is
+    // `replyLatencyMs`: last heard speech → first audio out.
+    const session = await startSession();
+    captured.onInputText?.("what's on tomorrow");
+    captured.onAudio?.(audioChunk());
+    captured.onAudio?.(audioChunk());
+    captured.onTurnComplete?.();
+
+    const complete = find("complete");
+    expect(typeof complete?.fields.replyLatencyMs).toBe("number");
+    // Distinct fields, distinct meanings: the reply ran at least as long as
+    // the audio it produced, and both are on the same line to compare.
+    expect(typeof complete?.fields.sinceFirstAudioMs).toBe("number");
+    expect(complete?.fields.audioBytes).toBe(1920);
+    session.close("client_closed" as never);
+  });
+
+  test("a turn nobody was heard on reports an unknown wait, not a zero one", async () => {
+    const session = await startSession();
+    captured.onAudio?.(audioChunk());
+    captured.onTurnComplete?.();
+
+    // Zero would read as "answered instantly"; there was simply nothing to
+    // measure from.
+    expect(find("complete")?.fields.replyLatencyMs).toBeNull();
+    session.close("client_closed" as never);
+  });
+});
+
+/**
+ * Whether the model called a tool at all.
+ *
+ * On 2026-08-17 a prod call said "I've pulled up your message inboxes, but it
+ * looks like you're all caught up" and "I checked your calendar and emails".
+ * The `tool_invocations` audit table held nothing for either conversation —
+ * which was read as proof no tool ran, and is not: that table is written by a
+ * lifecycle listener wired into the cascade's executor only, and this engine
+ * builds its own. So the sole record of a realtime tool call was a permission
+ * denial that happened to log itself on the way past.
+ *
+ * These lines are that record. A call that never happened and a call that
+ * happened and failed are different bugs with the same spoken symptom, and
+ * until now they were indistinguishable after the fact.
+ */
+describe("gemini-live tool-call telemetry", () => {
+  beforeEach(() => {
+    toolResponses = {};
+  });
+
+  test("a tool call is logged when it arrives and again with its outcome", async () => {
+    const session = await startSession();
+    captured.onToolCall?.([
+      { id: "c1", name: "check_inbox", args: { limit: 10 } },
+    ]);
+    await settle();
+
+    const requested = find("tool_call");
+    expect(requested?.fields.tools).toEqual(["check_inbox"]);
+    expect(requested?.fields.conversationId).toBe("conv-1");
+
+    const result = find("tool_result");
+    expect(result?.fields.tools).toEqual([{ name: "check_inbox", ok: true }]);
+    expect(typeof result?.fields.toolMs).toBe("number");
+    session.close("client_closed" as never);
+  });
+
+  test("a refused tool is recorded as having run and failed, not as silence", async () => {
+    // The distinction the calendar turn needed: the model DID ask, and was
+    // told no. Absent this line that turn is indistinguishable from a model
+    // that answered out of thin air.
+    toolResponses = {
+      get_calendar: {
+        ok: false,
+        error: "This action needs the user's approval",
+      },
+    };
+    const session = await startSession();
+    captured.onToolCall?.([{ id: "c2", name: "get_calendar", args: {} }]);
+    await settle();
+
+    expect(find("tool_result")?.fields.tools).toEqual([
+      { name: "get_calendar", ok: false },
+    ]);
+    session.close("client_closed" as never);
+  });
+
+  test("a turn that answered without calling anything leaves no tool line", async () => {
+    // The other half of the same prod call, and the reason these lines exist:
+    // "I've pulled up your message inboxes" with no tool_call line before it
+    // is now, on its own, proof of a fabrication.
+    const session = await startSession();
+    captured.onInputText?.("what's my latest emails");
+    captured.onOutputText?.("You're all caught up!");
+    captured.onTurnComplete?.();
+
+    expect(find("tool_call")).toBeUndefined();
+    expect(find("complete")).toBeDefined();
     session.close("client_closed" as never);
   });
 });

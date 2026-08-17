@@ -84,6 +84,24 @@ mock.module("@/domains/chat/components/question-prompt-slot", () => ({
   QuestionPromptSlot: () => <div data-testid="question-prompt-slot" />,
 }));
 
+// The desktop call-ladder projections. Stubbed to echo the conversation they
+// were bound to, because that id — not their appearance — is what the voice
+// binding cases below assert on. Spread from the real module so any other
+// export it grows stays intact for later files in the run.
+const voiceSlot =
+  await import("@/domains/chat/voice/voice-call-conversation-slot");
+mock.module("@/domains/chat/voice/voice-call-conversation-slot", () => ({
+  ...voiceSlot,
+  ConversationVoiceBar: ({ conversationId }: { conversationId?: string }) => (
+    <div data-testid="voice-bar" data-cid={conversationId} />
+  ),
+  ConversationVoiceRoomOverlay: ({
+    conversationId,
+  }: {
+    conversationId?: string;
+  }) => <div data-testid="voice-room" data-cid={conversationId} />,
+}));
+
 // Import after mocks are registered.
 const { ChatBody } = await import("@/domains/chat/components/chat-body");
 
@@ -338,5 +356,54 @@ describe("ChatBody — the home canvas (FINAL-NAV-BRIEF §4)", () => {
     const html = renderBody(baseProps({ isChannelReadonly: true }));
     expect(auditMarkup(html).audit.found).not.toContain("composer");
     expect(html).toContain("Read-only conversation");
+  });
+});
+
+/**
+ * Which conversation a call started from the composer mic belongs to.
+ *
+ * `composerProps.conversationId` is a lookup into the server's conversation
+ * list, so it is `undefined` on a thread whose first message has not been sent
+ * — which is the state the app opens in. On 2026-08-17 that sent the mic down
+ * the unbound path: the daemon fell back to the session id and minted an orphan
+ * conversation per call. Two calls thirty seconds apart produced two separate
+ * threads, neither of them the one on screen, and the conversation history the
+ * voice model is seeded with read a thread that had never held a message.
+ */
+describe("ChatBody — which conversation the mic binds a call to", () => {
+  test("an unsent thread still binds the call, using its draft id", () => {
+    const html = renderBody(
+      baseProps({
+        composerProps: {
+          assistantId: "a1",
+          // Absent, exactly as it is before the first message is sent.
+          conversationId: undefined,
+        } as never,
+        voiceConversationId: "draft-42",
+      }),
+    );
+
+    // The ladder engaged (it is gated on having a conversation at all)...
+    expect(html).toContain('data-testid="voice-room"');
+    // ...and it is bound to the thread the user is looking at.
+    expect(html).toContain('data-cid="draft-42"');
+  });
+
+  test("the server-side id still wins when the parent supplies no draft-aware one", () => {
+    const html = renderBody(
+      baseProps({
+        composerProps: { assistantId: "a1", conversationId: "conv-9" } as never,
+      }),
+    );
+
+    expect(html).toContain('data-cid="conv-9"');
+  });
+
+  test("with no thread on either prop there is nothing to bind and no ladder", () => {
+    const html = renderBody(
+      baseProps({ composerProps: { assistantId: "a1" } as never }),
+    );
+
+    expect(html).not.toContain('data-testid="voice-room"');
   });
 });

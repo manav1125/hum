@@ -1089,6 +1089,12 @@ export function ChatMainPanel({
         queuedDrawerSlot={isSidePanel ? undefined : mainQueuedDrawerSlot}
         readonlyBannerSlot={slackReadonlyBannerSlot}
         conversationTitle={activeConversation?.title ?? null}
+        // The selected thread, draft or not — `activeConversation` is a lookup
+        // into the server's list and is undefined until the first message is
+        // sent, which is precisely the state the app opens in. Voice binds to
+        // the same id typing does; without it every call from a fresh chat
+        // opened a conversation of its own.
+        voiceConversationId={activeConversationId}
         // Positions 3–4 of the home canvas, and nothing beside them. The
         // `ChatLauncher` that used to be spliced in here (six hardcoded
         // capability pills over three needs-you cards) is gone: needs-you is

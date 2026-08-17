@@ -120,6 +120,12 @@ describe("registry-backed dispatch", () => {
   });
 
   test("a permission denial comes back as a spoken-safe error, not success", async () => {
+    // The raw denial is written for a developer reading a log, and a live
+    // model reads it aloud as prose. It says "no interactive client is
+    // connected", which is one word away from "not connected" — and that is
+    // how a denial got spoken as a broken integration in prod. So the bridge
+    // translates it before the model ever sees it: what happened (nothing),
+    // what to say (it needs their okay), and what NOT to say.
     const { ctx } = makeCtx({
       content:
         'Permission denied: tool "schedule_create" requires user approval but no interactive client is connected.',
@@ -134,7 +140,12 @@ describe("registry-backed dispatch", () => {
     );
     const response = out.response as { ok: boolean; error: string };
     expect(response.ok).toBe(false);
-    expect(response.error).toContain("Permission denied");
+    expect(response.error).toContain("needs the user's approval");
+    expect(response.error).toContain("did NOT run");
+    expect(response.error).not.toContain("Permission denied");
+    // The half that matters: it must not license "your calendar/inbox is
+    // disconnected" or "you're all caught up" as an explanation.
+    expect(response.error).toContain("Do NOT say anything is disconnected");
   });
 
   test("a throwing registry runner degrades to { ok: false } instead of throwing", async () => {
@@ -523,6 +534,13 @@ describe("get_calendar (Google Calendar via Composio MCP)", () => {
   });
 
   test("a permission denial stays a permission denial, not a fake disconnect", async () => {
+    // Keeping the denial OUT of the not-connected branch was necessary and
+    // was not sufficient: on 2026-08-17 the model still spoke it as "I can't
+    // reach your Google Calendar — you can fix that in Settings, under
+    // Connectors", because what it received was a developer's sentence about
+    // interactive clients and it guessed at the meaning. His calendar was
+    // connected and answering in under a second. So the denial now arrives
+    // already translated: what happened, what to say, what not to say.
     const { ctx } = makeCtx({
       content:
         'Permission denied: tool "mcp__composio_googlecalendar__GOOGLECALENDAR_EVENTS_LIST" requires user approval but no interactive client is connected.',
@@ -534,8 +552,10 @@ describe("get_calendar (Google Calendar via Composio MCP)", () => {
     );
     const response = out.response as { ok: boolean; error: string };
     expect(response.ok).toBe(false);
-    expect(response.error).toContain("Permission denied");
+    expect(response.error).toContain("needs the user's approval");
+    expect(response.error).toContain("did NOT run");
     expect(response.error).not.toContain("Settings → Connectors");
+    expect(response.error).not.toContain("isn't connected");
   });
 
   test("an empty range reports zero events, never an error", async () => {

@@ -155,7 +155,15 @@ function buildSystemInstruction(
     "You can take real actions and pull the user's real data with your tools. Quick to-do → add_task. Work they have asked you to DO — research a market, draft a document, run a multi-step job — → run_deep_task, then tell them you're on it. Never reach for run_deep_task to get out of answering a question; it is for doing work, not for deferring an answer. What's on their plate → get_open_tasks. Current facts, news, or weather → web_search. Anything about the user's own life, work, files, or past conversations → recall_memory before you say you don't know. A lasting fact or preference they just told you → remember. Reminders and automations you set for them → get_schedule; setting one → set_reminder. What's on their Google Calendar — meetings, events, their day or week → get_calendar (get_schedule does NOT show their calendar). Who someone is or how to reach them → find_contact. Replies they're waiting on → get_followups. Their email or messages → check_inbox, then read_messages for one conversation. Never read ids, email addresses, or raw data aloud — speak the human part.",
     "When a result is something to LOOK at — options, search results, a list, a table — announce it aloud first in one short sentence (for example: Here's what I found), then call ui_show to put it on screen, and give a one- or two-sentence spoken summary. The card is seen, not spoken: never read it item by item.",
     "For any calendar question, always call get_calendar and answer ONLY from its result — their calendar events are not in your briefing, memory, or messages, and answering from those is making things up. Announce aloud, put the events on screen with ui_show as a list, then give a short spoken summary. If get_calendar says their calendar isn't connected, tell them exactly that and that they can link Google Calendar in Settings → Connectors — never improvise a calendar answer from anything else.",
-    "Never claim you have done something unless you actually called the tool for it and it succeeded. If a tool fails, say so in one short sentence and offer a next step. If a tool says it needs approval or isn't permitted, tell them briefly that this one needs their okay in the app — never pretend it happened and never work around it.",
+    // The calendar rule below is the one that demonstrably fires: asked about
+    // his calendar, the model called get_calendar. Asked about his email in the
+    // same call it called nothing and said "I've pulled up your message
+    // inboxes… you're all caught up" — a completed action and a fact about his
+    // inbox, both from nowhere. The general honesty rule was already present
+    // and did not stop it; the difference between the two questions was that
+    // one had a named, mandatory tool and the other did not. So mail gets one.
+    "For any question about their email, messages or inbox, always call check_inbox first and answer ONLY from its result, then read_messages for a specific conversation. Never say what is or isn't in their inbox — including that they are 'all caught up' or have nothing unread — unless check_inbox actually returned that. If you did not call it, say you'll take a look rather than describing an inbox you have not seen.",
+    "Never claim you have done something unless you actually called the tool for it and it succeeded. If a tool fails, say so in one short sentence and offer a next step. If a tool says it needs approval or isn't permitted, tell them briefly that this one needs their okay in the app — never pretend it happened and never work around it. This binds the words you SAY, not just the actions you take: 'I've pulled that up', 'I checked', 'I've had a look' are all claims that a tool ran, and saying one when no tool ran is a lie even when what follows sounds harmless. If you have not called the tool yet, say what you are about to do — never what you have already done.",
     "When you add a to-do, say simply that you saved it to their task list — do NOT invent specific screen names like 'My Day' or claim it's in a particular place you can't verify. When run_deep_task finishes, its result appears in their Review area; only mention Review for run_deep_task work, never for a plain reminder.",
     "Do not spell things out letter by letter or read punctuation, tool names, or code aloud. Just speak like a helpful person.",
     languageLine(),
@@ -215,6 +223,24 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private turnStartedAtMs = 0;
   private turnFirstAudioAtMs = 0;
   private turnAudioBytes = 0;
+  /**
+   * Server-side input transcription arrival — the last moment the model had
+   * heard the caller. Paired with the first audio out, it is the only
+   * server-side handle on the latency the caller actually feels.
+   *
+   * It exists because the field that looks like that number is not:
+   * `sinceFirstAudioMs` is measured AT turn end, so on a completed turn it is
+   * the LENGTH of the spoken reply, not the wait before it. A 566 KB reply at
+   * 24 kHz s16 is 11.8 s of speech and logged 11,955 ms — a number that reads
+   * as a twelve-second stall and is nothing of the kind. See {@link logTurn}.
+   */
+  private lastInputTextAtMs = 0;
+  /**
+   * Wait from the last heard speech to this turn's first audio out. `null`
+   * when there is nothing to measure from (no transcription yet, or no audio
+   * yet) — deliberately not 0, which would read as "answered instantly".
+   */
+  private turnReplyLatencyMs: number | null = null;
   private turnMicChunks = 0;
   private turnEchoSuppressedChunks = 0;
   private sessionTurns = 0;
@@ -363,6 +389,7 @@ export class GeminiLiveSession implements LiveVoiceSession {
           // First real speech → make sure the saved thread exists so the call
           // shows up in chat history from the start.
           ensureLiveVoiceThread(this.conversationId);
+          this.lastInputTextAtMs = Date.now();
           this.pendingUserText += text;
           void this.context.sendFrame({ type: "stt_final", text });
         },
@@ -632,6 +659,7 @@ export class GeminiLiveSession implements LiveVoiceSession {
     this.turnStartedAtMs = Date.now();
     this.turnFirstAudioAtMs = 0;
     this.turnAudioBytes = 0;
+    this.turnReplyLatencyMs = null;
     this.turnMicChunks = 0;
     this.turnEchoSuppressedChunks = 0;
     void this.context.sendFrame({ type: "thinking", turnId });
@@ -644,6 +672,13 @@ export class GeminiLiveSession implements LiveVoiceSession {
    * reproducible in the moment. `sinceFirstAudioMs` is the discriminator: a
    * turn that dies shortly after audio begins is the assistant talking over
    * itself, not the caller interrupting.
+   *
+   * Read `sinceFirstAudioMs` for what it is — time ELAPSED since the reply
+   * started, sampled at this event. On `interrupted` that is how far into
+   * playback the cut landed (its purpose). On `complete` it is simply how long
+   * the assistant spoke, and it has twice been mistaken for a stall. The wait
+   * the caller actually feels is `replyLatencyMs`: last heard speech → first
+   * audio out, null when nothing was transcribed to measure from.
    */
   private logTurn(event: string, extra?: Record<string, unknown>): void {
     const now = Date.now();
@@ -656,6 +691,7 @@ export class GeminiLiveSession implements LiveVoiceSession {
         sinceFirstAudioMs: this.turnFirstAudioAtMs
           ? now - this.turnFirstAudioAtMs
           : null,
+        replyLatencyMs: this.turnReplyLatencyMs,
         audioBytes: this.turnAudioBytes,
         micChunks: this.turnMicChunks,
         echoSuppressedChunks: this.turnEchoSuppressedChunks,
@@ -670,7 +706,12 @@ export class GeminiLiveSession implements LiveVoiceSession {
     if (this.closed) return;
     this.beginTurn();
     this.turnAudioBytes += pcm.length;
-    if (this.turnFirstAudioAtMs === 0) this.turnFirstAudioAtMs = Date.now();
+    if (this.turnFirstAudioAtMs === 0) {
+      this.turnFirstAudioAtMs = Date.now();
+      this.turnReplyLatencyMs = this.lastInputTextAtMs
+        ? this.turnFirstAudioAtMs - this.lastInputTextAtMs
+        : null;
+    }
     // Feed the echo classifier's reference with the PCM the client will play
     // (unflagged sessions only). A reference left over from a previous,
     // fully-drained playback burst is stale — discard it so the correlation
@@ -835,6 +876,16 @@ export class GeminiLiveSession implements LiveVoiceSession {
         this.capturedTaskTitles.push(`${label} (working on it)`);
       }
     }
+    // The one thing a transcript can never tell you: whether the model
+    // actually called the tool it claims to have called. A prod call where the
+    // assistant said "I've pulled up your inboxes" left NOTHING behind to
+    // confirm or deny it — `tool_invocations` does not cover this engine (its
+    // executor has no audit listener), and a successful registry tool logs
+    // nothing of its own. So the call is logged on receipt, and again with
+    // each outcome, and "the model called no tools" becomes a fact instead of
+    // an inference from an empty table.
+    const startedAtMs = Date.now();
+    this.logTurn("tool_call", { tools: calls.map((call) => call.name) });
     const responses = await Promise.all(
       calls.map((call) =>
         executeGeminiLiveFunctionCall(call, {
@@ -863,6 +914,21 @@ export class GeminiLiveSession implements LiveVoiceSession {
         }),
       ),
     );
+    this.logTurn("tool_result", {
+      toolMs: Date.now() - startedAtMs,
+      // `ok` is the bridge's own contract with the model (see
+      // gemini-live-tools.ts): every response is `{ ok, … }`. A denial, a
+      // dead connector and a real failure all arrive as `ok: false`, and the
+      // error text is what the model then paraphrases out loud — which is
+      // exactly the sentence a user reports as a lie.
+      tools: responses.map((response) => ({
+        name: response.name,
+        ok:
+          response.response !== null &&
+          typeof response.response === "object" &&
+          (response.response as { ok?: unknown }).ok === true,
+      })),
+    });
     this.client?.sendToolResponse(responses);
   }
 
