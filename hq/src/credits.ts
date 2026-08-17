@@ -5,7 +5,9 @@
  * All mutations are append-only credit_ledger entries (db.ts). Idempotency
  * is note-keyed:
  *   grants  — `grant <stripeSubId>@<periodStart>` (one per billing period,
- *             however many times Stripe retries invoice.paid)
+ *             however many times Stripe retries invoice.paid), plus the
+ *             one-off `grant provisioning:<customerId>` that funds an
+ *             instance nobody is billing (grantProvisioningCredits)
  *   top-ups — `topup <ref>` (ref = checkout session id / manual uuid)
  *   usage   — a per-instance cumulative cursor (instances.usageSyncedCents):
  *             each sync only converts the delta above the cursor, so
@@ -70,6 +72,57 @@ export function grantMonthlyCredits(
   return { granted: true, entry, balance: entry.balanceAfter };
 }
 
+export type ProvisioningGrantResult = GrantResult & {
+  /** Why nothing was granted, when granted:false. */
+  reason?: "already_granted" | "billed_by_stripe";
+};
+
+/**
+ * Fund a brand-new instance with its plan's monthly credits — the opening
+ * balance for a customer nobody is billing.
+ *
+ * Until this existed, `grantMonthlyCredits` was only ever reached from the
+ * `invoice.paid` webhook, so an invited colleague was provisioned with an
+ * empty ledger: their first usage sync wrote the account's only entry, it
+ * was a debit, and the negative balance froze their LLM key on day one.
+ *
+ * Two gates, both permanent:
+ *   - a customer with a Stripe subscription is granted by their invoices,
+ *     and adding a provisioning grant on top would be a double month;
+ *   - a customer who has EVER been granted is left alone, so re-provisioning
+ *     (a destroyed instance, a second machine) can never top anyone up.
+ */
+export function grantProvisioningCredits(
+  db: HqDb,
+  params: { customerId: string; plan: string },
+): ProvisioningGrantResult {
+  const balance = () => db.getCreditBalance(params.customerId);
+  if (db.getSubscription(params.customerId)) {
+    return {
+      granted: false,
+      entry: null,
+      balance: balance(),
+      reason: "billed_by_stripe",
+    };
+  }
+  if (db.hasCreditGrant(params.customerId)) {
+    return {
+      granted: false,
+      entry: null,
+      balance: balance(),
+      reason: "already_granted",
+    };
+  }
+  const spec = resolvePlan(params.plan);
+  const entry = db.appendCreditEntry({
+    customerId: params.customerId,
+    delta: spec.monthlyCredits,
+    kind: "grant",
+    note: `grant provisioning:${params.customerId}`,
+  });
+  return { granted: true, entry, balance: entry.balanceAfter };
+}
+
 export interface TopupResult {
   applied: boolean;
   entry: CreditEntry | null;
@@ -82,7 +135,9 @@ export function applyTopup(
   params: { customerId: string; credits: number; ref: string },
 ): TopupResult {
   if (!Number.isInteger(params.credits) || params.credits <= 0) {
-    throw new Error(`Top-up credits must be a positive integer: ${params.credits}`);
+    throw new Error(
+      `Top-up credits must be a positive integer: ${params.credits}`,
+    );
   }
   const note = `topup ${params.ref}`;
   const existing = db.findCreditEntryByNote("topup", note);
@@ -252,8 +307,7 @@ export async function syncKeyLimitsToBalance(
       });
       continue;
     }
-    const limitUsd =
-      Math.round((current.info.usage + headroomUsd) * 100) / 100;
+    const limitUsd = Math.round((current.info.usage + headroomUsd) * 100) / 100;
     const result = await updateKeyLimit(
       instance.openrouterKeyHash,
       limitUsd,

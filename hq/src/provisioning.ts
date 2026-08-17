@@ -8,7 +8,9 @@
  *   generate secrets → mint the OpenRouter child key (limit = the plan's
  *   monthly COGS budget) → driver.provision (env includes
  *   OPENROUTER_API_KEY + CUE_MANAGED=1) → poll /healthz → one-time
- *   POST /v1/guardian/init (learns guardianPrincipalId) → instance `live`.
+ *   POST /v1/guardian/init (learns guardianPrincipalId) → opening credit
+ *   grant for an unbilled customer (credits.ts grantProvisioningCredits,
+ *   idempotent) → instance `live`.
  *
  * Idempotency: a customer with any non-deleted instance is never
  * provisioned again — webhook retries and admin double-clicks no-op.
@@ -55,6 +57,7 @@ import {
   composioProjectsConfigured,
   createCustomerProject,
 } from "./composio-projects.js";
+import { grantProvisioningCredits, syncKeyLimitsToBalance } from "./credits.js";
 import { sendEmail, welcomeEmail } from "./email.js";
 import type { Customer, HqDb, Instance } from "./db.js";
 import { firstNameOf, trackEvent } from "./klaviyo.js";
@@ -90,7 +93,9 @@ export function slugify(name: string): string {
   );
 }
 
-export function parseInstanceSecrets(instance: Instance): InstanceSecrets | null {
+export function parseInstanceSecrets(
+  instance: Instance,
+): InstanceSecrets | null {
   try {
     const parsed = JSON.parse(instance.secretsJson) as InstanceSecrets;
     return parsed && typeof parsed === "object" ? parsed : null;
@@ -166,7 +171,8 @@ export async function provisionCustomer(
         "Set OPENROUTER_PROVISIONING_KEY on HQ to mint capped per-customer child keys.",
     );
     db.recordEvent("llm_key_shared_fallback", customer.id, {
-      warning: "shared OpenRouter key — spend capped only by instance guardrails",
+      warning:
+        "shared OpenRouter key — spend capped only by instance guardrails",
     });
   }
 
@@ -257,6 +263,34 @@ export async function provisionCustomer(
     });
   } catch (err) {
     db.recordEvent("guardian_bootstrap_failed", customer.id, {
+      instanceId: instance.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Opening balance. A customer nobody is billing — the invited colleague —
+  // used to arrive here with an empty ledger, so the first usage sync wrote
+  // the only entry it ever had, as a debit, and froze the LLM key at a
+  // negative balance. Gated inside on "never granted, no subscription", so
+  // paid provisions and re-provisions both no-op. Best-effort: a customer
+  // with a live instance is not un-provisioned over a ledger write.
+  try {
+    const grant = grantProvisioningCredits(db, {
+      customerId: customer.id,
+      plan: customer.plan,
+    });
+    db.recordEvent("provisioning_credits_granted", customer.id, {
+      instanceId: instance.id,
+      granted: grant.granted,
+      credits: grant.entry?.delta ?? 0,
+      balance: grant.balance,
+      ...(grant.reason ? { reason: grant.reason } : {}),
+    });
+    // Push the balance out to the child key's spend limit, exactly as a
+    // top-up does — the key was minted against the plan, not the ledger.
+    await syncKeyLimitsToBalance(db, customer.id, fetchImpl);
+  } catch (err) {
+    db.recordEvent("provisioning_credits_failed", customer.id, {
       instanceId: instance.id,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -572,7 +606,13 @@ export type MagicLinkOutcome =
       cueToken: string;
       expiresInDays: number;
     }
-  | { ok: false; status: number; error: string; detail?: string; instructions?: string };
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      detail?: string;
+      instructions?: string;
+    };
 
 /**
  * Mint a 30-day magic link for a customer's live/suspended instance
@@ -592,7 +632,11 @@ export async function mintMagicLinkForCustomer(
   }
   const secrets = parseInstanceSecrets(instance);
   if (!secrets?.actorTokenSigningKey) {
-    return { ok: false, status: 500, error: "instance has no stored signing key" };
+    return {
+      ok: false,
+      status: 500,
+      error: "instance has no stored signing key",
+    };
   }
 
   // Learn the guardian principal if provisioning didn't (e.g. the

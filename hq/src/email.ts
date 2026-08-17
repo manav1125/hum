@@ -2,7 +2,8 @@
  * Cue HQ — transactional email via the Resend API (plain fetch, zero deps,
  * mirroring stripe.ts / openrouter.ts style).
  *
- * The four templates are lifted from the designed site's `site/emails.html`
+ * The customer-facing templates are lifted from the designed site's
+ * `site/emails.html`
  * (single column, 560px, logo top, one primary button each) — the HTML here
  * reuses the designer's markup with {{placeholder}} values filled in; do not
  * restyle it without updating the design source.
@@ -46,6 +47,8 @@ interface EmailParts {
   button: { label: string; href: string };
   /** Optional "Credits remaining" box (credits-low template). */
   balance?: string;
+  /** Optional labelled code box, same chrome as the balance box (invite). */
+  code?: { label: string; value: string };
   /** Optional quiet PS line under the button. */
   ps?: string;
   /** Footer "why you're receiving this" line. */
@@ -55,6 +58,9 @@ interface EmailParts {
 function renderEmailHtml(p: EmailParts): string {
   const balanceHtml = p.balance
     ? `<div style="background:#F5F7FA;border:1px solid #E5E9F0;border-radius:11px;padding:14px 16px;margin-top:18px;display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;color:#5A6672">Credits remaining</span><b style="font-size:18px;color:#101828">${esc(p.balance)}</b></div>`
+    : "";
+  const codeHtml = p.code
+    ? `<div style="background:#F5F7FA;border:1px solid #E5E9F0;border-radius:11px;padding:14px 16px;margin-top:18px;display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;color:#5A6672">${esc(p.code.label)}</span><b style="font-size:18px;color:#101828;font-family:'DM Mono',ui-monospace,monospace;letter-spacing:.1em">${esc(p.code.value)}</b></div>`
     : "";
   const psHtml = p.ps
     ? `<p style="font-size:13px;line-height:1.6;color:#8D99A5;margin:20px 0 0">${p.ps}</p>`
@@ -72,6 +78,7 @@ function renderEmailHtml(p: EmailParts): string {
     <div style="font-size:21px;font-weight:600;letter-spacing:-.4px;color:#101828;line-height:1.25">${esc(p.head)}</div>
     <p style="font-size:15px;line-height:1.7;color:#43505F;margin:16px 0 0">${esc(p.body)}</p>
     ${balanceHtml}
+    ${codeHtml}
     <a href="${esc(p.button.href)}" style="display:block;text-align:center;background:#3D6EE8;color:#fff;border-radius:11px;padding:14px;font-size:15px;font-weight:600;text-decoration:none;margin-top:24px">${esc(p.button.label)}</a>
     ${psHtml}
   </div>
@@ -82,7 +89,7 @@ function renderEmailHtml(p: EmailParts): string {
 </body></html>`;
 }
 
-// ── the four designed templates ──────────────────────────────────────────
+// ── the designed templates ───────────────────────────────────────────────
 
 export interface EmailMessage {
   subject: string;
@@ -138,7 +145,8 @@ export function creditsLowEmail(params: {
       body: "You've used most of this cycle's credits. Cue will check with you before starting big jobs. Top up anytime to keep things moving.",
       balance: params.balance.toLocaleString("en-US"),
       button: { label: "Top up", href: params.accountUrl },
-      legal: "You're receiving this because credit alerts are on for your account.",
+      legal:
+        "You're receiving this because credit alerts are on for your account.",
     }),
   };
 }
@@ -168,7 +176,9 @@ export function opsAlertEmail(params: {
 }
 
 /** 04 · PAYMENT FAILED — grace period messaging, portal link. */
-export function paymentFailedEmail(params: { portalUrl: string }): EmailMessage {
+export function paymentFailedEmail(params: {
+  portalUrl: string;
+}): EmailMessage {
   return {
     subject: "Payment issue — Cue keeps running for now",
     link: params.portalUrl,
@@ -176,7 +186,49 @@ export function paymentFailedEmail(params: { portalUrl: string }): EmailMessage 
       head: "We couldn't process your payment.",
       body: "No need to worry — Cue keeps running during a short grace period while we retry. Update your payment method to avoid any interruption.",
       button: { label: "Update payment method", href: params.portalUrl },
-      legal: "You're receiving this because of a billing issue on your account.",
+      legal:
+        "You're receiving this because of a billing issue on your account.",
+    }),
+  };
+}
+
+/**
+ * 05 · INVITE — sent from the HQ admin invite panel, one per invitee.
+ *
+ * The button goes to the site's /redeem page (site/redeem.html — a real
+ * page, unlike POST /redeem, which is an API with no HTML of its own), and
+ * the code rides in its own box because that page asks for it by hand: it
+ * reads no query parameter, so a code hidden in the URL would be a code the
+ * invitee never sees.
+ */
+export function inviteEmail(params: {
+  code: string;
+  redeemUrl: string;
+  /** Display name of the plan they're being invited onto. */
+  planName: string;
+  /** Invite expiry (ms), or null when the code never expires. */
+  expiresAt?: number | null;
+  inviterName?: string;
+}): EmailMessage {
+  const from = params.inviterName?.trim()
+    ? `${params.inviterName.trim()} has invited you to Cue.`
+    : "You've been invited to Cue.";
+  const expiry =
+    params.expiresAt && Number.isFinite(params.expiresAt)
+      ? `This code is good until ${new Date(params.expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
+      : "";
+  return {
+    subject: "Your Cue invite",
+    link: params.redeemUrl,
+    html: renderEmailHtml({
+      head: from,
+      body: `Cue is a private assistant that's yours alone — one instance, your data, nobody else's. Your invite is for ${params.planName}. Enter the code below to set it up.`,
+      code: { label: "Invite code", value: params.code },
+      button: { label: "Set up your Cue", href: params.redeemUrl },
+      ps: expiry
+        ? `${expiry} Questions? Just reply to this email.`
+        : "Questions? Just reply to this email.",
+      legal: "You're receiving this because someone at Cue invited you.",
     }),
   };
 }
@@ -220,7 +272,10 @@ export async function sendEmail(
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      return { ok: false, reason: `resend_error_${res.status}: ${text.slice(0, 300)}` };
+      return {
+        ok: false,
+        reason: `resend_error_${res.status}: ${text.slice(0, 300)}`,
+      };
     }
     const body = (await res.json().catch(() => ({}))) as { id?: string };
     return { ok: true, sent: true, id: body.id ?? null };
@@ -280,7 +335,10 @@ export async function emailReadiness(
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
-      readiness.domainProbe = { ok: false, reason: `resend_error_${res.status}` };
+      readiness.domainProbe = {
+        ok: false,
+        reason: `resend_error_${res.status}`,
+      };
       return readiness;
     }
     const body = (await res.json().catch(() => ({}))) as {

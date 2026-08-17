@@ -41,6 +41,10 @@
  *   GET  /admin/status                          — readiness report (email/
  *                               Resend-domain probe, LLM key mode, connector
  *                               seeding, sizing defaults, sweep/backup state)
+ *   POST /admin/invites/send                    { emails, plan?, percentOff?,
+ *                               maxUses?, expiresDays?, note? } — per address:
+ *                               find/create customer, allowlist, mint a code,
+ *                               email it. Returns a per-address result row.
  *   GET/POST/DELETE /admin/invites/emails       — alpha signin allowlist
  *   POST /admin/catalog/ensure                  — idempotent Stripe catalog
  *   POST /admin/register-instance               { email, url, signingKey, guardianPrincipalId, name?, driver?, externalId?, flyUrl? }
@@ -87,6 +91,7 @@ import type {
 import { InvalidTransitionError } from "./db.js";
 import {
   emailReadiness,
+  inviteEmail,
   logEmailReadinessAtBoot,
   sendEmail,
   signinEmail,
@@ -95,6 +100,8 @@ import { startDbBackupScheduler } from "./db-backup.js";
 import { isOpenRouterConfigured } from "./openrouter.js";
 import { trackEvent } from "./klaviyo.js";
 import {
+  PLANS,
+  PLAN_IDS,
   TOPUPS,
   isPlanId,
   isTopupId,
@@ -258,6 +265,49 @@ function parsePlan(raw: unknown, fallback: CustomerPlan): CustomerPlan {
   return fallback;
 }
 
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+
+/**
+ * Pull addresses out of whatever the operator pasted into the invite box —
+ * commas, newlines, spaces, semicolons, `Name <a@b.io>`, trailing full
+ * stops. Order preserved, duplicates dropped.
+ *
+ * Only tokens containing "@" survive: the bare words in "Ana Ruiz
+ * <ana@example.com>" are name debris, not typos, and reporting them back as
+ * failures would bury the real ones. A token that HAS an "@" and is still
+ * malformed does come back — as an invalid_email row the operator can see.
+ */
+export function parseEmailList(raw: unknown): string[] {
+  const source = Array.isArray(raw)
+    ? raw.filter((v): v is string => typeof v === "string").join("\n")
+    : typeof raw === "string"
+      ? raw
+      : "";
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const token of source.split(/[\s,;]+/)) {
+    const email = token
+      .trim()
+      .toLowerCase()
+      .replace(/^[<("']+/, "")
+      .replace(/[>)"',.;:]+$/, "");
+    if (!email.includes("@") || seen.has(email)) continue;
+    seen.add(email);
+    out.push(email);
+  }
+  return out;
+}
+
+/** "ana.ruiz@example.com" → "Ana Ruiz" — a placeholder name, not a claim. */
+export function nameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  const words = local
+    .split(/[._\-+]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+  return words.join(" ") || email;
+}
+
 /** Normalize a top-up pack from the website ({pack} body) to a TopupId. */
 function parseTopupPack(raw: unknown): TopupId | null {
   const s = String(raw ?? "")
@@ -270,6 +320,24 @@ function parseTopupPack(raw: unknown): TopupId | null {
 
 function firstNameOf(customer: Customer): string {
   return customer.name.trim().split(/\s+/)[0] || customer.name;
+}
+
+/** One address's outcome from POST /admin/invites/send. */
+export interface InviteSendResult {
+  email: string;
+  /** Everything asked for happened — including the email leaving the box. */
+  ok: boolean;
+  customerId?: string;
+  /** True when this call created the customer row (vs. finding it). */
+  customerCreated?: boolean;
+  plan?: CustomerPlan;
+  /** An existing customer was moved onto the selected plan. */
+  planChanged?: boolean;
+  code?: string;
+  allowlisted?: boolean;
+  /** Resend actually accepted it. False in log-only mode. */
+  sent?: boolean;
+  reason?: string;
 }
 
 /** How long after checkout we keep saying "provisioning" before "delayed". */
@@ -519,6 +587,11 @@ export function createHandler(
 
         if (method === "GET" && path === "/admin/status") {
           return handleAdminStatus(url);
+        }
+
+        // The invite panel: one call per pasted blob of addresses.
+        if (method === "POST" && path === "/admin/invites/send") {
+          return handleInviteSend(req);
         }
 
         // Alpha invite allowlist (P0-7): the emails /signin recognizes
@@ -968,6 +1041,184 @@ export function createHandler(
    * POST /admin/invites/emails { emails: string[] } (or { email }, note?) —
    * add signin-allowlist entries. Idempotent per email.
    */
+  /**
+   * POST /admin/invites/send
+   *   { emails, plan?, percentOff?, maxUses?, expiresDays?, note?, name? }
+   *
+   * The whole invite, per address, in one call: find-or-create the customer
+   * on the chosen plan, put them on the sign-in allowlist, mint a code, and
+   * actually email it. Before this, each of those four was a separate button
+   * (or, for the allowlist, no button at all) and the email was nobody's job
+   * — /admin/customers/:id/invite minted a code and returned it as JSON for
+   * the operator to copy out by hand.
+   *
+   * Never all-or-nothing: every address gets its own result row, because a
+   * batch of ten where the eighth bounces must not look like ten failures or,
+   * worse, ten successes. `ok` means everything asked for happened; a code
+   * that was minted but not delivered still comes back so it can be passed on
+   * by hand.
+   *
+   * Existing customers are found, not overwritten: their name is left alone.
+   * The plan IS applied (it is the operator's explicit choice in the panel)
+   * and any change is reported in the row.
+   */
+  async function handleInviteSend(req: Request): Promise<Response> {
+    const body = await readJsonBody(req);
+    const emails = parseEmailList(body.emails ?? body.email);
+    if (emails.length === 0) {
+      return json({ error: "no email addresses found" }, 400);
+    }
+    const plan = parsePlan(body.plan, "chief_of_staff");
+    const planName = resolvePlan(plan).name;
+    const percentOff = Math.min(
+      100,
+      Math.max(0, Math.round(Number(body.percentOff ?? 0)) || 0),
+    );
+    const maxUses = Math.max(1, Math.round(Number(body.maxUses ?? 1)) || 1);
+    const expiresDays = Number(body.expiresDays ?? 14);
+    const expiresAt =
+      Number.isFinite(expiresDays) && expiresDays > 0
+        ? Date.now() + expiresDays * 86_400_000
+        : null;
+    const note = typeof body.note === "string" ? body.note.trim() : "";
+    const givenName =
+      typeof body.name === "string" && emails.length === 1
+        ? body.name.trim()
+        : "";
+    const redeemUrl = `${publicSiteBase()}/redeem`;
+
+    const results: InviteSendResult[] = [];
+    for (const email of emails) {
+      if (!EMAIL_SHAPE.test(email)) {
+        results.push({ email, ok: false, reason: "invalid_email" });
+        continue;
+      }
+      try {
+        results.push(
+          await inviteOne(email, {
+            plan,
+            planName,
+            percentOff,
+            maxUses,
+            expiresAt,
+            note,
+            givenName,
+            redeemUrl,
+          }),
+        );
+      } catch (err) {
+        results.push({
+          email,
+          ok: false,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    db.recordEvent("admin_invites_sent", null, {
+      requested: results.length,
+      ok: results.filter((r) => r.ok).length,
+      plan,
+    });
+    return json({ ok: results.every((r) => r.ok), results });
+  }
+
+  async function inviteOne(
+    email: string,
+    opts: {
+      plan: CustomerPlan;
+      planName: string;
+      percentOff: number;
+      maxUses: number;
+      expiresAt: number | null;
+      note: string;
+      givenName: string;
+      redeemUrl: string;
+    },
+  ): Promise<InviteSendResult> {
+    let customer = db.getCustomerByEmail(email);
+    const created = !customer;
+    const previousPlan = customer?.plan ?? null;
+    if (!customer) {
+      customer = db.createCustomer({
+        email,
+        name: opts.givenName || nameFromEmail(email),
+        plan: opts.plan,
+        status: "invited",
+      });
+    } else {
+      if (customer.status === "waitlist" || customer.status === "churned") {
+        customer = db.transitionCustomer(customer.id, "invited");
+      }
+      if (customer.plan !== opts.plan) {
+        customer = db.setCustomerPlan(customer.id, opts.plan);
+      }
+    }
+    const planChanged = previousPlan !== null && previousPlan !== customer.plan;
+
+    db.addInviteEmail(email, opts.note || `invited ${opts.planName}`);
+
+    const invite = db.createInvite({
+      customerId: customer.id,
+      percentOff: opts.percentOff,
+      maxUses: opts.maxUses,
+      expiresAt: opts.expiresAt,
+    });
+
+    const send = await sendEmail(
+      email,
+      inviteEmail({
+        code: invite.code,
+        redeemUrl: opts.redeemUrl,
+        planName: opts.planName,
+        expiresAt: opts.expiresAt,
+      }),
+      fetchImpl,
+    );
+    // P0-1 honesty: only a Resend-accepted send is recorded as sent.
+    db.recordEvent(
+      !send.ok
+        ? "invite_email_failed"
+        : send.sent
+          ? "invite_email_sent"
+          : "invite_email_skipped_no_key",
+      customer.id,
+      send.ok
+        ? { code: invite.code, sent: send.sent }
+        : { code: invite.code, reason: send.reason },
+    );
+    void trackEvent(
+      db,
+      {
+        metric: "Cue Invited",
+        email: customer.email,
+        firstName: firstNameOf(customer),
+        profileProps: { plan: customer.plan },
+        props: { code: invite.code, percentOff: invite.percentOff },
+        uniqueId: `invite:${invite.code}`,
+        customerId: customer.id,
+      },
+      fetchImpl,
+    );
+
+    return {
+      email,
+      // A minted-but-undelivered code is not a completed invite.
+      ok: send.ok,
+      customerId: customer.id,
+      customerCreated: created,
+      plan: customer.plan,
+      ...(planChanged ? { planChanged: true } : {}),
+      code: invite.code,
+      allowlisted: true,
+      sent: send.ok ? send.sent : false,
+      ...(send.ok
+        ? send.sent
+          ? {}
+          : { reason: send.reason }
+        : { reason: send.reason }),
+    };
+  }
+
   async function handleInviteEmailsAdd(req: Request): Promise<Response> {
     const body = await readJsonBody(req);
     const note = typeof body.note === "string" ? body.note.trim() : "";
@@ -1736,6 +1987,16 @@ function esc(s: string): string {
     .replaceAll('"', "&quot;");
 }
 
+/**
+ * Escape a value for use inside a single-quoted JS string that itself sits
+ * in a double-quoted HTML attribute (`onclick="f('…')"`). Attribute values
+ * are HTML-decoded BEFORE the JS is parsed, so `esc()` alone is not enough:
+ * an apostrophe — legal in an email local part — would close the string.
+ */
+function jsAttrString(s: string): string {
+  return esc(s.replaceAll("\\", "\\\\").replaceAll("'", "\\'"));
+}
+
 function statusPill(status: string): string {
   const colors: Record<string, string> = {
     waitlist: "#8b8fa3",
@@ -1758,7 +2019,24 @@ function renderAdminPage(db: HqDb): string {
     instancesByCustomer.set(c.id, db.listInstancesByCustomer(c.id));
   }
   const invites = db.listInvites();
+  const allowlist = db.listInviteEmails();
   const events = db.listEvents(30);
+
+  const planOptions = PLAN_IDS.map(
+    (id) =>
+      `<option value="${id}"${id === "chief_of_staff" ? " selected" : ""}>${esc(PLANS[id].name)} · ${PLANS[id].monthlyCredits.toLocaleString()} cr</option>`,
+  ).join("");
+
+  const allowlistRows = allowlist
+    .map(
+      (a) => `<tr>
+        <td class="mono">${esc(a.email)}</td>
+        <td class="dim">${esc(a.note)}</td>
+        <td class="dim">${new Date(a.createdAt).toLocaleDateString()}</td>
+        <td><button onclick="allowRemove('${jsAttrString(a.email)}')">Remove</button></td>
+      </tr>`,
+    )
+    .join("");
 
   const waitlistRows = customers
     .filter((c) => c.status === "waitlist")
@@ -1870,9 +2148,36 @@ function renderAdminPage(db: HqDb): string {
            word-break:break-all; font-size:12px; }
   a { color:#7fa7d9; text-decoration:none; }
   .empty { color:#6b6f81; padding:14px; }
+  .panel { background:#12141c; border:1px solid #1f2230; border-radius:10px;
+           padding:14px; margin-top:8px; }
+  .panel textarea, .panel input, .panel select {
+           background:#0c0d12; color:#e8e9ee; border:1px solid #2a2f45;
+           border-radius:7px; padding:8px 10px; font:inherit; font-size:13px; }
+  .panel textarea { width:100%; resize:vertical; font-family:"SF Mono", ui-monospace, monospace; }
+  .controls { display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+              margin-top:10px; }
+  .controls label { color:#8b8fa3; font-size:12px; display:flex; gap:6px;
+                    align-items:center; }
+  #inv-results { margin-top:12px; }
+  #inv-results table { margin-top:0; }
+  .ok { color:#3fb27f; } .bad { color:#b3524d; }
 </style></head><body>
 <h1><span class="accent">Cue</span> HQ</h1>
 <p class="sub">${customers.length} customers · ${[...instancesByCustomer.values()].flat().filter((i) => i.state === "live").length} live instances</p>
+
+<h2>Invite people</h2>
+<div class="panel">
+  <textarea id="inv-emails" rows="3" placeholder="ana@example.com, ben@example.com&#10;cara@example.com"></textarea>
+  <div class="controls">
+    <label>Plan <select id="inv-plan">${planOptions}</select></label>
+    <label>% off <input id="inv-off" type="number" min="0" max="100" value="0" style="width:64px"></label>
+    <label>Expires (days) <input id="inv-days" type="number" min="0" value="14" style="width:64px"></label>
+    <label>Note <input id="inv-note" type="text" placeholder="optional" style="width:150px"></label>
+    <button id="inv-go" onclick="sendInvites()">Invite</button>
+  </div>
+  <p class="dim" style="margin:10px 0 0;font-size:12px">Creates the customer, allowlists the address for sign-in, mints a code, and emails it. Existing customers are reused.</p>
+  <div id="inv-results"></div>
+</div>
 
 <h2>Waitlist</h2>
 <table><tr><th>Name</th><th>Email</th><th>Joined</th><th></th></tr>
@@ -1886,6 +2191,18 @@ ${customerRows || '<tr><td colspan="6" class="empty">No customers yet.</td></tr>
 <table><tr><th>Code</th><th>Discount</th><th>Uses</th><th>Expires</th></tr>
 ${inviteRows || '<tr><td colspan="4" class="empty">No invites minted.</td></tr>'}</table>
 
+<h2>Sign-in allowlist</h2>
+<p class="sub" style="font-size:12px">Addresses <code>/signin</code> recognizes before they have an account.</p>
+<table><tr><th>Email</th><th>Note</th><th>Added</th><th></th></tr>
+${allowlistRows || '<tr><td colspan="4" class="empty">Nobody allowlisted.</td></tr>'}</table>
+<div class="panel">
+  <div class="controls">
+    <input id="allow-email" type="email" placeholder="someone@example.com" style="width:220px">
+    <input id="allow-note" type="text" placeholder="note (optional)" style="width:180px">
+    <button onclick="allowAdd()">Add to allowlist</button>
+  </div>
+</div>
+
 <h2>Recent events</h2>
 <table><tr><th>When</th><th>Kind</th><th>Data</th></tr>
 ${eventRows || '<tr><td colspan="3" class="empty">Quiet so far.</td></tr>'}</table>
@@ -1893,17 +2210,77 @@ ${eventRows || '<tr><td colspan="3" class="empty">Quiet so far.</td></tr>'}</tab
 <div id="toast"></div>
 <script>
   const token = new URLSearchParams(location.search).get("token") || "";
+  async function api(path, method, payload) {
+    const res = await fetch(path, {
+      method: method,
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
+    return { res: res, body: await res.json() };
+  }
   async function act(path, payload) {
     toast("Working…");
     try {
-      const res = await fetch(path, {
-        method: "POST",
-        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify(payload || {}),
+      const out = await api(path, "POST", payload);
+      toast(JSON.stringify(out.body, null, 2));
+      if (out.res.ok && !out.body.url) setTimeout(() => location.reload(), 1200);
+    } catch (err) { toast(String(err)); }
+  }
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  async function sendInvites() {
+    const emails = document.getElementById("inv-emails").value;
+    if (!emails.trim()) return toast("Paste at least one email address.");
+    const btn = document.getElementById("inv-go");
+    btn.disabled = true; btn.textContent = "Inviting…";
+    try {
+      const out = await api("/admin/invites/send", "POST", {
+        emails: emails,
+        plan: document.getElementById("inv-plan").value,
+        percentOff: Number(document.getElementById("inv-off").value || 0),
+        expiresDays: Number(document.getElementById("inv-days").value || 0),
+        note: document.getElementById("inv-note").value,
       });
-      const body = await res.json();
-      toast(JSON.stringify(body, null, 2));
-      if (res.ok && !body.url) setTimeout(() => location.reload(), 1200);
+      renderInviteResults(out.body);
+    } catch (err) { toast(String(err)); }
+    btn.disabled = false; btn.textContent = "Invite";
+  }
+  function renderInviteResults(body) {
+    const el = document.getElementById("inv-results");
+    if (!body || !body.results) {
+      el.innerHTML = '<p class="bad">' + esc(body && body.error || "No result.") + "</p>";
+      return;
+    }
+    let rows = "";
+    for (const r of body.results) {
+      const state = r.ok
+        ? (r.sent ? '<span class="ok">invited · emailed</span>'
+                  : '<span class="ok">invited</span>')
+        : '<span class="bad">failed</span>';
+      const why = r.reason ? '<span class="dim"> · ' + esc(r.reason) + "</span>" : "";
+      rows += "<tr><td>" + esc(r.email) + "</td><td>" + state + why
+        + '</td><td class="mono">' + esc(r.code || "—") + "</td>"
+        + '<td class="dim">' + esc(r.plan || "—")
+        + (r.customerCreated ? " · new" : "")
+        + (r.planChanged ? " · plan changed" : "") + "</td></tr>";
+    }
+    el.innerHTML = "<table><tr><th>Email</th><th>Result</th><th>Code</th>"
+      + "<th>Plan</th></tr>" + rows + "</table>";
+    setTimeout(() => location.reload(), 6000);
+  }
+  function allowAdd() {
+    const email = document.getElementById("allow-email").value.trim();
+    if (!email) return toast("Need an email address.");
+    act("/admin/invites/emails", { email: email, note: document.getElementById("allow-note").value });
+  }
+  async function allowRemove(email) {
+    toast("Working…");
+    try {
+      const out = await api("/admin/invites/emails", "DELETE", { email: email });
+      toast(JSON.stringify(out.body, null, 2));
+      if (out.res.ok) setTimeout(() => location.reload(), 800);
     } catch (err) { toast(String(err)); }
   }
   function adjust(customerId) {

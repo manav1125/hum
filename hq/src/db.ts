@@ -15,22 +15,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 // ---------------------------------------------------------------------------
 
 export type CustomerStatus =
-  | "waitlist"
-  | "invited"
-  | "active"
-  | "suspended"
-  | "churned";
+  "waitlist" | "invited" | "active" | "suspended" | "churned";
 
 /**
  * Stored plan values. founding / founding_byo are legacy aliases that
  * resolve to chief_of_staff (see plans.ts resolvePlan()).
  */
 export type CustomerPlan =
-  | "founding"
-  | "founding_byo"
-  | "assistant"
-  | "chief_of_staff"
-  | "operator";
+  "founding" | "founding_byo" | "assistant" | "chief_of_staff" | "operator";
 
 export const CUSTOMER_PLANS: CustomerPlan[] = [
   "founding",
@@ -475,9 +467,7 @@ export class HqDb {
     );
     const applied = new Set(
       this.db
-        .query<{ version: number }, []>(
-          "SELECT version FROM schema_migrations",
-        )
+        .query<{ version: number }, []>("SELECT version FROM schema_migrations")
         .all()
         .map((r) => r.version),
     );
@@ -551,9 +541,7 @@ export class HqDb {
 
   listEvents(limit = 100): HqEvent[] {
     return this.db
-      .query<HqEvent, [number]>(
-        "SELECT * FROM events ORDER BY ts DESC LIMIT ?",
-      )
+      .query<HqEvent, [number]>("SELECT * FROM events ORDER BY ts DESC LIMIT ?")
       .all(limit);
   }
 
@@ -700,7 +688,10 @@ export class HqDb {
    * Consume a one-time sign-in token by hash. Atomic: only an unconsumed,
    * unexpired token flips — a raced or replayed consume returns null.
    */
-  consumeSigninToken(tokenHash: string, now: number = Date.now()): SigninToken | null {
+  consumeSigninToken(
+    tokenHash: string,
+    now: number = Date.now(),
+  ): SigninToken | null {
     let consumed: SigninToken | null = null;
     const tx = this.db.transaction(() => {
       const row = this.db
@@ -1075,7 +1066,8 @@ export class HqDb {
       note: params.note,
     };
     const tx = this.db.transaction(() => {
-      entry.balanceAfter = this.getCreditBalance(params.customerId) + params.delta;
+      entry.balanceAfter =
+        this.getCreditBalance(params.customerId) + params.delta;
       this.db.run(
         "INSERT INTO credit_ledger (id, customerId, ts, delta, balanceAfter, kind, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
@@ -1129,10 +1121,30 @@ export class HqDb {
   }
 
   /**
+   * True when the customer has ever received a grant — any grant, from any
+   * source (a paid invoice, or the one-off provisioning grant). This is the
+   * idempotency gate for the provisioning grant: it is not keyed to a
+   * billing period, because the question it answers is "has this account
+   * ever been funded at all", and the answer must stay no-after-yes forever.
+   */
+  hasCreditGrant(customerId: string): boolean {
+    return (
+      this.db
+        .query<{ n: number }, [string]>(
+          "SELECT COUNT(*) AS n FROM credit_ledger WHERE customerId = ? AND kind = 'grant'",
+        )
+        .get(customerId)!.n > 0
+    );
+  }
+
+  /**
    * Idempotency lookup: does an entry of `kind` with exactly this note
    * already exist? Grants and top-ups encode their dedupe key in the note.
    */
-  findCreditEntryByNote(kind: CreditEntryKind, note: string): CreditEntry | null {
+  findCreditEntryByNote(
+    kind: CreditEntryKind,
+    note: string,
+  ): CreditEntry | null {
     return (
       this.db
         .query<CreditEntry, [string, string]>(
