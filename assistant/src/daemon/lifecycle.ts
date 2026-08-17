@@ -68,6 +68,7 @@ import { seedOAuthProviders } from "../oauth/seed-providers.js";
 import { ensurePromptFiles } from "../prompts/system-prompt.js";
 import { runProviderConnectionsBackfill } from "../providers/inference/backfill.js";
 import { resolveManagedProxyContext } from "../providers/platform-proxy/context.js";
+import { startRitualSnapshotScheduler } from "../rituals/ritual-snapshot-job.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import {
   initAuthSigningKey,
@@ -1131,6 +1132,11 @@ export async function runDaemon(): Promise<void> {
       // Same contract as the action-board tick: unref'd timers, failures
       // log + skip, durable per-day dedupe via the notification pipeline.
       startMorningBriefScheduler();
+
+      // Keeps what each ritual said, once per period, so the archive has
+      // real dated rows and the weekly has a previous week to compare
+      // against. Idempotent per (ritual, period) and never backfills.
+      startRitualSnapshotScheduler();
 
       // Seed capability graph nodes (new memory graph system)
       try {

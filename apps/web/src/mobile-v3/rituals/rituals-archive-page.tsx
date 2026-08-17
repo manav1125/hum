@@ -9,21 +9,27 @@
  * ritual slot on Today is the fix; this page exists so that "where was that
  * brief" has an answer at 4pm on a Wednesday.
  *
- * ## What this page can honestly list, and what it cannot
+ * ## Two kinds of row, and the difference is load-bearing
  *
- * Design asked for "a dated archive of past ones". **There is no archive.**
- * `GET /brief/morning` composes today's brief from a sliding lookback window
- * over the live stores; it takes no date and there is no per-day snapshot
- * anywhere in the daemon. The weekly is the same shape over a seven-day
- * window. Opening "Tuesday's brief" would therefore not open Tuesday's
- * brief — it would recompute today's numbers under a Tuesday heading, which
- * is the fabrication rule with a date on it.
+ * **The live rows** — today's brief and this week's review — open the real
+ * surfaces, which compose from the live stores. They are the two rituals you
+ * can still act on.
  *
- * So the list is dated and real: **today's brief and this week's review**,
- * each with the date it covers and the state it is in. The absence of history
- * is stated in a line rather than filled with plausible rows. When the daemon
- * grows a brief archive this page gains rows and nothing else about it
- * changes — which is the point of it being a list rather than two buttons.
+ * **The kept rows** are snapshots: what a ritual actually said, recorded by
+ * the daemon at the moment it composed it (`ritual_snapshots`, migration 330,
+ * read through `GET /rituals/snapshots`). They deliberately do not navigate.
+ * `GET /brief/morning` takes no date, so tapping Tuesday through to it would
+ * recompute today's numbers under a Tuesday heading — the fabrication rule
+ * with a date on it. The stored sentence and its figures ARE the re-read:
+ * they were composed on the day and have not been touched since.
+ *
+ * ## And there is no backfill
+ *
+ * The snapshot store starts the day it is written. Briefs that went out
+ * before it existed cannot be reconstructed — the sliding windows they were
+ * computed from have moved on — so this page shows no rows for them and says
+ * so in a line instead, for exactly as long as that is true. See
+ * `ritual-archive.ts#interimLine`.
  */
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -37,6 +43,8 @@ import { LargeTitleHeader } from "../large-title-header";
 import { microLabel } from "../mv3-kit";
 import { readRitualProgress } from "../today/ritual-progress";
 import { isBriefWindow, isWeeklyWindow } from "../today/ritual-slot";
+import { dayLabel, interimLine, keptRows } from "./ritual-archive";
+import { useRitualSnapshots } from "./use-ritual-snapshots";
 
 const SAFE_BOTTOM =
   "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))";
@@ -49,17 +57,6 @@ interface Row {
   /** Where it stands right now, in words that are true of this row only. */
   state: string;
   href: string;
-}
-
-/** "SUN 16 AUG". */
-function dayLabel(d: Date): string {
-  return d
-    .toLocaleDateString(undefined, {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-    })
-    .toUpperCase();
 }
 
 /** The Monday–Sunday span the weekly review covers, as words. */
@@ -101,6 +98,19 @@ function buildRows(now: Date): Row[] {
   ];
 }
 
+const CARD: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  background: "var(--mv3-card)",
+  border: "1px solid var(--mv3-card-border)",
+  borderRadius: 16,
+  padding: "13px 14px",
+  fontFamily: "inherit",
+  color: "inherit",
+  WebkitTapHighlightColor: "transparent",
+};
+
 export function Mv3RitualsArchivePage() {
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -110,6 +120,9 @@ export function Mv3RitualsArchivePage() {
   const [now] = useState(() => new Date());
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const rows = buildRows(now);
+  const { archive, loaded } = useRitualSnapshots(assistantId);
+  const kept = keptRows(now, archive.snapshots);
+  const absence = interimLine(now, archive.storeStartedAt, loaded);
 
   return (
     <div
@@ -158,17 +171,8 @@ export function Mv3RitualsArchivePage() {
                 void navigate(row.href);
               }}
               style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                background: "var(--mv3-card)",
-                border: "1px solid var(--mv3-card-border)",
-                borderRadius: 16,
-                padding: "13px 14px",
-                fontFamily: "inherit",
-                color: "inherit",
+                ...CARD,
                 cursor: assistantId ? "pointer" : "default",
-                WebkitTapHighlightColor: "transparent",
               }}
             >
               <div
@@ -200,26 +204,78 @@ export function Mv3RitualsArchivePage() {
               </div>
             </button>
           ))}
+
+          {/*
+            The kept rows. Not buttons: there is nowhere honest to send a tap
+            (the live surfaces have no sense of a past date), and a control
+            that looks tappable and answers with today's numbers is worse than
+            a row that plainly states what it said at the time.
+          */}
+          {kept.map((row) => (
+            <div key={row.key} data-slot="mv3-ritual-kept" style={CARD}>
+              <div
+                style={{
+                  ...microLabel,
+                  fontSize: 9,
+                  color: "var(--mv3-muted)",
+                }}
+              >
+                {row.eyebrow}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  marginTop: 5,
+                }}
+              >
+                <span style={{ fontSize: 15, fontWeight: 600 }}>
+                  {row.title}
+                </span>
+                <span style={{ flex: 1 }} />
+                {row.detail ? (
+                  <span style={{ fontSize: 11.5, color: "var(--mv3-muted)" }}>
+                    {row.detail}
+                  </span>
+                ) : null}
+              </div>
+              {row.sentence ? (
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    lineHeight: 1.5,
+                    color: "var(--mv3-muted)",
+                    marginTop: 6,
+                  }}
+                >
+                  {row.sentence}
+                </div>
+              ) : null}
+            </div>
+          ))}
         </div>
 
         {/*
           The honest line, in the place a longer list would be. Drift the owner
-          can see is a decision; drift they discover is a bug — so the page
-          says what it does not have rather than quietly implying that two rows
-          is all there has ever been.
+          can see is a decision; drift they discover is a bug — so while the
+          log is younger than the history it is meant to hold, the page says
+          what it does not have rather than quietly implying that these rows
+          are all there has ever been. It removes itself after a week.
         */}
-        <div
-          style={{
-            fontSize: 11.5,
-            lineHeight: 1.55,
-            color: "var(--mv3-muted)",
-            marginTop: 16,
-            padding: "0 2px",
-          }}
-        >
-          Cue keeps the current brief and this week's review. Earlier ones
-          aren't stored yet, so there's nothing older to open.
-        </div>
+        {absence ? (
+          <div
+            style={{
+              fontSize: 11.5,
+              lineHeight: 1.55,
+              color: "var(--mv3-muted)",
+              marginTop: 16,
+              padding: "0 2px",
+            }}
+          >
+            {absence}
+          </div>
+        ) : null}
       </div>
     </div>
   );

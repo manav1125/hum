@@ -322,6 +322,7 @@ export { migrateMoveMemoryTelemetryLogsToMemoryDb } from "./326-move-memory-tele
 export { migrateMoveMemoryV3TablesToMemoryDb } from "./327-move-memory-v3-tables-to-memory-db.js";
 export { migrateMoveMemoryJobsToMemoryDb } from "./328-move-memory-jobs-to-memory-db.js";
 export { migrateMemoryNodeInjectionEvents } from "./329-memory-node-injection-events.js";
+export { migrateRitualSnapshots } from "./330-ritual-snapshots.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

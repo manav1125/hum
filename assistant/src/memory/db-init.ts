@@ -230,6 +230,7 @@ import {
   migrateRenameVerificationSessionIdColumn,
   migrateRenameVerificationTable,
   migrateRenameVoiceToPhone,
+  migrateRitualSnapshots,
   migrateScheduleDescription,
   migrateScheduleInferenceProfile,
   migrateScheduleOneShotRouting,
@@ -616,6 +617,7 @@ export function initializeDb(): void {
     migratePushBudgetLedger,
     migrateMemoryJobOutcome,
     migrateVolumeValve,
+    migrateRitualSnapshots,
     // 324–328: the memory-DB split. These run every boot AFTER every
     // creator/ALTER migration above (the legacy `CREATE TABLE IF NOT
     // EXISTS` creators recreate empty main-side shadows each boot; the

@@ -17,5 +17,6 @@ export * from "./memory-graph.js";
 export * from "./missions.js";
 export * from "./notifications.js";
 export * from "./oauth.js";
+export * from "./rituals.js";
 export * from "./tasks.js";
 export * from "./valve.js";
