@@ -21,11 +21,34 @@ const log = getLogger("tool-audit-listener");
 
 type InvocationRecorder = (record: ToolInvocationRecord) => void;
 
+export interface ToolAuditListenerOptions {
+  /**
+   * Whether executed/error rows carry the `tool_executed` telemetry columns
+   * (payload sizes + inference attribution), which is what makes a row
+   * eligible for the off-device usage projection. Defaults to true — the
+   * chat/agent-loop path, whose tool calls are driven by a resolved
+   * `llm.callSites` model that `context.attribution` names.
+   *
+   * The realtime-voice bridge passes `false`. Its tool calls are driven by the
+   * Gemini Live realtime model, which has no entry in the call-site
+   * attribution system at all, so `context.attribution` is unset and there is
+   * nothing truthful to write into provider/model/inference_profile. Recording
+   * NULL telemetry columns keeps the local audit row — the point of this
+   * listener — while leaving those rows out of the `tool_executed` projection
+   * through the same `arg_bytes IS NOT NULL` mechanism that excludes
+   * usage-opted-out rows, rather than silently growing the reported population
+   * with an unattributable class.
+   */
+  includeTelemetryColumns?: boolean;
+}
+
 export function createToolAuditListener(
   recorder: InvocationRecorder = recordToolInvocation,
+  options: ToolAuditListenerOptions = {},
 ): ToolLifecycleEventHandler {
+  const includeTelemetryColumns = options.includeTelemetryColumns !== false;
   return (event) => {
-    const record = toInvocationRecord(event);
+    const record = toInvocationRecord(event, includeTelemetryColumns);
     if (!record) return;
 
     try {
@@ -41,6 +64,7 @@ export function createToolAuditListener(
 
 function toInvocationRecord(
   event: ToolLifecycleEvent,
+  includeTelemetryColumns: boolean,
 ): ToolInvocationRecord | null {
   switch (event.type) {
     case "executed": {
@@ -69,6 +93,7 @@ function toInvocationRecord(
           event,
           rawInput,
           event.resultBytes ?? Buffer.byteLength(event.result.content, "utf8"),
+          includeTelemetryColumns,
         ),
       };
     }
@@ -87,7 +112,12 @@ function toInvocationRecord(
         // The error result string is built right here and never goes
         // through sensitive-output sanitization, so sizing it directly is
         // already raw — no executor stamp exists or is needed.
-        ...telemetryColumns(event, rawInput, Buffer.byteLength(result, "utf8")),
+        ...telemetryColumns(
+          event,
+          rawInput,
+          Buffer.byteLength(result, "utf8"),
+          includeTelemetryColumns,
+        ),
       };
     }
     case "permission_denied":
@@ -162,12 +192,19 @@ const NULL_TELEMETRY_COLUMNS: TelemetryColumns = {
  *
  * When opted in, the non-null sizing keeps `argBytes` populated, which the
  * projection's legacy-row filter relies on.
+ *
+ * `include` is the per-listener switch (see
+ * {@link ToolAuditListenerOptions.includeTelemetryColumns}) and rides the same
+ * NULL mechanism: an engine with no truthful inference attribution to report
+ * records audit-only rows.
  */
 function telemetryColumns(
   event: Extract<ToolLifecycleEvent, { type: "executed" | "error" }>,
   rawInput: string,
   resultBytes: number,
+  include: boolean,
 ): TelemetryColumns {
+  if (!include) return NULL_TELEMETRY_COLUMNS;
   if (!getConfig().collectUsageData) return NULL_TELEMETRY_COLUMNS;
   return {
     argBytes: event.inputBytes ?? Buffer.byteLength(rawInput, "utf8"),

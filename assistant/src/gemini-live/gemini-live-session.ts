@@ -879,11 +879,16 @@ export class GeminiLiveSession implements LiveVoiceSession {
     // The one thing a transcript can never tell you: whether the model
     // actually called the tool it claims to have called. A prod call where the
     // assistant said "I've pulled up your inboxes" left NOTHING behind to
-    // confirm or deny it — `tool_invocations` does not cover this engine (its
-    // executor has no audit listener), and a successful registry tool logs
-    // nothing of its own. So the call is logged on receipt, and again with
+    // confirm or deny it. So the call is logged on receipt, and again with
     // each outcome, and "the model called no tools" becomes a fact instead of
-    // an inference from an empty table.
+    // an inference.
+    //
+    // These turn logs are the per-turn narrative; the durable record is the
+    // `tool_invocations` row each registry-dispatched call now writes (see
+    // `getAuditListener` in gemini-live-tools.ts). The two are complementary:
+    // the log covers the whole bridge including the work-item fast path and
+    // `ui_show`, the table covers every executor gate outcome including the
+    // denials.
     const startedAtMs = Date.now();
     this.logTurn("tool_call", { tools: calls.map((call) => call.name) });
     const responses = await Promise.all(

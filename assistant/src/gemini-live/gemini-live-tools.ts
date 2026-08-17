@@ -32,11 +32,17 @@
 
 import { randomUUID } from "node:crypto";
 
+import { createToolAuditListener } from "../events/tool-audit-listener.js";
+import { ensureLiveVoiceThread } from "../live-voice/live-voice-thread.js";
 import { PermissionPrompter } from "../permissions/prompter.js";
 import { createTask } from "../tasks/task-store.js";
 import { ToolExecutor } from "../tools/executor.js";
 import { getTool } from "../tools/registry.js";
-import type { ToolContext, ToolExecutionResult } from "../tools/types.js";
+import type {
+  ToolContext,
+  ToolExecutionResult,
+  ToolLifecycleEventHandler,
+} from "../tools/types.js";
 import { getLogger } from "../util/logger.js";
 import { getSandboxWorkingDir } from "../util/platform.js";
 import {
@@ -408,6 +414,37 @@ function getSharedExecutor(): ToolExecutor {
 }
 
 /**
+ * Audit observation for this engine's tool calls, so a realtime-voice call
+ * leaves the same `tool_invocations` trail a chat turn does.
+ *
+ * Until this was wired, the voice executor ran with NO lifecycle handler and
+ * every call it made — executed, errored, denied — was invisible. On
+ * 2026-08-17 that made an empty `tool_invocations` read as "voice called zero
+ * tools" when voice had in fact called the calendar tool and been denied. An
+ * empty table was consistent with both stories, which is worse than no table.
+ *
+ * AUDIT ONLY, deliberately: the listener is constructed with
+ * `includeTelemetryColumns: false`, so voice rows carry NULL payload-size and
+ * inference-attribution columns and stay out of the off-device
+ * `tool_executed` projection. There is no truthful attribution to report here
+ * — the driver is the Gemini Live realtime model, which the `llm.callSites`
+ * attribution system does not describe — and expanding the reported telemetry
+ * population is a separate, deliberate decision from making the local audit
+ * log honest. Nothing about permissions or risk classification changes; this
+ * handler only observes.
+ */
+let auditToolLifecycleEvent: ToolLifecycleEventHandler | null = null;
+
+function getAuditListener(): ToolLifecycleEventHandler {
+  if (!auditToolLifecycleEvent) {
+    auditToolLifecycleEvent = createToolAuditListener(undefined, {
+      includeTelemetryColumns: false,
+    });
+  }
+  return auditToolLifecycleEvent;
+}
+
+/**
  * Run a registered tool through the real execution layer: alias resolution,
  * pre-execution gates, Zod input parsing, and the same permission checking
  * (`checker.check` / approval policy) every cascade tool call passes. The
@@ -419,6 +456,15 @@ async function runRegistryToolDefault(
   input: Record<string, unknown>,
   ctx: GeminiLiveToolExecutionContext,
 ): Promise<ToolExecutionResult> {
+  // `tool_invocations` has an enforced FK to `conversations`, so a tool call
+  // made before the thread row exists (the model acting on its opening turn,
+  // before the first transcript) would have its audit row silently rejected —
+  // the exact invisibility this wiring exists to end. The session creates the
+  // same row on first speech; doing it here makes "a voice tool call is always
+  // recordable" true by construction. Best-effort by contract (it swallows its
+  // own errors) and never gates the call.
+  ensureLiveVoiceThread(ctx.conversationId);
+
   const context: ToolContext = {
     conversationId: ctx.conversationId,
     workingDir: getSandboxWorkingDir(),
@@ -432,6 +478,10 @@ async function runRegistryToolDefault(
     callSessionId: ctx.conversationId,
     signal: ctx.signal,
     allowedToolNames: GEMINI_LIVE_REGISTRY_TOOL_ALLOWLIST,
+    // Every gate outcome — executed, errored, and (the one that was invisible)
+    // permission-denied — lands as a `tool_invocations` row. See
+    // {@link getAuditListener}.
+    onToolLifecycleEvent: getAuditListener(),
   };
   return getSharedExecutor().execute(name, input, context);
 }
