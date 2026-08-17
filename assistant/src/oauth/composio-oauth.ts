@@ -39,6 +39,29 @@ import {
 } from "./connector-health-store.js";
 
 const log = getLogger("composio-oauth");
+
+/**
+ * Composio faults that are about CUE's credentials rather than the user's
+ * connection: an API key missing a capability, a disabled feature, a plan
+ * ceiling. These arrive on the same 4xx path as a genuinely broken
+ * connection and read identically unless you look at the message.
+ *
+ * The distinction decides who gets asked to fix it. A user can reconnect
+ * their Google account; they cannot grant our API key a scope it was minted
+ * without. Anchored on the capability wording Composio uses so an ordinary
+ * provider rejection ("invalid credentials", an expired grant) still counts
+ * as connection-shaped and still marks the connector.
+ */
+export function isComposioInfrastructureFault(message: string): boolean {
+  return (
+    /proxy execute is not enabled/i.test(message) ||
+    /create a new scoped api ?key/i.test(message) ||
+    /not enabled for (?:this|your) (?:api ?key|organization|org|project)/i.test(
+      message,
+    ) ||
+    /\bapi ?key\b[^.]{0,60}\b(?:lacks|missing|does not have)\b/i.test(message)
+  );
+}
 const COMPOSIO_BASE = "https://backend.composio.dev/api/v3";
 // The request proxy lives on the v3.1 surface. Exported for the connector
 // health probe, which runs its liveness checks through the same proxy.
@@ -317,12 +340,24 @@ class ComposioOAuthConnection implements OAuthConnection {
         signal: req.signal,
       });
     } catch (err) {
-      // Passive health signal: a proxy-level failure is connection-shaped
-      // (Composio couldn't complete an authenticated call for this toolkit).
-      recordConnectorFailure(
-        toolkit,
-        err instanceof Error ? err.message : String(err),
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      // Passive health signal: a proxy-level failure is USUALLY
+      // connection-shaped (Composio couldn't complete an authenticated call
+      // for this toolkit). It is not when Composio rejected US — a key
+      // without proxy-execute, a disabled feature, a plan limit. Recording
+      // that against the connection puts "Needs attention" on a connector
+      // that is perfectly healthy and sends the user to Reconnect, which
+      // cannot possibly fix our own credential. Leave the connection's
+      // record alone and make the noise where an operator will see it.
+      if (isComposioInfrastructureFault(message)) {
+        log.error(
+          { toolkit, message },
+          "Composio rejected Cue's own API key — connector health left " +
+            "untouched; this needs an operator, not a user reconnect",
+        );
+        throw err;
+      }
+      recordConnectorFailure(toolkit, message);
       throw err;
     }
     const status = resp.status ?? 200;

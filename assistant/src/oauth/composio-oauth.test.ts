@@ -9,7 +9,10 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { buildProxyArgs } from "./composio-oauth.js";
+import {
+  buildProxyArgs,
+  isComposioInfrastructureFault,
+} from "./composio-oauth.js";
 
 describe("buildProxyArgs", () => {
   it("joins base + path with no query", () => {
@@ -122,5 +125,48 @@ describe("buildProxyArgs — base URL fallback", () => {
   it("no baseUrl and no fallback still degrades to the old behaviour", () => {
     const { endpoint } = buildProxyArgs({ method: "GET", path: "/x" });
     expect(endpoint).toBe("/x");
+  });
+});
+
+describe("isComposioInfrastructureFault", () => {
+  // The real message from Levi's instance. Recording this against the
+  // connector put "Needs attention" on Gmail/Calendar/Airtable whose
+  // Composio connections were all ACTIVE, and sent him round a reconnect
+  // loop that could never have worked — reconnecting a Google account does
+  // not grant Cue's API key a scope it was minted without.
+  it("recognises the proxy-execute capability rejection", () => {
+    expect(
+      isComposioInfrastructureFault(
+        'Composio proxy GET https://gmail.googleapis.com/gmail/v1/users/me/profile -> 403 {"error":{"message":"Proxy execute is not enabled for this API key. Create a new scoped API key with proxy execute functionality","code":403}}',
+      ),
+    ).toBe(true);
+  });
+
+  it("recognises other capability/plan rejections aimed at our key", () => {
+    expect(
+      isComposioInfrastructureFault(
+        "This feature is not enabled for your organization",
+      ),
+    ).toBe(true);
+    expect(
+      isComposioInfrastructureFault(
+        "The API key lacks the required capability",
+      ),
+    ).toBe(true);
+  });
+
+  // The other half matters just as much: a genuinely broken connection must
+  // still mark the connector, or a user who really does need to reconnect
+  // is never told.
+  it("leaves real connection failures classified as the connection's", () => {
+    for (const message of [
+      "Composio proxy GET /x -> 401 invalid credentials",
+      "No active connection found for gmail",
+      "invalid_grant: Token has been expired or revoked",
+      "Provider rejected the connection (HTTP 403) — reconnect to fix",
+      "connection is expired",
+    ]) {
+      expect(isComposioInfrastructureFault(message)).toBe(false);
+    }
   });
 });
