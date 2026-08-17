@@ -3,6 +3,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 import { noCrossDomainImports } from "./eslint-rules/no-cross-domain-imports.mjs";
+import { noOnTokenAsGround } from "./eslint-rules/no-on-token-as-ground.mjs";
 
 // ---------------------------------------------------------------------------
 // no-restricted-syntax rule sets
@@ -150,7 +151,12 @@ const eslintConfig = defineConfig([
   globalIgnores(["dist/**", "src/generated/**", "storybook-static/**"]),
   {
     plugins: {
-      local: { rules: { "no-cross-domain-imports": noCrossDomainImports } },
+      local: {
+        rules: {
+          "no-cross-domain-imports": noCrossDomainImports,
+          "no-on-token-as-ground": noOnTokenAsGround,
+        },
+      },
     },
     rules: {
       "@typescript-eslint/no-unused-vars": [
@@ -158,6 +164,14 @@ const eslintConfig = defineConfig([
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "local/no-cross-domain-imports": "error",
+
+      // A `-on-` token names INK and the ground it sits on. It may be painted
+      // as type and never as a background — design asked for this as a lint
+      // because two shipped bugs were exactly that inversion, inside a class
+      // they have logged eleven times across eleven design passes. The CSS
+      // half of the same rule lives in `src/lib/ground-role-tokens.test.ts`,
+      // since ESLint cannot see `.css` files.
+      "local/no-on-token-as-ground": "error",
       "no-restricted-syntax": [
         "error",
         ...darkPairedColorScaleRules,
@@ -207,6 +221,19 @@ const eslintConfig = defineConfig([
         ...universalAuthRules,
       ],
     },
+  },
+  // Override: the ground/role guard's own tests must be able to SPELL the
+  // inversion they forbid — the `.css` half's scanner asserts on a sample
+  // string, and a scanner that cannot hold its own negative case has nothing
+  // proving it still matches. Same reasoning as `api-interceptors.test.ts`
+  // inside the auth boundary: centralizing the test next to the thing it
+  // tests does not weaken the guardrail. Nothing else is exempt.
+  {
+    files: [
+      "src/lib/ground-role-tokens.test.ts",
+      "eslint-rules/no-on-token-as-ground.test.mjs",
+    ],
+    rules: { "local/no-on-token-as-ground": "off" },
   },
 ]);
 

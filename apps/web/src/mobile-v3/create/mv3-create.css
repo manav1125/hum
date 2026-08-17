@@ -750,8 +750,12 @@
   font-size: 10px;
 }
 
+/* The tick is a ✓ character, so it is TYPE, and `--mv3-violet-glyph` is a
+ * mark colour — 3.11:1 on the light card, and the guard rejects any `-glyph`
+ * token in a `color:` slot by NAME rather than waiting for the number. The
+ * text leg is what the eyebrow two rules up already uses. */
 .mv3c-steprow[data-state="done"] .mv3c-steptick {
-  color: var(--mv3-violet-glyph);
+  color: var(--mv3-violet-text);
 }
 
 .mv3c-steprow[data-state="done"] .mv3c-steptext {

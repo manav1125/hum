@@ -16,6 +16,12 @@
  * on the ink canvases the bright values already clear the floor, so a call
  * site that moves from a fill leg to a text leg must be a no-op in dark. If
  * someone "helpfully" darkens the dark leg, this fails.
+ *
+ * With one measured exception, which is the interesting part of this file:
+ * `--mv1-blue`'s bright value does NOT clear the floor on the ink grounds, so
+ * blue's dark text leg is a lighter stop and the equality row would be
+ * asserting a 3.49:1 value back into place. See the blue test below — the
+ * assertion sat there failing for a week after the token was corrected.
  */
 import { readFileSync } from "node:fs";
 
@@ -51,6 +57,19 @@ function decl(scope: string, name: string): string {
 const tokensCss = read(`${LIB}tokens.css`);
 const indexCss = read(`${ROOT}src/index.css`);
 const mv3Css = read(`${ROOT}src/mobile-v3/mv3.css`);
+
+/**
+ * The `--mv1-*` dark block, anchored on its own first declaration.
+ *
+ * `[data-theme="dark"],\n[data-theme="velvet"] {` alone is no longer unique in
+ * this file — the ground/role layer opens with the same selector list to swing
+ * the `--muted` alias. `block()` takes the FIRST match, so the bare selector
+ * silently started returning a two-line block and every mv1 dark lookup failed
+ * with "not declared". Anchoring on a declaration inside the block says which
+ * one is meant, which is the same lesson as the tokens themselves: a name that
+ * doesn't state what it refers to gets applied to the wrong thing.
+ */
+const MV1_DARK = '[data-theme="dark"],\n[data-theme="velvet"] {\n  /* Dark v1';
 
 describe("addendum A1 — design-library state tokens", () => {
   const light = block(tokensCss, ':root,\n[data-theme="light"]');
@@ -113,7 +132,7 @@ describe("addendum A1 — design-library state tokens", () => {
 
 describe("addendum A1 — app --mv1-* layer", () => {
   const light = block(indexCss, ":root {\n  --mv1-ink");
-  const dark = block(indexCss, '[data-theme="dark"],\n[data-theme="velvet"] {');
+  const dark = block(indexCss, MV1_DARK);
 
   test.each([
     ["mv1-blue-text", "#2b53c4"],
@@ -126,8 +145,9 @@ describe("addendum A1 — app --mv1-* layer", () => {
     expect(decl(light, name)).toBe(value);
   });
 
+  // Dark's text legs equal their fill legs for every accent whose bright value
+  // already clears the floor on the ink grounds — which is five of the six.
   test.each([
-    ["mv1-blue", "mv1-blue-text"],
     ["mv1-violet", "mv1-violet-text"],
     ["mv1-amber", "mv1-amber-text"],
     ["mv1-teal", "mv1-teal-text"],
@@ -135,6 +155,42 @@ describe("addendum A1 — app --mv1-* layer", () => {
     ["mv1-red", "mv1-red-text"],
   ])("dark keeps %s === %s", (fill, text) => {
     expect(decl(dark, text)).toBe(decl(dark, fill));
+  });
+
+  /**
+   * Blue is the exception, and this test used to assert the defect.
+   *
+   * A1 shipped under a comment claiming the dark text legs are "deliberately
+   * identical to the accents above: on the ink canvases the bright values
+   * already clear the contrast floor at small sizes". That premise held for
+   * every accent EXCEPT blue and had never been measured. `#3D6EE8` is
+   * 3.49:1 on `--mv1-card` and 3.97:1 on `--mv1-sunken` — four of HQ's
+   * fifteen sub-AA nodes — and the token was corrected to `#86A9F2`
+   * (6.82 / 7.76) on 2026-08-10 after measuring the live signed-in app.
+   *
+   * This assertion was not corrected with it, so a guard whose whole job is
+   * the contrast floor spent a week voting to put a 3.49:1 value back. That
+   * is worth naming rather than quietly editing, because it is the same
+   * failure the mv3 layer hit at `--mv3-accent-text`: **a test can hold a bug
+   * in place more firmly than no test at all, because it converts the fix
+   * into a failure.** Both were found by rendering and measuring, not by
+   * reading tokens — which is what both guards had been doing.
+   *
+   * So the rule the row asserts is now the rule that is actually true: the
+   * swap is a no-op in dark *where the bright value clears the floor*, and
+   * where it does not, the text leg is the readable stop and the number is
+   * recomputed here rather than asserted in prose.
+   */
+  test("dark blue text is the readable stop, not the fill leg", () => {
+    expect(decl(dark, "mv1-blue-text")).toBe("#86a9f2");
+    expect(decl(dark, "mv1-blue-text")).not.toBe(decl(dark, "mv1-blue"));
+    // The ink grounds it is read on, worst first.
+    for (const ground of ["#1a2230", "#0f1620", "#11161f"]) {
+      expect(contrast("#86a9f2", ground)).toBeGreaterThanOrEqual(4.5);
+      // …and the fill leg genuinely does not clear them, which is why the
+      // exception exists at all.
+      expect(contrast("#3d6ee8", ground)).toBeLessThan(4.5);
+    }
   });
 });
 
@@ -228,7 +284,7 @@ describe("addendum A1 — the shared serif-HQ C palette", () => {
 
 describe("A1 follow-ups — the two tokens design left to engineering", () => {
   const light = block(indexCss, ":root {\n  --mv1-ink");
-  const dark = block(indexCss, '[data-theme="dark"],\n[data-theme="velvet"] {');
+  const dark = block(indexCss, MV1_DARK);
 
   test("amber is the design system's needs-you bright, not the app's drifted one", () => {
     // The app carried #C98A1B, which the system does not specify and which

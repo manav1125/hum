@@ -60,6 +60,128 @@ body {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * GROUND AND ROLE — the app-wide layer (design v36/v37).
+ *
+ * Design has now logged ELEVEN recurrences of one failure class across eleven
+ * design packs, and every instance is the same shape: *a value correct for one
+ * ground or role applied to another*. The eleventh shipped inside the pack
+ * whose own §4 rules on honest numbers — `#5B5B68` on a dark card, two rows
+ * from two siblings using the correct `#9A9AA8`.
+ *
+ * Their conclusion, and this block's reason for existing:
+ *
+ *   "Eleven recurrences across eleven careful passes is not a discipline
+ *    problem. Until a name carries its ground, the wrong value stays typeable
+ *    into the right slot."
+ *
+ * So the ground is IN THE NAME, and the name is what the guard reads. Two
+ * rules hold this together, and both are enforced (see `eslint-rules/
+ * no-on-token-as-ground.mjs` for ts/tsx and `lib/ground-role-tokens.test.ts`
+ * for css + the values):
+ *
+ *   1. A `-on-<ground>` token is INVARIANT. No theme may redefine it — that
+ *      is what makes the name a promise rather than a reminder. Surfaces that
+ *      follow the theme take the `--muted` alias, which is what themes move.
+ *   2. A `-on-` token may appear only where TYPE is painted (`color`, `fill`,
+ *      `stroke`). Never in a `background`. Two shipped bugs were exactly this
+ *      inversion, which is why it is a lint and not a convention.
+ *
+ * Ratios below are computed against the grounds these actually land on, not
+ * against white. They are recomputed by the test rather than trusted.
+ * ------------------------------------------------------------------------ */
+:root {
+  /* ── Muted text, per ground ──────────────────────────────────────────
+   *
+   * Four grounds, because there are four. The first three are design's
+   * values verbatim; the fourth is the one they added this round.
+   *
+   *   paper   the HQ's warm editorial ground (#F4F3EF)      4.85:1
+   *   canvas  the cool app canvas (#F2F3F7 / #F4F6F9)       5.29:1
+   *   dark    the ink canvases and cards (#0A0C12 · #1A2230) 7.04 / 5.75:1
+   *   tint    paper or canvas PLUS a wash — a third ground
+   *
+   * The tint row is the part worth reading. Design measured `#6B6B60` at
+   * **4.35:1 on paper-plus-a-wash** — it passes on paper and fails on a
+   * tinted chip, and the two look near enough identical in review that no
+   * amount of care catches it. Measured here against every wash ground in
+   * the tree, `#6B6B60` lands 4.32 (#E8E6E0) · 4.23 (blue wash) · 4.58
+   * (green wash): under the floor on two of three. `#63635A` is one stop
+   * down the same hue and clears all of them (4.86 · 4.77 · 5.16).
+   *
+   * The consequence for call sites is the real fix: **a tinted chip
+   * declares its ground and inherits its muted stop** (`[data-ground]`
+   * below) rather than each usage picking a hex — which is how one wash
+   * ended up with the paper value in the first place. */
+  --muted-on-paper: #6b6b60;
+  --muted-on-canvas: #5a6672;
+  --muted-on-dark: #9a9aa8;
+  --muted-on-tint: #63635a;
+
+  /* The theme-following alias — correct for every surface whose ground
+   * moves with the theme, which is most of them. The four above are for
+   * grounds that DON'T move: a permanently warm card, a permanently dark
+   * scrim, a tinted chip. Over a theme-following ground a ground-named ink
+   * is wrong in one theme by construction, whichever one you picked. */
+  --muted: var(--muted-on-canvas);
+
+  /* ── Coloured controls: the ground and the ink that rides it ─────────
+   *
+   * `-fill`     the control's BACKGROUND.
+   * `-on-fill`  the INK that sits on that ground, and nothing else.
+   *
+   * The pairing is the point: whoever changes the ground sees the ink
+   * beside it. Design's rule for the grounds — "fills carrying white text
+   * take the TEXT variants" — is why these are the darker stops
+   * (#2B53C4 · #534AB7 · #8A5A08 · #0A6A6A) and never the bright legs.
+   * A bright leg under white ink is the exact defect that shipped the
+   * phone's Approve button at 3.76:1.
+   *
+   * Every pair clears 4.5:1 by construction; the test recomputes each one
+   * rather than trusting this comment. */
+  --blue-fill: #2b53c4;
+  --blue-on-fill: #ffffff;
+  --violet-fill: #534ab7;
+  --violet-on-fill: #ffffff;
+  --amber-fill: #8a5a08;
+  --amber-on-fill: #ffffff;
+  --teal-fill: #0a6a6a;
+  --teal-on-fill: #ffffff;
+  --green-fill: #277e41;
+  --green-on-fill: #ffffff;
+  --red-fill: #a63a2f;
+  --red-on-fill: #ffffff;
+  --danger-fill: #b83c12;
+  --danger-on-fill: #ffffff;
+}
+
+/* The alias follows the theme. The `-on-<ground>` tokens above deliberately
+ * do NOT appear here — see rule 1. The guard fails the build if they ever do. */
+[data-theme="dark"],
+[data-theme="velvet"] {
+  --muted: var(--muted-on-dark);
+}
+
+/* A surface DECLARES its ground, and its muted stop follows.
+ *
+ * This is design's "a tinted chip is a third ground" turned into something a
+ * call site can spell. `<span data-ground="tint">` inherits the tint stop for
+ * itself and everything inside it; nothing downstream picks a hex, so nothing
+ * downstream can pick the wrong one. Use it on any ground that does not move
+ * with the theme — a wash, a warm card, a permanent dark scrim. */
+[data-ground="paper"] {
+  --muted: var(--muted-on-paper);
+}
+[data-ground="canvas"] {
+  --muted: var(--muted-on-canvas);
+}
+[data-ground="tint"] {
+  --muted: var(--muted-on-tint);
+}
+[data-ground="dark"] {
+  --muted: var(--muted-on-dark);
+}
+
 /* Mobile design-book palette (`--mv1-*`) — theme-aware.
  *
  * The mobile screens built from the dark-v1 design book (mobile chat, the
@@ -152,8 +274,13 @@ body {
    * value — painted on the dark grounds, which is precisely the mistake the
    * "-on-<ground>" naming exists to prevent. Measured on the live app it gave
    * 2.96:1 on --mv1-card and 3.37:1 on --mv1-sunken, both under AA, and
-   * accounted for 11 of HQ's 15 sub-AA nodes. #9a9aa8 clears at 5.75 / 6.54. */
-  --mv1-t3: #9a9aa8;
+   * accounted for 11 of HQ's 15 sub-AA nodes. #9a9aa8 clears at 5.75 / 6.54.
+   *
+   * It now POINTS at the canonical stop rather than re-spelling it. Same
+   * value, one source: the hex was already living in four places (here,
+   * `--hq-muted`, `--gr-muted-on-dark`, `--mv3-muted-on-dark`), and a value
+   * copied four times is a value that only has to drift once. */
+  --mv1-t3: var(--muted-on-dark);
   --mv1-line: rgba(255, 255, 255, 0.08);
   --mv1-blue: #3d6ee8;
   --mv1-blue-eyebrow: #86a9f2;
