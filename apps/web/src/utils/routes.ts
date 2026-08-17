@@ -189,6 +189,15 @@ export const routes = {
    * Weekly review (design v24 frame F3) — the Friday four beats, paged.
    */
   weekly: r("/assistant/weekly"),
+  /**
+   * Briefs & reviews (v43 R1) — the dated list of the rituals.
+   *
+   * Deliberately the SECONDARY door. Today's ritual slot is the primary one,
+   * because a ritual needs a door that appears when it is due; this URL is for
+   * "where was that brief" at 4pm. Making the list primary is what left both
+   * surfaces dark.
+   */
+  rituals: r("/assistant/rituals"),
   voice: r("/assistant/voice"),
   /**
    * **Your Cue** — the door. One URL for "the place I change things", which

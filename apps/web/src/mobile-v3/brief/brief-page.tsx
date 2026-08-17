@@ -18,7 +18,7 @@
  * ./use-morning-brief.ts). Beat-2 actions call the declared endpoint/method
  * verbatim; approvals carry the `{requestId, decision}` confirm body.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
@@ -28,6 +28,7 @@ import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 import { microLabel, mv3Mono, rise } from "../mv3-kit";
+import { markRitualRead } from "../today/ritual-progress";
 import {
   useMorningBrief,
   morningBriefQueryKey,
@@ -579,6 +580,15 @@ export function BriefPage() {
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const { brief, isLoading, isError } = useMorningBrief(assistantId);
   const [beatIndex, setBeatIndex] = useState(0);
+
+  // The push and Today's ritual slot are ONE door — so arriving through
+  // either records the brief as read, and the slot behind this screen
+  // collapses to its one-line form instead of asking again for something the
+  // owner is looking at. Marking it here rather than in the slot is the whole
+  // point: an owner who only ever taps the notification never sees the slot.
+  useEffect(() => {
+    markRitualRead("brief");
+  }, []);
 
   const beats = useMemo(() => resolveBeats(brief), [brief]);
   const beat: BeatId | null = beats[beatIndex] ?? null;

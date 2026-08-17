@@ -916,6 +916,18 @@ export const routeTree = [
                         },
                       },
                       {
+                        // Briefs & reviews (v43 R1) — the dated list. The
+                        // SECONDARY door to the two rituals; Today's ritual
+                        // slot is the primary one.
+                        path: "rituals",
+                        lazy: {
+                          Component: () =>
+                            import(
+                              "@/mobile-v3/rituals/rituals-archive-page"
+                            ).then((m) => m.Mv3RitualsArchivePage),
+                        },
+                      },
+                      {
                         path: "voice",
                         lazy: {
                           Component: () =>

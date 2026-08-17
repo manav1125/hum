@@ -45,7 +45,7 @@
  *    Guardrails to change it yourself.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -63,19 +63,13 @@ import { routes } from "@/utils/routes";
 import { AuroraBackdrop } from "../aurora-backdrop";
 import { GlassCard } from "../glass-card";
 import { microLabel } from "../mv3-kit";
-
-const DAY_MS = 86_400_000;
-const WEEK_MS = 7 * DAY_MS;
-/** Nothing has touched it in this long → it slipped. */
-const STALE_DAYS = 5;
-
-const DONE_STATUSES = new Set(["done", "completed"]);
-const CLOSED_STATUSES = new Set([
-  "done",
-  "completed",
-  "cancelled",
-  "archived",
-]);
+import { markRitualRead } from "../today/ritual-progress";
+import {
+  countCleared,
+  listSlipped,
+  STALE_DAYS,
+  WEEK_MS,
+} from "./weekly-signal";
 
 export function Mv3WeeklyPage() {
   const assistantId = useActiveAssistantId();
@@ -83,6 +77,12 @@ export function Mv3WeeklyPage() {
   const [now] = useState(() => Date.now());
   const trackRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
+
+  // Same contract as the Brief: opening the review is what stops Today's
+  // ritual slot asking for it. One door, however you came through it.
+  useEffect(() => {
+    markRitualRead("weekly");
+  }, []);
 
   const missions = useQuery({
     ...missionsGetOptions({ path: { assistant_id: assistantId } }),
@@ -123,50 +123,14 @@ export function Mv3WeeklyPage() {
    * last touched inside the window*, which is an approximation and is labelled
    * as one on screen.
    */
-  const youCleared = useMemo(
-    () =>
-      items.filter(
-        (i) =>
-          DONE_STATUSES.has(i.status) &&
-          (i.updatedAt ?? 0) >= now - WEEK_MS &&
-          (i.ranProvenance === "manual" || i.completedElsewhere === true),
-      ).length,
-    [items, now],
-  );
+  const youCleared = useMemo(() => countCleared(items, now), [items, now]);
 
   const cueFinished = acts.data?.acts ?? 0;
   const denominator = youCleared + cueFinished;
   const cueShare =
     denominator > 0 ? Math.round((cueFinished / denominator) * 100) : null;
 
-  const slipped = useMemo(() => {
-    const out: { id: string; text: string }[] = [];
-    for (const i of items) {
-      if (CLOSED_STATUSES.has(i.status)) continue;
-      if (i.dueAt && i.dueAt < now) {
-        out.push({
-          id: i.id,
-          text: `${i.title} — ${Math.floor((now - i.dueAt) / DAY_MS)}d past due`,
-        });
-        continue;
-      }
-      if (i.waitingState === "going_cold") {
-        out.push({
-          id: i.id,
-          text: `${i.title} — waiting, and going cold`,
-        });
-        continue;
-      }
-      const idle = i.lastActivityAt ? now - i.lastActivityAt : 0;
-      if (idle > STALE_DAYS * DAY_MS) {
-        out.push({
-          id: i.id,
-          text: `${i.title} — nothing for ${Math.floor(idle / DAY_MS)} days`,
-        });
-      }
-    }
-    return out.slice(0, 5);
-  }, [items, now]);
+  const slipped = useMemo(() => listSlipped(items, now), [items, now]);
 
   const rings = useMemo(
     () =>

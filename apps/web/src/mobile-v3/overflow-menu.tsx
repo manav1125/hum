@@ -240,6 +240,18 @@ function AccountSheet({
       run: () => navigate(routes.workView("library")),
     },
     {
+      // "Briefs & reviews" (v43 R1). It belongs beside the other things that
+      // accumulate, and it is deliberately the SECOND door to the two rituals:
+      // the ritual slot at the top of Today is the first, because a ritual
+      // needs a door that appears when it is due and a menu has no sense of
+      // time. That ordering is the ruling — putting these two surfaces ONLY in
+      // this list is what kept both of them dark for weeks.
+      key: "rituals",
+      label: "Briefs & reviews",
+      sub: "Your morning brief and the week's review",
+      run: () => navigate(routes.rituals),
+    },
+    {
       key: "agents",
       group: "Your Cue",
       label: "Agents",

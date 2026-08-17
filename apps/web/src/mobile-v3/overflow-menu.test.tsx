@@ -154,6 +154,12 @@ describe("the ⓶ menu's contents match the ruled model", () => {
       "people",
       "conversations",
       "library",
+      // "Briefs & reviews" (v43 R1) closes the Accumulating group — rituals
+      // accumulate, so they get an archive. It is deliberately NOT the first
+      // door to them: the ritual slot at the top of Today is, because a menu
+      // has no sense of time and listing these two here alone is exactly what
+      // kept both surfaces dark.
+      "rituals",
       "agents",
       "skills",
       "your-cue",

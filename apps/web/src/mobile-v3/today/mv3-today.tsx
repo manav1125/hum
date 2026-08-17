@@ -71,6 +71,8 @@ import {
   usePausedRuns,
 } from "./mv3-paused-run";
 import { capDeck, isCapped, needsYouLabel } from "./needs-you-deck";
+import { Mv3RitualSlot } from "./mv3-ritual-slot";
+import { useRitualSlot } from "./use-ritual-slot";
 import type { PausedRun } from "../approval-sheet";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -1093,6 +1095,14 @@ export function Mv3Today({
   // Stamped once per mount — reading the clock during render is impure. The
   // day strip's segments would otherwise slide on every unrelated re-render.
   const [hour] = useState(() => new Date().getHours());
+  /**
+   * Stamped once, for the same reason: the ritual slot's whole model is a
+   * function of the clock, and a `new Date()` in render would re-decide which
+   * ritual is due on every unrelated re-render — including, at 10:59:59, in
+   * the middle of a tap.
+   */
+  const [ritualNow] = useState(() => new Date());
+  const ritual = useRitualSlot(assistantId, ritualNow);
   // Ticks per minute, and feeds ONLY the day strip. The rail's bounds don't
   // move, but "is that free block still ahead of me?" does, and a session left
   // open across the gap would otherwise keep offering time that had gone.
@@ -1492,6 +1502,21 @@ export function Mv3Today({
             Reconnecting to Cue…
           </div>
         ) : null}
+
+        {/*
+          The ritual slot — above the ring, because at 7:34 the brief IS the
+          greeting (v43 R1). Most of the day this renders nothing at all: it is
+          a door that appears when a ritual is due and is absent otherwise,
+          which is why it sits here as a component rather than as a permanent
+          row somebody has to keep empty.
+
+          It is inset to the CARD stack's 16px, not the hero's 22px, so it
+          lines up with the NEXT MOVE card below the ring exactly as the frame
+          draws it.
+        */}
+        <div style={{ padding: "6px 16px 0" }}>
+          <Mv3RitualSlot face={ritual} style={rise(0.04)} />
+        </div>
 
         <CueRingHero
           chips={chips}

@@ -20,6 +20,37 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { Mv3OverflowMenu, TabBarV3 } from "@/mobile-v3";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 
+/**
+ * `?at=YYYY-MM-DDTHH:MM` — pin the wall clock.
+ *
+ * Added for the ritual slot, whose whole model is a function of the clock:
+ * which of its three faces renders depends on the hour and the weekday, so
+ * without this the harness could only ever show whichever face happened to be
+ * due when someone opened it. Installed at MODULE scope, before `NOW` and
+ * before any component reads a date — a `useEffect` would land after the first
+ * render had already stamped the real time.
+ *
+ * Only the wall clock moves. Everything else is the real component.
+ */
+(() => {
+  const raw = new URLSearchParams(globalThis.location?.search ?? "").get("at");
+  if (!raw) return;
+  const target = new Date(raw).getTime();
+  if (Number.isNaN(target)) return;
+  const Real = Date;
+  const offset = target - Real.now();
+  class Pinned extends Real {
+    constructor(...args: unknown[]) {
+      if (args.length === 0) super(Real.now() + offset);
+      else super(...(args as []));
+    }
+    static now() {
+      return Real.now() + offset;
+    }
+  }
+  (globalThis as any).Date = Pinned;
+})();
+
 const ASSISTANT_ID = "a-preview";
 const NOW = Date.now();
 const MIN = 60_000;
@@ -1162,14 +1193,84 @@ const FIXTURES: [RegExp, () => unknown][] = [
     }),
   ],
   [
+    // The REAL wire contract (`runtime/routes/morning-brief-routes.ts`, and
+    // `mobile-v3/brief/use-morning-brief.ts`'s narrowing of it): a flat object
+    // with `overnight` / `ask` / `day`, not a nested `brief` envelope.
+    //
+    // This fixture used to answer `{ brief: { greeting, summary, sections } }`,
+    // which `normalizeMorningBrief` reads as a brief with nothing in it — so
+    // the harness's Brief screen had been previewing the ALL-QUIET story while
+    // looking like it was previewing a populated one. A fixture in the wrong
+    // shape is worse than a missing one: the surface renders, so nobody looks.
     /\/brief\/morning$/,
     () => ({
-      brief: {
-        greeting: "Good morning",
-        summary: "Three things want you before lunch.",
-        sections: [],
+      generatedAt: new Date(NOW).toISOString(),
+      since: new Date(NOW - 24 * 60 * MIN).toISOString(),
+      overnight: [
+        {
+          id: "ov-1",
+          title: "Drafted the Northwind renewal reply",
+          project: "Northwind",
+          agent: "Ops",
+          state: "done",
+          kind: "work_item",
+          completedAt: new Date(NOW - 5 * 60 * MIN).toISOString(),
+        },
+        {
+          id: "ov-2",
+          title: "Reconciled the September invoices",
+          state: "done",
+          kind: "work_item",
+          completedAt: new Date(NOW - 4 * 60 * MIN).toISOString(),
+        },
+        {
+          id: "ov-3",
+          title: "Swept the inbox",
+          state: "done",
+          kind: "inbox_cleanup",
+          counts: { archived: 41, drafted: 3, keptImportant: 6 },
+          completedAt: new Date(NOW - 3 * 60 * MIN).toISOString(),
+        },
+        {
+          id: "ov-4",
+          title: "Built the Q3 partner deck outline",
+          state: "done",
+          kind: "work_item",
+          completedAt: new Date(NOW - 2 * 60 * MIN).toISOString(),
+        },
+      ],
+      ask: {
+        id: "ask-1",
+        kind: "approval",
+        title: "Send the Northwind renewal reply",
+        project: "Northwind",
+        actions: [
+          {
+            id: "ok",
+            label: "Approve",
+            kind: "approve",
+            endpoint: "/v1/x",
+            method: "POST",
+          },
+        ],
       },
+      day: [
+        {
+          title: "Pipeline review",
+          kind: "event",
+          time: new Date(new Date().setHours(10, 30, 0, 0)).toISOString(),
+        },
+      ],
+      calendarAvailable: true,
     }),
+  ],
+  [
+    // `acts` is a NUMBER on this route. The generic fallback body answers
+    // `acts: []`, which the weekly's `acts.data?.acts ?? 0` happily accepts and
+    // then adds to a count — string-concatenating an array into "N things
+    // moved". A typed contract deserves a typed fixture.
+    /\/acts\/summary$/,
+    () => ({ acts: 7, reversed: 1, window: { days: 7 } }),
   ],
 ];
 
@@ -1182,6 +1283,12 @@ function mockBody(url: string): unknown {
     items: [],
     events: [],
     conversations: [],
+    // `contacts` and `documents` are read as `data.contacts.length` /
+    // `data.documents.length` by `useCueCounts`, which the ⋯ menu calls. Their
+    // absence from this fallback threw inside the FIXED chrome — outside the
+    // route's boundary — and blanked every `overflow: true` screen entirely.
+    contacts: [],
+    documents: [],
     skills: [],
     categories: [],
     plugins: [],
@@ -1329,6 +1436,11 @@ const Mv3WatchingPage = lazy(() =>
 const Mv3WeeklyPage = lazy(() =>
   import("@/mobile-v3/weekly/mv3-weekly-page").then((m) => ({
     default: m.Mv3WeeklyPage,
+  })),
+);
+const Mv3RitualsArchivePage = lazy(() =>
+  import("@/mobile-v3/rituals/rituals-archive-page").then((m) => ({
+    default: m.Mv3RitualsArchivePage,
   })),
 );
 const Mv3LedgerPage = lazy(() =>
@@ -1694,6 +1806,21 @@ const SCREENS: Screen[] = [
     tabBar: false,
   },
   {
+    // The SECONDARY door to the two rituals (v43 R1). The primary one is the
+    // slot at the top of Today — pin the clock with `?at=` to see its faces.
+    key: "rituals",
+    label: "Briefs & reviews (archive)",
+    entry: "/assistant/rituals",
+    route: "/assistant/rituals",
+    element: <Mv3RitualsArchivePage />,
+    tabBar: false,
+    // Not one of `MV3_OVERFLOW_SURFACES` — it is reached FROM the ⋯ menu, so
+    // it carries no second copy of it. (Marked `true` first time round, which
+    // is exactly the collision `corner-chrome.ts` exists to prevent: the ☰
+    // button landed on the header's first line.)
+    overflow: false,
+  },
+  {
     key: "organizer",
     label: "Organizer remote",
     entry: "/assistant/organizer",
@@ -1798,8 +1925,25 @@ export function MobileAuditGallery() {
               </Boundary>
             </Suspense>
           </div>
-          {screen.overflow ? <Mv3OverflowMenu /> : null}
-          {screen.tabBar ? <TabBarV3 /> : null}
+          {/*
+            The fixed chrome gets its own boundary.
+
+            It used to sit outside one, so a crash anywhere in the ⋯ menu's
+            import graph — which reaches into Create and the chat composer —
+            blanked the ENTIRE preview with no message, for every screen marked
+            `overflow`. The screen under test was fine; you just could not see
+            it, or tell that the chrome was the reason.
+          */}
+          {screen.overflow ? (
+            <Boundary>
+              <Mv3OverflowMenu />
+            </Boundary>
+          ) : null}
+          {screen.tabBar ? (
+            <Boundary>
+              <TabBarV3 />
+            </Boundary>
+          ) : null}
           <div id="viewport-overlays" />
         </div>
       </MemoryRouter>
