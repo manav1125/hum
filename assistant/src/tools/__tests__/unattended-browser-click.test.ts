@@ -181,7 +181,6 @@ describe("the rest of the medium-risk surface is untouched", () => {
   const STILL_DENIED = [
     "host_file_write",
     "host_bash",
-    "mcp__gmail__send_email",
     "browser_fill_credential",
   ];
 
@@ -201,6 +200,24 @@ describe("the rest of the medium-risk surface is untouched", () => {
       );
     });
   }
+
+  // The partner-email case named above, kept apart because it is now refused
+  // one step earlier and for a stronger reason. It is a send, and the owner's
+  // autonomy policy asks about sends — so it is refused by class rather than
+  // by sitting above the Medium threshold, and would be refused even if a
+  // classifier called it Low.
+  test("mcp__gmail__send_email is still denied unattended, by class", async () => {
+    classifications["mcp__gmail__send_email"] = {
+      risk: "medium",
+      reason: "medium risk",
+      matchType: "unknown",
+    };
+
+    const decision = await decide("mcp__gmail__send_email", {});
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.approvalReason).toBe("autonomy_policy_ask");
+  });
 
   test("a High-risk tool is denied even if a rule tried to name it", async () => {
     // A whole-tool rule can lower a tool to Low, so the ceiling is worth

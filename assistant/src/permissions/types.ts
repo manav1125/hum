@@ -16,6 +16,13 @@ export type ApprovalReason =
   | "sandbox_auto_approve"
   | "platform_auto_approve"
   | "no_interactive_client"
+  /**
+   * Denied because the owner's per-category autonomy policy marks this class
+   * of action "ask" and the run had no human to ask. Distinct from
+   * `no_interactive_client`, which covers prompts reached on the risk path:
+   * this one would still have been a prompt at any risk level.
+   */
+  | "autonomy_policy_ask"
   | "grant_scoped_consumed"
   | "system_cancelled"
   | "unknown";

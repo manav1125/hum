@@ -1,5 +1,6 @@
 import { getIsContainerized } from "../config/env-registry.js";
 import { mapApprovalProvenance } from "../permissions/approval-provenance.js";
+import { classifyAutonomy } from "../permissions/autonomy-class.js";
 import {
   check,
   classifyRisk,
@@ -241,6 +242,65 @@ export class PermissionChecker {
           matchedTrustRuleId,
           riskMeta,
           ...provenance,
+          riskThreshold,
+        };
+      }
+
+      // ── The autonomy policy binds in unattended runs ──────────────────
+      // `check()` sets `autonomyAskEnforced` when the owner's per-category
+      // autonomy policy is what put this invocation on the prompt path: the
+      // classes they marked "ask" (send / money / delete / publish /
+      // contact), plus any enabled guardrail checkpoint. "Ask" means a person
+      // answers. With no person present there is nothing to fall back on, so
+      // the action is denied — at ANY risk level.
+      //
+      // This sits ahead of every auto-approve shortcut below rather than
+      // being a condition inside one of them, and that placement is the
+      // point. Each shortcut decides on risk alone, and risk is not what the
+      // owner configured here: they drew the line at a class of action, not
+      // at a severity. Gating the shortcuts one at a time is exactly how the
+      // guardian background branch came to be the one that forgot to look.
+      //
+      // Interactive sessions are untouched: they fall through to the prompt
+      // below and a human still answers it.
+      if (
+        context.isInteractive === false &&
+        result.autonomyAskEnforced === true
+      ) {
+        const autonomyClass = classifyAutonomy(name, input);
+        const durationMs = Date.now() - startTime;
+        const reason = `Autonomy policy: "${autonomyClass}" actions are set to ask, and this run has no one to ask`;
+        log.info(
+          { toolName: name, riskLevel, autonomyClass },
+          "Denying unattended action: autonomy policy asks for this class",
+        );
+        emitLifecycleEvent({
+          type: "permission_denied",
+          toolName: name,
+          executionTarget,
+          input,
+          workingDir: context.workingDir,
+          conversationId: context.conversationId,
+          requestId: context.requestId,
+          riskLevel,
+          riskReason,
+          matchedTrustRuleId,
+          decision: "deny",
+          reason,
+          durationMs,
+        });
+        return {
+          allowed: false,
+          decision: "denied",
+          riskLevel,
+          content: `Permission denied: "${name}" is a ${autonomyClass}-class action, and the autonomy policy for ${autonomyClass} is set to "ask" — a person approves these one at a time. This run is unattended, so there was no one to ask and the tool was NOT executed. This is not a risk-threshold denial: the risk level (${riskLevel}) did not enter into it, and a trust rule or a raised threshold will not change it. Do NOT retry. Either carry out this step from an interactive session, or leave it for the owner and continue with the rest of the work.`,
+          matchedTrustRuleId,
+          riskMeta,
+          // Deliberately not passing matchedTrustRuleId into the provenance
+          // mapper: a rule may well have matched, but the reason for denial
+          // is the autonomy policy, which is evaluated before rules and which
+          // no rule can override.
+          ...mapApprovalProvenance("denied_autonomy_policy", {}),
           riskThreshold,
         };
       }

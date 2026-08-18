@@ -12,6 +12,7 @@ import type { ApprovalMode, ApprovalReason } from "./types.js";
  *   "temporary_override"    — auto-approved by an active temporary approval override
  *   "deny"                  — user denied via interactive prompt
  *   "denied"                — system denied (no interactive client, or trust rule deny)
+ *   "denied_autonomy_policy"— unattended run, autonomy policy asks for this class
  *   "platform_auto_approve" — guardian bash in platform-hosted session
  *   "guardian_auto_approve" — non-interactive guardian session within background threshold
  */
@@ -73,6 +74,15 @@ export function mapApprovalProvenance(
       return { approvalMode: "prompted", approvalReason: "timed_out" };
     }
     return { approvalMode: "prompted", approvalReason: "user_denied" };
+  }
+
+  // Unattended run, and the owner's autonomy policy marks this class of
+  // action "ask". Kept separate from the "denied" bucket below so that a
+  // policy denial is never read as a risk-threshold denial after the fact —
+  // a trust rule would not have changed this outcome, and the logs should
+  // say so.
+  if (decision === "denied_autonomy_policy") {
+    return { approvalMode: "blocked", approvalReason: "autonomy_policy_ask" };
   }
 
   // "denied" — system denied without user interaction

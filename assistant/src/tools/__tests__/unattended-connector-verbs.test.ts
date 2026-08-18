@@ -162,39 +162,44 @@ describe("the regression this fixes", () => {
     // What the gateway returned BEFORE 2026-08-16, from the provisioner's
     // auto-written `defaultRiskLevel: "low"`. Both blanket values are wrong;
     // the blanket is what is wrong.
+    //
+    // This case is now held by TWO independent guards. The verb classifier
+    // rates a send "high", and — proven here by forcing the old blanket back
+    // on — the autonomy policy denies the class outright even when risk says
+    // low. Until that second guard existed, this exact line read
+    // `expect(decision.allowed).toBe(true)`.
     forcedRisk = "low";
 
     const decision = await decide("mcp__composio_gmail__GMAIL_SEND_EMAIL");
 
-    // Allowed. Not prompted, not denied — allowed, unattended, no human.
-    expect(decision.allowed).toBe(true);
-    expect(decision.decision).toBe("guardian_auto_approve");
+    expect(decision.allowed).toBe(false);
+    expect(decision.riskLevel).toBe("low");
+    expect(decision.allowed === false && decision.content).toContain(
+      'set to "ask"',
+    );
   });
 
-  test("the autonomy 'send → ask' policy does not stop it, and never did", async () => {
-    // Worth stating plainly because it is easy to assume otherwise. The
-    // autonomy classifier DOES read this tool as a send, and the owner's
-    // policy for `send` IS "ask", so DefaultApprovalPolicy returns a prompt
-    // with `enforcedByAutonomyPolicy`. But the guardian branch of
-    // PermissionChecker (the one an unattended run takes) re-checks that
-    // prompt against the BACKGROUND THRESHOLD and consults risk only — it
-    // does not look at `autonomyAskEnforced`, which only the temporary-
-    // override branch further down honours.
+  test("the autonomy 'send → ask' policy is what stops it, independent of risk", async () => {
+    // Worth stating plainly, because for a long time the opposite was true.
+    // The autonomy classifier reads this tool as a send, and the owner's
+    // policy for `send` is "ask", so DefaultApprovalPolicy returns a prompt
+    // carrying `enforcedByAutonomyPolicy`. The guardian branch of
+    // PermissionChecker — the one an unattended run takes — used to re-check
+    // that prompt against the BACKGROUND THRESHOLD and consult risk only,
+    // never looking at `autonomyAskEnforced`. Risk level was the ONLY thing
+    // between a send and its execution, which is why a blanket low was a
+    // live rogue-send hole rather than a theoretical one.
     //
-    // So in an unattended run, risk level is the ONLY thing between a send
-    // and its execution. That is what makes the verb taxonomy load-bearing
-    // rather than a second opinion, and it is why a blanket low was a live
-    // rogue-send hole for four days rather than a theoretical one.
+    // Now the class is decisive on its own: low risk, high risk, either way.
     forcedRisk = "low";
-    expect(
-      (
-        await decide(
-          "mcp__composio_slack__SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
-        )
-      ).allowed,
-    ).toBe(true);
+    const atLowRisk = await decide(
+      "mcp__composio_slack__SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+    );
+    expect(atLowRisk.allowed).toBe(false);
+    expect(atLowRisk.riskLevel).toBe("low");
 
-    // With risk derived from the verb, the same call is stopped.
+    // And with risk derived from the verb, still stopped — now for both
+    // reasons at once.
     forcedRisk = null;
     clearRiskCache(); // the checker memoizes classifications per tool+input
     expect(
@@ -236,21 +241,60 @@ describe("what the owner asked for: reading and drafting run unattended", () => 
 // ── The line: send and delete ────────────────────────────────────────────────
 
 describe("the line the owner drew holds", () => {
-  const DENIED = [
+  // Split by WHY each one is refused, because the two reasons are not
+  // interchangeable and the deny text says so. A class the owner set to
+  // "ask" is refused by the autonomy policy and would be refused at any risk
+  // level; everything else is refused for being over the background risk
+  // threshold, and would run if the threshold moved.
+  const DENIED_BY_AUTONOMY_CLASS = [
     "mcp__composio_gmail__GMAIL_SEND_EMAIL",
     "mcp__composio_slack__SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
-    "mcp__composio_googlecalendar__GOOGLECALENDAR_DELETE_EVENT",
-    "mcp__composio_googledrive__GOOGLEDRIVE_DELETE_FILE",
-    "mcp__composio_googledrive__GOOGLEDRIVE_ADD_FILE_SHARING_PREFERENCE",
     "mcp__composio_stripe__STRIPE_CREATE_REFUND",
   ];
 
-  for (const tool of DENIED) {
-    test(`${tool} is denied`, async () => {
+  for (const tool of DENIED_BY_AUTONOMY_CLASS) {
+    test(`${tool} is denied by the autonomy policy`, async () => {
       const decision = await decide(tool);
 
       expect(decision.allowed).toBe(false);
       expect(decision.riskLevel).toBe("high");
+      expect(decision.approvalReason).toBe("autonomy_policy_ask");
+      expect(decision.allowed === false && decision.content).toContain(
+        'set to "ask"',
+      );
+    });
+  }
+
+  // These three are refused by the risk tier alone, and the deny text says
+  // so rather than claiming a policy that did not fire.
+  //
+  // The two DELETEs are the interesting pair, and they are here on purpose.
+  // `classifyAutonomy` matches its delete verbs as a PREFIX of the tool-name
+  // suffix (`delete_`, `remove_`, `archive_`), but Composio names an
+  // operation app-first — the suffix is `GOOGLECALENDAR_DELETE_EVENT`, not
+  // `DELETE_EVENT`. So no Composio delete reaches the delete class; they all
+  // land in "other", which the owner has set to auto. Only the send and
+  // money classes catch connector tools today, because those two match a
+  // SEGMENT anywhere in the name rather than a prefix.
+  //
+  // Nothing is open as a result — the verb risk classifier rates these high
+  // and the background threshold is low — but connector deletes are held by
+  // risk alone, with no second guard behind it. That is the same single-leg
+  // arrangement that made the send hole live, and it is worth closing in
+  // `permissions/autonomy-class.ts` rather than leaving it to be rediscovered.
+  const DENIED_BY_RISK_TIER = [
+    "mcp__composio_googledrive__GOOGLEDRIVE_ADD_FILE_SHARING_PREFERENCE",
+    "mcp__composio_googlecalendar__GOOGLECALENDAR_DELETE_EVENT",
+    "mcp__composio_googledrive__GOOGLEDRIVE_DELETE_FILE",
+  ];
+
+  for (const tool of DENIED_BY_RISK_TIER) {
+    test(`${tool} is denied on risk, not class`, async () => {
+      const decision = await decide(tool);
+
+      expect(decision.allowed).toBe(false);
+      expect(decision.riskLevel).toBe("high");
+      expect(decision.approvalReason).toBe("no_interactive_client");
       expect(decision.allowed === false && decision.content).toContain(
         "no interactive client is connected",
       );
