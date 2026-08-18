@@ -37,30 +37,42 @@ export function hasSomethingToSend(policy: {
 // ---------------------------------------------------------------------------
 
 /**
- * Shown when a text-only model would reject an image. Exported so every input
- * path words it identically — the picker, the paste handler and the drop zone
- * all reach this state and used to phrase it (or not phrase it) separately.
+ * Shown when nothing in the workspace can read an image. Exported so every
+ * input path words it identically — the picker, the paste handler and the drop
+ * zone all reach this state and used to phrase it (or not phrase it)
+ * separately.
+ *
+ * The wording names the real condition. It used to say the *current model*
+ * doesn't support image input, which was both the wrong reason and, on the
+ * usual setup, simply untrue: the daemon reroutes image-bearing rounds to a
+ * vision model, so a text-only chat model refuses nothing. This state is now
+ * only reached when the daemon reports that no vision path exists at all.
  */
 export const NON_VISION_IMAGE_NOTICE =
-  "The current model doesn't support image input. Switch to a vision-capable model to attach images.";
+  "No model available here can read images, so they can't be attached. Other files still work.";
 
 /**
  * Split picked / pasted / dropped files into the ones that can be attached and
- * a count of the images a text-only model could not read.
+ * a count of the images nothing could have read.
  *
- * Vision support is a question about **images**, and only about images. A PDF,
+ * `imagesAreReadable` answers "does this workspace have somewhere to send an
+ * image" — see `useImageInputSupported`. It is not "is the conversation's model
+ * multimodal": that question has a different, usually wronger answer, because
+ * image-bearing rounds are rerouted to a vision model before they are sent.
+ *
+ * Either way this is a question about **images**, and only about images. A PDF,
  * a spreadsheet or a `.txt` reaches the model as a `file` block, which the
  * providers serialize as extracted text (`fileBlockToText`) — it never touches
- * the vision path at all. Gating the whole paperclip on `supportsVision` is
+ * the vision path at all. Gating the whole paperclip on vision support is
  * therefore an answer to a question nobody asked, and on a text-only brain it
  * is what "I can't upload a file" means: not that one image was refused, but
  * that the picker never opened for anything.
  */
 export function partitionAttachableFiles(
   files: readonly File[],
-  modelSupportsVision: boolean,
+  imagesAreReadable: boolean,
 ): { accepted: File[]; blockedImages: number } {
-  if (modelSupportsVision) return { accepted: [...files], blockedImages: 0 };
+  if (imagesAreReadable) return { accepted: [...files], blockedImages: 0 };
   const accepted = files.filter((file) => !file.type.startsWith("image/"));
   return { accepted, blockedImages: files.length - accepted.length };
 }

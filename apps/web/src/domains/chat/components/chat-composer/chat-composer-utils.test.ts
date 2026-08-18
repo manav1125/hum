@@ -76,12 +76,19 @@ describe("the Enter path answers the same question", () => {
  * nothing to do with a PDF, and the daemon's own `agent/vision-tier.ts` reroutes
  * image-bearing rounds to a vision model anyway; the composer was refusing
  * files nobody's model ever objected to.
+ *
+ * The flag itself was the next layer of the same mistake: it answered "is the
+ * chat model multimodal" when the question is "does this workspace have
+ * anywhere to send an image". The daemon answers the second one now
+ * (`imageInputSupported`); the partition below is unchanged in shape, but
+ * `false` has stopped meaning "text-only brain" and started meaning "no vision
+ * path exists at all", which is a genuinely rare state.
  */
 const file = (name: string, type: string): File =>
   new File(["x"], name, { type });
 
 describe("partitionAttachableFiles", () => {
-  test("a text-only model still accepts documents — they are never images", () => {
+  test("documents attach even with no vision path — they are never images", () => {
     const { accepted, blockedImages } = partitionAttachableFiles(
       [
         file("contract.pdf", "application/pdf"),
@@ -98,7 +105,7 @@ describe("partitionAttachableFiles", () => {
     expect(blockedImages).toBe(0);
   });
 
-  test("a text-only model takes the documents and counts the images it dropped", () => {
+  test("with no vision path, documents go through and dropped images are counted", () => {
     const { accepted, blockedImages } = partitionAttachableFiles(
       [file("shot.png", "image/png"), file("contract.pdf", "application/pdf")],
       false,
@@ -107,7 +114,7 @@ describe("partitionAttachableFiles", () => {
     expect(blockedImages).toBe(1);
   });
 
-  test("images only, on a text-only model: nothing attaches and the caller is told why", () => {
+  test("images only, no vision path: nothing attaches and the caller is told why", () => {
     const { accepted, blockedImages } = partitionAttachableFiles(
       [file("a.png", "image/png"), file("b.jpg", "image/jpeg")],
       false,
@@ -117,7 +124,7 @@ describe("partitionAttachableFiles", () => {
     expect(blockedImages).toBe(2);
   });
 
-  test("a vision model takes everything untouched", () => {
+  test("a readable-image workspace takes everything untouched", () => {
     const { accepted, blockedImages } = partitionAttachableFiles(
       [file("shot.png", "image/png"), file("contract.pdf", "application/pdf")],
       true,
@@ -128,7 +135,7 @@ describe("partitionAttachableFiles", () => {
 });
 
 describe("attachDisabledReason", () => {
-  test("a text-only model is NOT a reason to disable the paperclip", () => {
+  test("unreadable images are NOT a reason to disable the paperclip", () => {
     // The regression itself: `supportsVision === false` used to land here.
     expect(
       attachDisabledReason({ typingDisabled: false, assistantId: "asst_1" }),

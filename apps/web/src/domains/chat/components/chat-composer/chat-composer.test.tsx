@@ -1099,12 +1099,12 @@ function pickFiles(
 const attachFile = (name: string, type: string): File =>
   new File(["x"], name, { type });
 
-describe("ChatComposer — attaching on a text-only model", () => {
-  test("a PDF still attaches when the model can't read images", () => {
+describe("ChatComposer — attaching where images cannot be read", () => {
+  test("a PDF still attaches when images cannot be read", () => {
     const onAddAttachmentFiles = mock((_f: FileList | File[]) => {});
     const { button, input } = renderAttachComposer({
       onAddAttachmentFiles,
-      modelSupportsVision: false,
+      imagesAreReadable: false,
     });
 
     expect(button.disabled).toBe(false);
@@ -1117,12 +1117,12 @@ describe("ChatComposer — attaching on a text-only model", () => {
     expect(Array.from(delivered).map((f) => f.name)).toEqual(["contract.pdf"]);
   });
 
-  test("an image on the same model is dropped — but the composer says so", () => {
+  test("an image is dropped there — but the composer says so", () => {
     useComposerStore.setState({ attachmentLastError: null });
     const onAddAttachmentFiles = mock((_f: FileList | File[]) => {});
     const { button, input } = renderAttachComposer({
       onAddAttachmentFiles,
-      modelSupportsVision: false,
+      imagesAreReadable: false,
     });
 
     pickFiles(button, input, [attachFile("shot.png", "image/png")]);
@@ -1131,16 +1131,16 @@ describe("ChatComposer — attaching on a text-only model", () => {
     // A no-op is not a success: refusing the file silently was the old bug in
     // a different costume.
     expect(useComposerStore.getState().attachmentLastError).toContain(
-      "doesn't support image input",
+      "can read images",
     );
   });
 
-  test("a vision model attaches the image untouched", () => {
+  test("with a vision path the image attaches untouched", () => {
     useComposerStore.setState({ attachmentLastError: null });
     const onAddAttachmentFiles = mock((_f: FileList | File[]) => {});
     const { button, input } = renderAttachComposer({
       onAddAttachmentFiles,
-      modelSupportsVision: true,
+      imagesAreReadable: true,
     });
 
     pickFiles(button, input, [attachFile("shot.png", "image/png")]);

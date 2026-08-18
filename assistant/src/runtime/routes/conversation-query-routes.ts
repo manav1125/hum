@@ -21,6 +21,7 @@
 
 import { z } from "zod";
 
+import { workspaceCanReadImages } from "../../agent/vision-tier.js";
 import { LlmContextResponseSchema } from "../../api/responses/llm-context-response.js";
 import { LLMRequestLogEntrySchema } from "../../api/responses/llm-request-log-entry.js";
 import {
@@ -37,7 +38,11 @@ import {
 } from "../../config/loader.js";
 import { AssistantConfigSchema } from "../../config/schema.js";
 import { getSchemaAtPath } from "../../config/schema-utils.js";
-import { LLMConfigFragment, ProfileEntry } from "../../config/schemas/llm.js";
+import {
+  type LLMConfig,
+  LLMConfigFragment,
+  ProfileEntry,
+} from "../../config/schemas/llm.js";
 import { VALID_MEMORY_EMBEDDING_PROVIDERS } from "../../config/schemas/memory-storage.js";
 import { getConfigWatcher } from "../../daemon/config-watcher.js";
 import {
@@ -469,7 +474,14 @@ function readPlainObject(value: unknown): Record<string, unknown> | undefined {
 }
 
 const WireProfileEntry = ProfileEntry.extend({
+  /** The profile's own model, per the catalog. Not an attachment gate. */
   supportsVision: z.boolean().optional(),
+  /**
+   * Whether an image sent under this profile would be read by anything —
+   * resolved model capability OR vision-tier reroute. This is the flag a
+   * composer's attach control should consult.
+   */
+  imageInputSupported: z.boolean().optional(),
 }).passthrough();
 
 /**
@@ -492,6 +504,11 @@ const ConfigGetResponseSchema = z
         profiles: z.record(z.string(), WireProfileEntry).optional(),
         profileOrder: z.array(z.string()).optional(),
         activeProfile: z.string().optional(),
+        /**
+         * Workspace-level answer to "can an image be attached here?", used
+         * when no inference profile is active. Wire-only.
+         */
+        imageInputSupported: z.boolean().optional(),
         callSites: z
           .record(
             z.string(),
@@ -645,7 +662,7 @@ const ConfigPatchRequestSchema = z
 function handleGetConfig() {
   try {
     const config = applyContextDefaultsToRawConfig(loadRawConfig());
-    enrichProfilesWithVisionFlag(config);
+    enrichWithImageInputSupport(config);
     return config;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -654,26 +671,70 @@ function handleGetConfig() {
 }
 
 /**
- * Annotate each profile in `config.llm.profiles` with `supportsVision`
- * resolved from the model catalog. The flag is wire-only — it is never
- * persisted to disk. Unknown (provider, model) pairs default to `true`
- * (fail-open) so image upload remains available for custom / unlisted models.
+ * Answer, for the wire, whether an image can be attached — per profile and for
+ * the workspace as a whole. Both flags are wire-only; neither is persisted.
+ *
+ * Two different questions live here and they are not interchangeable:
+ *
+ *   - `supportsVision` describes the profile's OWN model, straight from the
+ *     catalog. It is a fact about a model the user picked, useful for showing
+ *     what that model is, and it is NOT an attachment gate. The model named in
+ *     a profile is routinely not the model that serves the turn (call-site
+ *     overrides and the self-host OpenRouter force both re-point it), so a
+ *     client that gates on this refuses images on the strength of a model that
+ *     never runs.
+ *   - `imageInputSupported` answers what a composer actually needs to know:
+ *     would an image sent under this profile be read by anything? That is
+ *     `agent/vision-tier.ts`'s question, computed by the same functions the
+ *     turn uses — the effective model after resolution, and the vision-tier
+ *     reroute that rescues an image-bearing round from a text-only brain.
+ *
+ * The workspace-level flag covers the case where no profile is active at all,
+ * so a client has an honest default rather than a guess. Anything that throws
+ * (a config too malformed to resolve) fails OPEN: an unreadable config is a
+ * broken workspace, not a judgement that the user's image is unwelcome, and
+ * silently greying out the paperclip is the worse failure of the two.
  */
-function enrichProfilesWithVisionFlag(config: unknown): void {
+function enrichWithImageInputSupport(config: unknown): void {
   const root = readPlainObject(config);
   if (!root) return;
   const llm = readPlainObject(root.llm);
   if (!llm) return;
+
+  let resolvedLlm: LLMConfig | null = null;
+  try {
+    resolvedLlm = getConfig().llm;
+  } catch (err) {
+    log.warn(
+      { err },
+      "Could not resolve LLM config for image-input support — reporting images as attachable (fail-open)",
+    );
+  }
+  const canReadImages = (profile?: string): boolean => {
+    if (!resolvedLlm) return true;
+    try {
+      return workspaceCanReadImages(resolvedLlm, { profile });
+    } catch (err) {
+      log.warn(
+        { err, profile },
+        "Image-input support could not be resolved — reporting images as attachable (fail-open)",
+      );
+      return true;
+    }
+  };
+
+  llm.imageInputSupported = canReadImages();
+
   const profiles = readPlainObject(llm.profiles);
   if (!profiles) return;
-
-  for (const profile of Object.values(profiles)) {
+  for (const [name, profile] of Object.entries(profiles)) {
     const entry = readPlainObject(profile);
     if (!entry) continue;
+    entry.imageInputSupported = canReadImages(name);
+
     const provider = entry.provider;
     const model = entry.model;
     if (typeof provider !== "string" || typeof model !== "string") continue;
-
     const catalogProvider = PROVIDER_CATALOG.find((p) => p.id === provider);
     const catalogModel = catalogProvider?.models.find((m) => m.id === model);
     entry.supportsVision = catalogModel?.supportsVision ?? true;
@@ -799,7 +860,7 @@ async function handlePatchConfig({ body }: RouteHandlerArgs) {
   await commitConfigWrite(raw, "patch");
 
   const merged = applyContextDefaultsToRawConfig(loadRawConfig());
-  enrichProfilesWithVisionFlag(merged);
+  enrichWithImageInputSupport(merged);
   return merged;
 }
 

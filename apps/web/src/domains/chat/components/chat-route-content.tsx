@@ -89,7 +89,7 @@ import type { TranscriptItem } from "@/domains/chat/transcript/types";
 import type { HistoryPaginationResult } from "@/domains/chat/transcript/use-history-pagination";
 import type { UIContext } from "@/domains/chat/turn-selectors";
 import { getDiskPressureChatBlockReason } from "@/assistant/disk-pressure";
-import { useActiveProfileModel } from "@/domains/chat/hooks/use-active-profile-model";
+import { useImageInputSupported } from "@/domains/chat/hooks/use-image-input-supported";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
 import { isChannelConversation } from "@/domains/chat/utils/conversation-channel";
 import { useViewerStore } from "@/stores/viewer-store";
@@ -629,11 +629,10 @@ export function ChatMainPanel({
   const canSendAttachments =
     attachmentsUploadingCount === 0 && attachmentUploadedIds.length > 0;
 
-  const activeProfileModel = useActiveProfileModel(
+  const imagesAreReadable = useImageInputSupported(
     assistantId,
     activeConversation?.conversationId,
   );
-  const activeModelSupportsVision = activeProfileModel?.supportsVision ?? true;
 
   const showUploadBlockedNotice =
     attachmentsUploadingCount > 0 &&
@@ -658,7 +657,7 @@ export function ChatMainPanel({
       // ways a file can arrive cannot drift apart again.
       const { accepted, blockedImages } = partitionAttachableFiles(
         Array.from(files),
-        activeModelSupportsVision,
+        imagesAreReadable,
       );
       if (blockedImages > 0) {
         useComposerStore.setState({
@@ -667,7 +666,7 @@ export function ChatMainPanel({
       }
       if (accepted.length > 0) addChatAttachmentFiles(accepted);
     },
-    [addChatAttachmentFiles, activeModelSupportsVision],
+    [addChatAttachmentFiles, imagesAreReadable],
   );
   const {
     isDragOver: isAttachmentDragOver,
@@ -959,7 +958,7 @@ export function ChatMainPanel({
     canStopGenerating,
     assistantId,
     conversationId: activeConversation?.conversationId,
-    modelSupportsVision: activeModelSupportsVision,
+    imagesAreReadable,
     onRecallLastMessage: isIdle ? handleRecallLastMessage : undefined,
     onCancelEdit: isEditing ? handleCancelEdit : undefined,
     textareaMaxHeightPx: isEmptyConversation ? 320 : undefined,

@@ -234,6 +234,86 @@ export function resolveVisionTierRouteForTurn(opts: {
   return { model, reason: "image_with_text_only_model" };
 }
 
+/**
+ * A one-image history used only to ask the router a hypothetical: "if an image
+ * arrived right now, would anything be able to read it?" The data is a 1x1
+ * placeholder — `resolveVisionTierRouteForTurn` only ever inspects the block's
+ * `type`, never its bytes.
+ */
+const IMAGE_PROBE_HISTORY: Message[] = [
+  {
+    role: "user",
+    content: [
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "" },
+      },
+    ],
+  },
+];
+
+/**
+ * Can an image sent into this workspace be read by anything?
+ *
+ * This is the question a client's attach control actually needs answered, and
+ * it is deliberately NOT "does the configured model support vision". Those two
+ * came apart for two independent reasons, and on the production instance both
+ * were live at once:
+ *
+ *   - The configured model is frequently not the model that serves the turn.
+ *     `resolveCallSiteConfig` applies call-site overrides, the direct-provider
+ *     routes, and the self-host OpenRouter force — an install whose config
+ *     still says `ollama` / `llama3.2` from its first boot serves every turn on
+ *     `deepseek/deepseek-v4-*`. Asking the catalog about the *configured*
+ *     model answers a question about a model that never runs.
+ *   - Even the resolved model is not the end of it. Vision-tier routing (above,
+ *     on by default) re-pins an image-bearing round to a vision-capable model
+ *     whenever the resolved one is known text-only. A text-only brain is
+ *     therefore not a reason to refuse an image; it is the exact case the
+ *     router was built for.
+ *
+ * So the answer is computed by asking the same two functions the turn itself
+ * asks, in the same order — the effective model's catalog capability, then the
+ * router — rather than by re-deriving a parallel notion of "vision support"
+ * that can drift from what routing does.
+ *
+ * Tri-state catalog support is read the way the router reads it: `true` and
+ * `undefined` (uncataloged, e.g. a custom endpoint that may well be multimodal)
+ * both count as capable. Refusing is reserved for the case where the model is
+ * *known* text-only AND no vision model resolves for its provider — the one
+ * situation where an attached image provably could not be answered.
+ */
+export function workspaceCanReadImages(
+  llm: LLMConfig,
+  opts: {
+    /** Conversation/workspace inference profile, when one is selected. */
+    profile?: string | undefined;
+    selectionSeed?: string;
+  } = {},
+): boolean {
+  const routeOpts = {
+    llm,
+    callSite: "mainAgent" as const,
+    overrideProfile: opts.profile ?? undefined,
+    ...(opts.selectionSeed != null
+      ? { selectionSeed: opts.selectionSeed }
+      : {}),
+  };
+  const resolved = resolveCallSiteConfig("mainAgent", llm, {
+    ...(opts.profile != null ? { overrideProfile: opts.profile } : {}),
+    ...(opts.selectionSeed != null
+      ? { selectionSeed: opts.selectionSeed }
+      : {}),
+  });
+  if (getCatalogVisionSupport(resolved.model) !== false) return true;
+  return (
+    resolveVisionTierRouteForTurn({
+      ...routeOpts,
+      history: IMAGE_PROBE_HISTORY,
+    }) != null
+  );
+}
+
 export interface ModelTierRoute {
   model: string;
   tier: "vision" | "flash";

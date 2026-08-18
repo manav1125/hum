@@ -8795,6 +8795,8 @@ paths:
                                 additionalProperties: false
                             supportsVision:
                               type: boolean
+                            imageInputSupported:
+                              type: boolean
                           additionalProperties: {}
                       profileOrder:
                         type: array
@@ -8802,6 +8804,8 @@ paths:
                           type: string
                       activeProfile:
                         type: string
+                      imageInputSupported:
+                        type: boolean
                       callSites:
                         type: object
                         propertyNames:
@@ -9302,6 +9306,8 @@ paths:
                                 additionalProperties: false
                             supportsVision:
                               type: boolean
+                            imageInputSupported:
+                              type: boolean
                           additionalProperties: {}
                       profileOrder:
                         type: array
@@ -9309,6 +9315,8 @@ paths:
                           type: string
                       activeProfile:
                         type: string
+                      imageInputSupported:
+                        type: boolean
                       callSites:
                         type: object
                         propertyNames:

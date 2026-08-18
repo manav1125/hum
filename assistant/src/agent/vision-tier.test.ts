@@ -11,6 +11,7 @@ import {
   resolveModelRouteForTurn,
   resolveVisionTierModel,
   resolveVisionTierRouteForTurn,
+  workspaceCanReadImages,
 } from "./vision-tier.js";
 
 function user(...content: Array<string | ContentBlock>): Message {
@@ -208,6 +209,88 @@ describe("resolveVisionTierModel", () => {
         mainModel: "llama3.2",
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("workspaceCanReadImages", () => {
+  test("a text-only brain with vision routing available still takes images", () => {
+    // The production shape, and the whole point: the brain cannot read an
+    // image, the router can hand it to one that can, so the answer is yes.
+    expect(workspaceCanReadImages(textOnlyLlm())).toBe(true);
+  });
+
+  test("an explicitly configured vision tier is the reason it's yes", () => {
+    const llm = textOnlyLlm({ visionTier: { model: VISION_MODEL } });
+    expect(workspaceCanReadImages(llm)).toBe(true);
+  });
+
+  test("a vision-capable brain needs no router to say yes", () => {
+    expect(workspaceCanReadImages(LLMSchema.parse({}))).toBe(true);
+  });
+
+  test("a catalog-unknown model is not refused — it may well be multimodal", () => {
+    const llm = LLMSchema.parse({
+      profiles: { custom: { model: UNKNOWN_MODEL, provider: "openrouter" } },
+      activeProfile: "custom",
+    });
+    expect(workspaceCanReadImages(llm)).toBe(true);
+  });
+
+  test("no vision path at all → no, and that refusal is the honest one", () => {
+    // Ollama/llama3.2: known text-only, and no vision model resolves for the
+    // provider (there is no cross-provider default outside OpenRouter).
+    const llm = LLMSchema.parse({
+      profiles: { local: { model: "llama3.2", provider: "ollama" } },
+      activeProfile: "local",
+    });
+    expect(workspaceCanReadImages(llm)).toBe(false);
+  });
+
+  test("vision routing switched off on a text-only brain → no", () => {
+    const llm = textOnlyLlm({ visionTier: { enabled: false } });
+    expect(workspaceCanReadImages(llm)).toBe(false);
+  });
+
+  test("answers per profile, not just for the active one", () => {
+    const llm = LLMSchema.parse({
+      default: { model: "llama3.2", provider: "ollama" },
+      profiles: {
+        local: { model: "llama3.2", provider: "ollama" },
+        cloud: { model: TEXT_ONLY_MODEL, provider: "openrouter" },
+        sighted: { model: VISION_MODEL, provider: "openrouter" },
+      },
+      activeProfile: "local",
+    });
+    expect(workspaceCanReadImages(llm, { profile: "local" })).toBe(false);
+    expect(workspaceCanReadImages(llm, { profile: "cloud" })).toBe(true);
+    expect(workspaceCanReadImages(llm, { profile: "sighted" })).toBe(true);
+    // …and the workspace default follows the active profile.
+    expect(workspaceCanReadImages(llm)).toBe(false);
+  });
+
+  test("follows the model that actually serves the turn, not the one on disk", () => {
+    // A first-boot config still naming ollama/llama3.2 while the self-host
+    // OpenRouter force re-points every call site. Asking the catalog about the
+    // configured model says "text-only, no vision path"; asking the resolver
+    // says the turn runs on OpenRouter, where a vision model always resolves.
+    const llm = LLMSchema.parse({
+      default: { model: "llama3.2", provider: "ollama" },
+      profiles: { local: { model: "llama3.2", provider: "ollama" } },
+      activeProfile: "local",
+    });
+    expect(workspaceCanReadImages(llm)).toBe(false);
+
+    const previous = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    try {
+      expect(resolveCallSiteConfig("mainAgent", llm).provider).toBe(
+        "openrouter",
+      );
+      expect(workspaceCanReadImages(llm)).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previous;
+    }
   });
 });
 

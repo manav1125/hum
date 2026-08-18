@@ -144,9 +144,14 @@ export interface ChatComposerProps {
   onEnterVoiceMode?: () => void;
 
   /**
-   * Whether the currently-active inference model accepts **image** input.
-   * Sourced at runtime from the daemon config API — defaults to `true`
-   * (fail-open) when the daemon hasn't surfaced the flag yet.
+   * Whether an image sent from this composer would be read by anything.
+   *
+   * Resolved by the daemon (`imageInputSupported` on `GET /v1/config`, see
+   * `useImageInputSupported`) because only the daemon knows both which model
+   * actually serves the turn and whether vision-tier routing would hand an
+   * image to a model that can read it. It is NOT "is the chat model
+   * multimodal" — that question refused images on a workspace that reads them
+   * perfectly well. Defaults to `true` (fail-open) when unknown.
    *
    * When `false`, images are filtered out of a pick/paste/drop and the user is
    * told why. It does NOT disable the paperclip: every other kind of file
@@ -155,7 +160,7 @@ export interface ChatComposerProps {
    * OpenRouter models) has no opinion about a PDF. Disabling the button here
    * is what "I can't upload a file" meant on the desktop home screen.
    */
-  modelSupportsVision?: boolean;
+  imagesAreReadable?: boolean;
 
   // chrome surfacing existing buttons (rendered in the form's bottom-left row)
   thresholdPickerSlot?: ReactNode;
@@ -225,7 +230,7 @@ export function ChatComposer({
   textareaMaxHeightPx = 240,
   cmdEnterMode = false,
   suggestion,
-  modelSupportsVision = true,
+  imagesAreReadable = true,
   onRecallLastMessage,
   onCancelEdit,
 }: ChatComposerProps) {
@@ -490,7 +495,7 @@ export function ChatComposer({
     (files: FileList | File[]) => {
       const { accepted, blockedImages } = partitionAttachableFiles(
         Array.from(files),
-        modelSupportsVision,
+        imagesAreReadable,
       );
       // A no-op is not a success: if every file was an image the model can't
       // read, the user must be told, not left staring at an empty strip.
@@ -501,7 +506,7 @@ export function ChatComposer({
       }
       if (accepted.length > 0) onAddAttachmentFiles(accepted);
     },
-    [modelSupportsVision, onAddAttachmentFiles],
+    [imagesAreReadable, onAddAttachmentFiles],
   );
 
   /** Null when the paperclip is usable; otherwise the tooltip saying why not. */
