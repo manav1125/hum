@@ -56,6 +56,7 @@
 import {
   composioProjectsConfigured,
   createCustomerProject,
+  keyCanProxyExecute,
 } from "./composio-projects.js";
 import { grantProvisioningCredits, syncKeyLimitsToBalance } from "./credits.js";
 import { sendEmail, welcomeEmail } from "./email.js";
@@ -348,6 +349,26 @@ async function resolveComposioSeed(
         instanceId,
         projectId: project.projectId,
       });
+      // The auto-created key arrives WITHOUT proxy-execute, and nothing in
+      // the create response admits it. Left unchecked, the customer is the
+      // one who finds out — days later, via every connector telling them to
+      // reconnect a Google account that was never broken. Ask now, while an
+      // operator is still looking at this provision.
+      const canProxy = await keyCanProxyExecute(project.apiKey, {
+        fetchImpl: deps.fetchImpl,
+      });
+      if (!canProxy) {
+        console.error(
+          `[hq/provisioning] Composio project ${project.projectId} for ${customer.email} ` +
+            `was minted WITHOUT proxy-execute. Connectors will authenticate and then ` +
+            `fail 403 on every call. Create a scoped API key with proxy-execute for ` +
+            `this project in the Composio dashboard and reseed connectors.json.`,
+        );
+        db.recordEvent("composio_project_key_cannot_proxy", customer.id, {
+          instanceId,
+          projectId: project.projectId,
+        });
+      }
       return {
         ok: true,
         apiKey: project.apiKey,

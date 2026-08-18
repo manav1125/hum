@@ -207,3 +207,47 @@ export async function deleteCustomerProject(
     `/org/owner/project/${encodeURIComponent(projectId)}?revoke_on_delete=true`,
   );
 }
+
+/**
+ * Can this project key actually execute proxy requests?
+ *
+ * Composio's `should_create_api_key` mints a key WITHOUT the proxy-execute
+ * capability, and nothing in the create response says so. Every connector
+ * call then fails 403 the first time a customer uses one — days later, and
+ * reported to them as their own Google connection being broken.
+ *
+ * There is no capability field to read and no API to mint a scoped key, so
+ * ask the proxy itself. A deliberately non-existent connected account is the
+ * probe: the capability is checked BEFORE the account is resolved, so
+ *
+ *   403 + "proxy execute is not enabled"  → the key cannot proxy
+ *   404 ConnectedAccount_ResourceNotFound → the key can (the account can't)
+ *
+ * Read-only and side-effect-free — the request never reaches a provider.
+ * Returns true when the answer is unclear: this gates a warning, and crying
+ * wolf on every provision over a network blip would train the operator to
+ * ignore the one that matters.
+ */
+export async function keyCanProxyExecute(
+  apiKey: string,
+  deps: ComposioProjectDeps = {},
+): Promise<boolean> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  try {
+    const res = await fetchImpl(`${apiBase()}/tools/execute/proxy`, {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify({
+        connected_account_id: "ca_hq_capability_probe",
+        endpoint: "https://example.invalid/",
+        method: "GET",
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (res.status !== 403) return true;
+    const body = (await res.text()).toLowerCase();
+    return !/proxy execute is not enabled|scoped api ?key/.test(body);
+  } catch {
+    return true;
+  }
+}
