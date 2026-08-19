@@ -1227,19 +1227,29 @@ async function finishResponseAfterPlayback(
   if (session.generation !== generation) return;
 
   // A barge-in mid-drain already re-armed the session, and a stopped/failed
-  // session must not be revived — leave those alone. Anything else is a turn
+  // session must not be revived — leave those alone.
+  //
+  // But `listening` needs its gate handed back. On the manual path the disarm
+  // above fires unconditionally, so a barge-in that ran `resumeListening`
+  // (forwarding ON, phase `listening`) has already had that gate shut by the
+  // time this check is reached. Returning here then strands the session
+  // exactly as reported: the orb says "listening", and no mic audio ever
+  // leaves the machine again — `releasePushToTalk` bails on `!forwardingAudio`
+  // too, so nothing re-arms but the next `tts_done`, which can never come
+  // because nothing is being heard. One barge-in was permanent. Anything else is a turn
   // still waiting to be closed, INCLUDING one that never reached `speaking`:
   // the daemon closes a turn with no spoken answer (an utterance that
   // transcribed to nothing) with a bare `tts_done`, and bailing on every phase
   // but `speaking` left those sessions stuck in `transcribing` with the mic
   // gate shut — alive, but unable to hear another word.
   const phase = useLiveVoiceStore.getState().state;
-  if (
-    phase === "listening" ||
-    phase === "idle" ||
-    phase === "ending" ||
-    phase === "failed"
-  ) {
+  if (phase === "listening") {
+    // Re-open only the gate. The rest of `resumeListening`'s state was already
+    // set by the barge-in that put us in this phase.
+    session.forwardingAudio = true;
+    return;
+  }
+  if (phase === "idle" || phase === "ending" || phase === "failed") {
     return;
   }
 

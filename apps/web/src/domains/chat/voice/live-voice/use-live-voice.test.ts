@@ -445,6 +445,53 @@ describe("barge-in", () => {
     expect(h.getCapture().shutdownCount).toBe(1);
   });
 
+  test("after a barge-in closes the turn, the mic gate is still open for the next utterance", async () => {
+    // The bug this pins, from a real call: one barge-in made the session
+    // permanently deaf. `resumeListening` re-opened the forwarding gate, then
+    // `finishResponseAfterPlayback` shut it again on the manual path and
+    // returned early on phase `listening` — so the orb said "listening" while
+    // no mic audio left the machine, and nothing could re-arm it because the
+    // only thing that does is the next `tts_done`, which can never arrive when
+    // nothing is being heard. The daemon saw a clean close and blamed nobody.
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+    expect(useLiveVoiceStore.getState().handsFree).toBe(false); // manual path
+
+    act(() => {
+      h.client.emit("thinking", { type: "thinking", seq: 2, turnId: "t1" });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 3,
+        mimeType: "audio/pcm",
+        sampleRate: 24000,
+        dataBase64: "AAAA",
+      });
+    });
+    expect(h.view.result.current.state).toBe("speaking");
+
+    act(() => {
+      pushSustainedAmplitude(h.getCapture(), 0.2);
+    });
+    expect(h.client.interruptCount).toBe(1);
+    expect(h.view.result.current.state).toBe("listening");
+
+    // The daemon closes the interrupted turn: `interrupted` then `turnComplete`
+    // arrive microseconds apart, and the client gets its `tts_done`.
+    const before = h.client.sentAudio.length;
+    await act(async () => {
+      h.client.emit("ttsDone", { type: "tts_done", seq: 4, turnId: "t1" });
+      await Promise.resolve();
+    });
+
+    // Still listening — and, the part that was broken, still HEARING.
+    expect(h.view.result.current.state).toBe("listening");
+    act(() => {
+      h.getCapture().pushAmplitude(0.2);
+      h.getCapture().pushChunk(pcmChunk(200));
+    });
+    expect(h.client.sentAudio.length).toBeGreaterThan(before);
+  });
+
   test("a single transient spike does not interrupt — echo must not cut the assistant off", async () => {
     // The assistant's own voice leaks back through the speakers as short
     // spikes. Only speech sustained past the guard window may barge in;
