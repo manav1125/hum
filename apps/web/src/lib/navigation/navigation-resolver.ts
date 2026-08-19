@@ -23,6 +23,15 @@ export interface NavigationState {
    * `true` so any state built without it behaves exactly as before.
    */
   selfHostIntroComplete: boolean;
+  /**
+   * Whether this is a Cue self-hosted install (hosted SPA, desktop shell,
+   * connected or not). Such an install has no Vellum Platform account, so the
+   * signed-out funnel below — welcome / select-assistant / platform login —
+   * has nothing to offer it but a WorkOS round trip that cannot succeed.
+   * Defaults to `false` so any state built without it behaves exactly as
+   * before.
+   */
+  isCueSelfHostInstall: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +243,29 @@ function requireAuth(
   pathnameWithSearch: string,
 ): NavigationDecision | null {
   if (state.isAuthenticated) return null;
+
+  // A Cue self-hosted install signs in one way: a magic link, on the sign-on
+  // screen that `/account/login` renders. Send a signed-out session there
+  // before the platform funnel below offers `welcome`, whose "Log In" runs
+  // WorkOS OAuth against an account this instance does not have. The funnel's
+  // own branches are what mis-routed a lapsed session, so this goes ahead of
+  // them.
+  //
+  // Explicitly NOT applied to a local-mode install that has assistants: those
+  // are local daemons, reachable with no account at all, and `select-assistant`
+  // is how their owner gets back in. Taking that away to close a WorkOS hole
+  // would trade one lockout for another. Same carve-out as
+  // `shouldShowCueConnectAsync`'s `hasLocalDaemonAssistants` check.
+  if (
+    state.isCueSelfHostInstall &&
+    !(state.isLocalMode && state.hasAssistants)
+  ) {
+    if (path === routes.account.login) return { action: "allow" };
+    return {
+      action: "redirect",
+      to: `${routes.account.login}?returnTo=${encodeURIComponent(pathnameWithSearch)}`,
+    };
+  }
 
   if (
     state.isLocalMode &&

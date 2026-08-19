@@ -12,6 +12,8 @@ import {
   PROVIDER_ID,
   buildProviderCallbackUrl,
 } from "@/domains/account/login-flow";
+import { CueConnectScreen } from "@/lib/self-hosted/cue-connect-screen";
+import { isCueSelfHostInstall } from "@/lib/self-hosted/cue-self-host";
 import {
   startAuthFlow,
   startNativeLogin,
@@ -140,14 +142,25 @@ function WebLoginForm({ returnTo }: { returnTo: string | null }) {
 /**
  * Branded sign-in screen for `/account/login`.
  *
- * Delegates to `NativeLoginForm` (Capacitor iOS) or `WebLoginForm`
- * (standard browser / Electron) based on platform detection.
+ * On a Cue self-hosted install this is the Cue sign-on flow — the magic-link
+ * arc that is the ONLY way into a single-tenant instance. The two forms below
+ * are the inherited Vellum Platform ones; both route through WorkOS, which a
+ * Cue install has no tenancy in, so offering them here is offering a door that
+ * opens onto another company's login page and then fails.
+ *
+ * This is also the screen the route guard sends a lapsed session to, so it is
+ * the one that has to be right when someone is signed out mid-session — the
+ * boot-time self-host gate in `main.tsx` has long since run by then.
+ *
+ * Otherwise: `NativeLoginForm` (Capacitor iOS) or `WebLoginForm` (standard
+ * browser / Electron) based on platform detection.
  */
 export function LoginPage() {
   const [searchParams] = useSearchParams();
   const isNative = useIsNativePlatform();
   const returnTo = searchParams.get("returnTo");
 
+  if (isCueSelfHostInstall()) return <CueConnectScreen />;
   if (isNative) return <NativeLoginForm returnTo={returnTo} />;
   return <WebLoginForm returnTo={returnTo} />;
 }

@@ -9,6 +9,7 @@ import { sanitizeReturnTo } from "@/domains/account/return-to";
 import { getSession } from "@/lib/auth/allauth-client";
 import { isPlatformLocal, startLoopbackAuth } from "@/lib/auth/loopback-auth";
 import { isLocalMode } from "@/lib/local-mode";
+import { isCueSelfHostInstall } from "@/lib/self-hosted/cue-self-host";
 import { isElectron } from "@/runtime/is-electron";
 import { setMenuPlatformSession } from "@/runtime/menu";
 import { primeElectronSessionToken } from "@/runtime/session-token";
@@ -246,6 +247,24 @@ export async function startAuthFlow(
   callbackUrl: string,
   options: ProviderRedirectOptions & { returnTo?: string | null } = {},
 ): Promise<void> {
+  // A Cue install has no Vellum Platform account and no WorkOS org, so every
+  // branch below can only fail — but not before sending the owner to a third
+  // party's identity provider, under another company's branding, for an
+  // account that does not exist. Refuse here rather than in each of the four
+  // call sites: this is the single door all of them go through, and it is the
+  // door that has to hold no matter which screen is on top.
+  //
+  // Throwing rather than navigating is deliberate. The callers already render
+  // an inline error and stay put, which leaves a local-daemon install able to
+  // reach its assistant chooser. Redirecting to the sign-on screen from here
+  // would take that away from them; the route guard (`requireAuth`) does the
+  // redirecting, and only for the installs that have nowhere else to be.
+  if (isCueSelfHostInstall()) {
+    throw new Error(
+      "Cue signs in with a magic link to your own instance — there is no platform account to sign in to.",
+    );
+  }
+
   if (isNativePlatform()) {
     try {
       await startNativeLogin({

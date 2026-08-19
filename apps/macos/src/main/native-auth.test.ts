@@ -19,8 +19,10 @@ mock.module("./ipc", () => ({
   },
 }));
 
-// Capture the OAuth start URL so tests can read back the generated `state`.
-let lastOpenedUrl = "";
+// Any outbound reach at all is the bug. `net.fetch` and `shell.openExternal`
+// both record instead of doing, so a test can assert nothing left the process.
+const fetchedUrls: string[] = [];
+const openedUrls: string[] = [];
 
 // Capture legacy-cookie eviction calls.
 const cookieRemoveCalls: Array<{ url: string; name: string }> = [];
@@ -28,36 +30,9 @@ const cookieRemoveCalls: Array<{ url: string; name: string }> = [];
 mock.module("electron", () => ({
   app: { getVersion: () => "9.9.9", getPath: () => "/tmp" },
   net: {
-    // Routed by URL: serves the real workos-pkce module's three network
-    // legs (config discovery, WorkOS code exchange, session exchange) and
-    // the legacy /accounts/native/exchange.
     fetch: (url: string) => {
-      let body: unknown;
-      if (url.includes("/_allauth/app/v1/config")) {
-        body = {
-          data: {
-            socialaccount: {
-              providers: [
-                {
-                  id: "workos-oidc",
-                  name: "WorkOS",
-                  client_id: "client_um_test",
-                  flows: ["provider_redirect", "provider_token"],
-                },
-              ],
-            },
-          },
-        };
-      } else if (url.includes("/user_management/authenticate")) {
-        body = { access_token: "access-token-abc", user: {} };
-      } else if (url.includes("/_allauth/app/v1/auth/provider/token")) {
-        body = { meta: { session_token: "sess-tok-123" } };
-      } else {
-        body = { session_token: "sess-tok-123" };
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify(body), { status: 200 }),
-      );
+      fetchedUrls.push(url);
+      return Promise.resolve(new Response("{}", { status: 200 }));
     },
   },
   session: {
@@ -72,7 +47,7 @@ mock.module("electron", () => ({
   },
   shell: {
     openExternal: (url: string) => {
-      lastOpenedUrl = url;
+      openedUrls.push(url);
       return Promise.resolve();
     },
   },
@@ -92,9 +67,6 @@ const store = {
 };
 
 mock.module("./session-token-store", () => ({
-  saveSessionToken: (token: string) => {
-    store.saved.push(token);
-  },
   clearSessionToken: () => {
     store.clearCalls += 1;
   },
@@ -109,7 +81,8 @@ afterEach(() => {
   __resetForTesting();
   store.saved.length = 0;
   store.clearCalls = 0;
-  lastOpenedUrl = "";
+  fetchedUrls.length = 0;
+  openedUrls.length = 0;
   cookieRemoveCalls.length = 0;
   for (const key of Object.keys(ipcHandlers)) delete ipcHandlers[key];
   for (const key of Object.keys(ipcSyncHandlers)) delete ipcSyncHandlers[key];
@@ -129,44 +102,61 @@ describe("generateState", () => {
   });
 });
 
-describe("installNativeAuth — session-token wiring", () => {
-  test("persists the exchanged token on successful PKCE login", async () => {
+describe("installNativeAuth — platform OAuth is gone", () => {
+  test("startOAuth rejects and reaches nothing", async () => {
     installNativeAuth();
 
     const startOAuth = ipcHandlers["vellum:auth:startOAuth"];
+    // Registered, not absent: the renderer treats an ABSENT bridge method as
+    // "older preload" and falls back to a same-origin form POST that redirects
+    // to the very authorize URL this removal exists to prevent.
     expect(startOAuth).toBeDefined();
 
-    const pending = startOAuth([{}]) as Promise<{ sessionToken: string }>;
+    await expect(
+      Promise.resolve().then(() => startOAuth([{}])),
+    ).rejects.toThrow(/magic link/i);
 
-    // Wait for the async setup (config fetch + listener bind) to open the
-    // browser at the WorkOS authorize URL.
-    while (!lastOpenedUrl) await Bun.sleep(1);
-    const opened = new URL(lastOpenedUrl);
-    expect(opened.pathname).toBe("/user_management/authorize");
-    expect(opened.searchParams.get("client_id")).toBe("client_um_test");
-    expect(opened.searchParams.get("code_challenge_method")).toBe("S256");
-
-    // Play the browser: hit the real loopback listener with the code.
-    const redirectUri = opened.searchParams.get("redirect_uri")!;
-    const state = opened.searchParams.get("state")!;
-    expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/auth\/callback$/);
-    const res = await fetch(`${redirectUri}?code=auth-code-xyz&state=${state}`);
-    expect(res.status).toBe(200);
-
-    const result = await pending;
-    expect(result.sessionToken).toBe("sess-tok-123");
-    expect(store.saved).toContain("sess-tok-123");
+    // Give any stray async leg a tick to show itself.
+    await Bun.sleep(5);
+    expect(openedUrls).toEqual([]);
+    expect(fetchedUrls).toEqual([]);
   });
 
+  test("no handler can produce a workos.com URL", async () => {
+    installNativeAuth();
+
+    for (const [channel, fn] of Object.entries(ipcHandlers)) {
+      try {
+        await fn(channel === "vellum:auth:startOAuth" ? [{}] : []);
+      } catch {
+        // A refusal is a pass.
+      }
+    }
+    await Bun.sleep(5);
+
+    const reached = [...openedUrls, ...fetchedUrls];
+    expect(reached.some((u) => u.includes("workos.com"))).toBe(false);
+  });
+
+  test("cancelOAuth is a no-op rather than an unregistered channel", async () => {
+    installNativeAuth();
+
+    const cancel = ipcHandlers["vellum:auth:cancelOAuth"];
+    expect(cancel).toBeDefined();
+    await cancel([]);
+  });
+});
+
+describe("installNativeAuth — session-token wiring", () => {
   test("evicts both legacy session cookies on install", () => {
     installNativeAuth();
     // Eviction fires synchronously (Promise.all over the cookie names).
     const names = cookieRemoveCalls.map((c) => c.name);
     expect(names).toContain("sessionid");
     expect(names).toContain("__Secure-sessionid");
-    expect(cookieRemoveCalls.every((c) => c.url === "https://platform.example")).toBe(
-      true,
-    );
+    expect(
+      cookieRemoveCalls.every((c) => c.url === "https://platform.example"),
+    ).toBe(true);
   });
 
   test("signOut clears the persisted token", async () => {

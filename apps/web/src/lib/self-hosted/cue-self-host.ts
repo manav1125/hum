@@ -233,6 +233,35 @@ export function shouldShowCueConnect(): boolean {
 }
 
 /**
+ * True when this surface belongs to a Cue self-hosted install, in ANY of its
+ * states — hosted SPA, desktop shell, connected or not, signed in or not.
+ *
+ * This is deliberately the widest of the predicates in this file and the only
+ * synchronous one, because it answers a question that has no timing: is there
+ * a Vellum Platform account behind this app at all? For Cue the answer is
+ * always no. Every Cue install authenticates by magic link against its own
+ * gateway; it has no Vellum Platform tenancy and no WorkOS org, so the
+ * upstream platform-OAuth funnel can only ever fail — after sending the owner
+ * to a third-party identity provider under another company's branding.
+ *
+ * The narrower gates (`shouldShowCueConnect`, `isElectronSelfHostConnected`)
+ * run once, at boot, before the router mounts. A session that lapses WHILE the
+ * app is open never re-runs them, and the route guard then falls through to
+ * the inherited platform funnel. That is the hole this closes: it is checked
+ * at the moment auth is attempted, not at boot.
+ *
+ * Three signals, any of which is sufficient:
+ *  - `isSelfHostMode()`     — a token has been seeded here before.
+ *  - `isCueSelfHostDeploy()`— the build/host says self-host (`*.justcue.app`).
+ *  - `hasSelfHostBridge()`  — the Cue desktop preload is present. Covers the
+ *    packaged `app://vellum.ai` SPA, where neither of the above can be true
+ *    even though the install is unambiguously Cue.
+ */
+export function isCueSelfHostInstall(): boolean {
+  return isSelfHostMode() || isCueSelfHostDeploy() || hasSelfHostBridge();
+}
+
+/**
  * The desktop app's own copy of the SPA is served from `app://`, so the
  * hostname test above can never see that the app is pointed at a self-host
  * instance. Ask the main process instead: it is the thing that actually holds

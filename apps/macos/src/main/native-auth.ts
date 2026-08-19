@@ -1,25 +1,11 @@
-import { session, shell } from "electron";
+import { session } from "electron";
 import crypto from "node:crypto";
 import { z } from "zod";
 
 import { resolveLocalConfigFromEnv } from "@vellumai/local-mode";
 
 import { handle, handleSync } from "./ipc";
-import {
-    clearSessionToken,
-    getSessionToken,
-    saveSessionToken,
-} from "./session-token-store";
-import {
-    buildAuthorizeUrl,
-    exchangeAccessTokenForSession,
-    exchangeCodeWithWorkos,
-    fetchWorkosClientId,
-    generatePkcePair,
-    startLoopbackListener,
-} from "./workos-pkce";
-
-const AUTH_FLOW_TIMEOUT_MS = 5 * 60_000;
+import { clearSessionToken, getSessionToken } from "./session-token-store";
 
 export function generateState(): string {
   return crypto.randomBytes(32).toString("base64url");
@@ -42,63 +28,35 @@ function resolveProxyPlatformUrl(): string {
   return resolveLocalConfigFromEnv(process.env).platformUrl;
 }
 
-let activePkceCancel: ((reason?: string) => void) | null = null;
-
 /**
- * App-held PKCE login (workos-pkce.ts). Drives the WorkOS OAuth flow in
- * the main process; the renderer is uninvolved beyond the IPC result.
+ * Why this file no longer starts an OAuth flow.
+ *
+ * We forked upstream at the commit that added app-held WorkOS PKCE login for
+ * native macOS, and inherited it wholesale. Cue is single-tenant and
+ * self-hosted: every owner runs their own gateway and signs in by magic link
+ * to it. There is no Vellum Platform account behind a Cue install and no
+ * WorkOS org that would recognise one — the client_id the flow fetched was
+ * upstream's.
+ *
+ * So the flow could never have completed. What it could do, and did, was open
+ * the system browser at `api.workos.com/user_management/authorize` under
+ * another company's branding, on behalf of an account that does not exist.
+ * The whole PKCE implementation (`workos-pkce.ts`) is therefore deleted rather
+ * than disabled: a self-hosted install must have no code path that can reach
+ * a third-party identity provider at all.
+ *
+ * The channel itself stays registered and rejects. Removing it would make
+ * `window.vellum.auth.startOAuth` absent in the preload's shape, and the
+ * renderer's `startAuthFlow` treats absence as "older preload" and falls
+ * through to the same-origin form POST — which 302s to the same WorkOS
+ * authorize URL. Present-and-refusing is the safe shape; absent is not.
+ *
+ * `signOut` / `getSessionToken` stay: `host-proxy-router` reads the session
+ * token store, and the renderer clears it on logout. Neither reaches the
+ * network.
  */
-async function startOAuth(options: {
-  providerHint?: string;
-  loginHint?: string;
-  intent?: string;
-}): Promise<{ sessionToken: string }> {
-  activePkceCancel?.();
-
-  const platformUrl = resolveProxyPlatformUrl();
-  const clientId = await fetchWorkosClientId(platformUrl);
-  const state = generateState();
-  const { verifier, challenge } = generatePkcePair();
-  const listener = await startLoopbackListener(state);
-
-  const timer = setTimeout(
-    () => listener.close("Sign-in timed out. Please try again."),
-    AUTH_FLOW_TIMEOUT_MS,
-  );
-  activePkceCancel = listener.close;
-
-  try {
-    const authorizeUrl = buildAuthorizeUrl({
-      clientId,
-      redirectUri: listener.redirectUri,
-      challenge,
-      state,
-      loginHint: options.loginHint,
-      providerHint: options.providerHint,
-      intent: options.intent,
-    });
-    void shell.openExternal(authorizeUrl);
-
-    const code = await listener.waitForCode;
-    const accessToken = await exchangeCodeWithWorkos({
-      clientId,
-      code,
-      verifier,
-    });
-    const sessionToken = await exchangeAccessTokenForSession(
-      platformUrl,
-      clientId,
-      accessToken,
-    );
-
-    saveSessionToken(sessionToken);
-    return { sessionToken };
-  } finally {
-    clearTimeout(timer);
-    listener.close();
-    activePkceCancel = null;
-  }
-}
+const PLATFORM_AUTH_REMOVED =
+  "Cue signs in with a magic link to your own instance. This build has no platform sign-in.";
 
 const startOAuthSchema = z.tuple([
   z.object({
@@ -119,14 +77,14 @@ export const installNativeAuth = (): void => {
   handle(
     "vellum:auth:startOAuth",
     startOAuthSchema,
-    async ([options]): Promise<{ sessionToken: string }> => {
-      return startOAuth(options);
+    (): Promise<{ sessionToken: string }> => {
+      throw new Error(PLATFORM_AUTH_REMOVED);
     },
   );
 
-  handle("vellum:auth:cancelOAuth", z.tuple([]), () => {
-    activePkceCancel?.();
-  });
+  // Nothing to cancel, but the renderer calls this from its login-cancel path
+  // and an unregistered channel would reject into a floating promise.
+  handle("vellum:auth:cancelOAuth", z.tuple([]), () => {});
 
   handle("vellum:auth:signOut", z.tuple([]), () => {
     clearSessionToken();
@@ -137,5 +95,4 @@ export const installNativeAuth = (): void => {
 
 export const __resetForTesting = (): void => {
   installed = false;
-  activePkceCancel?.();
 };

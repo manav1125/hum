@@ -6,6 +6,7 @@ import {
   EXTENSION_SESSION_TOKEN_LS_KEYS,
   getStoredActorToken,
   isCueSelfHostDeploy,
+  isCueSelfHostInstall,
   isSelfHostMode,
   isStoredActorTokenValid,
   rehydrateGatewayTokenFromActor,
@@ -362,5 +363,52 @@ describe("fresh desktop install reaches Connect (B4)", () => {
     installBridge(null);
     seedCueToken(makeToken({ exp: nowSec() + 30 * 24 * 60 * 60 }));
     expect(await shouldShowCueConnectAsync()).toBe(false);
+  });
+});
+
+// The boot-time gates above all run once, before the router mounts. A session
+// that lapses WHILE the app is open never re-runs them, and the route guard
+// then fell through to the inherited Vellum-Platform funnel — whose "Log In"
+// opens `api.workos.com/user_management/authorize` with upstream's client_id,
+// for an account a single-tenant instance does not have. `isCueSelfHostInstall`
+// is the synchronous predicate that closes that, so it has to be true in every
+// shape a Cue install can be in, signed out included.
+describe("isCueSelfHostInstall", () => {
+  const originalVellum = (globalThis.window as { vellum?: unknown }).vellum;
+
+  beforeEach(() => {
+    window.location.href = "http://localhost/";
+    (globalThis.window as { vellum?: unknown }).vellum = undefined;
+  });
+
+  afterEach(() => {
+    (globalThis.window as { vellum?: unknown }).vellum = originalVellum;
+  });
+
+  test("true for a seeded self-host session", () => {
+    seedCueToken(makeToken({ exp: nowSec() + 30 * 24 * 60 * 60 }));
+    expect(isCueSelfHostInstall()).toBe(true);
+  });
+
+  test("true on a *.justcue.app deploy with no session at all", () => {
+    window.location.href = "https://manav.justcue.app/assistant/";
+    expect(isSelfHostMode()).toBe(false);
+    expect(isCueSelfHostInstall()).toBe(true);
+  });
+
+  test("true in the packaged desktop app, signed out, with nothing stored", () => {
+    // The exact state behind the incident: origin is app://vellum.ai so the
+    // hostname test cannot fire, the flag was cleared by the sign-out, and no
+    // token remains. Only the preload bridge still says "this is Cue".
+    (globalThis.window as { vellum?: unknown }).vellum = {
+      selfHost: { connected: async () => null },
+    };
+    expect(isSelfHostMode()).toBe(false);
+    expect(isCueSelfHostDeploy()).toBe(false);
+    expect(isCueSelfHostInstall()).toBe(true);
+  });
+
+  test("false for a plain web build with no bridge and no self-host signal", () => {
+    expect(isCueSelfHostInstall()).toBe(false);
   });
 });

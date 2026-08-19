@@ -17,6 +17,7 @@ const base: NavigationState = {
   tosAccepted: true,
   aiDataConsent: true,
   selfHostIntroComplete: true,
+  isCueSelfHostInstall: false,
 };
 
 function s(overrides: Partial<NavigationState>): NavigationState {

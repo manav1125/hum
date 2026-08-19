@@ -4,6 +4,7 @@ import { isGatewayAuthMode } from "@/lib/auth/gateway-session";
 import { isLocalMode } from "@/lib/local-mode";
 import { readTosAccepted, readAiDataConsent } from "@/domains/onboarding/prefs";
 import { isSelfHostIntroComplete } from "@/domains/onboarding/signon/intro-state";
+import { isCueSelfHostInstall } from "@/lib/self-hosted/cue-self-host";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import type { NavigationState } from "./navigation-resolver";
 
@@ -21,6 +22,7 @@ export function buildNavigationState(
     tosAccepted: readTosAccepted(),
     aiDataConsent: readAiDataConsent(),
     selfHostIntroComplete: isSelfHostIntroComplete(),
+    isCueSelfHostInstall: isCueSelfHostInstall(),
     ...overrides,
   };
 }
