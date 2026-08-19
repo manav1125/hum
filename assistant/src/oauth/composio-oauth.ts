@@ -411,3 +411,37 @@ export async function composioConnectionFor(
   log.info({ provider, toolkits: usable }, "Using Composio for OAuth provider");
   return new ComposioOAuthConnection(provider, creds, usable);
 }
+
+/**
+ * Auth headers for a Composio-hosted MCP endpoint, or undefined for any other
+ * host.
+ *
+ * Composio's MCP endpoint rejects an unauthenticated POST with 401 "API key or
+ * valid JWT Bearer token is required in headers", and the auto-provisioned
+ * server entries carry no headers at all — so every Composio MCP server on an
+ * instance fails to connect, while the proxy path beside it works because it
+ * sends this same key. The visible symptom is a connector that reads
+ * "connected" in the list and reports an auth error the moment a chat tries to
+ * use it, which is expensive: an agent whose tools answer 401 will keep
+ * re-deriving how it is connected. One tester spent 2.5M tokens doing that.
+ *
+ * Read at connect time rather than written into the server entry on purpose.
+ * The key already lives in `connectors.json`; persisting a second copy into
+ * config would go stale on rotation and hand back the identical silent 401,
+ * with the added charm of being wrong in a file nobody thinks to look at.
+ */
+export function composioMcpAuthHeaders(
+  url: string,
+): Record<string, string> | undefined {
+  let host: string;
+  try {
+    host = new URL(url).host.toLowerCase();
+  } catch {
+    return undefined;
+  }
+  if (host !== "backend.composio.dev" && !host.endsWith(".composio.dev")) {
+    return undefined;
+  }
+  const creds = readCreds();
+  return creds ? { "x-api-key": creds.apiKey } : undefined;
+}

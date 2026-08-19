@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 import { getIsPlatform } from "../config/env-registry.js";
 import type { McpTransport } from "../config/schemas/mcp.js";
+import { composioMcpAuthHeaders } from "../oauth/composio-oauth.js";
 import { getSecureKeyAsync } from "../security/secure-keys.js";
 import { getLogger } from "../util/logger.js";
 import { McpOAuthProvider } from "./mcp-oauth-provider.js";
@@ -273,15 +274,34 @@ export class McpClient {
       case "sse":
         return new SSEClientTransport(new URL(config.url), {
           authProvider: this.oauthProvider ?? undefined,
-          requestInit: config.headers ? { headers: config.headers } : undefined,
+          requestInit: hostRequestInit(config.url, config.headers),
         });
       case "streamable-http":
         return new StreamableHTTPClientTransport(new URL(config.url), {
           authProvider: this.oauthProvider ?? undefined,
-          requestInit: config.headers ? { headers: config.headers } : undefined,
+          requestInit: hostRequestInit(config.url, config.headers),
         });
     }
   }
+}
+
+/**
+ * Request init for an HTTP-ish MCP transport, with any host-supplied auth
+ * folded in underneath the server's own headers.
+ *
+ * Auto-provisioned Composio servers are written with no headers at all, so
+ * every one of them fails to connect with a 401 asking for an API key — while
+ * the proxy path beside them works, because it sends the key this adds. An
+ * explicitly configured header always wins: the host default is a floor, not
+ * an override.
+ */
+function hostRequestInit(
+  url: string,
+  headers: Record<string, string> | undefined,
+): { headers: Record<string, string> } | undefined {
+  const hostHeaders = composioMcpAuthHeaders(url);
+  if (!hostHeaders && !headers) return undefined;
+  return { headers: { ...hostHeaders, ...headers } };
 }
 
 /**
