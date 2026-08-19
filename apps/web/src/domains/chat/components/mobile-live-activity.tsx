@@ -34,32 +34,14 @@
  * its own `prefers-reduced-motion` guard.
  */
 
-import { useEffect, useState } from "react";
 import { Check, MessageCircleQuestion } from "lucide-react";
 
 import { deriveStepLabelFromName } from "@/domains/chat/components/tool-progress-card/derive-step-label";
-import { requestActiveReconcileAndSettle } from "@/domains/chat/foreground-reconcile";
-import {
-  useLiveStatusForConversation,
-  useLiveStatusStore,
-  type LiveStep,
-} from "@/domains/chat/live-status-store";
-import {
-  deriveLiveStatus,
-  formatElapsed,
-  formatTokens,
-} from "@/domains/chat/transcript/live-turn-status";
-import { isSending, useTurnStore } from "@/domains/chat/turn-store";
+import { useLiveActivity } from "@/domains/chat/components/use-live-activity";
+import type { LiveStep } from "@/domains/chat/live-status-store";
+import { formatElapsed } from "@/domains/chat/transcript/live-turn-status";
 import { truncate } from "@/domains/chat/utils/truncate";
 import { LivePulseBadge } from "@/mobile-v3/work-kit";
-import { useConversationStore } from "@/stores/conversation-store";
-import { useSSEConnectedStore } from "@/stores/sse-connected-store";
-
-/** No thinking/tool signal for this long ⇒ offer the check-status rescue. */
-const WATCHDOG_SILENCE_MS = 120_000;
-
-/** How many recent steps the mini-stream shows. */
-const VISIBLE_STEPS = 3;
 
 const STEP_LABEL_MAX_CHARS = 56;
 
@@ -96,104 +78,20 @@ export interface MobileLiveActivityProps {
 export function MobileLiveActivity({
   fallbackActive = false,
 }: MobileLiveActivityProps) {
-  const phase = useTurnStore.use.phase();
-  const statusText = useTurnStore.use.statusText();
-  const pendingQueuedCount = useTurnStore.use.pendingQueuedCount();
-  const activeConversationId = useConversationStore.use.activeConversationId();
+  // Every piece of state here is shared with the desktop strip — see
+  // `use-live-activity.ts`. Only the markup below is mobile's.
   const {
-    turnStartedAt,
-    thinkingTail,
-    thinkingAt,
-    runningTools,
-    steps,
-    stepCount,
-    turnTokens,
-    lastEventAt,
-  } = useLiveStatusForConversation(activeConversationId);
-  const sseConnected = useSSEConnectedStore.use.isConnected();
+    view,
+    isWaiting,
+    visibleSteps,
+    subParts,
+    showWatchdog,
+    silentFor,
+    checking,
+    checkStatus: handleCheckStatus,
+  } = useLiveActivity(fallbackActive);
 
-  const active = isSending(phase) || fallbackActive;
-
-  // Ticking clock — lazy init + interval; Date.now() never runs in render.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(id);
-  }, [active]);
-
-  // Restored/external turns have no start stamp — take one on first sight
-  // (idempotent with the identical effect in LiveTurnStatus).
-  useEffect(() => {
-    if (active && activeConversationId && turnStartedAt === null) {
-      useLiveStatusStore.getState().noteTurnStart(activeConversationId);
-    }
-  }, [active, activeConversationId, turnStartedAt]);
-
-  // Manual check-status state.
-  const [checking, setChecking] = useState(false);
-  const [checkedAt, setCheckedAt] = useState<number | null>(null);
-  useEffect(() => {
-    // Reset the affordance across turns.
-    if (!active) {
-      setChecking(false);
-      setCheckedAt(null);
-    }
-  }, [active]);
-
-  const view = deriveLiveStatus({
-    phase,
-    statusText,
-    pendingQueuedCount,
-    thinkingTail,
-    thinkingAt,
-    runningTools,
-    turnStartedAt,
-    now,
-    fallbackActive,
-    sseConnected,
-  });
   if (!view) return null;
-
-  const elapsedMs = turnStartedAt !== null ? now - turnStartedAt : 0;
-  const lastSignalAt = Math.max(
-    turnStartedAt ?? 0,
-    lastEventAt ?? 0,
-    thinkingAt ?? 0,
-    checkedAt ?? 0,
-  );
-  const silentFor = lastSignalAt > 0 ? now - lastSignalAt : 0;
-  const showWatchdog = sseConnected && silentFor >= WATCHDOG_SILENCE_MS;
-
-  const isWaiting = view.state === "waiting";
-  const visibleSteps = steps.slice(-VISIBLE_STEPS);
-
-  // Effort read (step / elapsed / token burn-down) belongs to a live run,
-  // never to "Waiting on you" — there it would read as ongoing work.
-  const subParts: string[] = [];
-  if (!isWaiting) {
-    if (stepCount > 0) {
-      subParts.push(`Step ${stepCount}`);
-    }
-    if (elapsedMs >= 3_000) {
-      subParts.push(formatElapsed(elapsedMs));
-    }
-    if (turnTokens > 0) {
-      subParts.push(`${formatTokens(turnTokens)} tokens`);
-    }
-  }
-
-  const handleCheckStatus = () => {
-    if (checking) return;
-    setChecking(true);
-    void requestActiveReconcileAndSettle().finally(() => {
-      setChecking(false);
-      // Quiets the watchdog for another window if the turn is genuinely
-      // still running (reconcile found no missed terminal state).
-      setCheckedAt(Date.now());
-    });
-  };
 
   return (
     <div

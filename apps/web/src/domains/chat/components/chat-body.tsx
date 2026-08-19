@@ -7,6 +7,7 @@ import {
 
 import { Eye, Paperclip, Square } from "lucide-react";
 
+import { DesktopLiveActivity } from "@/domains/chat/components/desktop-live-activity";
 import {
   ChatComposer,
   type ChatComposerProps,
@@ -381,6 +382,10 @@ export function ChatBody({
             // the composer keeps its position in the React tree (and with it
             // its focus, draft text and attachments) across empty→active.
             <div {...canvasElement("composer")}>
+              {/* Pinned above the composer, not in the transcript: the
+                  transcript's status line scrolls out of view, which is how
+                  a long turn and a dead one came to look identical. */}
+              <DesktopLiveActivity fallbackActive={canStopGenerating} />
               <ChatComposer
                 {...composerProps}
                 onEnterVoiceMode={
