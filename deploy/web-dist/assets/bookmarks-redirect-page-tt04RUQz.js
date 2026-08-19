@@ -1,0 +1,1 @@
+import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{jt as t}from"./design-library-CRpa8G9v.js";import{f as n}from"./react-vendor-BDCQYcwm.js";import{i as r}from"./routes-B0V0Dd2H.js";var i=e(t(),1);function a(){let e=n();return(0,i.useEffect)(()=>{e(`${r.conversations}?filter=bookmarked`,{replace:!0})},[e]),null}export{a as BookmarksRedirectPage};

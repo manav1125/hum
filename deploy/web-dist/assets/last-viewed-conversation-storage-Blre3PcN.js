@@ -1,1 +1,0 @@
-import{t as e}from"./typed-storage-B3QB8aIy.js";var t=e({keyFn:e=>`vellum:lastViewedConversation:${e}`,scope:`user`,parse:e=>e.length>0?e:null,serialize:e=>e??``,fallback:null});function n(e){return t.load(e)}function r(e,n){t.save(e,n)}export{r as n,n as t};

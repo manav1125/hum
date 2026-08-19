@@ -1,1 +1,0 @@
-import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{U as t}from"./design-library-PLdIta_8.js";var n=e(t(),1),r=0,i=``;function a(){r===0&&(i=document.body.style.overflow,document.body.style.overflow=`hidden`),r+=1}function o(){r!==0&&(--r,r===0&&(document.body.style.overflow=i,i=``))}function s(e){(0,n.useEffect)(()=>{if(e)return a(),o},[e])}export{s as t};
