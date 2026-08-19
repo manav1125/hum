@@ -281,6 +281,19 @@ export interface GeminiLiveClientCallbacks {
   /** The user barged in — the model's output was interrupted server-side. */
   onInterrupted?: () => void;
   /**
+   * Every post-setup message the server sent, reported as its top-level keys
+   * (`["serverContent"]`, `["goAway"]`, `["sessionResumptionUpdate"]`, …) —
+   * never the payload, which is audio and transcript.
+   *
+   * It exists for the silence case, where no other callback fires at all.
+   * When a call stops answering, the first fork in the diagnosis is whether
+   * the upstream leg is still saying anything, and a socket that has gone
+   * quiet without closing is indistinguishable from one nobody is talking to
+   * unless something records the last time it spoke. See the session's
+   * turnless-gap probe.
+   */
+  onUpstreamMessage?: (kinds: readonly string[]) => void;
+  /**
    * A recoverable hiccup the client is handling itself (steady-state socket
    * error, a message it could not process). The session may surface it as a
    * non-fatal error frame; it must NOT tear anything down — the close/reconnect
@@ -703,6 +716,12 @@ export class GeminiLiveClient {
 
   private handleServerMessage(msg: Record<string, unknown>): void {
     const cb = this.opts.callbacks;
+
+    // Report the bare shape of every message BEFORE dispatching it, so the
+    // messages that fire no other callback (resumption-handle refreshes, and
+    // anything this switch does not understand) still prove the upstream leg
+    // is alive. Keys only — the payload is the caller's audio.
+    cb.onUpstreamMessage?.(Object.keys(msg));
 
     // DROP CLASS 2: the server warns before it tears a connection down
     // (connection lifetime limits) via `goAway`. Ignoring it made the

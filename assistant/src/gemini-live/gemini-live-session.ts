@@ -69,6 +69,36 @@ const DEFAULT_ECHO_DRAIN_SLACK_MS = 300;
 const DEFAULT_ECHO_BARGE_IN_MARGIN = 1.5;
 const DEFAULT_ECHO_EMA_HALF_LIFE_MS = 400;
 
+/**
+ * How often the turnless-gap probe reports while a call is open with no turn
+ * running. Override with `CUE_GEMINI_LIVE_GAP_PROBE_MS` (0 disables); tests
+ * shorten it so the probe is drivable in real time.
+ *
+ * ## Why this exists
+ *
+ * Every other line in this file is emitted by a turn. So the failure users
+ * actually report — "it went to listening and got stuck" — is the one shape
+ * the log could not describe: the session closes cleanly, `unfinishedTurn:
+ * false`, no interruption pending, and the caller's next sentence simply
+ * never opens a turn. Twenty-three seconds of that gap looked exactly like
+ * twenty-three seconds of a caller thinking.
+ *
+ * The gap has three possible tenants and they need different fixes, so the
+ * probe reports which one it is: the client stopped sending mic audio, the
+ * echo gate substituted silence for all of it, or Gemini got real audio and
+ * said nothing back. See {@link probeGap}.
+ */
+const DEFAULT_GAP_PROBE_INTERVAL_MS = 5_000;
+
+function resolveGapProbeIntervalMs(): number {
+  const raw = process.env.CUE_GEMINI_LIVE_GAP_PROBE_MS?.trim();
+  if (!raw) return DEFAULT_GAP_PROBE_INTERVAL_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0
+    ? parsed
+    : DEFAULT_GAP_PROBE_INTERVAL_MS;
+}
+
 /** Lazily-cached silence buffers keyed by chunk length (mic chunks are uniform). */
 const SILENCE_CHUNKS = {
   cache: new Map<number, Uint8Array>(),
@@ -247,6 +277,35 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private sessionInterruptions = 0;
   private readonly sessionStartedAtMs = Date.now();
   /**
+   * Turnless-gap accounting — the silent half of the call, which until now
+   * left no record at all. See {@link probeGap} for why.
+   *
+   * The three counters are per probe WINDOW (reset on every report), because
+   * what matters is not how much audio a two-minute gap saw in total but
+   * whether it is still seeing any right now: a gap that starts healthy and
+   * goes deaf halfway is the exact shape being hunted, and cumulative totals
+   * hide it behind the healthy prefix.
+   */
+  private readonly gapProbeIntervalMs = resolveGapProbeIntervalMs();
+  private gapTimer: ReturnType<typeof setInterval> | null = null;
+  private gapProbeSeq = 0;
+  /** Wall clock at the last turn end (session start until the first turn). */
+  private gapStartedAtMs = 0;
+  /** Wall clock at the last probe report — the counters' window start. */
+  private gapWindowStartedAtMs = 0;
+  /** Mic chunks the CLIENT delivered in this window (0 ⇒ nothing arrived). */
+  private gapMicChunks = 0;
+  /** Of those, the ones whose real audio went upstream to Gemini. */
+  private gapForwardedChunks = 0;
+  /** Of those, the ones the echo gate replaced with silence. */
+  private gapEchoSuppressedChunks = 0;
+  /** Last mic chunk from the client, ever — not reset per window. */
+  private lastMicChunkAtMs = 0;
+  /** Last message from Gemini, ever, of any kind — not reset per window. */
+  private lastUpstreamAtMs = 0;
+  /** Top-level keys of that message, e.g. ["serverContent"]. */
+  private lastUpstreamKinds: readonly string[] = [];
+  /**
    * Rolling window of the most recent completed turns, kept so a NON-resumed
    * upstream reconnect (fresh Gemini session — no conversation context) can be
    * handed a recap instead of amnesia mid-call. Bounded; the saved thread is
@@ -394,6 +453,17 @@ export class GeminiLiveSession implements LiveVoiceSession {
           void this.context.sendFrame({ type: "stt_final", text });
         },
         onToolCall: (calls) => void this.onToolCall(calls),
+        onUpstreamMessage: (kinds) => {
+          this.lastUpstreamAtMs = Date.now();
+          this.lastUpstreamKinds = kinds;
+        },
+        onGoAway: (timeLeftMs) => {
+          // The client migrates on its own; this line is here because a
+          // server-scheduled disconnect landing mid-gap is one of the few
+          // upstream explanations for a call going quiet, and it must be
+          // readable next to the gap probes rather than in the client's log.
+          this.logTurn("go_away", { timeLeftMs });
+        },
         onTurnComplete: () => this.onTurnComplete(),
         onInterrupted: () => {
           // The user barged in; Gemini stops generating server-side. We simply
@@ -409,6 +479,9 @@ export class GeminiLiveSession implements LiveVoiceSession {
             userChars: this.pendingUserText.trim().length,
           });
           this.currentTurnId = null;
+          // A barge-in opens a gap of its own: from here until the caller's
+          // next utterance opens a turn, nothing else in this file speaks.
+          this.beginGap();
         },
         onError: (message) => {
           // Recoverable by contract (the client's close/reconnect path owns
@@ -471,6 +544,11 @@ export class GeminiLiveSession implements LiveVoiceSession {
       );
     }
     this.client = client;
+    // The first gap runs from "connected" to the caller's first utterance —
+    // a session that is deaf from the outset must be as visible as one that
+    // goes deaf later.
+    this.beginGap();
+    this.startGapProbe();
 
     await this.context.sendFrame({
       type: "ready",
@@ -617,26 +695,142 @@ export class GeminiLiveSession implements LiveVoiceSession {
     // untouched so the user can interrupt mid-reply at full sensitivity.
     const classifier = this.echoClassifier;
     this.turnMicChunks += 1;
-    if (!classifier) return [chunk];
+    this.gapMicChunks += 1;
+    this.lastMicChunkAtMs = Date.now();
+    if (!classifier) {
+      this.gapForwardedChunks += 1;
+      return [chunk];
+    }
     if (Date.now() >= this.playbackTailUntilMs + this.echoDrainSlackMs) {
       // Outside the echo window: nothing we sent can still be audible.
       classifier.resetWindow();
+      this.gapForwardedChunks += 1;
       return [chunk];
     }
     const buffer = Buffer.isBuffer(chunk)
       ? chunk
       : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
     return classifier.classify(buffer).map((classified) => {
-      if (classified.classification !== "echo") return classified.chunk;
+      if (classified.classification !== "echo") {
+        this.gapForwardedChunks += 1;
+        return classified.chunk;
+      }
       // Counted, not logged per chunk: the useful number is the per-turn
       // proportion. A turn where most mic audio was suppressed as echo is a
       // caller who could not have been heard even if they did speak.
       this.turnEchoSuppressedChunks += 1;
+      this.gapEchoSuppressedChunks += 1;
       return (
         SILENCE_CHUNKS.get(classified.chunk.length) ??
         new Uint8Array(classified.chunk.length)
       );
     });
+  }
+
+  // ── Turnless-gap probe ─────────────────────────────────────────────
+
+  /** Open a fresh gap window: a turn just ended (or the call just connected). */
+  private beginGap(): void {
+    this.gapStartedAtMs = Date.now();
+    this.gapWindowStartedAtMs = this.gapStartedAtMs;
+    this.gapMicChunks = 0;
+    this.gapForwardedChunks = 0;
+    this.gapEchoSuppressedChunks = 0;
+  }
+
+  private startGapProbe(): void {
+    if (this.gapTimer || this.gapProbeIntervalMs <= 0) return;
+    this.gapTimer = setInterval(() => this.probeGap(), this.gapProbeIntervalMs);
+    this.gapTimer.unref?.();
+  }
+
+  private stopGapProbe(): void {
+    if (this.gapTimer) {
+      clearInterval(this.gapTimer);
+      this.gapTimer = null;
+    }
+  }
+
+  /**
+   * One line per interval of call time with NO turn open — the silence the
+   * caller is sitting in, described well enough to say who is responsible
+   * for it.
+   *
+   * `micReaching` is the whole point, and it is deliberately a statement
+   * about where audio GOT TO, not about who is at fault:
+   *
+   * - `"nothing"` — the client sent no mic audio at all this window. The
+   *   caller may well be talking; nothing left their machine. The break is
+   *   client → daemon, and no amount of daemon-side work will hear them.
+   * - `"gate"` — audio arrived and the echo gate replaced every chunk with
+   *   silence (or is still holding it as a correlation probe). Gemini heard
+   *   a silent room. The break is the gate.
+   * - `"gemini"` — real mic audio went upstream and no turn opened anyway.
+   *   The break is upstream; `sinceUpstreamMs` says whether the socket is
+   *   still saying anything at all.
+   *
+   * A healthy pause between utterances also lands here, and reads as
+   * `"gemini"` with a small `sinceUpstreamMs` — that is correct: the room is
+   * being heard and nobody is speaking. Silence that is fine and silence
+   * that is broken are the same experience from outside and must be told
+   * apart from the inside.
+   *
+   * Volume: one line per interval per open call, only while no turn is
+   * running, and never per chunk — this log is already hard to read.
+   */
+  private probeGap(): void {
+    if (this.closed || this.currentTurnId !== null) return;
+    const now = Date.now();
+    const windowMs = now - this.gapWindowStartedAtMs;
+    // A gap shorter than one interval is the tail of a turn that just ended.
+    if (windowMs < this.gapProbeIntervalMs) return;
+    this.gapProbeSeq += 1;
+    const micReaching =
+      this.gapMicChunks === 0
+        ? "nothing"
+        : this.gapForwardedChunks === 0
+          ? "gate"
+          : "gemini";
+    log.info(
+      {
+        event: "gap",
+        conversationId: this.conversationId,
+        probe: this.gapProbeSeq,
+        // Which turn the silence follows; 0 = the call has not had one yet.
+        afterTurn: this.turnSeq,
+        micReaching,
+        // How long the caller has been sitting in this silence…
+        sinceTurnEndMs: now - this.gapStartedAtMs,
+        // …and the slice of it the counters below describe.
+        windowMs,
+        micChunks: this.gapMicChunks,
+        forwardedChunks: this.gapForwardedChunks,
+        echoSuppressedChunks: this.gapEchoSuppressedChunks,
+        sinceLastMicChunkMs: this.lastMicChunkAtMs
+          ? now - this.lastMicChunkAtMs
+          : null,
+        sinceUpstreamMs: this.lastUpstreamAtMs
+          ? now - this.lastUpstreamAtMs
+          : null,
+        upstreamKinds: this.lastUpstreamKinds,
+        // How much longer the echo gate still believes our own reply is
+        // audible. A window left open long past the reply (a barge-in the
+        // playback-tail estimate never learned about) is itself a cause of
+        // `micReaching: "gate"`.
+        echoWindowMs: Math.max(
+          0,
+          this.playbackTailUntilMs + this.echoDrainSlackMs - now,
+        ),
+        interruptions: this.sessionInterruptions,
+        sessionMs: now - this.sessionStartedAtMs,
+      },
+      `gemini-live turnless gap (${micReaching})`,
+    );
+    // Per-window, not cumulative: the next line answers "is it STILL deaf".
+    this.gapWindowStartedAtMs = now;
+    this.gapMicChunks = 0;
+    this.gapForwardedChunks = 0;
+    this.gapEchoSuppressedChunks = 0;
   }
 
   /**
@@ -759,6 +953,8 @@ export class GeminiLiveSession implements LiveVoiceSession {
       assistantChars: assistantText.trim().length,
       silent: this.turnAudioBytes === 0 && assistantText.trim().length === 0,
     });
+    // The turn is over; the gap the caller now sits in starts here.
+    this.beginGap();
     void this.context.sendFrame({ type: "tts_done", turnId });
   }
 
@@ -950,6 +1146,17 @@ export class GeminiLiveSession implements LiveVoiceSession {
         interruptions: this.sessionInterruptions,
         durationMs: Date.now() - this.sessionStartedAtMs,
         unfinishedTurn: this.currentTurnId !== null,
+        // How the call ENDED, which "turns: 2, unfinishedTurn: false" cannot
+        // say: a caller who hangs up after twenty seconds of a room that
+        // stopped hearing him looks, on those fields alone, exactly like one
+        // who got his answer and was done.
+        endedInSilenceMs:
+          this.currentTurnId === null && this.gapStartedAtMs
+            ? Date.now() - this.gapStartedAtMs
+            : null,
+        sinceLastMicChunkMs: this.lastMicChunkAtMs
+          ? Date.now() - this.lastMicChunkAtMs
+          : null,
       },
       "gemini-live session closed",
     );
@@ -976,6 +1183,7 @@ export class GeminiLiveSession implements LiveVoiceSession {
       });
     }
     this.closed = true;
+    this.stopGapProbe();
     this.toolAbort.abort();
     // Stop watching deep-task completions: a task that finishes after the
     // call ends lands in Review (existing behavior) with nothing announced,
