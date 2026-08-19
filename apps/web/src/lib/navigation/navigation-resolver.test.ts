@@ -720,3 +720,65 @@ describe("resolveNavigation", () => {
     });
   });
 });
+
+// A Cue self-hosted install has no Vellum Platform account. Before this
+// branch, a session that lapsed WHILE the app was open fell through
+// `requireAuth` into the platform funnel — `welcome` for an install with no
+// assistants — whose "Log In" runs WorkOS OAuth. The boot-time self-host gate
+// had long since run, so nothing re-checked. These pin the routing.
+describe("route-guard — Cue self-host signed out", () => {
+  const guard = (state: NavigationState, pathname: string) =>
+    resolveNavigation(state, { kind: "route-guard", pathname });
+
+  const cueSignedOut = (extra: Partial<NavigationState> = {}) =>
+    s({
+      isAuthenticated: false,
+      isCueSelfHostInstall: true,
+      platformSession: "absent",
+      ...extra,
+    });
+
+  test("a lapsed session goes to the Cue sign-on screen, not welcome", () => {
+    expect(
+      guard(cueSignedOut({ isLocalMode: true, hasAssistants: false }), "/assistant"),
+    ).toEqual({
+      action: "redirect",
+      to: "/account/login?returnTo=%2Fassistant",
+    });
+  });
+
+  test("the hosted (non-local) install lands there too", () => {
+    expect(guard(cueSignedOut(), "/assistant")).toEqual({
+      action: "redirect",
+      to: "/account/login?returnTo=%2Fassistant",
+    });
+  });
+
+  test("the sign-on screen itself is reachable — no redirect loop", () => {
+    expect(guard(cueSignedOut(), "/account/login")).toEqual(ALLOW);
+  });
+
+  test("a local-daemon install keeps its assistant chooser", () => {
+    // Local daemons need no account at all, and `select-assistant` is how
+    // their owner gets back in. Closing the WorkOS hole must not cost them
+    // that — it would trade one lockout for another.
+    expect(
+      guard(cueSignedOut({ isLocalMode: true, hasAssistants: true }), "/assistant"),
+    ).toEqual({ action: "redirect", to: "/assistant/select-assistant" });
+  });
+
+  test("an authenticated Cue session is untouched", () => {
+    expect(
+      guard(s({ isCueSelfHostInstall: true, isGatewayAuth: true }), "/assistant"),
+    ).toEqual(ALLOW);
+  });
+
+  test("a non-Cue install still gets the platform funnel", () => {
+    expect(
+      guard(
+        s({ isAuthenticated: false, isLocalMode: true, hasAssistants: false }),
+        "/assistant",
+      ),
+    ).toEqual({ action: "redirect", to: "/assistant/welcome" });
+  });
+});
