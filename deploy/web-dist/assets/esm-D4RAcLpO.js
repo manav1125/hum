@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-B5W7dyaw.js","assets/dist-BwCawvKK.js"])))=>i.map(i=>d[i]);
+import{_ as e}from"./react-vendor-ClZQnK6j.js";import{i as t}from"./dist-BwCawvKK.js";var n;(function(e){e.Light=`light`,e.Dark=`dark`})(n||={});var r=t(`SafeArea`,{web:()=>e(()=>import(`./web-B5W7dyaw.js`).then(e=>new e.SafeAreaWeb),__vite__mapDeps([0,1]))});export{r as SafeArea};

@@ -1,1 +1,0 @@
-import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{jt as t}from"./design-library-CRpa8G9v.js";import{n}from"./event-bus-dVhOiVw3.js";var r=e(t(),1);function i(e,t){let i=(0,r.useRef)(t);(0,r.useLayoutEffect)(()=>{i.current=t}),(0,r.useEffect)(()=>n(e,e=>{i.current(e)}),[e])}export{i as t};
