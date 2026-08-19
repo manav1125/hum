@@ -133,3 +133,78 @@ describe("self-host OpenRouter force (B1)", () => {
     expect(resolved.model).toBe("claude-sonnet-4-6");
   });
 });
+
+describe("an explicitly attached provider connection", () => {
+  beforeEach(() => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    // The direct BYO routes return before the force, so a call-site list left
+    // set by an earlier test decides the provider and this block would be
+    // asserting someone else's branch.
+    for (const key of [
+      "CUE_OPENROUTER_MODEL",
+      "CUE_OPENROUTER_FLASH_MODEL",
+      "CUE_ANTHROPIC_CALLSITES",
+      "CUE_ANTHROPIC_MODEL",
+      "CUE_ANTHROPIC_FLASH_MODEL",
+      "CUE_OPENAI_CALLSITES",
+      "CUE_OPENAI_MODEL",
+      "CUE_OPENAI_FLASH_MODEL",
+    ]) {
+      delete process.env[key];
+    }
+  });
+
+  // The failure this pins was silent and expensive to trust: a profile
+  // reading `openai` executed as DeepSeek because an OpenRouter key existed,
+  // so the owner believed they were benchmarking OpenAI while measuring
+  // something else. A provider that simply failed would have been obvious.
+  test("is respected instead of being rewritten to OpenRouter", () => {
+    const llm = LLMSchema.parse({
+      activeProfile: "levi-openai",
+      profiles: {
+        "levi-openai": {
+          provider: "openai",
+          provider_connection: "chatgpt-subscription",
+          model: "gpt-5.4-mini",
+        },
+      },
+    });
+    const resolved = resolveCallSiteConfig("mainAgent", llm);
+    expect(resolved.provider).toBe("openai");
+    expect(resolved.provider_connection).toBe("chatgpt-subscription");
+    expect(resolved.model).toBe("gpt-5.4-mini");
+  });
+
+  // The force has to survive for everyone who has NOT attached anything:
+  // HQ provisions an instance with an OpenRouter key and nothing else, so a
+  // profile naming a provider it has no credential for must still be pulled
+  // back rather than failing every turn.
+  test("a provider with no named connection is still forced", () => {
+    const llm = LLMSchema.parse({
+      activeProfile: "wishful",
+      profiles: {
+        wishful: { provider: "anthropic", model: "claude-sonnet-4-6" },
+      },
+    });
+    const resolved = resolveCallSiteConfig("mainAgent", llm);
+    expect(resolved.provider).toBe("openrouter");
+    expect(resolved.model).toBe(DEFAULT_OPENROUTER_MODEL);
+  });
+
+  test("an OpenRouter connection still gets the seeded pair re-pinned", () => {
+    process.env.CUE_OPENROUTER_MODEL = "moonshotai/kimi-k3";
+    const llm = LLMSchema.parse({
+      activeProfile: "managed",
+      profiles: {
+        managed: {
+          provider: "openrouter",
+          provider_connection: "openrouter",
+          model: DEFAULT_OPENROUTER_MODEL,
+        },
+      },
+    });
+    expect(resolveCallSiteConfig("mainAgent", llm).model).toBe(
+      "moonshotai/kimi-k3",
+    );
+  });
+});

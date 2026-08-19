@@ -300,8 +300,26 @@ export function resolveCallSiteConfig(
   // A model this key cannot serve is worth overriding even when the user chose
   // it deliberately: the alternative is a 403 on every turn.
   const blockedModel = BLOCKED_ON_PLATFORM_KEY.test(resolvedModel);
+  // A connection the owner named is a decision, not a default. The force
+  // exists because HQ provisions an instance with an OpenRouter key and
+  // nothing else, so without it a fresh install would serve every turn on a
+  // provider it has no credential for — but that reasoning stops the moment
+  // someone has gone and attached their own. Overriding them there produced
+  // the worst possible outcome: a profile reading `openai` that quietly
+  // executed as DeepSeek, so the owner believed they were benchmarking one
+  // model while measuring another. Silence is what made it expensive; a
+  // provider that simply failed would have been noticed in a minute.
+  //
+  // Only a non-OpenRouter connection counts. An OpenRouter one still falls
+  // through, so re-pinning the seeded managed pair via CUE_OPENROUTER_MODEL
+  // keeps working.
+  const explicitConnection =
+    typeof resolved.provider_connection === "string" &&
+    resolved.provider_connection.trim() !== "" &&
+    resolved.provider_connection !== "openrouter";
   if (
     forceOpenRouterSelfHost() &&
+    !explicitConnection &&
     (resolved.provider !== "openrouter" || seededManagedModel || blockedModel)
   ) {
     resolved.provider = "openrouter";
