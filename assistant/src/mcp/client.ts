@@ -8,6 +8,11 @@ import { getIsPlatform } from "../config/env-registry.js";
 import type { McpTransport } from "../config/schemas/mcp.js";
 import { composioMcpAuthHeaders } from "../oauth/composio-oauth.js";
 import { getSecureKeyAsync } from "../security/secure-keys.js";
+import {
+  CredentialReferenceError,
+  resolveCredentialReferencesInEnv,
+} from "../tools/credentials/env-references.js";
+import { buildSanitizedEnv } from "../tools/terminal/safe-env.js";
 import { getLogger } from "../util/logger.js";
 import { McpOAuthProvider } from "./mcp-oauth-provider.js";
 
@@ -109,8 +114,37 @@ export class McpClient {
       }
     }
 
+    // Resolve any `${credential:...}` references in the child's env before
+    // spawning. A stdio server runs unattended, so this is the only point at
+    // which a secret can reach it without a human approving a reveal.
+    let resolvedEnv: Record<string, string> | undefined;
+    if (transportConfig.type === "stdio") {
+      try {
+        resolvedEnv = await resolveCredentialReferencesInEnv(
+          transportConfig.env,
+          mcpCredentialConsumer(this.serverId),
+        );
+      } catch (err) {
+        // Refuse to start rather than spawn the server with the reference
+        // passed through as literal text — it would authenticate with the
+        // string "${credential:...}" and fail somewhere far less legible.
+        this._lastError = err instanceof Error ? err : new Error(String(err));
+        log.error(
+          {
+            serverId: this.serverId,
+            reason:
+              err instanceof CredentialReferenceError
+                ? err.message
+                : String(err),
+          },
+          "MCP server not started: a credential reference could not be resolved",
+        );
+        return;
+      }
+    }
+
     log.info({ serverId: this.serverId }, "Connecting to MCP server");
-    this.transport = this.createTransport(transportConfig);
+    this.transport = this.createTransport(transportConfig, resolvedEnv);
 
     try {
       await Promise.race([
@@ -261,15 +295,14 @@ export class McpClient {
 
   private createTransport(
     config: McpTransport,
+    resolvedEnv?: Record<string, string>,
   ): StdioClientTransport | SSEClientTransport | StreamableHTTPClientTransport {
     switch (config.type) {
       case "stdio":
         return new StdioClientTransport({
           command: config.command,
           args: config.args,
-          env: config.env
-            ? ({ ...process.env, ...config.env } as Record<string, string>)
-            : undefined,
+          env: stdioChildEnv(resolvedEnv),
         });
       case "sse":
         return new SSEClientTransport(new URL(config.url), {
@@ -283,6 +316,34 @@ export class McpClient {
         });
     }
   }
+}
+
+/**
+ * The identity a stdio MCP server presents to the credential tool policy.
+ *
+ * A credential must name this string in its `allowedTools` before it can be
+ * injected into that server — listing a reference in config is a request, not
+ * a grant.
+ */
+export function mcpCredentialConsumer(serverId: string): string {
+  return `mcp:${serverId}`;
+}
+
+/**
+ * Environment for a spawned stdio MCP server.
+ *
+ * The declared env used to be merged over `process.env`, which handed every
+ * stdio server the daemon's entire environment — every provider key, every
+ * platform token — purely as a side effect of declaring one variable. The
+ * bash tool has never done this; `buildSanitizedEnv` is the allowlist it uses,
+ * and there is no reason an MCP child should see more than a shell command
+ * does. Declared values (including resolved credential references) are laid
+ * on top.
+ */
+export function stdioChildEnv(
+  declared: Record<string, string> | undefined,
+): Record<string, string> {
+  return { ...buildSanitizedEnv(), ...(declared ?? {}) };
 }
 
 /**

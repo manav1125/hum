@@ -238,6 +238,7 @@ import {
   migrateScheduleRetryPolicy,
   migrateScheduleReuseConversation,
   migrateScheduleScriptColumn,
+  migrateScheduleScriptEnv,
   migrateScheduleScriptTimeout,
   migrateScheduleSourceConversation,
   migrateScheduleWakeConversationId,
@@ -618,6 +619,7 @@ export function initializeDb(): void {
     migrateMemoryJobOutcome,
     migrateVolumeValve,
     migrateRitualSnapshots,
+    migrateScheduleScriptEnv,
     // 324–328: the memory-DB split. These run every boot AFTER every
     // creator/ALTER migration above (the legacy `CREATE TABLE IF NOT
     // EXISTS` creators recreate empty main-side shadows each boot; the

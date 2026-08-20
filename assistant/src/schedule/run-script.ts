@@ -32,7 +32,19 @@ export interface ScriptResult {
  */
 export async function runScript(
   command: string,
-  options?: { timeoutMs?: number; cwd?: string },
+  options?: {
+    timeoutMs?: number;
+    cwd?: string;
+    /**
+     * Extra environment for the child, laid over the sanitized base.
+     *
+     * This is the only channel by which a scheduled script can receive a
+     * secret: the command string is visible in `ps` and stored verbatim on
+     * the schedule, so a value that must stay private cannot travel in it.
+     * Callers resolve `${credential:...}` references before calling.
+     */
+    env?: Record<string, string>;
+  },
 ): Promise<ScriptResult> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const cwd = options?.cwd ?? getWorkspaceDir();
@@ -43,7 +55,11 @@ export async function runScript(
   // could still reach an external host at fire time with no human present.
   // Flag it loudly so it's visible in prod logs; the tool-layer gate is the
   // actual closure, so an already-approved schedule is not blocked here.
-  if (/\b(curl|wget|nc|ncat|telnet|sendmail|ssh|scp|sftp)\b|\/dev\/tcp/i.test(command)) {
+  if (
+    /\b(curl|wget|nc|ncat|telnet|sendmail|ssh|scp|sftp)\b|\/dev\/tcp/i.test(
+      command,
+    )
+  ) {
     log.warn(
       { cwd, preview: command.slice(0, 200) },
       "scheduled script reaches the network at fire time (no human in the loop) — review this schedule",
@@ -56,7 +72,7 @@ export async function runScript(
     cwd,
     stdout: "pipe",
     stderr: "pipe",
-    env: buildSanitizedEnv(),
+    env: { ...buildSanitizedEnv(), ...(options?.env ?? {}) },
   });
 
   // Start consuming streams immediately so buffered output is available even on timeout.

@@ -42,6 +42,7 @@ import {
   getScheduleUsageSummaries,
   getSystemTaskUsageSummaries,
 } from "../../schedule/schedule-usage-store.js";
+import { resolveScheduleScriptEnv } from "../../schedule/script-env.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { parseEpochMillisRange } from "./epoch-millis-range.js";
@@ -857,8 +858,15 @@ async function handleRunScheduleNow(id: string) {
         { jobId: schedule.id, name: schedule.name },
         "Executing script schedule manually (run now)",
       );
+      // Same resolution as a scheduled fire: "run now" must not behave
+      // differently from the unattended path it exists to rehearse.
+      const scriptEnv = await resolveScheduleScriptEnv(
+        schedule.id,
+        schedule.scriptEnvJson,
+      );
       const result = await runScript(schedule.script, {
         timeoutMs: schedule.timeoutMs ?? undefined,
+        env: scriptEnv,
       });
       completeScheduleRun(runId, {
         status: result.exitCode === 0 ? "ok" : "error",

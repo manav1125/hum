@@ -35,6 +35,10 @@ export const cronJobs = sqliteTable("cron_jobs", {
     .notNull()
     .default(false), // reuse the same conversation across runs
   script: text("script"), // shell command for script mode (nullable, only used when mode = 'script')
+  // JSON object of env vars for script mode. Values may be
+  // `${credential:service/field}` references, resolved at fire time so the
+  // secret never rests here. Null = no declared environment.
+  scriptEnvJson: text("script_env_json"),
   wakeConversationId: text("wake_conversation_id"), // target conversation for wake mode (nullable)
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),

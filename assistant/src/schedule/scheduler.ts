@@ -30,6 +30,7 @@ import {
   scheduleRetry,
   setScheduleRunConversationId,
 } from "./schedule-store.js";
+import { resolveScheduleScriptEnv } from "./script-env.js";
 
 const log = getLogger("scheduler");
 
@@ -304,8 +305,16 @@ export async function runScheduleDueWorkOnce(
           { jobId: job.id, name: job.name, isOneShot },
           "Executing script schedule",
         );
+        // Resolve the declared environment before running. A credential
+        // reference that cannot be resolved fails the run rather than
+        // starting the script with the variable unset.
+        const scriptEnv = await resolveScheduleScriptEnv(
+          job.id,
+          job.scriptEnvJson,
+        );
         const result: ScriptResult = await runScript(job.script, {
           timeoutMs: job.timeoutMs ?? undefined,
+          env: scriptEnv,
         });
         completeScheduleRun(runId, {
           status: result.exitCode === 0 ? "ok" : "error",

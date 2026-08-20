@@ -72,6 +72,12 @@ export interface ScheduleJob {
   timezone: string | null;
   message: string;
   script: string | null;
+  /**
+   * JSON object of env vars for script mode, whose values may be
+   * `${credential:service/field}` references. Resolved at fire time — the
+   * reference is what is stored, never the secret.
+   */
+  scriptEnvJson: string | null;
   wakeConversationId: string | null;
   nextRunAt: number;
   lastRunAt: number | null;
@@ -184,6 +190,8 @@ export function createSchedule(params: {
   timezone?: string | null;
   message: string;
   script?: string | null;
+  /** JSON env for script mode; values may be `${credential:service/field}`. */
+  scriptEnvJson?: string | null;
   wakeConversationId?: string | null;
   enabled?: boolean;
   createdBy?: string;
@@ -277,6 +285,7 @@ export function createSchedule(params: {
     timezone,
     message: params.message,
     script: params.script ?? null,
+    scriptEnvJson: params.scriptEnvJson ?? null,
     wakeConversationId: params.wakeConversationId ?? null,
     nextRunAt,
     lastRunAt: null as number | null,
@@ -1144,6 +1153,7 @@ function parseJobRow(row: typeof scheduleJobs.$inferSelect): ScheduleJob {
     timezone: row.timezone,
     message: row.message,
     script: row.script ?? null,
+    scriptEnvJson: row.scriptEnvJson ?? null,
     wakeConversationId: row.wakeConversationId ?? null,
     nextRunAt: row.nextRunAt,
     lastRunAt: row.lastRunAt,

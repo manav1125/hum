@@ -323,6 +323,7 @@ export { migrateMoveMemoryV3TablesToMemoryDb } from "./327-move-memory-v3-tables
 export { migrateMoveMemoryJobsToMemoryDb } from "./328-move-memory-jobs-to-memory-db.js";
 export { migrateMemoryNodeInjectionEvents } from "./329-memory-node-injection-events.js";
 export { migrateRitualSnapshots } from "./330-ritual-snapshots.js";
+export { migrateScheduleScriptEnv } from "./331-schedule-script-env.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,
