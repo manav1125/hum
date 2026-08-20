@@ -28,6 +28,41 @@ import {
 
 const log = getLogger("memory-embedding-local");
 
+/** How long to wait for a SIGTERMed worker before escalating to SIGKILL. */
+const WORKER_TERM_GRACE_MS = 2000;
+const WORKER_TERM_POLL_MS = 50;
+
+/**
+ * A process's full command line, read straight from `/proc`, allocating no
+ * subprocess. Returns null when `/proc` is unavailable (macOS) or the process
+ * has exited — callers must treat null as "unknown", never as "not ours".
+ */
+export function readProcCmdline(pid: number): string | null {
+  try {
+    const raw = readFileSync(`/proc/${pid}/cmdline`);
+    if (raw.length === 0) return null;
+    return new TextDecoder().decode(raw).replace(/\0/g, " ").trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decide what a command line says about a PID.
+ *
+ * Split out from the reading so the decision is testable without a live
+ * process: an absent or empty command line is `unknown`, NOT `other`. The
+ * caller's `other` branch drops the PID file without killing, which orphans
+ * a live worker — a verdict we may only reach from evidence we actually read.
+ */
+export function classifyPidCmdline(
+  cmdline: string | null,
+  workerPath: string,
+): "ours" | "other" | "unknown" {
+  if (cmdline == null || cmdline.trim() === "") return "unknown";
+  return cmdline.includes(workerPath) ? "ours" : "other";
+}
+
 interface WorkerResponse {
   id?: number;
   type?: string;
@@ -492,24 +527,87 @@ export class LocalEmbeddingBackend implements EmbeddingBackend {
    * the absolute worker script path, which lives under THIS workspace's
    * embedding-models directory and is therefore unique per instance.
    */
-  private isOurEmbedWorker(pid: number, workerPath: string): boolean {
+  /**
+   * Identify a live PID, WITHOUT forking a subprocess where that is possible.
+   *
+   * `unknown` is a distinct answer from `other` on purpose. Collapsing the
+   * two is what let a 4 GB instance accumulate four 500 MB embed workers and
+   * OOM: identification used to shell out to `ps` via `spawnSync`, and both
+   * a non-zero exit and a throw returned "not ours", whose handler drops the
+   * PID file *without killing*. Under memory pressure the fork for `ps` is
+   * exactly what fails — so the guard against runaway memory broke precisely
+   * when memory was short, orphaned a live worker, and made the pressure
+   * worse on every retry. An infrastructure failure must never be reported
+   * as a judgement that the process is somebody else's.
+   *
+   * Reading `/proc/<pid>/cmdline` allocates no process and cannot fail that
+   * way, so on Linux — every deployed instance — the fragile path is gone.
+   */
+  private identifyPid(
+    pid: number,
+    workerPath: string,
+  ): "ours" | "other" | "unknown" {
+    const fromProc = readProcCmdline(pid);
+    if (fromProc != null) {
+      return classifyPidCmdline(fromProc, workerPath);
+    }
+
+    // No /proc (macOS). `-ww` disables column-width truncation; without it
+    // `ps` clips the command field to the terminal width, cutting off the
+    // workerPath argument. Same flag, same reason, as daemon-control.ts.
     try {
-      // `-ww` disables column-width truncation. Without it, macOS `ps` clips
-      // the command field to the terminal width, which can cut off the
-      // workerPath argument and cause this check to spuriously return false
-      // for genuine orphans. Same flag is used by daemon-control.ts:123 for
-      // exactly this reason.
       const result = Bun.spawnSync({
         cmd: ["ps", "-ww", "-p", String(pid), "-o", "command="],
         stdout: "pipe",
         stderr: "ignore",
       });
-      if (result.exitCode !== 0) return false;
+      if (result.exitCode !== 0) return "unknown";
       const cmd = new TextDecoder().decode(result.stdout).trim();
-      if (!cmd) return false;
-      return cmd.includes(workerPath);
+      return classifyPidCmdline(cmd, workerPath);
     } catch {
-      return false;
+      return "unknown";
+    }
+  }
+
+  /**
+   * Terminate a worker and confirm it is gone, escalating if it is not.
+   *
+   * A worker blocked in a native ONNX call cannot run its JS signal handler,
+   * so a bare SIGTERM is a request, not a guarantee — and the caller drops
+   * the PID file immediately afterwards, so a survivor becomes untracked and
+   * nothing ever tries again.
+   */
+  private terminateWorker(pid: number): void {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      return; // Already gone.
+    }
+    // Brief synchronous grace period: this runs on the spawn path, and
+    // returning before the old worker releases its memory is what we are
+    // trying to avoid.
+    const deadline = Date.now() + WORKER_TERM_GRACE_MS;
+    while (Date.now() < deadline) {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        return; // Exited.
+      }
+      Bun.sleepSync(WORKER_TERM_POLL_MS);
+    }
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    log.warn(
+      { pid },
+      "Embed worker ignored SIGTERM within the grace period; sending SIGKILL",
+    );
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Raced us to exit.
     }
   }
 
@@ -551,7 +649,9 @@ export class LocalEmbeddingBackend implements EmbeddingBackend {
       return;
     }
 
-    if (!this.isOurEmbedWorker(pid, workerPath)) {
+    const identity = this.identifyPid(pid, workerPath);
+
+    if (identity === "other") {
       // PID points to something that isn't this workspace's embed worker —
       // either an unrelated process (PID reuse after the original worker
       // exited) or another assistant instance's worker. Either way, don't
@@ -564,15 +664,24 @@ export class LocalEmbeddingBackend implements EmbeddingBackend {
       return;
     }
 
+    if (identity === "unknown") {
+      // We could not read what this live process is. Saying "not ours" here
+      // is what orphans a running worker — and we are about to spawn another
+      // one beside it, so the cost of being wrong is a leaked ~500 MB that
+      // nothing will ever reclaim. Keep the PID file so the next attempt can
+      // try again, and say so loudly.
+      log.error(
+        { pid, model: this.model },
+        "Could not identify the process holding the embed worker PID file; leaving it in place rather than orphaning a possible live worker",
+      );
+      return;
+    }
+
     log.warn(
       { pid, model: this.model },
       "Found orphaned embed worker from a previous daemon, terminating it",
     );
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {
-      // Race: it exited between the liveness check and the kill — fine.
-    }
+    this.terminateWorker(pid);
     this.removePidFile();
   }
 
