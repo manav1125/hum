@@ -546,10 +546,23 @@ async function dispatchRegistryTool(
   name: string,
   input: Record<string, unknown>,
   ctx: GeminiLiveToolExecutionContext,
+  /**
+   * Heading for the card this result may become. Passing one does NOT force a
+   * card: the result's own shape decides (see {@link withResultCard}), so a
+   * tool that answers in prose — `web_search` returns formatted text — shows
+   * nothing and reads exactly as it did before.
+   */
+  cardTitle?: string,
 ): Promise<Record<string, unknown>> {
   const run = ctx.runRegistryTool ?? runRegistryToolDefault;
   const result = await run(name, input, ctx);
-  return fromToolResult(result);
+  const response = fromToolResult(result);
+  if (cardTitle === undefined) return response;
+  const content =
+    typeof result.content === "string"
+      ? result.content
+      : JSON.stringify(result.content);
+  return withResultCard(response, parseJsonPayload(content), cardTitle, ctx);
 }
 
 // ── get_calendar (Google Calendar via Composio MCP) ──────────────────
@@ -786,7 +799,283 @@ async function executeGetCalendar(
       message: "No calendar events in that range.",
     };
   }
-  return { ok: true, count: events.length, events };
+  return withResultCard(
+    { ok: true, count: events.length, events },
+    events,
+    "Calendar",
+    ctx,
+  );
+}
+
+/**
+ * The presentation plumbing the client's list renderer requires (a stable id
+ * per item) applied to whatever the caller supplied. Shared by `ui_show` and
+ * the derived result cards so both engines' cards are the same object.
+ */
+function normalizeListItems(
+  items: readonly unknown[],
+): Record<string, unknown>[] {
+  return items.map((item, i) => {
+    const record: Record<string, unknown> =
+      item !== null && typeof item === "object" && !Array.isArray(item)
+        ? { ...(item as Record<string, unknown>) }
+        : { title: String(item) };
+    if (typeof record.id !== "string" || record.id.length === 0) {
+      record.id = `item-${i + 1}`;
+    }
+    return record;
+  });
+}
+
+// ── Result cards (shape-driven, not tool-driven) ─────────────────────
+
+/**
+ * A card is a property of the RESULT, not of which tool produced it.
+ *
+ * Before this, a card only appeared if the model made a SECOND call
+ * (`ui_show`) after the data one. On the realtime model that second call is
+ * the step that gets skipped: the owner's report was "I did have to prompt it
+ * to show cards when I was asking for info" — the calendar came back, the
+ * events were spoken, and nothing went on screen. A mandatory prompt rule
+ * naming `ui_show` was already there and did not hold, because a prompt rule
+ * is the same kind of thing that was already being dropped.
+ *
+ * So a list of named records — calendar events, inbox conversations, messages,
+ * contacts, tasks, follow-ups — goes on screen because of its SHAPE, whatever
+ * produced it. Nothing here is keyed to a tool name, so a result that arrives
+ * from a different tool later (a raw connector, a new declaration) is carded on
+ * exactly the same terms with no new wiring.
+ *
+ * Deliberately conservative in both directions:
+ *
+ * - It needs a real collection. A single object (a saved reminder, a "noted"
+ *   confirmation) and prose (`web_search` returns formatted text) derive
+ *   nothing, so an acknowledgement never becomes a card.
+ * - It only reads fields a human would read. A record with no human-legible
+ *   title is dropped, which is also why a calendar event's `attendees` — bare
+ *   email addresses — cannot become a card: no title key, no item.
+ * - It never blocks or fails a tool call. No derivation simply means no card,
+ *   and the model can still call `ui_show` itself (the prompt keeps that path
+ *   open for exactly this case).
+ *
+ * `ui_show` is untouched and still the way the model shows something it
+ * COMPOSED rather than fetched.
+ */
+
+/** Items on one auto-derived card. Enough to scan; a call is not a mailbox. */
+const RESULT_CARD_MAX_ITEMS = 12;
+
+/** Per-field clip. Card lines are glanced at, not read. */
+const RESULT_CARD_TEXT_CHARS = 140;
+
+/** Fields a human-legible heading can come from, best first. */
+const RESULT_CARD_TITLE_KEYS = [
+  "title",
+  "name",
+  "summary",
+  "subject",
+  "label",
+  "headline",
+] as const;
+
+/** Fields the supporting line can come from, best first. */
+const RESULT_CARD_DETAIL_KEYS = [
+  "subtitle",
+  "snippet",
+  "preview",
+  "description",
+  "topic",
+  "text",
+  "body",
+  "location",
+  "status",
+] as const;
+
+function cardText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > RESULT_CARD_TEXT_CHARS
+    ? `${trimmed.slice(0, RESULT_CARD_TEXT_CHARS - 1)}…`
+    : trimmed;
+}
+
+function firstCardText(
+  record: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  for (const key of keys) {
+    const text = cardText(record[key]);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/**
+ * Render an event time from the LITERAL fields of its ISO string — never via
+ * Date, which would re-express the user's 9am meeting in the daemon's timezone
+ * (the daemon runs in a datacenter; the user does not). A calendar time already
+ * carries the offset it should be read in, so the digits are taken as written.
+ */
+function cardTimeLabel(start: unknown, end: unknown): string | undefined {
+  const from = eventTime(start);
+  if (!from) return undefined;
+  const date = /^(\d{4})-(\d{2})-(\d{2})/.exec(from);
+  const day = date
+    ? `${Number(date[3])} ${MONTHS[Number(date[2]) - 1] ?? ""}`.trim()
+    : undefined;
+  const clock = /T(\d{2}:\d{2})/.exec(from);
+  if (!clock) return day ? `${day}, all day` : undefined;
+  const to = eventTime(end);
+  const endLabel =
+    typeof to === "string" && to.slice(0, 10) === from.slice(0, 10)
+      ? /T(\d{2}:\d{2})/.exec(to)?.[1]
+      : undefined;
+  const time = endLabel ? `${clock[1]}–${endLabel}` : clock[1];
+  return day ? `${day}, ${time}` : time;
+}
+
+interface ResultCardItem {
+  title: string;
+  subtitle?: string;
+}
+
+/**
+ * One record → one card line, or `null` when there is no human-legible heading
+ * in it (an id-and-email blob, a settings object, a number).
+ */
+function shapeResultCardItem(raw: unknown): ResultCardItem | null {
+  const plain = cardText(raw);
+  if (plain) return { title: plain };
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return null;
+  const record = raw as Record<string, unknown>;
+
+  let title = firstCardText(record, RESULT_CARD_TITLE_KEYS);
+  if (!title) {
+    // Message-shaped: the person is the heading and the message is the line.
+    const sender = record.sender;
+    if (
+      sender !== null &&
+      typeof sender === "object" &&
+      !Array.isArray(sender)
+    ) {
+      title = cardText((sender as Record<string, unknown>).name);
+    }
+  }
+  if (!title) return null;
+
+  const parts: string[] = [];
+  const when =
+    cardTimeLabel(record.start, record.end) ??
+    cardTimeLabel(record.start_time, record.end_time) ??
+    cardTimeLabel(record.when, undefined) ??
+    cardTimeLabel(record.fire_at, undefined);
+  if (when) parts.push(when);
+  const unread = record.unreadCount;
+  if (typeof unread === "number" && unread > 0) {
+    parts.push(`${unread} unread`);
+  }
+  const detail = firstCardText(record, RESULT_CARD_DETAIL_KEYS);
+  if (detail && detail !== title) parts.push(detail);
+
+  const subtitle = cardText(parts.join(" · "));
+  return { title, ...(subtitle ? { subtitle } : {}) };
+}
+
+/**
+ * Find the collection worth showing inside an arbitrary result envelope
+ * (Composio wraps under `data`, Google under `items`, a skill tool may return
+ * the array bare). A candidate only counts when at least one of its entries
+ * shapes into a card line, which is what keeps `defaultReminders`, `attendees`
+ * and other machinery arrays from winning. Ties go to the longest.
+ */
+function findResultCardArray(node: unknown, depth = 0): unknown[] | null {
+  if (node === null || typeof node !== "object" || Array.isArray(node)) {
+    return null;
+  }
+  if (depth > 3) return null;
+  let best: unknown[] | null = null;
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    const candidate =
+      Array.isArray(value) &&
+      value.some((entry) => shapeResultCardItem(entry) !== null)
+        ? value
+        : findResultCardArray(value, depth + 1);
+    if (candidate && (best === null || candidate.length > best.length)) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/** The card lines a result yields, or `null` when it is not something to look at. */
+export function deriveResultCardItems(
+  payload: unknown,
+): ResultCardItem[] | null {
+  const array = Array.isArray(payload) ? payload : findResultCardArray(payload);
+  if (!array) return null;
+  const items = array
+    .map(shapeResultCardItem)
+    .filter((item): item is ResultCardItem => item !== null)
+    .slice(0, RESULT_CARD_MAX_ITEMS);
+  return items.length > 0 ? items : null;
+}
+
+/** Parse a tool's raw content, or `undefined` when it is not JSON (prose). */
+function parseJsonPayload(content: string): unknown {
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What the model is told when the bridge has already put the result on screen.
+ * Phrased as an instruction because that is how this bridge talks to the model
+ * everywhere else, and because the two failures to prevent are it reading the
+ * card aloud item by item and it showing a second, duplicate one.
+ */
+const RESULT_CARD_NOTE =
+  "Already on the user's screen as a card. Summarize aloud in a sentence or two; do not read the items out, and do not call ui_show for this result.";
+
+/**
+ * Show a successful result if its shape is worth looking at, and tell the model
+ * it is up. A no-op for an error, for a call with no screen attached, and for a
+ * result that derives nothing — in all three the response is returned verbatim.
+ */
+function withResultCard(
+  response: Record<string, unknown>,
+  payload: unknown,
+  title: string,
+  ctx: GeminiLiveToolExecutionContext,
+): Record<string, unknown> {
+  if (response.ok !== true || !ctx.showCard) return response;
+  const items = deriveResultCardItems(payload);
+  if (!items) return response;
+  ctx.showCard({
+    surfaceId: randomUUID(),
+    surfaceType: "list",
+    title,
+    data: { items: normalizeListItems(items), selectionMode: "none" },
+  });
+  return { ...response, on_screen: RESULT_CARD_NOTE };
 }
 
 // ── ui_show (voice tile subset) ──────────────────────────────────────
@@ -825,16 +1114,7 @@ function executeUiShow(
     // The voice model reliably produces titles but not ids or selection
     // modes; default the presentation plumbing so the client's list renderer
     // (which requires both) accepts the card.
-    data.items = data.items.map((item, i) => {
-      const record: Record<string, unknown> =
-        item !== null && typeof item === "object" && !Array.isArray(item)
-          ? { ...(item as Record<string, unknown>) }
-          : { title: String(item) };
-      if (typeof record.id !== "string" || record.id.length === 0) {
-        record.id = `item-${i + 1}`;
-      }
-      return record;
-    });
+    data.items = normalizeListItems(data.items);
     if (typeof data.selectionMode !== "string") {
       data.selectionMode = "none";
     }
@@ -989,14 +1269,26 @@ export async function executeGeminiLiveFunctionCall(
           .filter((w) => OPEN_STATUSES.has(w.status))
           .slice(0, 10)
           .map((w) => ({ title: w.title, status: w.status }));
-        return wrap({ ok: true, count: open.length, tasks: open });
+        return wrap(
+          withResultCard(
+            { ok: true, count: open.length, tasks: open },
+            open,
+            "Your tasks",
+            ctx,
+          ),
+        );
       }
 
       case "web_search": {
         const query = String(call.args.query ?? "").trim();
         if (!query) return wrap({ ok: false, error: "empty query" });
         return wrap(
-          await dispatchRegistryTool("web_search", { query, count: 5 }, ctx),
+          await dispatchRegistryTool(
+            "web_search",
+            { query, count: 5 },
+            ctx,
+            "Search results",
+          ),
         );
       }
 
@@ -1022,6 +1314,7 @@ export async function executeGeminiLiveFunctionCall(
             "schedule_list",
             jobId ? { job_id: jobId } : {},
             ctx,
+            "Reminders",
           ),
         );
       }
@@ -1076,6 +1369,7 @@ export async function executeGeminiLiveFunctionCall(
               limit: 5,
             },
             ctx,
+            "Contacts",
           ),
         );
       }
@@ -1087,6 +1381,7 @@ export async function executeGeminiLiveFunctionCall(
             "followup_list",
             overdueOnly ? { overdue_only: true } : {},
             ctx,
+            "Waiting on replies",
           ),
         );
       }
@@ -1102,6 +1397,7 @@ export async function executeGeminiLiveFunctionCall(
             "messaging_list_conversations",
             { limit },
             ctx,
+            "Inbox",
           ),
         );
       }
@@ -1121,6 +1417,7 @@ export async function executeGeminiLiveFunctionCall(
             "messaging_read",
             { conversation_id: conversationId, limit },
             ctx,
+            "Messages",
           ),
         );
       }

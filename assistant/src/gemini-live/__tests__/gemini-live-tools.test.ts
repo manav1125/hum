@@ -29,6 +29,7 @@ const {
   GEMINI_LIVE_REGISTRY_TOOL_ALLOWLIST,
   GEMINI_LIVE_TOOL_SCHEMA_BUDGET_BYTES,
   GEMINI_LIVE_VOICE_SKILLS,
+  deriveResultCardItems,
   geminiLiveDeclarationsJsonBytes,
 } = await import("../gemini-live-tools.js");
 
@@ -667,5 +668,215 @@ describe("unknown functions", () => {
     expect(response.ok).toBe(false);
     expect(response.error).toContain("isn't available in this call");
     expect(registryCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * Result cards: the card comes from the SHAPE of what came back, not from the
+ * model remembering to make a second `ui_show` call after the data one.
+ *
+ * The reported defect — "I did have to prompt it to show cards when I was
+ * asking for info, and it displayed weather but not the rest" — is that second
+ * call being skipped. The prompt already carried a mandatory rule naming
+ * `ui_show` for calendar results and it did not hold, so these assert the half
+ * that does not depend on the model: given a result, does a card exist.
+ *
+ * The behaviour these cannot prove is the model's spoken half (that it
+ * summarizes rather than reads the card out, and does not add a duplicate of
+ * its own). Only a live call shows that.
+ */
+describe("result cards (shape-driven)", () => {
+  test("calendar events go on screen with no ui_show call at all", async () => {
+    const { ctx, cards } = makeCtx({
+      content: JSON.stringify({
+        successful: true,
+        data: {
+          items: [
+            {
+              status: "confirmed",
+              summary: "Investor sync",
+              location: "Zoom",
+              start: { dateTime: "2026-08-10T09:00:00+08:00" },
+              end: { dateTime: "2026-08-10T09:45:00+08:00" },
+              attendees: [
+                { email: "alice@example.com" },
+                { email: "bob@example.com" },
+              ],
+            },
+            {
+              status: "confirmed",
+              summary: "Block: deep work",
+              start: { date: "2026-08-11" },
+              end: { date: "2026-08-12" },
+            },
+          ],
+        },
+      }),
+    });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "get_calendar", args: {} },
+      { ...ctx, isToolRegistered: () => true },
+    );
+
+    expect(cards).toHaveLength(1);
+    const card = cards[0]!;
+    expect(card.surfaceType).toBe("list");
+    expect(card.title).toBe("Calendar");
+    const items = (card.data as { items: Array<Record<string, unknown>> })
+      .items;
+    expect(items.map((i) => i.title)).toEqual([
+      "Investor sync",
+      "Block: deep work",
+    ]);
+    // The event's own offset is read as written — never re-expressed in the
+    // daemon's timezone, which is not the user's.
+    expect(items[0]!.subtitle).toBe("10 Aug, 09:00–09:45 · Zoom");
+    expect(items[1]!.subtitle).toBe("11 Aug, all day");
+    // Attendees are a count on the spoken result and cannot reach the card:
+    // a bare {email} record has no human-legible title, so it is not an item.
+    expect(JSON.stringify(card)).not.toContain("@example.com");
+
+    // And the model is told it is up, so it summarizes instead of listing.
+    const response = out.response as { ok: boolean; on_screen?: string };
+    expect(response.ok).toBe(true);
+    expect(response.on_screen).toContain("Already on the user's screen");
+    expect(response.on_screen).toContain("do not call ui_show");
+  });
+
+  test("an inbox listing cards itself, unread counts and all", async () => {
+    const { ctx, cards } = makeCtx({
+      content: JSON.stringify([
+        {
+          id: "c1",
+          name: "Ravi Menon",
+          type: "inbox",
+          unreadCount: 3,
+          topic: "Term sheet",
+        },
+        { id: "c2", name: "Newsletters", type: "inbox", unreadCount: 0 },
+      ]),
+    });
+    await executeGeminiLiveFunctionCall({ name: "check_inbox", args: {} }, ctx);
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.title).toBe("Inbox");
+    const items = (cards[0]!.data as { items: Array<Record<string, unknown>> })
+      .items;
+    expect(items.map((i) => i.title)).toEqual(["Ravi Menon", "Newsletters"]);
+    expect(items[0]!.subtitle).toBe("3 unread · Term sheet");
+    // Zero unread contributes nothing rather than "0 unread".
+    expect(items[1]!.subtitle).toBeUndefined();
+    // The client's list renderer requires ids; the derived card has them, the
+    // same way `ui_show`'s does.
+    expect(items.map((i) => i.id)).toEqual(["item-1", "item-2"]);
+  });
+
+  test("messages are headed by the person, not the body", async () => {
+    const { ctx, cards } = makeCtx({
+      content: JSON.stringify([
+        {
+          id: "m1",
+          conversationId: "c1",
+          sender: { id: "u1", name: "Ravi Menon" },
+          text: "Sending the revised terms tonight.",
+          timestamp: 1,
+        },
+      ]),
+    });
+    await executeGeminiLiveFunctionCall(
+      { name: "read_messages", args: { conversation_id: "c1" } },
+      ctx,
+    );
+
+    expect(cards).toHaveLength(1);
+    const items = (cards[0]!.data as { items: Array<Record<string, unknown>> })
+      .items;
+    expect(items[0]!.title).toBe("Ravi Menon");
+    expect(items[0]!.subtitle).toBe("Sending the revised terms tonight.");
+  });
+
+  test("a prose answer is not a card (web_search reads as text)", async () => {
+    const { ctx, cards } = makeCtx({
+      content: "1. Luigi's Hot Pizza — open until 2am\n2. Warung Bu Mi — 24h",
+    });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "web_search", args: { query: "late night food canggu" } },
+      ctx,
+    );
+    expect(cards).toHaveLength(0);
+    expect(out.response).not.toHaveProperty("on_screen");
+  });
+
+  test("a confirmation is not a card", async () => {
+    const { ctx, cards } = makeCtx({
+      content: JSON.stringify({
+        id: "job_9",
+        name: "Call mum",
+        mode: "notify",
+      }),
+    });
+    await executeGeminiLiveFunctionCall(
+      {
+        name: "set_reminder",
+        args: { message: "Call mum", when: "2026-08-21T17:00:00" },
+      },
+      ctx,
+    );
+    expect(cards).toHaveLength(0);
+  });
+
+  test("an empty collection shows nothing rather than an empty card", async () => {
+    const { ctx, cards } = makeCtx({ content: JSON.stringify([]) });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "check_inbox", args: {} },
+      ctx,
+    );
+    expect(cards).toHaveLength(0);
+    expect(out.response).not.toHaveProperty("on_screen");
+  });
+
+  test("a failed call never cards and never claims a screen", async () => {
+    const { ctx, cards } = makeCtx({
+      content: JSON.stringify([{ name: "Ravi Menon", unreadCount: 3 }]),
+      isError: true,
+    });
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "check_inbox", args: {} },
+      ctx,
+    );
+    expect(cards).toHaveLength(0);
+    const response = out.response as { ok: boolean; on_screen?: string };
+    expect(response.ok).toBe(false);
+    expect(response.on_screen).toBeUndefined();
+  });
+
+  test("with no screen attached the result is unchanged, not an error", async () => {
+    const out = await executeGeminiLiveFunctionCall(
+      { name: "check_inbox", args: {} },
+      {
+        conversationId: "conv-1",
+        runRegistryTool: async () => ({
+          content: JSON.stringify([{ name: "Ravi Menon", unreadCount: 3 }]),
+          isError: false,
+        }),
+      },
+    );
+    const response = out.response as { ok: boolean; on_screen?: string };
+    expect(response.ok).toBe(true);
+    expect(response.on_screen).toBeUndefined();
+  });
+
+  test("machinery arrays cannot beat the real collection", () => {
+    // The Composio calendar envelope carries `defaultReminders` and every
+    // event carries `attendees`; neither has a human-legible title, so the
+    // items array is the only candidate.
+    const items = deriveResultCardItems({
+      defaultReminders: [{ method: "popup", minutes: 10 }],
+      items: [
+        { summary: "Standup", attendees: [{ email: "alice@example.com" }] },
+        { summary: "Review" },
+      ],
+    });
+    expect(items?.map((i) => i.title)).toEqual(["Standup", "Review"]);
   });
 });

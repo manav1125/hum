@@ -436,6 +436,30 @@ describe("gemini-live answer-vs-file routing rules", () => {
     // sentence that lied was a claim, not an action.
     expect(text).toContain("This binds the words you SAY");
   });
+
+  test("the card rule tells the model the card is already there", async () => {
+    // "I did have to prompt it to show cards when I was asking for info" — the
+    // old rule ordered a SECOND call (`ui_show`) after every data call, and
+    // that is the call the realtime model drops. A list result now goes on
+    // screen from the bridge, by shape, so the prompt's job is to stop the
+    // model reading it out or duplicating it — while keeping ui_show available
+    // for what it composes itself, and as the fallback when nothing was shown.
+    //
+    // Shape guard on the bytes that go upstream, not proof of behaviour: what
+    // the model does with the sentence only a live call shows.
+    const text = await instruction();
+
+    expect(text).toContain("goes onto their screen by itself");
+    expect(text).toContain("do NOT call ui_show for that same result");
+    expect(text).toContain(
+      "If the result does not say it is on screen and it is still worth seeing, call ui_show yourself",
+    );
+    // The calendar rule keeps its mandatory half (call get_calendar, answer
+    // only from it) and no longer orders a card the bridge already put up.
+    expect(text).toContain("always call get_calendar");
+    expect(text).toContain("the events go on their screen by themselves");
+    expect(text).not.toContain("put the events on screen with ui_show");
+  });
 });
 
 /**
