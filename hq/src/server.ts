@@ -17,7 +17,7 @@
  *                               customer's instance (fresh magic link),
  *                               falling back to /account
  *   POST /testflight            { email } → {ok} (idempotent interest event)
- *   GET  /downloads/cue-macos.dmg — DMG from HQ_DOWNLOADS_DIR (branded 404)
+ *   GET  /downloads/cue-macos.dmg — 302 to the current GitHub release asset
  *   GET  /skills/{slug}         — public shareable skill page (share.ts:
  *                               static catalog/seed-source render, OG tags,
  *                               install CTA; zero customer data)
@@ -1591,28 +1591,30 @@ export function createHandler(
   }
 
   /**
-   * GET /downloads/cue-macos.dmg — the macOS app image, served from
-   * HQ_DOWNLOADS_DIR (default /data/downloads; the DMG is uploaded to the
-   * volume out-of-band — see README). Missing file ⇒ a friendly branded 404.
+   * GET /downloads/cue-macos.dmg — redirects to the current release on GitHub.
+   *
+   * This used to serve a DMG copied onto the volume out-of-band, which drifted:
+   * the volume still held 0.0.1 long after newer builds shipped, so everyone
+   * downloading from the site got a stale app. GitHub Releases is where the
+   * app's own auto-updater reads from, so pointing the download at the same
+   * place leaves exactly one artifact per version and nothing to keep in sync.
+   *
+   * `MAC_RELEASE` is the only thing to bump when cutting a desktop release;
+   * the public /downloads/cue-macos.dmg URL never changes.
+   *
+   * HQ_MAC_DOWNLOAD_URL overrides the target entirely if distribution ever
+   * moves off GitHub.
    */
-  function handleMacDownload(method: string): Response {
-    const dir = process.env.HQ_DOWNLOADS_DIR ?? "/data/downloads";
-    const filePath = join(dir, "cue-macos.dmg");
-    if (!existsSync(filePath) || !statSync(filePath).isFile()) {
-      return new Response(renderDownloadMissingPage(), {
-        status: 404,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    }
-    const size = statSync(filePath).size;
-    return new Response(method === "HEAD" ? null : Bun.file(filePath), {
-      headers: {
-        "Content-Type": "application/x-apple-diskimage",
-        "Content-Length": String(size),
-        "Content-Disposition": 'attachment; filename="cue-macos.dmg"',
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "no-cache",
-      },
+  function handleMacDownload(_method: string): Response {
+    const MAC_RELEASE = "v1.0.0";
+    const target =
+      process.env.HQ_MAC_DOWNLOAD_URL ??
+      `https://github.com/manav1125/cue-releases/releases/download/${MAC_RELEASE}/Cue-${MAC_RELEASE.slice(
+        1,
+      )}-arm64.dmg`;
+    return new Response(null, {
+      status: 302,
+      headers: { Location: target, "Cache-Control": "no-cache" },
     });
   }
 
@@ -1936,44 +1938,6 @@ export function createHandler(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Branded 404 for /downloads when the DMG hasn't been uploaded yet.
-// Matches the site's dark palette (#0F1620 / #3D6EE8) with system fonts —
-// self-contained, no external assets.
-// ---------------------------------------------------------------------------
-
-function renderDownloadMissingPage(): string {
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
-<title>Cue — download not ready</title>
-<style>
-  :root { color-scheme: dark; }
-  body { margin:0; min-height:100vh; display:flex; align-items:center;
-         justify-content:center; background:#0F1620; color:#E6ECF5;
-         font:15px/1.6 -apple-system, "SF Pro Text", "Segoe UI", sans-serif; }
-  .card { max-width:420px; padding:40px 32px; text-align:center; }
-  .mark { width:44px; height:44px; border-radius:12px; background:#1A2230;
-          border:1.5px solid rgba(255,255,255,.18); display:inline-flex;
-          align-items:center; justify-content:center; position:relative;
-          font-size:24px; font-weight:600; color:#fff; }
-  .mark i { position:absolute; width:7px; height:7px; border-radius:50%;
-            background:#3D6EE8; right:9px; bottom:11px; }
-  h1 { font-size:22px; font-weight:600; letter-spacing:-.02em; margin:22px 0 0; }
-  p { color:#AEB7C7; font-size:14px; margin:12px 0 0; }
-  a { display:inline-block; margin-top:22px; background:#3D6EE8; color:#fff;
-      text-decoration:none; border-radius:10px; padding:11px 20px;
-      font-size:13.5px; font-weight:500; }
-</style></head><body>
-<div class="card">
-  <span class="mark">C<i></i></span>
-  <h1>This download isn't ready yet.</h1>
-  <p>The Cue for Mac installer is being prepared. Check back shortly, or email hello@justcue.ai and we'll send it your way.</p>
-  <a href="/account">Back to your account</a>
-</div>
-</body></html>`;
-}
 
 // ---------------------------------------------------------------------------
 // Admin dashboard — one server-rendered page, inline CSS, dark.

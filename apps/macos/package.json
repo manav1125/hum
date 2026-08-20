@@ -1,6 +1,6 @@
 {
   "name": "@vellumai/macos",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Electron wrapper for the Cue macOS app.",
   "main": "out/main/index.js",

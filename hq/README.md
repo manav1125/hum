@@ -118,7 +118,7 @@ price-id → env-var mapping to paste into the environment.
 | `HQ_PUBLIC_SITE_URL` | Marketing-site base URL; wins over `HQ_PUBLIC_URL` for checkout success/cancel redirects and emailed links. HQ serves the site itself, so point this at HQ's own origin |
 | `HQ_SITE_DIR` | Directory of the static marketing/commerce site (default: repo-root `site/`) |
 | `HQ_SESSION_SECRET` | HMAC key for the customer `/account` session cookie + enables `/signin`. Unset ⇒ site auth routes answer 503 |
-| `HQ_DOWNLOADS_DIR` | Directory HQ serves app downloads from (default `/data/downloads`). `GET /downloads/cue-macos.dmg` streams `cue-macos.dmg` from here; a missing file answers a friendly branded 404 |
+| `HQ_MAC_DOWNLOAD_URL` | Overrides where `GET /downloads/cue-macos.dmg` redirects (302). Unset ⇒ the current GitHub release asset on `manav1125/cue-releases`, which is also where the app's auto-updater reads from |
 | `RESEND_API_KEY` | Resend secret for transactional email. Unset ⇒ log-only mode: every would-be email (incl. its action link) is printed at info level |
 | `EMAIL_FROM` | From header for transactional email (default `Cue <hello@justcue.ai>`) |
 | `KLAVIYO_PRIVATE_KEY` | Klaviyo private API key (`pk_…`) for lifecycle event sync (see "Klaviyo sync"). Unset ⇒ no-op: every would-be event is logged at info level, nothing is sent |
@@ -353,15 +353,20 @@ wires the site):
 - **`POST /testflight`** — body `{email}` → `{ok}` (repeat submissions:
   `{ok, existing: true}`). Records a `testflight_interest` event,
   idempotent per email — the account page's "Join the TestFlight" capture.
-- **`GET /downloads/cue-macos.dmg`** — the macOS app image, streamed from
-  `HQ_DOWNLOADS_DIR` (default `/data/downloads`) with
-  `application/x-apple-diskimage` + `Content-Length`. Missing file ⇒
-  branded 404 page. The DMG is uploaded to the Fly volume out-of-band:
+- **`GET /downloads/cue-macos.dmg`** — 302 to the current macOS release asset
+  on GitHub (`manav1125/cue-releases`), which is also where the desktop app's
+  auto-updater reads from. One artifact per version, nothing to keep in sync.
 
-  ```bash
-  flyctl ssh console -a cue-hq -C "mkdir -p /data/downloads"
-  flyctl ssh sftp put ./Cue.dmg /data/downloads/cue-macos.dmg -a cue-hq
-  ```
+  This previously streamed a DMG copied onto the Fly volume out-of-band, and it
+  drifted: the volume still held 0.0.1 long after newer builds shipped, so every
+  site download handed out a stale app.
+
+  Cutting a desktop release: build with
+  `bash apps/macos/scripts/pack.sh --environment production` (see the packaging
+  notes for the signing env), publish the dmg/zip/blockmaps/`latest-mac.yml` to a
+  GitHub release tagged `v<version>`, then bump `MAC_RELEASE` in
+  `handleMacDownload` (`src/server.ts`). Set `HQ_MAC_DOWNLOAD_URL` to point the
+  redirect elsewhere entirely.
 
 ## Fly release flow (build once, deploy many)
 

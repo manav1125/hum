@@ -1,14 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { HqDb } from "../db.js";
 import { MockDriver } from "../providers/mock-driver.js";
 import { createHandler } from "../server.js";
 
 const savedEnv: Record<string, string | undefined> = {};
-const ENV_KEYS = ["HQ_DOWNLOADS_DIR", "HQ_SITE_DIR", "HQ_SESSION_SECRET"];
+const ENV_KEYS = ["HQ_MAC_DOWNLOAD_URL", "HQ_SITE_DIR", "HQ_SESSION_SECRET"];
 beforeEach(() => {
   for (const k of ENV_KEYS) {
     savedEnv[k] = process.env[k];
@@ -30,51 +27,33 @@ function setup() {
 }
 
 describe("GET /downloads/cue-macos.dmg", () => {
-  test("serves the DMG from HQ_DOWNLOADS_DIR with the right headers", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hq-downloads-"));
-    try {
-      const bytes = Buffer.from("not-really-a-dmg-but-bytes");
-      writeFileSync(join(dir, "cue-macos.dmg"), bytes);
-      process.env.HQ_DOWNLOADS_DIR = dir;
-      const { handle } = setup();
-
-      const res = await handle(
-        new Request("http://hq.local/downloads/cue-macos.dmg"),
-      );
-      expect(res.status).toBe(200);
-      expect(res.headers.get("content-type")).toBe(
-        "application/x-apple-diskimage",
-      );
-      expect(res.headers.get("content-length")).toBe(String(bytes.length));
-      expect(res.headers.get("content-disposition")).toContain(
-        "cue-macos.dmg",
-      );
-      expect(Buffer.from(await res.arrayBuffer()).equals(bytes)).toBe(true);
-
-      // HEAD answers headers only.
-      const head = await handle(
-        new Request("http://hq.local/downloads/cue-macos.dmg", {
-          method: "HEAD",
-        }),
-      );
-      expect(head.status).toBe(200);
-      expect(head.headers.get("content-length")).toBe(String(bytes.length));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  test("missing file answers a friendly branded 404 page", async () => {
-    process.env.HQ_DOWNLOADS_DIR = "/nonexistent-downloads-dir";
+  test("redirects to the current GitHub release asset", async () => {
     const { handle } = setup();
     const res = await handle(
       new Request("http://hq.local/downloads/cue-macos.dmg"),
     );
-    expect(res.status).toBe(404);
-    expect(res.headers.get("content-type")).toContain("text/html");
-    const html = await res.text();
-    expect(html).toContain("Cue");
-    expect(html).toContain("isn't ready yet");
+    expect(res.status).toBe(302);
+    const loc = res.headers.get("location") ?? "";
+    // The public URL is stable; only the release tag moves. Assert the shape
+    // so a version bump does not need this test edited, but a broken target does.
+    expect(loc).toMatch(
+      /^https:\/\/github\.com\/manav1125\/cue-releases\/releases\/download\/v[\d.]+\/Cue-[\d.]+-arm64\.dmg$/,
+    );
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+  });
+
+  test("HQ_MAC_DOWNLOAD_URL overrides the target", async () => {
+    process.env.HQ_MAC_DOWNLOAD_URL = "https://example.com/custom.dmg";
+    try {
+      const { handle } = setup();
+      const res = await handle(
+        new Request("http://hq.local/downloads/cue-macos.dmg"),
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("https://example.com/custom.dmg");
+    } finally {
+      delete process.env.HQ_MAC_DOWNLOAD_URL;
+    }
   });
 });
 
