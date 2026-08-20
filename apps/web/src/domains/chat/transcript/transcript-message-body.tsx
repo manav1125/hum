@@ -136,6 +136,14 @@ export function TranscriptMessageBody({
     return () => document.removeEventListener("pointerdown", onDocPointerDown);
   }, [revealed]);
 
+  // A tap on the bubble reveals the action row — including on Slack-sourced
+  // messages, which used to navigate straight to Slack from anywhere in the
+  // body. That early return meant the row never revealed, and since touch has
+  // no hover the row is unreachable without it: Copy, Retry, Bookmark, Fork,
+  // "Summarize up to here" and Inspect were all off the table on the device
+  // Cue is used from most. Slack is still one tap away — the row renders an
+  // explicit "Open in Slack" link — which also keeps navigating off-app an
+  // affordance the user aims at rather than a hidden whole-bubble target.
   const handleBubbleClick = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
       const target = e.target as Element | null;
@@ -143,16 +151,10 @@ export function TranscriptMessageBody({
         return;
       }
 
-      if (slackMessageUrl && isPointerCoarse()) {
-        if (window.getSelection()?.toString()) return;
-        window.open(slackMessageUrl, "_blank", "noopener,noreferrer");
-        return;
-      }
-
       if (!isPointerCoarse()) return;
       setRevealed((v) => !v);
     },
-    [slackMessageUrl],
+    [],
   );
 
   const linkedSubagentEntries = useSubagentStore((s) =>

@@ -391,7 +391,12 @@ describe("TranscriptMessageBody", () => {
     ).toBe("https://example.slack.com/archives/C123/p1710000000000300");
   });
 
-  test("opens Slack from the message body on coarse pointers", () => {
+  // A Slack-sourced body used to navigate to Slack on tap and return early, so
+  // the action row never revealed — and on touch there is no hover to fall back
+  // on, which took Copy, Retry, Bookmark, Fork, "Summarize up to here" and
+  // Inspect away from the phone entirely. The tap now reveals the row like any
+  // other message; Slack is reached through the row's own explicit link.
+  test("reveals the action row instead of navigating on coarse pointers", () => {
     const originalMatchMedia = window.matchMedia;
     const originalOpen = window.open;
     const openMock = mock(() => null);
@@ -412,7 +417,7 @@ describe("TranscriptMessageBody", () => {
     window.open = openMock as unknown as typeof window.open;
 
     try {
-      const { getByTestId } = render(
+      const { container, getByTestId, getByRole } = render(
         <TranscriptMessageBody
           message={{
             id: "slack-1",
@@ -431,13 +436,17 @@ describe("TranscriptMessageBody", () => {
         />,
       );
 
+      expect(container.querySelector('[data-revealed="true"]')).toBeNull();
+
       fireEvent.click(getByTestId("markdown"));
 
-      expect(openMock).toHaveBeenCalledWith(
-        "https://example.slack.com/archives/C123/p1710000000000300",
-        "_blank",
-        "noopener,noreferrer",
-      );
+      expect(openMock).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-revealed="true"]')).not.toBeNull();
+      // Slack is still reachable from the revealed row, by an element the user
+      // aims at rather than the whole bubble.
+      expect(
+        getByRole("link", { name: "Open in Slack" }).getAttribute("href"),
+      ).toBe("https://example.slack.com/archives/C123/p1710000000000300");
     } finally {
       Object.defineProperty(window, "matchMedia", {
         configurable: true,
