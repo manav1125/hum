@@ -3,6 +3,7 @@ import type { McpServerManager } from "../../mcp/manager.js";
 import { RiskLevel } from "../../permissions/types.js";
 import { toProviderSafeToolName } from "../provider-tool-name.js";
 import { schemaDefinesProperty } from "../schema-transforms.js";
+import { boundOutput } from "../shared/output-spill.js";
 import type { Tool, ToolContext, ToolExecutionResult } from "../types.js";
 import { recordComposioToolOutcome } from "./composio-tool-health.js";
 
@@ -55,6 +56,16 @@ function resolveRiskLevel(
  * Create a Tool object from MCP tool metadata.
  * The tool delegates execution to the McpServerManager.
  */
+/**
+ * Character bound on one MCP tool result before it is spilled to a file.
+ *
+ * Deliberately larger than the 20k shell bound: an MCP result is usually the
+ * answer itself (a page, a record set) rather than a command's chatter, so
+ * cutting it early costs more than it saves. It is still a bound — the point
+ * is that there was none.
+ */
+const MAX_MCP_RESULT_CHARS = 60_000;
+
 export function createMcpTool(
   metadata: McpToolMetadata,
   serverId: string,
@@ -106,8 +117,17 @@ export function createMcpTool(
           content: result.content,
           isError: result.isError,
         });
+        // An MCP server's result reached the model unbounded: one large
+        // payload could spend the entire context window with nothing able to
+        // stop it, and these are third-party servers whose response size we do
+        // not control. Bound it and spill the rest so nothing is lost.
+        const bounded = boundOutput(
+          result.content,
+          MAX_MCP_RESULT_CHARS,
+          `mcp-${serverId}-${metadata.name}`,
+        );
         return {
-          content: result.content,
+          content: bounded.content,
           isError: result.isError,
         };
       } catch (err) {

@@ -4,13 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { safeStringSlice } from "../../util/unicode.js";
+import { cleanupSpilledFiles } from "./output-spill.js";
 
 export const MAX_OUTPUT_LENGTH = 20_000;
 
 /** Tracks temp files created for truncated shell output so they can be cleaned up on shutdown. */
 const trackedTempFiles = new Set<string>();
 
-/** Remove all tracked truncated-output temp files. Safe to call multiple times. */
+/**
+ * Remove every spilled-output file this process created. Safe to call twice.
+ *
+ * Covers both this module's own shell spills and anything `output-spill` wrote
+ * for other tools, so the shutdown handler stays a single call.
+ */
 export function cleanupShellOutputTempFiles(): void {
   for (const filePath of trackedTempFiles) {
     try {
@@ -20,6 +26,7 @@ export function cleanupShellOutputTempFiles(): void {
     }
   }
   trackedTempFiles.clear();
+  cleanupSpilledFiles();
 }
 
 export interface ShellOutputResult {
