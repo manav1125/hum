@@ -91,8 +91,17 @@ describe("ruling 2 — an abandoned mission keeps its ring", () => {
     ).toBe("needs_you");
   });
 
-  test("an ordinary active mission is on track", () => {
-    expect(ringStatusFor(mission())).toBe("on_track");
+  test("a mission with NO work items reads stalled, not on track", () => {
+    // CHANGED 2026-08-20, deliberately. This previously asserted `on_track`
+    // for a mission whose counts are all zero — no items queued, running,
+    // waiting or even created. A full green tick is a claim about progress,
+    // and there had been none: this is the "it says it is running but nothing
+    // is happening" report, asserted as correct behaviour.
+    //
+    // It is the same argument the `moving` test below already makes one level
+    // down — that a live mission and an untouched one must not draw the same
+    // calm tick — carried to the case where nothing exists at all.
+    expect(ringStatusFor(mission())).toBe("stalled");
   });
 });
 
@@ -177,5 +186,49 @@ describe("v35 · V3 — the arc IS the status, never a quantity", () => {
     // …and the labels are all distinct, so the word always separates them.
     const labels = Object.values(RING_META).map((m) => m.label);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+describe("`on_track` stops absorbing three different realities", () => {
+  const withCounts = (over: Record<string, number>) =>
+    mission({
+      rollup: {
+        counts: { ...NO_COUNTS, ...over },
+        projects: [],
+        spentCents: 0,
+        budgetCents: null,
+      },
+    } as Partial<MissionLike>);
+
+  test("queued work IS on track — it is scheduled and will run", () => {
+    expect(withCounts({ queued: 2, open: 2, total: 2 })).toBeDefined();
+    expect(ringStatusFor(withCounts({ queued: 2, open: 2, total: 2 }))).toBe(
+      "on_track",
+    );
+  });
+
+  test("everything done IS on track — a genuine tick", () => {
+    expect(ringStatusFor(withCounts({ done: 5, total: 5 }))).toBe("on_track");
+  });
+
+  test("MUTATION CHECK: a failure with nothing requeued is not on track", () => {
+    // The exact reported shape: work exists, the last of it failed, nothing
+    // was queued behind it, and nobody paused the mission — so it is not
+    // `blocked` either. Before this split it drew the same green tick as a
+    // mission that had finished everything successfully.
+    expect(ringStatusFor(withCounts({ failed: 2, done: 1, total: 3 }))).toBe(
+      "stalled",
+    );
+  });
+
+  test("stalled is NOT blocked — nothing stopped it", () => {
+    // Geometry must stay unambiguous between the two: blocked is a stub the
+    // owner has to act on, stalled is an absence.
+    expect(RING_META.stalled.arc).not.toBe(RING_META.blocked.arc);
+    expect(RING_META.stalled.color).not.toBe(RING_META.blocked.color);
+  });
+
+  test("the label states the fact rather than judging it", () => {
+    expect(RING_META.stalled.label).toBe("nothing running");
   });
 });

@@ -6,7 +6,9 @@
  * Also owns the honest phase-1 ring derivation: a mission ring is
  *   blocked   → paused, or stopped at its budget ceiling
  *   needs_you → any linked work item awaiting review
- *   on_track  → otherwise
+ *   moving    → something is running right now
+ *   on_track  → work is queued, or everything linked is done
+ *   stalled   → nothing queued, running or waiting, and it is not stopped
  * (% progress is phase 2 — it appears only when a real metric is connected.)
  */
 
@@ -77,8 +79,33 @@ export function ringStatusFor(m: Mission): RingStatus {
   // single abandoned mission left the rings dark entirely.
   if (m.status === "abandoned") return "blocked";
   if (m.status === "paused" || budgetStopped) return "blocked";
-  if (m.rollup.counts.awaiting_review > 0) return "needs_you";
-  if (m.rollup.counts.running > 0) return "moving";
+  const c = m.rollup.counts;
+  if ((c.awaiting_review ?? 0) > 0) return "needs_you";
+  if ((c.running ?? 0) > 0) return "moving";
+
+  // Every count is read defensively: a rollup that arrives without a field
+  // must not fall through to a confident green tick. A number we cannot read
+  // is not evidence of progress.
+  //
+  // Past this point `open === queued`, because `open` is defined server-side as
+  // queued + running + awaiting_review and the other two are now known zero
+  // (mission-store.ts computeMissionRollup).
+  //
+  // `on_track` used to be the else branch, so it absorbed three different
+  // realities and drew the same full green ✓ for all of them. Only one of them
+  // is actually on track.
+  if ((c.queued ?? 0) > 0) return "on_track"; // scheduled work that will run
+
+  // No work items exist at all: nothing has started, so a ✓ is a claim about
+  // progress that never happened.
+  if ((c.total ?? 0) === 0) return "stalled";
+
+  // Something failed and nothing was queued behind it. The mission is not
+  // blocked — nobody stopped it — but it is not progressing either, and this
+  // is the shape the owner reported as "running but no work is happening".
+  if ((c.failed ?? 0) > 0) return "stalled";
+
+  // Everything linked is done. That is a genuine ✓.
   return "on_track";
 }
 

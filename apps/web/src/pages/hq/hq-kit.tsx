@@ -21,7 +21,12 @@ import { C, mono, serif } from "@/domains/activity/theme";
 export { C, mono, serif };
 
 /** The honest ring state. Never a percentage — see {@link StatusRing}. */
-export type RingStatus = "on_track" | "needs_you" | "moving" | "blocked";
+export type RingStatus =
+  | "on_track"
+  | "needs_you"
+  | "moving"
+  | "stalled"
+  | "blocked";
 
 export const RING_META: Record<
   RingStatus,
@@ -47,6 +52,17 @@ export const RING_META: Record<
   on_track: { glyph: "✓", label: "on track", color: C.green, arc: 1 },
   needs_you: { glyph: "!", label: "needs you", color: C.amber, arc: 1 },
   moving: { glyph: "", label: "moving", color: C.blue, arc: 0.76 },
+  // Nothing is queued, nothing is running, nothing is waiting on you — and the
+  // mission is not stopped either. This state exists because `on_track` used to
+  // absorb it, so a mission with no work items at all, and a mission whose last
+  // item failed and was never requeued, both drew a full green ✓. That is the
+  // "it says it is running but nothing is happening" report.
+  //
+  // Muted rather than red: an absence is not an alarm, and nothing here has
+  // gone wrong that the owner must answer. The arc is deliberately neither a
+  // stub (that is `blocked`, and geometry must not be ambiguous between the
+  // two) nor a full circle (which reads as settled).
+  stalled: { glyph: "◦", label: "nothing running", color: C.t3, arc: 0.42 },
   // A stub, not a ring: blocked is the one state that should look interrupted
   // rather than merely tinted.
   blocked: { glyph: "◼", label: "blocked", color: C.danger, arc: 0.17 },

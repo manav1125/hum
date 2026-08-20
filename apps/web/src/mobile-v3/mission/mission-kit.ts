@@ -187,6 +187,14 @@ export function missionStatusLabel(mission: Mission): {
           ? "moving"
           : ring === "needs_you"
             ? "needs you"
-            : "blocked";
-  return { text: `Mission · ${leg}`, tone: ring === "moving" ? "on_track" : ring };
+            : ring === "stalled"
+              ? "nothing running"
+              : "blocked";
+  // `stalled` is folded into the `blocked` HUE for the same reason `moving` is
+  // folded into `on_track`: the phone's tone set is a palette, not a state
+  // machine. "Not progressing" is the honest half these two share, and the
+  // word carries the difference — nothing stopped a stalled mission.
+  const tone =
+    ring === "moving" ? "on_track" : ring === "stalled" ? "blocked" : ring;
+  return { text: `Mission · ${leg}`, tone };
 }

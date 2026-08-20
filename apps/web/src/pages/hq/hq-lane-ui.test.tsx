@@ -57,7 +57,22 @@ function mission(over: Partial<Mission> & { id: string }): Mission {
     title: over.id,
     budgetCents: null,
     spentCents: 0,
-    rollup: { counts: { awaiting_review: 0 }, projects: [] },
+    // A complete counts object with work actually queued. The partial one this
+    // used to carry left `total` undefined, which the ring derivation now
+    // refuses to read as healthy — correctly, but these fixtures are meant to
+    // be ORDINARY missions with work scheduled, not empty ones.
+    rollup: {
+      counts: {
+        queued: 2,
+        running: 0,
+        awaiting_review: 0,
+        done: 0,
+        failed: 0,
+        open: 2,
+        total: 2,
+      },
+      projects: [],
+    },
     ...over,
   } as unknown as Mission;
 }

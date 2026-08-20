@@ -141,7 +141,20 @@ describe("missionStatusLabel", () => {
     status: "active",
     budgetCents: null,
     spentCents: 0,
-    rollup: { counts: { awaiting_review: 0 } },
+    // A complete counts object: the partial one this used to carry made
+    // `total` undefined, which is precisely the unreadable-count case the ring
+    // derivation now refuses to treat as healthy.
+    rollup: {
+      counts: {
+        queued: 1,
+        running: 0,
+        awaiting_review: 0,
+        done: 0,
+        failed: 0,
+        open: 1,
+        total: 1,
+      },
+    },
   } as unknown as Mission;
 
   test("legs: on track / needs you / paused / achieved", () => {
@@ -158,5 +171,24 @@ describe("missionStatusLabel", () => {
     expect(
       missionStatusLabel({ ...base, status: "achieved" } as Mission).text,
     ).toBe("Mission · achieved");
+  });
+
+  test("a mission with nothing running says so, and is not toned on_track", () => {
+    const idle = {
+      ...base,
+      rollup: {
+        counts: {
+          queued: 0,
+          running: 0,
+          awaiting_review: 0,
+          done: 0,
+          failed: 0,
+          open: 0,
+          total: 0,
+        },
+      },
+    } as unknown as Mission;
+    expect(missionStatusLabel(idle).text).toBe("Mission · nothing running");
+    expect(missionStatusLabel(idle).tone).not.toBe("on_track");
   });
 });
