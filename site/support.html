@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Cue — Support</title>
+<meta name="description" content="Get help with Cue — contact support, common questions, and how to export or delete your data.">
+<meta name="robots" content="index,follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300..700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:#0F1620;font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .sp-body p{font-size:15px;line-height:1.75;color:#43505F;margin:0 0 16px}
+  .sp-body h2{font-size:20px;font-weight:600;letter-spacing:-.3px;color:#101828;margin:38px 0 12px;scroll-margin-top:90px}
+  .sp-body a{color:#2B53C4}
+  @media (max-width:860px){ [data-nav-links]{display:none !important} }
+</style>
+</helmet>
+
+<!-- ░░ NAV ░░ -->
+<div style="position:sticky;top:0;z-index:50;background:rgba(15,22,32,.86);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.07)">
+  <div style="max-width:1080px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:15px clamp(20px,4vw,36px)">
+    <a href="index.html" style="display:flex;align-items:center;gap:9px;text-decoration:none;color:#fff"><span style="width:30px;height:30px;border-radius:9px;background:#1A2230;border:1.5px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;position:relative"><span style="font-size:17px;font-weight:600;color:#fff">C</span><span style="position:absolute;width:5px;height:5px;border-radius:50%;background:#3D6EE8;right:6px;bottom:8px"></span></span><b style="font-size:20px;font-weight:500;letter-spacing:-.9px">cue<span style="color:#3D6EE8">.</span></b></a>
+    <div data-nav-links style="display:flex;align-items:center;gap:24px;font-size:12.5px;color:rgba(255,255,255,.72)">
+      <a href="product.html" style="color:inherit;text-decoration:none">Product</a>
+      <a href="pricing.html" style="color:inherit;text-decoration:none">Pricing</a>
+      <a href="signin.html" style="background:#3D6EE8;color:#fff;border-radius:8px;padding:7px 14px;font-weight:500;text-decoration:none">Sign in</a>
+    </div>
+  </div>
+</div>
+
+<!-- ░░ HEADER ░░ -->
+<div style="background:#fff;padding:clamp(36px,6vh,60px) clamp(20px,4vw,36px) 0">
+  <div style="max-width:1000px;margin:0 auto">
+    <h1 style="font-size:clamp(30px,4.6vw,44px);font-weight:600;letter-spacing:-.03em;color:#101828;margin:0">Support</h1>
+    <div style="font-size:15px;color:#5A6672;margin-top:12px;max-width:620px;line-height:1.65">Something not working, or a question about your Cue? Write to us — a person reads every message.</div>
+  </div>
+</div>
+
+<!-- ░░ CONTACT CARD ░░ -->
+<div style="background:#fff;padding:clamp(24px,4vh,36px) clamp(20px,4vw,36px) 0">
+  <div style="max-width:680px;margin:0 auto;background:#F4F7FC;border:1px solid #D9E2F5;border-left:3px solid #3D6EE8;border-radius:12px;padding:22px 24px">
+    <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.14em;color:#8D99A5;margin-bottom:10px">CONTACT</div>
+    <div style="font-size:19px;font-weight:600;color:#101828;margin-bottom:6px"><a href="mailto:hello@justcue.ai" style="color:#2B53C4;text-decoration:none">hello@justcue.ai</a></div>
+    <div style="font-size:14px;line-height:1.65;color:#43505F">We aim to reply within two business days. Include your account email and, if you're reporting a problem, what you expected to happen and what happened instead.</div>
+  </div>
+</div>
+
+<!-- ░░ BODY ░░ -->
+<div style="background:#fff;padding:clamp(20px,3vh,32px) clamp(20px,4vw,36px) clamp(60px,9vh,100px)">
+  <div class="sp-body" style="max-width:680px;margin:0 auto">
+
+    <h2 id="access">Getting access</h2>
+    <p>Cue is in invite-only early access. If you don't have an invite yet, request one from the <a href="index.html#waitlist">home page</a> and we'll be in touch — we invite people in small batches.</p>
+    <p>If you have an invite, open it on the device you want to use and follow the link. It signs you in and connects the app to your own Cue.</p>
+
+    <h2 id="signin">Signing in</h2>
+    <p>Cue signs you in with a magic link rather than a password. Enter your email in the app and we'll send a link that signs you in when you open it.</p>
+    <p>If the link doesn't arrive, check your spam folder, then confirm you used the same address your invite was sent to. Links expire after a short time — request a fresh one rather than reusing an old email.</p>
+
+    <h2 id="mobile">The iPhone app</h2>
+    <p>The iPhone app is a client for your own Cue instance, so you need an account before it can show you anything. Once you've signed in once, the app remembers your instance and opens straight into it.</p>
+    <p>For voice, allow microphone access when prompted. For approvals to reach you while the app is closed, allow notifications. Both can be changed later in iOS Settings under Cue.</p>
+
+    <h2 id="connect">Connecting your tools</h2>
+    <p>Open Connectors in the app to link email, calendar, messaging, and the other tools you use. Each connection is scoped — you choose what Cue is allowed to do with it, and you can change or revoke that at any time.</p>
+    <p>If a connection stops working, disconnect and reconnect it; the most common cause is an access token revoked on the provider's side.</p>
+
+    <h2 id="control">Stopping or limiting your assistant</h2>
+    <p>Cue asks before anything consequential leaves your hands. You can tighten or loosen this per tool and per agent in Guardrails, and set a spending cap for any agent that runs on its own.</p>
+    <p>Any run can be stopped while it's in progress. Stop always wins.</p>
+
+    <h2 id="data">Your data — export and deletion</h2>
+    <p>You can see what Cue knows about you in Memory, and edit or delete any individual memory. You can export your data, and you can delete your account and its instance entirely from your account settings, or by emailing us.</p>
+    <p>How long data is kept, and when it's purged from backups, is set out in the <a href="/privacy">Privacy Policy</a>.</p>
+
+    <h2 id="billing">Billing</h2>
+    <p>Manage your plan, payment method, and invoices from your <a href="account.html">account page</a>. Upgrades are prorated immediately; downgrades take effect at the end of the current period. You can cancel at any time and keep access until the period you've paid for ends.</p>
+
+    <h2 id="security">Reporting a security issue</h2>
+    <p>If you believe you've found a vulnerability, email <a href="mailto:hello@justcue.ai">hello@justcue.ai</a> with the details and please give us a reasonable chance to fix it before disclosing it publicly. We'll acknowledge your report and keep you posted on the fix.</p>
+
+    <div style="margin-top:40px;padding-top:20px;border-top:1px solid #E5E9F0;font-size:13px;color:#8D99A5">See also the <a href="/terms" style="color:#2B53C4;text-decoration:none">Terms of Service</a> and <a href="/privacy" style="color:#2B53C4;text-decoration:none">Privacy Policy</a>.</div>
+  </div>
+</div>
+
+<!-- ░░ FOOTER ░░ -->
+<div style="background:#0F1620;color:rgba(255,255,255,.55);font-size:13px;padding:34px clamp(20px,4vw,36px)">
+  <div style="max-width:1000px;margin:0 auto;display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+    <span>© 2026 Cue. All rights reserved.</span>
+    <span style="display:flex;gap:18px;flex-wrap:wrap"><a href="index.html" style="color:inherit;text-decoration:none">Home</a><a href="pricing.html" style="color:inherit;text-decoration:none">Pricing</a><a href="/terms" style="color:inherit;text-decoration:none">Terms</a><a href="/privacy" style="color:inherit;text-decoration:none">Privacy</a><a href="mailto:hello@justcue.ai" style="color:inherit;text-decoration:none">hello@justcue.ai</a></span>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

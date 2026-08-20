@@ -111,11 +111,20 @@ function contentTypeFor(path: string): string {
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
 }
 
-/** Checkout-redirect contract → designed pages. */
+/**
+ * Checkout-redirect contract → designed pages, plus the two legal URLs.
+ *
+ * /privacy and /terms both resolve to legal.html, which picks the document to
+ * show from the path. They are aliases rather than files because the App Store
+ * listing and the app both publish stable /privacy and /terms links, and those
+ * must not depend on the page's internal toggle state.
+ */
 const ALIASES: Record<string, string> = {
   "/": "index.html",
   "/checkout/success": "welcome.html",
   "/checkout/cancel": "pricing.html",
+  "/privacy": "legal.html",
+  "/terms": "legal.html",
 };
 
 /**
