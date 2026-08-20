@@ -31,4 +31,7 @@ IPHONEOS_DEPLOYMENT_TARGET = 15.0
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
 PRODUCT_NAME = $(TARGET_NAME)
 SWIFT_VERSION = 5.0
-TARGETED_DEVICE_FAMILY = 1,2
+// iPhone only. A universal binary makes App Store Connect demand a 12.9" iPad
+// screenshot set, and the app has no iPad layout - at that size it falls back to
+// the desktop web UI. Ship iPhone-first; widen this when iPad is actually designed.
+TARGETED_DEVICE_FAMILY = 1
