@@ -73,12 +73,30 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
   homeStateGet: () => Promise.reject(new Error("daemon unreachable")),
 }));
 
-/** The consent step's policy write — real HTTP, and not what is under test. */
-const setAutonomyPoliciesMock = mock(() => Promise.resolve({}));
+/**
+ * The gateway's policy endpoint — both halves.
+ *
+ * The write is real HTTP and never what is under test, so it is always a spy.
+ * The READ is under test: the consent switches are seeded from it, and the
+ * whole point of `sources` is that a mode alone cannot be read back as an
+ * answer. `instanceHolds` below is how a test states what the gateway returns;
+ * unset, it rejects, which is the unreachable case.
+ */
+const setAutonomyPoliciesMock = mock((..._args: unknown[]) =>
+  Promise.resolve({}),
+);
+let policyState: {
+  policies: Record<string, string>;
+  sources: Record<string, string>;
+} | null = null;
 const realAutonomy = await import("@/lib/autonomy-policies-api");
 mock.module("@/lib/autonomy-policies-api", () => ({
   ...realAutonomy,
   setAutonomyPolicies: setAutonomyPoliciesMock,
+  getAutonomyPolicyState: () =>
+    policyState
+      ? Promise.resolve(policyState)
+      : Promise.reject(new Error("gateway unreachable")),
 }));
 
 const { SelfHostIntro } = await import("./self-host-intro");
@@ -99,6 +117,8 @@ let queryClient: QueryClient;
 beforeEach(() => {
   localStorage.clear();
   currentUser = null;
+  policyState = null;
+  setAutonomyPoliciesMock.mockClear();
   navigateMock.mockClear();
   persistConsentMock.mockClear();
   setPendingPreChatContextMock.mockClear();
@@ -158,6 +178,67 @@ function instanceSays(state: {
 
 function advance(name: string) {
   fireEvent.click(screen.getByRole("button", { name }));
+}
+
+/**
+ * Put a policy map in front of the consent screen.
+ *
+ * `stored` is the list of categories the instance has an ANSWER for; every
+ * other category is reported at its mode but attributed to the gateway's own
+ * defaults, which is the distinction the whole feature turns on. Calling this
+ * with no `stored` entries is a never-configured instance.
+ */
+function instanceHolds(
+  policies: Partial<Record<string, string>>,
+  stored: string[] = [],
+) {
+  useResolvedAssistantsStore.setState({ activeAssistantId: ASSISTANT_ID });
+  policyState = {
+    // The gateway always resolves a complete map; these are its own defaults.
+    policies: {
+      research: "auto",
+      draft: "auto",
+      send: "auto",
+      money: "ask",
+      delete: "ask",
+      other: "auto",
+      ...policies,
+    },
+    sources: Object.fromEntries(
+      ["research", "draft", "send", "money", "delete", "other"].map((c) => [
+        c,
+        stored.includes(c) ? "stored" : "default",
+      ]),
+    ),
+  };
+}
+
+/**
+ * Wait for the policy read to land.
+ *
+ * Needed wherever the seeded values are INDISTINGUISHABLE from the shipped
+ * defaults — a fresh instance is exactly that case, so without an explicit
+ * synchronisation point those tests would pass on the blind path and never
+ * exercise the seed they exist to pin.
+ */
+async function policyReadLands() {
+  await waitFor(() =>
+    expect(
+      queryClient.getQueryState(["autonomy-policies", ASSISTANT_ID])?.status,
+    ).toBe("success"),
+  );
+}
+
+const switchState = (name: string) =>
+  screen.getByRole("switch", { name }).getAttribute("aria-checked");
+
+/** The map actually PUT to the gateway, once the write has happened. */
+async function writtenPolicies(): Promise<Record<string, string>> {
+  await waitFor(() => expect(setAutonomyPoliciesMock).toHaveBeenCalled());
+  return setAutonomyPoliciesMock.mock.calls.at(-1)?.[1] as Record<
+    string,
+    string
+  >;
 }
 
 describe("the honest landing", () => {
@@ -321,6 +402,157 @@ describe("M8 · three cards, and send-and-spend is off", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Send and spend" }));
     advance("Continue");
     expect(readConsentScopes("user-1").send_spend).toBe(true);
+  });
+});
+
+/**
+ * The second-device reset.
+ *
+ * `cue:signon:introDone` is device-scoped by design, so this screen replays on
+ * every new laptop against an instance that already holds policy — and it used
+ * to start its switches at the frozen defaults and PUT all six categories on
+ * Continue. An owner who had set research or draft to "never" in Guardrails got
+ * both back at "auto" for clicking a button that never mentioned them: autonomy
+ * widened that nobody asked for.
+ *
+ * The naive fix is a trap of its own, and the second block below is the one
+ * that pins it: the gateway's own default is `send: "auto"`, so seeding from a
+ * plain read-back would render "Send and spend" ON for every brand-new
+ * instance — the exact default that had a background run email a partner with
+ * no approval. Seeding is allowed only from categories the gateway reports as
+ * `stored`.
+ *
+ * MUTATION CHECK (run by hand; each does go red):
+ *   · `seedConsentScopes`: drop the `if (!view.answered[scope]) continue;`
+ *     guard → "a never-configured instance does not turn the send card on"
+ *     fails, and so does "…and Continue still writes send: ask".
+ *   · `seedConsentScopes`: `return { ...DEFAULT_CONSENT_SCOPES }` unconditionally
+ *     (i.e. never seed) → the two "reflects what the instance holds" tests fail.
+ *   · `consentPolicyWrite`: return `promised` in full for the blind branch →
+ *     "a gateway that never answered is not written over" fails.
+ *   · `consentPolicyWrite`: drop the `strictest(...)` floor → "a stricter
+ *     choice this screen never mentioned is not relaxed" fails.
+ */
+describe("an instance with policy is not reset by a new device", () => {
+  function reachConsent() {
+    renderIntro();
+    advance("Continue");
+  }
+
+  test("the switches reflect what the instance holds, not the shipped defaults", async () => {
+    // The reported case: both tightened to "never" in Guardrails.
+    instanceHolds({ research: "never", draft: "never" }, ["research", "draft"]);
+    reachConsent();
+    await waitFor(() => expect(switchState("Read and organise")).toBe("false"));
+    expect(switchState("Draft and prepare")).toBe("false");
+  });
+
+  test("…and Continue writes those choices back rather than widening them", async () => {
+    instanceHolds({ research: "never", draft: "never" }, ["research", "draft"]);
+    reachConsent();
+    await waitFor(() => expect(switchState("Read and organise")).toBe("false"));
+    advance("Continue");
+
+    const written = await writtenPolicies();
+    // The regression, stated the way it failed: these came back as "auto".
+    expect(written.research).toBe("never");
+    expect(written.draft).toBe("never");
+  });
+
+  test("a stricter choice this screen never mentioned is not relaxed", async () => {
+    // Neither card says anything about money or deletion, so a "never" the
+    // owner set for either must survive a Continue — the promised "ask" would
+    // be a loosening the user was never shown.
+    instanceHolds({ money: "never", delete: "never" }, ["money", "delete"]);
+    reachConsent();
+    await waitFor(() => expect(switchState("Send and spend")).toBe("false"));
+    advance("Continue");
+
+    const written = await writtenPolicies();
+    expect(written.money).toBe("never");
+    expect(written.delete).toBe("never");
+  });
+
+  test("an owner who genuinely turned sending on sees it on", async () => {
+    instanceHolds({ send: "auto" }, ["send"]);
+    reachConsent();
+    await waitFor(() => expect(switchState("Send and spend")).toBe("true"));
+    advance("Continue");
+    expect((await writtenPolicies()).send).toBe("auto");
+  });
+
+  test("a switch the user moved wins over a seed that lands afterwards", async () => {
+    // The seed and the user disagree, so this can only pass one way: the
+    // instance holds send: "never" (which seeds the card OFF) and the user
+    // turns it ON while the read is still in flight.
+    instanceHolds({ send: "never", research: "never" }, ["send", "research"]);
+    reachConsent();
+    expect(switchState("Send and spend")).toBe("false");
+    fireEvent.click(screen.getByRole("switch", { name: "Send and spend" }));
+    expect(switchState("Send and spend")).toBe("true");
+
+    // The read lands — visible on the card nobody touched…
+    await waitFor(() => expect(switchState("Read and organise")).toBe("false"));
+    // …and it must not have reached under the user and flipped theirs back.
+    expect(switchState("Send and spend")).toBe("true");
+    advance("Continue");
+    expect((await writtenPolicies()).send).toBe("auto");
+  });
+});
+
+describe("…but a default is never mistaken for an answer", () => {
+  function reachConsent() {
+    renderIntro();
+    advance("Continue");
+  }
+
+  test("a never-configured instance does not turn the send card on", async () => {
+    // The gateway reports send: "auto" — its own default, for an instance
+    // nobody has ever configured. Seeding from the mode alone would show this
+    // card ON to every brand-new user.
+    instanceHolds({}, []);
+    reachConsent();
+    await policyReadLands();
+    expect(switchState("Send and spend")).toBe("false");
+    expect(switchState("Read and organise")).toBe("true");
+  });
+
+  test("…and Continue still writes send: ask, explicitly", async () => {
+    instanceHolds({}, []);
+    reachConsent();
+    await policyReadLands();
+    advance("Continue");
+    const written = await writtenPolicies();
+    expect(written.send).toBe("ask");
+    expect(written.money).toBe("ask");
+  });
+
+  test("a gateway that never answered is not written over", async () => {
+    // policyState stays null → the read rejects. We know nothing about this
+    // instance, so the categories whose "on" is only our own default must be
+    // left alone; the PUT upserts just the keys it is given.
+    useResolvedAssistantsStore.setState({ activeAssistantId: ASSISTANT_ID });
+    reachConsent();
+    expect(switchState("Send and spend")).toBe("false");
+    advance("Continue");
+
+    const written = await writtenPolicies();
+    expect(written.research).toBeUndefined();
+    expect(written.draft).toBeUndefined();
+    expect(written.other).toBeUndefined();
+    // The card's promise is still kept — skipping `send` would leave the
+    // gateway's "auto" in force and make the copy a lie.
+    expect(written.send).toBe("ask");
+  });
+
+  test("…yet a card the user actually touched is still honoured", async () => {
+    useResolvedAssistantsStore.setState({ activeAssistantId: ASSISTANT_ID });
+    reachConsent();
+    fireEvent.click(screen.getByRole("switch", { name: "Read and organise" }));
+    advance("Continue");
+
+    // An answer given on this screen is an answer, unreachable gateway or not.
+    expect((await writtenPolicies()).research).toBe("never");
   });
 });
 

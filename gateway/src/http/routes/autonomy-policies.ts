@@ -7,13 +7,39 @@
  *   - "ask":   always prompt
  *   - "never": always deny
  *
- * GET  /v1/permissions/autonomy-policies → { policies: Record<category, mode> }
- *      with SAFE DEFAULTS filled in for any category that has no stored row.
+ * GET  /v1/permissions/autonomy-policies → { policies, sources }
+ *      `policies` has SAFE DEFAULTS filled in for any category with no stored
+ *      row; `sources` says, per category, which of the two you are looking at.
  * PUT  /v1/permissions/autonomy-policies validates mode ∈ {auto,ask,never}
  *      and upserts the provided category rows.
  *
  * The gateway is the sole owner of this persistence (NOT localStorage, NOT
  * daemon files). The daemon reads the resolved map over IPC.
+ *
+ * WHY `sources` EXISTS
+ * --------------------
+ * A resolved map cannot be read back as a user's answer. `send: "auto"` is
+ * both the value an owner picks when they want unattended sending AND the
+ * value this file hands out to an instance nobody has ever configured — and a
+ * client that cannot tell those apart either re-asks a question already
+ * answered or, worse, presents a default as if it were a choice.
+ *
+ * The first-run consent screen (`domains/onboarding/signon/consent-scopes.ts`)
+ * is the caller that made this load-bearing: its gate is device-scoped on
+ * purpose, so it replays on every new laptop against an instance that may
+ * already hold real policy. It must seed its switches from what the instance
+ * holds — but only where "what the instance holds" is an ANSWER. Seeding from
+ * the resolved map instead would render its "Send and spend" card ON for every
+ * brand-new instance, which is precisely the default this project already had
+ * a background run email a partner over.
+ *
+ * Nothing new is stored to support this. A row in `autonomy_category_policies`
+ * exists if and only if somebody wrote that category, so the table has always
+ * carried the distinction; `resolveAutonomyPolicies` simply discarded it while
+ * overlaying defaults. `sources` stops discarding it. That is why this, rather
+ * than an "answered" marker alongside the map: a marker is a second fact that
+ * can disagree with the first, and every future writer would have to remember
+ * to set it. The row cannot drift from itself.
  */
 
 import { sql } from "drizzle-orm";
@@ -40,6 +66,22 @@ export type AutonomyCategory = (typeof AUTONOMY_CATEGORIES)[number];
 
 export const AUTONOMY_MODES = ["auto", "ask", "never"] as const;
 export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
+
+/**
+ * Where a category's resolved mode came from.
+ *
+ * `"stored"` — a row exists, so a human (or a client acting on a human's
+ *   answer) wrote this. It is a choice and may be read back as one.
+ * `"default"` — no row. The mode is this file's opinion, not the user's, and a
+ *   client must not present it as an answer.
+ */
+export const AUTONOMY_POLICY_SOURCES = ["stored", "default"] as const;
+export type AutonomyPolicySource = (typeof AUTONOMY_POLICY_SOURCES)[number];
+
+export type AutonomyPolicyState = {
+  policies: Record<AutonomyCategory, AutonomyMode>;
+  sources: Record<AutonomyCategory, AutonomyPolicySource>;
+};
 
 /**
  * DEFAULTS — applied when a category has no stored row.
@@ -74,26 +116,47 @@ function isValidMode(value: unknown): value is AutonomyMode {
   );
 }
 
+/** Every category attributed to the defaults — the "we know nothing" map. */
+function allDefaultSources(): Record<AutonomyCategory, AutonomyPolicySource> {
+  return Object.fromEntries(
+    AUTONOMY_CATEGORIES.map((category) => [category, "default" as const]),
+  ) as Record<AutonomyCategory, AutonomyPolicySource>;
+}
+
 /**
- * Resolve the full policy map: start from the safe defaults, then overlay any
- * stored rows. Centralized so the GET handler and the IPC handler share one
- * source of truth for the defaults.
+ * Resolve the full policy map AND its provenance: start from the safe
+ * defaults, then overlay any stored rows, marking each overlaid category
+ * `"stored"`.
+ *
+ * A row whose mode fails validation is left at the default AND left marked
+ * `"default"`: we have a row but no usable answer in it, and reporting that as
+ * a choice would let a corrupt write masquerade as consent.
  */
-export function resolveAutonomyPolicies(): Record<
-  AutonomyCategory,
-  AutonomyMode
-> {
+export function resolveAutonomyPolicyState(): AutonomyPolicyState {
   const policies: Record<AutonomyCategory, AutonomyMode> = {
     ...SAFE_DEFAULT_POLICIES,
   };
+  const sources = allDefaultSources();
   const db = getGatewayDb();
   const rows = db.select().from(autonomyCategoryPolicies).all();
   for (const row of rows) {
     if (isValidCategory(row.category) && isValidMode(row.mode)) {
       policies[row.category] = row.mode;
+      sources[row.category] = "stored";
     }
   }
-  return policies;
+  return { policies, sources };
+}
+
+/**
+ * The resolved map alone, for callers that only enforce it. The daemon's IPC
+ * reader is one: enforcement acts on the mode and has no use for who chose it.
+ */
+export function resolveAutonomyPolicies(): Record<
+  AutonomyCategory,
+  AutonomyMode
+> {
+  return resolveAutonomyPolicyState().policies;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,13 +166,18 @@ export function resolveAutonomyPolicies(): Record<
 export function createAutonomyPoliciesGetHandler() {
   return async (_req: Request): Promise<Response> => {
     try {
-      const policies = resolveAutonomyPolicies();
-      return Response.json({ policies });
+      return Response.json(resolveAutonomyPolicyState());
     } catch (err) {
       log.error({ err }, "Failed to read autonomy policies");
       // Fail closed: on a DB read error, still return the SAFE defaults rather
-      // than an error the UI might paper over with stale or absent values.
-      return Response.json({ policies: { ...SAFE_DEFAULT_POLICIES } });
+      // than an error the UI might paper over with stale or absent values —
+      // and attribute every one of them to the defaults, because a read that
+      // did not happen is the one case where we provably know nothing about
+      // what the user chose.
+      return Response.json({
+        policies: { ...SAFE_DEFAULT_POLICIES },
+        sources: allDefaultSources(),
+      });
     }
   };
 }
@@ -183,8 +251,10 @@ export function createAutonomyPoliciesPutHandler() {
           .run();
       }
       // Return the full resolved map so the client always has the complete,
-      // defaults-applied view after a write.
-      return Response.json({ policies: resolveAutonomyPolicies() });
+      // defaults-applied view after a write — with provenance, so a client that
+      // writes and then re-reads sees the categories it just wrote flip to
+      // "stored" rather than having to assume it.
+      return Response.json(resolveAutonomyPolicyState());
     } catch (err) {
       log.error({ err }, "Failed to upsert autonomy policies");
       return Response.json({ error: "Internal server error" }, { status: 500 });

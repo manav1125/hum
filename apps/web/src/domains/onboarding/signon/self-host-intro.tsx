@@ -27,6 +27,7 @@
  * made and the arc runs exactly as before.
  */
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import {
@@ -44,10 +45,14 @@ import { persistConsentForUser } from "@/utils/onboarding-cleanup";
 import { routes } from "@/utils/routes";
 import { haptic } from "@/utils/haptics";
 
+import { getAutonomyPolicyState } from "@/lib/autonomy-policies-api";
+
 import {
   applyConsentScopes,
-  DEFAULT_CONSENT_SCOPES,
+  consentInstanceView,
+  seedConsentScopes,
   persistConsentScopes,
+  type ConsentInstanceView,
   type ConsentScopeId,
   type ConsentScopes,
 } from "./consent-scopes";
@@ -304,11 +309,43 @@ const CONSENT_CARDS: Array<{
   },
 ];
 
-function ConsentStep({ onNext }: { onNext: () => void }) {
-  const [scopes, setScopes] = useState<ConsentScopes>({
-    ...DEFAULT_CONSENT_SCOPES,
+/**
+ * What the instance already holds, in the three cards' terms — or `null`.
+ *
+ * Advisory in exactly the way `useInstanceFacts` is: nothing renders behind it,
+ * no button waits on it, `retry: false`, and every unknown (no assistant yet,
+ * gateway unreachable, request in flight, request failed) collapses to `null`.
+ * `null` is not a guess in the permissive direction — `seedConsentScopes` reads
+ * it as the shipped defaults, which keeps "Send and spend" off, and
+ * `consentPolicyWrite` reads it as "do not touch what you did not read".
+ */
+function useConsentInstanceView(
+  assistantId: string | null,
+): ConsentInstanceView | null {
+  const { data } = useQuery({
+    queryKey: ["autonomy-policies", assistantId],
+    queryFn: () => getAutonomyPolicyState(assistantId ?? ""),
+    enabled: Boolean(assistantId),
+    staleTime: 60_000,
+    retry: false,
   });
+  return data ? consentInstanceView(data) : null;
+}
+
+function ConsentStep({ onNext }: { onNext: () => void }) {
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const view = useConsentInstanceView(assistantId);
+  /**
+   * Only the switches a human moved on this screen. Held separately from the
+   * seed rather than folded into it, for two reasons: an answer that arrives
+   * late must not overwrite a switch the user has already set, and
+   * `consentPolicyWrite` needs to know which cards were answered HERE when the
+   * instance never answered at all.
+   */
+  const [touched, setTouched] = useState<
+    Partial<Record<ConsentScopeId, boolean>>
+  >({});
+  const scopes: ConsentScopes = { ...seedConsentScopes(view), ...touched };
   const setTosAccepted = useOnboardingStore.getState().setTosAccepted;
   const setAiDataConsent = useOnboardingStore.getState().setAiDataConsent;
 
@@ -322,7 +359,7 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
     // …and the three capabilities, both as device keys and as the autonomy
     // policy map the daemon actually enforces.
     persistConsentScopes(userId, scopes);
-    void applyConsentScopes(assistantId, scopes);
+    void applyConsentScopes(assistantId, scopes, view, touched);
     void haptic.light();
     onNext();
   };
@@ -347,7 +384,7 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
             on={scopes[card.id]}
             onToggle={(next) => {
               void haptic.light();
-              setScopes((prev) => ({ ...prev, [card.id]: next }));
+              setTouched((prev) => ({ ...prev, [card.id]: next }));
             }}
           />
         ))}
