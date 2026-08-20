@@ -27,6 +27,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@vellumai/design-library/components/button";
 import { toast } from "@vellumai/design-library/components/toast";
 
+import { useHideVendorUi } from "@/assistant/use-managed-mode";
 import { DetailCard } from "@/components/detail-card";
 import { SttLanguagePickerModal } from "@/domains/settings/components/stt-language-picker-modal";
 import {
@@ -49,7 +50,14 @@ import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
  */
 const LANGUAGE_SELECTABLE_STT_PROVIDER = "deepgram";
 
-/** Honest display names for the daemon's other STT provider ids. */
+/**
+ * Honest display names for the daemon's other STT provider ids.
+ *
+ * Only ever rendered to a confirmed self-hoster. A managed customer did not
+ * choose this provider and has no page on which to change it, so naming it
+ * to them only discloses which vendor is behind the product — see
+ * `useHideVendorUi`.
+ */
 const STT_PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   "google-gemini": "Google Gemini",
   "openai-whisper": "OpenAI Whisper",
@@ -61,6 +69,7 @@ export function ListeningLanguageCard() {
   // the raw store (nullable) rather than `useActiveAssistantId()`, which
   // throws.
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const hideVendors = useHideVendorUi();
   const queryClient = useQueryClient();
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -74,8 +83,7 @@ export function ListeningLanguageCard() {
   // (`unknown`), so narrow it explicitly. Absent fields read as the daemon
   // schema defaults (provider "deepgram", language "multi").
   const daemonStt = daemonConfig?.services?.stt as
-    | { provider?: string; language?: string }
-    | undefined;
+    { provider?: string; language?: string } | undefined;
   const configuredProvider =
     daemonStt?.provider ?? LANGUAGE_SELECTABLE_STT_PROVIDER;
   const providerAcceptsLanguage =
@@ -154,11 +162,21 @@ export function ListeningLanguageCard() {
         </>
       ) : (
         <p className="text-body-medium-lighter text-[var(--content-tertiary)]">
-          Your speech-to-text provider (
-          {STT_PROVIDER_DISPLAY_NAMES[configuredProvider] ?? configuredProvider}
-          ) detects the spoken language on its own, so there is nothing to
-          choose here. Language selection applies when the provider is
-          Deepgram, on Models &amp; Services.
+          {hideVendors ? (
+            <>
+              Cue detects the spoken language on its own, so there is nothing to
+              choose here.
+            </>
+          ) : (
+            <>
+              Your speech-to-text provider (
+              {STT_PROVIDER_DISPLAY_NAMES[configuredProvider] ??
+                configuredProvider}
+              ) detects the spoken language on its own, so there is nothing to
+              choose here. Language selection applies when the provider is
+              Deepgram, on Models &amp; Services.
+            </>
+          )}
         </p>
       )}
     </DetailCard>

@@ -34,6 +34,8 @@ interface SttConfig {
 let sttState: SttConfig = {};
 let patchBodies: unknown[] = [];
 let patchShouldFail = false;
+// Drives `useHideVendorUi`, which reads `capabilities.managed` off healthz.
+let managedInstance = false;
 
 const buildConfig = () => ({ services: { stt: { ...sttState } } });
 
@@ -41,9 +43,10 @@ const actualSdk = await import("@/generated/daemon/sdk.gen");
 mock.module("@/generated/daemon/sdk.gen", () => ({
   ...actualSdk,
   configGet: async () => ({ data: buildConfig() }),
-  configPatch: async (args: {
-    body: { services?: { stt?: SttConfig } };
-  }) => {
+  healthzGet: async () => ({
+    data: { capabilities: { managed: managedInstance } },
+  }),
+  configPatch: async (args: { body: { services?: { stt?: SttConfig } } }) => {
     if (patchShouldFail) {
       throw new Error("patch failed");
     }
@@ -71,9 +74,8 @@ mock.module("@/lib/sentry/capture-error", () => ({
   captureError: () => {},
 }));
 
-const { ListeningLanguageCard } = await import(
-  "@/domains/settings/pages/listening-language-card"
-);
+const { ListeningLanguageCard } =
+  await import("@/domains/settings/pages/listening-language-card");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,6 +94,7 @@ function renderCard(): ReturnType<typeof render> {
 
 beforeEach(() => {
   sttState = { provider: "deepgram", language: "multi" };
+  managedInstance = false;
   patchBodies = [];
   patchShouldFail = false;
   toastErrors.length = 0;
@@ -152,9 +155,7 @@ describe("ListeningLanguageCard", () => {
     fireEvent.click(getByRole("option", { name: /Hindi/ }));
 
     await waitFor(() => {
-      expect(patchBodies).toEqual([
-        { services: { stt: { language: "hi" } } },
-      ]);
+      expect(patchBodies).toEqual([{ services: { stt: { language: "hi" } } }]);
     });
     // The modal closed on pick and the card row shows the new value.
     expect(queryByRole("listbox")).toBeNull();
@@ -179,9 +180,7 @@ describe("ListeningLanguageCard", () => {
 
     fireEvent.keyDown(search, { key: "Enter" });
     await waitFor(() => {
-      expect(patchBodies).toEqual([
-        { services: { stt: { language: "ta" } } },
-      ]);
+      expect(patchBodies).toEqual([{ services: { stt: { language: "ta" } } }]);
     });
   });
 
@@ -214,5 +213,43 @@ describe("ListeningLanguageCard", () => {
     });
     expect(getByText(/detects the spoken language on its own/)).toBeTruthy();
     expect(queryByRole("button", { name: "Change" })).toBeNull();
+  });
+});
+
+describe("ListeningLanguageCard — vendor discretion", () => {
+  test("a managed customer is not told which speech vendor is behind it", async () => {
+    // Settings → Voice is not behind a managed gate, so this paragraph was a
+    // route by which a hosted customer could read the product's speech vendor
+    // off the screen. They did not choose it and have no page on which to
+    // change it, so the name is disclosure with no use attached.
+    managedInstance = true;
+    sttState = { provider: "google-gemini", language: "multi" };
+    const { container } = renderCard();
+
+    await waitFor(() => {
+      if (!/nothing to\s+choose here/.test(container.textContent ?? "")) {
+        throw new Error("note not rendered yet");
+      }
+    });
+
+    const text = container.textContent ?? "";
+    expect(text).not.toContain("Gemini");
+    expect(text).not.toContain("Deepgram");
+    expect(text).toContain("Cue detects the spoken language");
+  });
+
+  test("a self-hoster still gets the provider named", async () => {
+    // They supplied the provider, so they are entitled to see which one ran.
+    managedInstance = false;
+    sttState = { provider: "google-gemini", language: "multi" };
+    const { container } = renderCard();
+
+    await waitFor(() => {
+      if (!(container.textContent ?? "").includes("Gemini")) {
+        throw new Error("provider name not rendered yet");
+      }
+    });
+
+    expect(container.textContent ?? "").toContain("Google Gemini");
   });
 });
