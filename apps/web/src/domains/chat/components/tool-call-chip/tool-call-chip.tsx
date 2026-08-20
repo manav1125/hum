@@ -163,6 +163,10 @@ function InlineConfirmationCard({
     : null;
   const hasDetails = !!confirmation.input;
   const hasAllowlistOptions = (confirmation.allowlistOptions?.length ?? 0) > 0;
+  // Same gate the standalone prompt card uses: the daemon sets this false for
+  // tools whose approval may never be satisfied by a cached grant.
+  const temporaryGrantsAvailable =
+    confirmation.persistentDecisionsAllowed !== false;
 
   return (
     <div className="rounded-lg border border-[var(--border-base)] bg-[var(--surface-overlay)] p-3">
@@ -193,6 +197,34 @@ function InlineConfirmationCard({
 
       {/* Row 3: action buttons (right-aligned) */}
       <div className="mt-3 flex justify-end gap-2">
+        {/* Temporary grants. These exist on the standalone prompt card but
+            were missing here — and this inline card is what a user actually
+            answers when the approval belongs to a running tool call, which is
+            most of them. The effect was that someone answering approvals in
+            the transcript was only ever offered Allow and Deny, so a long
+            build asked again on every step and "allow for 10 minutes" read
+            like a feature that did not exist. */}
+        {temporaryGrantsAvailable && (
+          <>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => onSubmit?.("allow_10m")}
+              className="flex items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--surface-lift)] px-3 py-1.5 text-body-small-default text-[var(--content-default)] transition-colors hover:border-[var(--accent-cue)] disabled:opacity-50"
+            >
+              Allow for 10 min
+            </button>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => onSubmit?.("allow_conversation")}
+              className="flex items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--surface-lift)] px-3 py-1.5 text-body-small-default text-[var(--content-default)] transition-colors hover:border-[var(--accent-cue)] disabled:opacity-50"
+            >
+              Allow for this chat
+            </button>
+          </>
+        )}
+
         {/* Allow button — split when allowlistOptions present */}
         {hasAllowlistOptions && onAllowAndCreateRule ? (
           <div ref={splitMenuRef} className="relative flex">
