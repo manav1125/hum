@@ -166,6 +166,14 @@ function SelectedBadge() {
         position: "absolute",
         top: 8,
         right: 8,
+        // A card whose artwork is itself positioned (the slides card layers a
+        // thumbnail and a preview inside a `position: relative` frame) paints
+        // that frame over this badge on tree order alone, so the check was
+        // invisible wherever it mattered most. Lift it above the card's own
+        // content; `pointer-events: none` keeps the full-bleed select button
+        // underneath clickable through the badge's corner.
+        zIndex: 1,
+        pointerEvents: "none",
         width: 22,
         height: 22,
         borderRadius: 999,

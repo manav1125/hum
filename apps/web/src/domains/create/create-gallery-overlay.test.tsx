@@ -197,3 +197,86 @@ describe("CreateGalleryOverlay — the slides card is not one big button", () =>
     expect(first.getAttribute("aria-pressed")).toBe("true");
   });
 });
+
+/**
+ * Desktop mock frame 1a (site/create.html) puts a blue ✓ in the top-right of a
+ * selected template card, and the slides card renders one. It was never
+ * VISIBLE: the card layers its thumbnail and preview inside a
+ * `position: relative` media frame that comes after the badge in the tree, so
+ * with both on `z-index: auto` the artwork painted straight over the check.
+ * A stacking bug leaves the DOM perfectly correct, so this is asserted on the
+ * layering rather than on the badge merely existing.
+ */
+describe("CreateGalleryOverlay — the selected ✓ is painted above the artwork", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  /** The ✓ badge inside a card: the aria-hidden pill, not the fidelity chip. */
+  function badgeIn(card: HTMLElement): HTMLElement | undefined {
+    return Array.from(card.children).find(
+      (c): c is HTMLElement =>
+        c instanceof HTMLElement &&
+        c.getAttribute("aria-hidden") !== null &&
+        c.style.borderRadius === "999px",
+    );
+  }
+
+  function selectFirstSlidesCard(): HTMLElement {
+    render(
+      <CreateGalleryOverlay
+        mode="slides"
+        hasBrand={false}
+        onConfirm={() => {}}
+        onTakeAiDirection={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    const select = document.querySelector<HTMLElement>(
+      "button[aria-label^='Use the ']",
+    )!;
+    fireEvent.click(select);
+    return select.parentElement as HTMLElement;
+  }
+
+  test("the badge outranks every positioned sibling that follows it", () => {
+    const card = selectFirstSlidesCard();
+    const badge = badgeIn(card);
+    expect(badge).toBeDefined();
+
+    const badgeZ = Number(badge!.style.zIndex);
+    expect(Number.isNaN(badgeZ)).toBe(false);
+
+    // The media frame is positioned and comes LATER in the tree, so on equal
+    // z-index it would win on tree order alone — the badge must outrank it.
+    const laterPositioned = Array.from(card.children)
+      .slice(Array.from(card.children).indexOf(badge!) + 1)
+      .filter(
+        (c): c is HTMLElement =>
+          c instanceof HTMLElement &&
+          (c.style.position === "relative" || c.style.position === "absolute"),
+      );
+    expect(laterPositioned.length).toBeGreaterThan(0);
+    for (const sib of laterPositioned) {
+      const z = sib.style.zIndex === "" ? 0 : Number(sib.style.zIndex);
+      expect(badgeZ).toBeGreaterThan(z);
+    }
+  });
+
+  test("the badge does not eat the card's own clicks", () => {
+    const card = selectFirstSlidesCard();
+    // Lifting the badge puts it over the full-bleed select button, so it has
+    // to stay transparent to the pointer or it would punch a dead 22px hole in
+    // the corner of every selected card.
+    expect(badgeIn(card)!.style.pointerEvents).toBe("none");
+  });
+
+  test("the fidelity chip still sits above the lifted badge", () => {
+    const card = selectFirstSlidesCard();
+    const badgeZ = Number(badgeIn(card)!.style.zIndex);
+    const fidelity = Array.from(card.querySelectorAll<HTMLElement>("button"))
+      .find((b) => b.textContent === "EXACT" || b.textContent === "INSPIRED")!
+      .closest<HTMLElement>("span[style*='z-index']")!;
+    expect(Number(fidelity.style.zIndex)).toBeGreaterThan(badgeZ);
+  });
+});
