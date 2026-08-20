@@ -1,19 +1,45 @@
 import type { ConnectorStatus, ConnectorTool } from "@vellumai/ipc-contract";
 
-import { connectorappsDisconnectPost } from "@/generated/daemon/sdk.gen";
+import {
+  connectorappsDisconnectPost,
+  connectorappsGet,
+} from "@/generated/daemon/sdk.gen";
 import { isElectron } from "@/runtime/is-electron";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 
 /** Whether the connectors control surface is available (desktop + configured). */
 export async function connectorsAvailable(): Promise<boolean> {
-  if (!isElectron() || !window.vellum?.connectors) return false;
-  return window.vellum.connectors.available();
+  // The Electron bridge answers for a LOCAL connector daemon. A desktop app
+  // pointed at a remote instance has no bridge, and answering "unavailable"
+  // there hid the whole management surface — no Manage button, no detail
+  // page — so a connector that authorized against the wrong account could
+  // never be disconnected or inspected. The daemon serves the same list over
+  // HTTP, so an install with an assistant selected can manage them too.
+  if (isElectron() && window.vellum?.connectors) {
+    return window.vellum.connectors.available();
+  }
+  return getSelectedAssistantId() !== null;
 }
 
 /** List connectors with this install's connection status. */
 export async function listConnectors(): Promise<ConnectorStatus[]> {
-  if (!isElectron() || !window.vellum?.connectors) return [];
-  return window.vellum.connectors.list();
+  if (isElectron() && window.vellum?.connectors) {
+    return window.vellum.connectors.list();
+  }
+  const assistantId = getSelectedAssistantId();
+  if (!assistantId) return [];
+  const { data } = await connectorappsGet({
+    path: { assistant_id: assistantId },
+    throwOnError: true,
+  });
+  // The daemon carries logo and health beyond this shape; the management
+  // surface only needs identity and whether it is connected.
+  return (data?.apps ?? []).map((app) => ({
+    slug: app.slug,
+    name: app.name,
+    category: app.category,
+    connected: app.connected,
+  }));
 }
 
 /** Start connecting an app; returns the OAuth URL the user must open. */
