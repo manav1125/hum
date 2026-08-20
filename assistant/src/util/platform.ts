@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 import { SEEDS } from "@vellumai/environments";
 
@@ -213,6 +213,22 @@ export function getHistoryPath(): string {
  * - Skipped in containerized mode (credentials via CES, trust via gateway)
  */
 export function getProtectedDir(): string {
+  // An explicit security directory wins. On a containerized install the
+  // workspace volume is mounted at the filesystem root ("/workspace"), so
+  // `vellumRoot()` refuses its parent — "/" — and falls back to ~/.vellum,
+  // which on those hosts is the EPHEMERAL container layer. The credential
+  // metadata index lives on the volume and survives, so the failure presents
+  // as a vault that still lists every secret with no value behind it, and the
+  // owner re-enters keys after each deploy without ever being told why. One
+  // tester re-keyed Slack, GitHub, Airtable and Hunter for four days.
+  //
+  // Naming the directory is what makes it safe to put on the volume: the file
+  // tools deny anything inside CREDENTIAL_SECURITY_DIR (see
+  // tools/shared/filesystem/path-policy.ts), so a store under /workspace is
+  // still unreachable by the agent — the same arrangement GATEWAY_SECURITY_DIR
+  // already uses.
+  const configured = process.env.CREDENTIAL_SECURITY_DIR?.trim();
+  if (configured && isAbsolute(configured)) return configured;
   return join(vellumRoot(), "protected");
 }
 

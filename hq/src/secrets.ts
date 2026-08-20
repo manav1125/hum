@@ -181,6 +181,14 @@ export function buildInstanceEnv(
     GATEWAY_PORT: "10000",
     GATEWAY_INTERNAL_URL: "http://127.0.0.1:10000",
     GATEWAY_SECURITY_DIR: "/workspace/gateway-security",
+    // Must be on the volume. Left unset, the daemon derives the credential
+    // store from the workspace's PARENT — which is "/" here — refuses it, and
+    // falls back to ~/.vellum on the ephemeral container layer. The metadata
+    // index stays on the volume either way, so every user-added secret comes
+    // back from a deploy listed but empty, and the owner re-enters keys
+    // forever without being told they were discarded. The file tools deny
+    // anything inside this directory, so the volume is safe to use.
+    CREDENTIAL_SECURITY_DIR: "/workspace/credential-security",
     // Instances sit behind the Fly proxy, which terminates TLS and forwards.
     // Without this the gateway keys its auth-failure limiter on the PROXY's
     // address, so every client of an instance shares one bucket and one
