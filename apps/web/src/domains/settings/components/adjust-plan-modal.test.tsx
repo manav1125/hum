@@ -334,6 +334,26 @@ describe("AdjustPlanModal credit bundle — change mode", () => {
   });
 });
 
+describe("AdjustPlanModal — plans payload without a plans array", () => {
+  test("renders the error state instead of crashing", async () => {
+    // An auth failure mid-session does not always surface as `isError`: the
+    // request resolves with a JSON body (`{"error":"Unauthorized"}`) that
+    // React Query stores as ordinary data. `data` is truthy, `data.plans` is
+    // undefined, and the modal used to die with an unhandled TypeError on
+    // `data!.plans.map` rather than showing the error state it already has.
+    renderModal(subscription("pro", "credits_50"), {
+      error: "Unauthorized",
+    } as unknown as PlanListResponse);
+
+    await new Promise((r) => setTimeout(r, 0));
+    // The dialog portals out of the render container, so assert on the document.
+    expect(document.body.textContent ?? "").toContain("Failed to load plans");
+    expect(
+      document.querySelector('[data-testid="modal-change-tier-button"]'),
+    ).toBeNull();
+  });
+});
+
 describe("AdjustPlanModal credit bundle — unseeded sentinel", () => {
   test("does not enable Update Plan from a spurious pre-seed creditChanged", async () => {
     // A Pro user with an existing bundle and no other pending change. Once the

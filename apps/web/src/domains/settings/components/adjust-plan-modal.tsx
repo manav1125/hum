@@ -131,7 +131,7 @@ export function AdjustPlanModal({
   const proTierChangeMode =
     onPro && tierChangeEligibleStatus && !cancelAtPeriodEnd && !isCanceled;
 
-  const proPlan = plansQuery.data?.plans.find(
+  const proPlan = plansQuery.data?.plans?.find(
     (p): p is ProPlan => p.id === "pro",
   );
 
@@ -207,7 +207,7 @@ export function AdjustPlanModal({
     currentCreditTier,
   ]);
 
-  const basePlan = plansQuery.data?.plans.find((p) => p.id === "base");
+  const basePlan = plansQuery.data?.plans?.find((p) => p.id === "base");
   const baseFeatureSet = new Set(basePlan?.included_features ?? []);
   const lostFeatures = (proPlan?.included_features ?? []).filter(
     (f) => !baseFeatureSet.has(f),
@@ -472,10 +472,17 @@ export function AdjustPlanModal({
   // ---------------------------------------------------------------------------
 
   const isLoading = plansQuery.isLoading || subscriptionQuery.isLoading;
+  // `plans` must be an array, not merely present. A rejected plans request
+  // does not always surface as `isError`: an auth failure mid-session resolves
+  // with a JSON body (`{"error":"Unauthorized"}`) that React Query stores as
+  // ordinary data, so `data` is truthy while `data.plans` is undefined. The
+  // old `!plansQuery.data` check passed that through to `data!.plans.map`,
+  // and the modal died with an unhandled TypeError instead of rendering the
+  // error state it already has.
   const isError =
     plansQuery.isError ||
     subscriptionQuery.isError ||
-    !plansQuery.data ||
+    !Array.isArray(plansQuery.data?.plans) ||
     !subscriptionQuery.data;
 
   return (
