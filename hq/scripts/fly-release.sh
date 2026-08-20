@@ -54,7 +54,11 @@ fi
 # Context is the repo root (assistant/Dockerfile expects repo-root context,
 # same as render.yaml's dockerContext: .).
 echo "▶ building ${IMAGE_REF} (remote builder)"
+# `--config` is required: the registry app is never deployed, so it owns no
+# machines, and without a config file flyctl tries to reconstruct fly.toml
+# from running machines and fails with "No machines configured for this app".
 flyctl deploy "${REPO_ROOT}" \
+  --config "${REPO_ROOT}/fly-release.toml" \
   --app "${APP}" \
   --dockerfile "${REPO_ROOT}/assistant/Dockerfile" \
   --build-only \
