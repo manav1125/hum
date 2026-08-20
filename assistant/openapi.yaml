@@ -10563,6 +10563,42 @@ paths:
               required:
                 - slug
               additionalProperties: false
+  /v1/connector-apps/disconnect:
+    post:
+      operationId: connectorapps_disconnect_post
+      summary: Disconnect a connector
+      description: Delete the Composio connected account for a toolkit slug, so the connector can be re-authorized from scratch.
+      tags:
+        - connectors
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  disconnected:
+                    type: boolean
+                  reason:
+                    type: string
+                    const: not_connected
+                required:
+                  - disconnected
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slug:
+                  type: string
+                  description: Composio toolkit slug (e.g. 'gmail')
+              required:
+                - slug
+              additionalProperties: false
   /v1/consolidation/config:
     get:
       operationId: consolidation_config_get

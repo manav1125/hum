@@ -151,7 +151,7 @@ function readCreds(): ComposioCreds | null {
 
 async function composio(
   creds: ComposioCreds,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   path: string,
   body?: unknown,
 ): Promise<unknown> {
@@ -169,7 +169,11 @@ async function composio(
       `Composio ${method} ${path} -> ${res.status} ${detail.slice(0, 160)}`,
     );
   }
-  return res.json();
+  // A successful delete answers 204 with no body, and parsing that as JSON
+  // would turn a completed call into a thrown error.
+  if (res.status === 204) return null;
+  const text = await res.text();
+  return text ? (JSON.parse(text) as unknown) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +531,58 @@ async function resolveAuthConfigId(
   return id;
 }
 
+/**
+ * Disconnect a connector — delete the Composio connected account for a
+ * toolkit.
+ *
+ * Until this existed, disconnecting was reachable only through the Electron
+ * bridge to a LOCAL connector daemon (`window.vellum.connectors`), so anyone
+ * running the desktop app against a REMOTE instance had no way to do it at
+ * all: a connector that authorized against the wrong account simply stayed
+ * that way. One tester put it plainly — "I'm unable to disconnect an item in
+ * connectors to reconnect, so i'm stuck."
+ *
+ * The account id comes from the ownership-verified lookup rather than from
+ * the caller: this issues a DELETE against a third-party account, and a slug
+ * is not proof of who owns it.
+ */
+async function handleDisconnectConnectorApp({ body = {} }: RouteHandlerArgs) {
+  const slug = (body as { slug?: unknown }).slug;
+  if (typeof slug !== "string" || slug.trim().length === 0) {
+    throw new BadRequestError("slug is required");
+  }
+  const creds = readCreds();
+  if (!creds) {
+    throw new BadRequestError(
+      "Connectors are not configured on this instance — Composio credentials are missing.",
+    );
+  }
+  const wanted = slug.trim().toLowerCase();
+  const account = (await connectedAccounts(creds)).get(wanted);
+  if (!account) {
+    // Already gone is the state the caller asked for, so report it rather
+    // than failing a button whose whole purpose is to reach that state.
+    return { disconnected: false, reason: "not_connected" as const };
+  }
+  try {
+    await composio(
+      creds,
+      "DELETE",
+      `/connected_accounts/${encodeURIComponent(account.id)}`,
+    );
+    // The memo would otherwise keep reporting it connected for its whole TTL,
+    // which reads as the disconnect having silently failed.
+    connectedMemo = null;
+    log.info({ slug: wanted }, "connector disconnected");
+    return { disconnected: true };
+  } catch (err) {
+    log.warn({ err, slug: wanted }, "connector disconnect failed");
+    throw new InternalError(
+      `Couldn't disconnect ${wanted} — try again in a moment.`,
+    );
+  }
+}
+
 async function handleConnectConnectorApp({ body = {} }: RouteHandlerArgs) {
   const slug = (body as { slug?: unknown }).slug;
   if (typeof slug !== "string" || slug.trim().length === 0) {
@@ -711,5 +767,27 @@ export const ROUTES: RouteDefinition[] = [
     }),
     responseBody: z.object({ redirectUrl: z.string() }),
     handler: handleConnectConnectorApp,
+  },
+  {
+    operationId: "disconnectConnectorApp",
+    endpoint: "connector-apps/disconnect",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Disconnect a connector",
+    description:
+      "Delete the Composio connected account for a toolkit slug, so the " +
+      "connector can be re-authorized from scratch.",
+    tags: ["connectors"],
+    requestBody: z.object({
+      slug: z.string().describe("Composio toolkit slug (e.g. 'gmail')"),
+    }),
+    responseBody: z.object({
+      disconnected: z.boolean(),
+      reason: z.literal("not_connected").optional(),
+    }),
+    handler: handleDisconnectConnectorApp,
   },
 ];
