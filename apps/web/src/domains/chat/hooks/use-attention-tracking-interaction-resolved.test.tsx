@@ -157,7 +157,7 @@ describe("useAttentionTracking — interaction_resolved subscriber", () => {
     ).toBe(false);
   });
 
-  test("does not touch the active conversation", () => {
+  test("clears the active conversation too, so a server-side resolve cannot strand its badge", () => {
     useConversationStore.getState().setActiveConversationId("conv-active");
     useConversationStore.getState().addAttentionConversationId("conv-active");
 
@@ -170,19 +170,22 @@ describe("useAttentionTracking — interaction_resolved subscriber", () => {
       { wrapper },
     );
 
+    // No inline button was clicked: the daemon resolved this on its own
+    // (timeout / cancel / supersede / an approval given on another device).
+    // The button handler is the only other thing that clears the key, so if
+    // this path exempts the active conversation nothing clears it and the
+    // "!" survives until the next mount sweep or SSE reopen.
     publishInteractionResolved({
       requestId: "req-3",
       conversationId: "conv-active",
       state: "approved",
     });
 
-    // Active conversation keeps its attention badge — the open chat view
-    // owns the bubble lifecycle directly.
     expect(
       useConversationStore
         .getState()
         .attentionConversationIds.has("conv-active"),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test("ignores events with an empty conversationId", () => {

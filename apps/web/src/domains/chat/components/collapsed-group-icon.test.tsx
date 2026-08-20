@@ -160,8 +160,58 @@ describe("CollapsedGroupIcon", () => {
         <div>content</div>
       </CollapsedGroupIcon>,
     );
-    expect(html).toContain("bg-[var(--system-mid-strong)]");
+    expect(html).toContain("bg-[var(--system-warning-strong)]");
     expect(html).toContain("rounded-full");
+  });
+
+  test("attention and unread are not the same dot", () => {
+    // Collapsed, there is no room for the row view's distinguishing shape,
+    // so colour is the only thing separating "waiting on you" from "new
+    // message". Painting both `--system-mid-strong` made the two states
+    // pixel-identical.
+    const dot = (state: "attention" | "unread") =>
+      /class="[^"]*rounded-full[^"]*"/.exec(
+        renderToStaticMarkup(
+          <CollapsedGroupIcon icon={Pin} label="Pinned" indicatorState={state}>
+            <div>content</div>
+          </CollapsedGroupIcon>,
+        ),
+      )?.[0];
+
+    expect(dot("attention")).toBeTruthy();
+    expect(dot("unread")).toBeTruthy();
+    expect(dot("attention")).not.toBe(dot("unread"));
+  });
+
+  test("the indicator is named in the tooltip and accessible name", () => {
+    const cases = {
+      attention: "needs you",
+      processing: "working",
+      unread: "new reply",
+    } as const;
+    for (const [state, phrase] of Object.entries(cases)) {
+      const html = renderToStaticMarkup(
+        <CollapsedGroupIcon
+          icon={Pin}
+          label="Pinned"
+          indicatorState={state as keyof typeof cases}
+        >
+          <div>content</div>
+        </CollapsedGroupIcon>,
+      );
+      expect(html).toContain(`aria-label="Pinned — ${phrase}"`);
+      expect(html).toContain(`data-tooltip-content="Pinned — ${phrase}"`);
+    }
+  });
+
+  test("a group with no indicator keeps its plain label", () => {
+    const html = renderToStaticMarkup(
+      <CollapsedGroupIcon icon={Pin} label="Pinned" indicatorState={null}>
+        <div>content</div>
+      </CollapsedGroupIcon>,
+    );
+    expect(html).toContain('aria-label="Pinned"');
+    expect(html).not.toContain("—");
   });
 
   test("renders indicator dot with processing class (pulsing)", () => {

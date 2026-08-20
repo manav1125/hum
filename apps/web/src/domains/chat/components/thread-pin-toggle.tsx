@@ -50,6 +50,30 @@ function IdleAndHoverGlyphs({
 }
 
 /**
+ * Human-readable name for the state a row's idle glyph is showing.
+ *
+ * Every glyph in this slot is `aria-hidden`, sits in the same 14px box, and
+ * is *replaced* by the pin on hover — so hovering to inspect a symbol
+ * destroys the symbol you were inspecting. Without a label the three states
+ * are three unexplained marks. This is what the tooltip and the accessible
+ * name say instead.
+ */
+function statusLabel({
+  needsAttention,
+  isProcessing,
+  showUnreadDot,
+}: {
+  needsAttention: boolean;
+  isProcessing: boolean;
+  showUnreadDot: boolean;
+}): string | null {
+  if (needsAttention) return "Needs you — waiting on your approval";
+  if (isProcessing) return "Working on it";
+  if (showUnreadDot) return "New reply";
+  return null;
+}
+
+/**
  * Leading-slot button for a thread row. State machine (priority order):
  *
  *   Needs attention   → Exclamation circle (warning color, no pulse).
@@ -70,6 +94,11 @@ export function ThreadPinToggle({
 }: ThreadPinToggleProps) {
   const isPinned = isConversationPinned(conversation);
   const showUnreadDot = conversation.hasUnseenLatestAssistantMessage === true;
+  const status = statusLabel({
+    needsAttention: needsAttention === true,
+    isProcessing: isProcessing === true,
+    showUnreadDot,
+  });
 
   let glyphs: ReactNode;
 
@@ -138,7 +167,13 @@ export function ThreadPinToggle({
 
   if (!onPinToggle) {
     return (
-      <span aria-hidden className={SLOT_BASE}>
+      <span
+        className={SLOT_BASE}
+        title={status ?? undefined}
+        aria-hidden={status ? undefined : true}
+        aria-label={status ?? undefined}
+        role={status ? "img" : undefined}
+      >
         {glyphs}
       </span>
     );
@@ -147,7 +182,14 @@ export function ThreadPinToggle({
   return (
     <button
       type="button"
-      aria-label={isPinned ? "Unpin conversation" : "Pin conversation"}
+      title={status ?? undefined}
+      aria-label={
+        status
+          ? `${status}. ${isPinned ? "Unpin conversation" : "Pin conversation"}`
+          : isPinned
+            ? "Unpin conversation"
+            : "Pin conversation"
+      }
       onClick={(event) => {
         event.stopPropagation();
         onPinToggle();

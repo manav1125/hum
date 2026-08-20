@@ -148,10 +148,20 @@ export function useAttentionTracking({
   //
   // The daemon publishes `interaction_resolved` on the bus-owned SSE
   // connection the instant a pending interaction transitions to resolved
-  // (approved, rejected, answered, cancelled, or superseded). When that
-  // event fires for a non-active conversation, drop it from both
-  // `attentionConversationIds` and `processingConversationIds` — the user has either responded
-  // elsewhere or the daemon discarded the prompt.
+  // (approved, rejected, answered, cancelled, or superseded). Drop the
+  // conversation from both `attentionConversationIds` and
+  // `processingConversationIds` — the user has either responded elsewhere
+  // or the daemon discarded the prompt.
+  //
+  // The active conversation is pruned too. Exempting it left the badge
+  // stuck on the chat the user was looking at whenever the interaction
+  // resolved through any path other than the inline buttons — a timeout, a
+  // cancel, a supersede, or an approval given on another device. The button
+  // handler is the only other thing that clears the key, so nothing cleared
+  // it and the "!" survived until the next mount sweep or SSE reopen.
+  // Clearing it here cannot hide a pending action: the active conversation
+  // renders its own prompt card in view, so the badge only ever duplicates
+  // something already on screen.
   //
   // Only the user-facing interaction kinds (confirmation, secret,
   // question, acp_confirmation — see `USER_FACING_INTERACTION_KINDS`)
@@ -174,7 +184,6 @@ export function useAttentionTracking({
     const key = event.conversationId;
     if (!key) return;
     const state = useConversationStore.getState();
-    if (key === state.activeConversationId) return;
     if (state.attentionConversationIds.has(key)) {
       state.removeAttentionConversationId(key);
     }

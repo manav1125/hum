@@ -46,9 +46,25 @@ export function getGroupIndicatorState(
 // ---------------------------------------------------------------------------
 
 const INDICATOR_CLASS: Record<Exclude<GroupIndicatorState, null>, string> = {
-  attention: "bg-[var(--system-mid-strong)]",
+  // Attention must not reuse the unread colour. Collapsed, the rail has no
+  // room for the row view's distinguishing *shape* (alert circle vs dot), so
+  // colour is the only thing separating "a group in here is waiting on you"
+  // from "a group in here has a new message" — and painting both
+  // `--system-mid-strong` made those two states pixel-identical.
+  attention: "bg-[var(--system-warning-strong)]",
   processing: "bg-[var(--primary-base)] animate-pulse",
   unread: "bg-[var(--system-mid-strong)]",
+};
+
+/**
+ * What the indicator dot means, appended to the group's tooltip and
+ * accessible name. The dot itself is decorative; this is the text that
+ * makes it legible.
+ */
+const INDICATOR_LABEL: Record<Exclude<GroupIndicatorState, null>, string> = {
+  attention: "needs you",
+  processing: "working",
+  unread: "new reply",
 };
 
 // ---------------------------------------------------------------------------
@@ -93,6 +109,10 @@ export function CollapsedGroupIcon({
     [onOpenChange],
   );
   const close = useCallback(() => setOpen(false), []);
+  const describedLabel =
+    indicatorState != null
+      ? `${label} — ${INDICATOR_LABEL[indicatorState]}`
+      : label;
 
   if (disabled) {
     // Empty group: a muted, non-interactive icon. The tooltip explains why it
@@ -113,11 +133,11 @@ export function CollapsedGroupIcon({
 
   return (
     <Popover.Root open={open} onOpenChange={handleOpenChange}>
-      <Tooltip content={label} side="right">
+      <Tooltip content={describedLabel} side="right">
         <Popover.Trigger asChild>
           <button
             type="button"
-            aria-label={label}
+            aria-label={describedLabel}
             aria-haspopup="dialog"
             className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[var(--content-tertiary)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--content-secondary)] aria-[expanded=true]:bg-[var(--surface-active)] aria-[expanded=true]:text-[var(--content-emphasised)]"
           >
