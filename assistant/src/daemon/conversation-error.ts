@@ -363,13 +363,8 @@ function classifyCore(
     }
     if (error.statusCode === 401 || error.statusCode === 403) {
       // Both managed-proxy and user-key 401/403s reach this branch.
-      // Managed-proxy routes through the assistant API key (stale → re-
-      // provision) and emits `MANAGED_KEY_INVALID`; everything else is a
-      // user-set credential that the upstream provider rejected → emit
-      // `PROVIDER_INVALID_KEY` so the macOS chat banner renders an
-      // "Invalid API key" surface (distinct from "API key required"
-      // which only fires when the key is genuinely missing — see
-      // `providerNotConfiguredClassification`).
+      // Managed-proxy routes through the assistant API key (stale for
+      // either status → re-provision) and emits `MANAGED_KEY_INVALID`.
       const providerName = error.provider;
       if (getProviderRoutingSource(providerName) === "managed-proxy") {
         return {
@@ -379,6 +374,23 @@ function classifyCore(
           retryable: true,
           errorCategory: "managed_key_invalid",
         };
+      }
+      // User-set credential. 401 vs 403 have different root causes and
+      // recovery actions, so classify them separately:
+      // - 401 → the key itself was rejected (invalid/expired). Emit
+      //   `PROVIDER_INVALID_KEY` so the macOS banner renders "Invalid API
+      //   key" and the user updates it (distinct from "API key required",
+      //   which only fires when the key is genuinely missing — see
+      //   `providerNotConfiguredClassification`).
+      // - 403 → usually the key authenticates fine but the provider
+      //   refused this request (ToS / authorization / model access), e.g.
+      //   an OpenRouter account blocked from `anthropic/*`. Emit
+      //   `PROVIDER_FORBIDDEN` so the user is told to switch models / check
+      //   their account rather than pointlessly re-entering a valid key.
+      //   Carve-out: if the 403 body explicitly names the key as invalid,
+      //   keep the "update your key" surface.
+      if (error.statusCode === 403 && !isInvalidApiKeyMessage(message)) {
+        return providerForbiddenClassification(attribution);
       }
       return invalidApiKeyClassification(attribution);
     }
@@ -464,11 +476,7 @@ function classifyCore(
       if (isProviderBillingError(message)) {
         return providerBillingClassification();
       }
-      if (
-        /invalid.*api.?key|invalid.*x-api-key|authentication.?error|invalid.authentication/i.test(
-          message,
-        )
-      ) {
+      if (isInvalidApiKeyMessage(message)) {
         // Mirror the 401/403 branch: a credential-shaped 4xx is an
         // "invalid key" surface (banner: "Invalid API key"), distinct
         // from "no key configured" (banner: "API key required").
@@ -566,6 +574,19 @@ function isProviderBillingError(message: string): boolean {
   return PROVIDER_BILLING_PATTERNS.some((p) => p.test(message));
 }
 
+/**
+ * Whether the error body explicitly blames the API key (bad/expired/
+ * malformed), as opposed to an authorization/ToS/model-access refusal.
+ * Used to keep the "update your key" surface for a 403 whose message
+ * genuinely names the key, while a bare 403 (e.g. an OpenRouter account
+ * blocked from a model by the provider's terms) maps to `PROVIDER_FORBIDDEN`.
+ */
+function isInvalidApiKeyMessage(message: string): boolean {
+  return /invalid.*api.?key|invalid.*x-api-key|authentication.?error|invalid.authentication/i.test(
+    message,
+  );
+}
+
 function managedBalanceClassification(): Omit<
   ClassifiedConversationError,
   "debugDetails"
@@ -630,6 +651,36 @@ function invalidApiKeyClassification(
       : "Your API key was rejected by the provider. Update it in Settings → Models & Services.",
     retryable: false,
     errorCategory: "provider_invalid_key",
+    ...(attribution?.connectionName
+      ? { connectionName: attribution.connectionName }
+      : {}),
+    ...(attribution?.profileName
+      ? { profileName: attribution.profileName }
+      : {}),
+  };
+}
+
+/**
+ * Classification for a provider 403 on a user-set credential — the key
+ * authenticates fine but the provider refused *this* request:
+ * ToS/authorization/model-access. The canonical trigger is an OpenRouter
+ * account that's blocked from `anthropic/*` or `openai/*` models (403
+ * "violation of provider Terms Of Service") while open models return 200.
+ * Distinct from `PROVIDER_INVALID_KEY` (401, a bad/expired key): here the
+ * key is valid, so "update your key" is the wrong recovery. Guide the user
+ * to switch models or check their provider account instead.
+ */
+function providerForbiddenClassification(
+  attribution?: ConversationErrorAttribution,
+): Omit<ClassifiedConversationError, "debugDetails"> {
+  const target = describeAttribution(attribution);
+  return {
+    code: "PROVIDER_FORBIDDEN",
+    userMessage:
+      `The model provider refused this request (403)${target} — the model may be unavailable on your account or blocked by the provider's terms. ` +
+      "Try a different model in Settings → Models & Services, or check your provider account.",
+    retryable: false,
+    errorCategory: "provider_forbidden",
     ...(attribution?.connectionName
       ? { connectionName: attribution.connectionName }
       : {}),

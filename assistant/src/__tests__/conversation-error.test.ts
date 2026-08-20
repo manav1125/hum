@@ -636,10 +636,50 @@ describe("classifyConversationError", () => {
     });
 
     it("classifies ProviderError 403 with 'invalid api key' message as PROVIDER_INVALID_KEY", () => {
+      // Carve-out: a 403 whose body explicitly names the key as invalid
+      // still routes to the "update your key" surface.
       const err = new ProviderError("OpenAI: Invalid API key", "openai", 403);
       const result = classifyConversationError(err, baseCtx);
       expect(result.code).toBe("PROVIDER_INVALID_KEY");
       expect(result.errorCategory).toBe("provider_invalid_key");
+    });
+
+    it("classifies OpenRouter 403 ToS block as PROVIDER_FORBIDDEN, not PROVIDER_INVALID_KEY", () => {
+      // Regression for the 2026-07-09 prod QA finding: an OpenRouter key
+      // blocked from anthropic/* by the provider's terms returns 403. The
+      // key is valid (open models 200), so "update your key" is wrong — the
+      // user needs to switch models / check their account.
+      const err = new ProviderError(
+        "OpenRouter API error (403): Provider returned error — violation of provider Terms Of Service",
+        "openrouter",
+        403,
+      );
+      const result = classifyConversationError(err, baseCtx);
+      expect(result.code).toBe("PROVIDER_FORBIDDEN");
+      expect(result.errorCategory).toBe("provider_forbidden");
+      expect(result.retryable).toBe(false);
+      expect(result.userMessage).not.toContain("Update it in Settings");
+      expect(result.userMessage).toContain("different model");
+    });
+
+    it("classifies a bare 403 (no key wording) as PROVIDER_FORBIDDEN", () => {
+      const err = new ProviderError("Forbidden", "openrouter", 403);
+      const result = classifyConversationError(err, baseCtx);
+      expect(result.code).toBe("PROVIDER_FORBIDDEN");
+      expect(result.errorCategory).toBe("provider_forbidden");
+    });
+
+    it("includes connection/profile attribution in PROVIDER_FORBIDDEN when provided", () => {
+      const err = new ProviderError("Forbidden", "openrouter", 403);
+      const result = classifyConversationError(err, {
+        ...baseCtx,
+        connectionName: "my-openrouter",
+        profileName: "team",
+      });
+      expect(result.code).toBe("PROVIDER_FORBIDDEN");
+      expect(result.connectionName).toBe("my-openrouter");
+      expect(result.profileName).toBe("team");
+      expect(result.userMessage).toContain("team");
     });
 
     it("includes connection/profile attribution in PROVIDER_INVALID_KEY when provided", () => {
