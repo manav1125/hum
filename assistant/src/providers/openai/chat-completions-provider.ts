@@ -458,8 +458,11 @@ export class OpenAIChatCompletionsProvider implements Provider {
         }
       }
 
-      const { signal: timeoutSignal, cleanup: cleanupTimeout } =
-        createStreamTimeout(this.streamTimeoutMs, signal);
+      const {
+        signal: timeoutSignal,
+        rearm: rearmTimeout,
+        cleanup: cleanupTimeout,
+      } = createStreamTimeout(this.streamTimeoutMs, signal);
 
       // Accumulate the response from chunks
       let contentText = "";
@@ -549,6 +552,9 @@ export class OpenAIChatCompletionsProvider implements Provider {
         });
 
         for await (const chunk of stream) {
+          // Silence budget, not a call budget: a healthy stream must never
+          // be aborted for taking a long time overall.
+          rearmTimeout();
           const choice = chunk.choices[0];
           if (choice) {
             if (choice.delta.content) {

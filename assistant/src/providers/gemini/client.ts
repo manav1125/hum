@@ -340,8 +340,11 @@ export class GeminiProvider implements Provider {
         ];
       }
 
-      const { signal: timeoutSignal, cleanup: cleanupTimeout } =
-        createStreamTimeout(this.streamTimeoutMs, signal);
+      const {
+        signal: timeoutSignal,
+        rearm: rearmTimeout,
+        cleanup: cleanupTimeout,
+      } = createStreamTimeout(this.streamTimeoutMs, signal);
       geminiConfig.abortSignal = timeoutSignal;
       if (usageAttributionHeaders) {
         geminiConfig.httpOptions = { headers: usageAttributionHeaders };
@@ -380,6 +383,8 @@ export class GeminiProvider implements Provider {
         });
 
         for await (const chunk of stream) {
+          // Silence budget, not a call budget.
+          rearmTimeout();
           // Extract text delta
           const chunkText = chunk.text;
           if (chunkText) {

@@ -1276,8 +1276,11 @@ export class AnthropicProvider implements Provider {
         }
       }
 
-      const { signal: timeoutSignal, cleanup: cleanupTimeout } =
-        createStreamTimeout(this.streamTimeoutMs, signal);
+      const {
+        signal: timeoutSignal,
+        rearm: rearmTimeout,
+        cleanup: cleanupTimeout,
+      } = createStreamTimeout(this.streamTimeoutMs, signal);
       innerTimeoutSignal = timeoutSignal;
 
       /** Minimal stream interface shared by MessageStream and BetaMessageStream. */
@@ -1396,6 +1399,9 @@ export class AnthropicProvider implements Provider {
         >();
 
         stream.on("streamEvent", (event) => {
+          // Silence budget, not a call budget: every event proves the stream
+          // is alive, so the abort timer restarts here.
+          rearmTimeout();
           contentShadow.handleEvent(event as ShadowStreamEvent);
           // Reset the text sentinel buffer at each content-block boundary.
           // A new block starts fresh; at the end of a block, flush any

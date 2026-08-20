@@ -299,8 +299,11 @@ export class OpenAIResponsesProvider implements Provider {
         }
       }
 
-      const { signal: timeoutSignal, cleanup: cleanupTimeout } =
-        createStreamTimeout(this.streamTimeoutMs, signal);
+      const {
+        signal: timeoutSignal,
+        rearm: rearmTimeout,
+        cleanup: cleanupTimeout,
+      } = createStreamTimeout(this.streamTimeoutMs, signal);
 
       // Accumulate the response from stream events
       let contentText = "";
@@ -344,6 +347,8 @@ export class OpenAIResponsesProvider implements Provider {
         );
 
         for await (const event of stream) {
+          // Silence budget, not a call budget.
+          rearmTimeout();
           switch (event.type) {
             case "response.output_text.delta": {
               const delta = event.delta;
