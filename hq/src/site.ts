@@ -54,6 +54,14 @@ export function canonicalHostRedirect(
   const method = req.method.toUpperCase();
   if (method !== "GET" && method !== "HEAD") return null;
   if (path === "/healthz") return null;
+  // Admin API routes are machine-to-machine and authenticate with an
+  // `Authorization: Bearer` header. Redirecting them to the canonical origin
+  // silently breaks that: fetch (per spec) DROPS the Authorization header
+  // when a redirect crosses origins, so a Bearer call to this machine's own
+  // localhost/.fly.dev address arrives unauthenticated and 401s — while the
+  // `?token=` path keeps working, because the query string rides along in
+  // Location. Never redirect /admin.
+  if (path === "/admin" || path.startsWith("/admin/")) return null;
   const host = bareHost(req.headers.get("host") ?? url.host);
   if (!host || host === canonical) return null;
   const instanceDomain = bareHost(process.env.HQ_INSTANCE_DOMAIN ?? null);

@@ -73,6 +73,17 @@ export interface InstanceDriver {
   /** Permanently destroy the instance. */
   destroy(externalId: string): Promise<void>;
 
+  /**
+   * OPTIONAL: the container image the instance is running RIGHT NOW, as the
+   * provider reports it — not the `imageRef` HQ recorded when it provisioned
+   * or rolled it. The two diverge exactly when someone moves a machine
+   * outside HQ (a manual `flyctl machine update`), which is the case the
+   * sweep's drift check exists to catch, so it must read live provider state.
+   * Drivers with no image concept omit it; callers must treat its absence as
+   * "unknown", never as agreement.
+   */
+  currentImage?(externalId: string): Promise<string | null>;
+
   /** True when the instance answers its health check. Never throws. */
   health(url: string): Promise<boolean>;
 

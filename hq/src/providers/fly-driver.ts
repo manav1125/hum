@@ -170,6 +170,7 @@ export function customDomainConfig(): CustomDomainConfig | null {
 interface FlyMachine {
   id: string;
   state?: string;
+  config?: FlyMachineConfig;
 }
 
 interface FlyVolume {
@@ -700,6 +701,21 @@ export class FlyDriver implements InstanceDriver {
       `/apps/${appName}/machines`,
     )) as FlyMachine[] | undefined;
     return Array.isArray(machines) ? machines : [];
+  }
+
+  /**
+   * The image the app's machines are actually running (see
+   * InstanceDriver.currentImage). The list response already carries each
+   * machine's config, so this is one API call, not one per machine.
+   * Machines Fly is tearing down keep reporting their old image for a
+   * while, so they are excluded rather than read as drift.
+   */
+  async currentImage(externalId: string): Promise<string | null> {
+    const images = (await this.listMachines(externalId))
+      .filter((m) => m.state !== "destroyed" && m.state !== "destroying")
+      .map((m) => m.config?.image)
+      .filter((image): image is string => !!image);
+    return images[0] ?? null;
   }
 
   async suspend(externalId: string): Promise<void> {

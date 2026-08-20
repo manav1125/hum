@@ -1250,8 +1250,9 @@ export function createHandler(
    * GET /admin/status[?probe=0] — operator readiness report (P0-1/P0-6).
    * Reports what IS, never what should be: email mode + a live Resend
    * domain-status probe (skip with probe=0), LLM key mode, connector-seed
-   * readiness, instance sizing defaults, allowlist size, and the latest
-   * fleet-sweep / hq.db-backup audit events.
+   * readiness, instance sizing defaults, allowlist size, the image new
+   * instances are provisioned with (+ any fleet drift from it), and the
+   * latest fleet-sweep / hq.db-backup audit events.
    */
   async function handleAdminStatus(url: URL): Promise<Response> {
     const probe = url.searchParams.get("probe") !== "0";
@@ -1263,6 +1264,11 @@ export function createHandler(
     );
     const lastBackupFail = db.findLatestEventByKindData("db_backup_failed", "");
     const sharedKeyPresent = !!process.env.OPENROUTER_SHARED_KEY;
+    const lastSweepData = lastSweep
+      ? (JSON.parse(lastSweep.dataJson) as {
+          imageDrift?: { instanceId: string; running: string; expected: string }[];
+        })
+      : null;
     return json({
       ok: true,
       service: "cue-hq",
@@ -1298,6 +1304,16 @@ export function createHandler(
         memoryMb: Number(process.env.HQ_FLY_VM_MEMORY_MB ?? 2048),
         instanceDomain: process.env.HQ_INSTANCE_DOMAIN?.trim() || null,
       },
+      // The image EVERY new customer instance is provisioned with, plus
+      // whether the live fleet actually agrees with it. `drifted` comes from
+      // the last fleet sweep (measuring it needs a provider call per
+      // instance, so this endpoint reports rather than re-probes); null means
+      // no sweep has run yet — unknown, not "no drift".
+      image: {
+        configured: process.env.CUE_IMAGE_REF?.trim() || null,
+        drifted: lastSweepData?.imageDrift ?? null,
+        checkedAt: lastSweep?.ts ?? null,
+      },
       invites: { allowlisted: db.listInviteEmails().length },
       fleetSweep: {
         disabled: ["1", "true"].includes(
@@ -1305,7 +1321,7 @@ export function createHandler(
         ),
         opsAlertEmailConfigured: !!process.env.HQ_OPS_ALERT_EMAIL?.trim(),
         lastCompletedAt: lastSweep?.ts ?? null,
-        lastResult: lastSweep ? JSON.parse(lastSweep.dataJson) : null,
+        lastResult: lastSweepData,
       },
       backups: {
         disabled: ["1", "true"].includes(

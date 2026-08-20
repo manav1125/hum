@@ -19,9 +19,14 @@ set -euo pipefail
 #   FLY_ORG_SLUG      — org that owns the registry app (required)
 #   FLY_RELEASES_APP  — registry app name (default: cue-releases)
 #   FLY_API_TOKEN     — optional; flyctl also honors `flyctl auth login`
+#   HQ_APP            — HQ app whose CUE_IMAGE_REF is repointed at the new
+#                       image (default: cue-hq). Set HQ_APP="" to skip and
+#                       only build+push.
 #
-# Output: prints the image ref. Set it as CUE_IMAGE_REF for HQ:
-#   CUE_IMAGE_REF=registry.fly.io/cue-releases:v<sha>
+# Output: prints the image ref, and (unless HQ_APP="") points HQ's
+# CUE_IMAGE_REF at it so newly provisioned customers get the build that was
+# just shipped. Leaving that to a human is what let HQ sit two days behind
+# production while every new joiner silently landed on the older image.
 #
 # Fallback (if the remote builder misbehaves): local Docker push —
 #   flyctl auth docker
@@ -68,4 +73,19 @@ flyctl deploy "${REPO_ROOT}" \
 
 echo
 echo "✅ pushed ${IMAGE_REF}"
-echo "   export CUE_IMAGE_REF=${IMAGE_REF}"
+
+# Repoint HQ at what we just shipped. This is deliberately part of the
+# release, not a follow-up step: the image is only half the ship — until
+# CUE_IMAGE_REF moves, every customer provisioned from here on gets the
+# PREVIOUS build. Note this does not touch instances that already exist;
+# rolling the live fleet is still `POST /admin/fleet/update`.
+HQ_APP="${HQ_APP-cue-hq}"
+if [[ -n "${HQ_APP}" ]]; then
+  echo "▶ pointing ${HQ_APP} CUE_IMAGE_REF at ${IMAGE_REF}"
+  flyctl secrets set "CUE_IMAGE_REF=${IMAGE_REF}" --app "${HQ_APP}"
+  echo "✅ ${HQ_APP} now provisions new instances from ${IMAGE_REF}"
+  echo "   existing instances are unchanged — roll them with POST /admin/fleet/update"
+else
+  echo "   (HQ_APP empty — skipping the CUE_IMAGE_REF update)"
+  echo "   export CUE_IMAGE_REF=${IMAGE_REF}"
+fi

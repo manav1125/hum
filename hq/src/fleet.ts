@@ -51,6 +51,15 @@ export interface SweepResult {
   creditsUsed: number;
   /** Customers found at ≤ 0 balance (frozen when provisioning is live). */
   exhausted: string[];
+  /**
+   * Live instances running an image other than CUE_IMAGE_REF — the ref every
+   * NEW instance is provisioned with (provisioning.ts, and the fly driver's
+   * default). A non-empty list means the next customer to sign up would land
+   * on a different build than the fleet is actually running. Empty when
+   * CUE_IMAGE_REF is unset or the driver can't report a running image, since
+   * neither is evidence of agreement.
+   */
+  imageDrift: { instanceId: string; running: string; expected: string }[];
 }
 
 export async function sweepFleet(
@@ -67,8 +76,10 @@ export async function sweepFleet(
     usageSynced: 0,
     creditsUsed: 0,
     exhausted: [],
+    imageDrift: [],
   };
   const checkedCustomers = new Set<string>();
+  const expectedImage = process.env.CUE_IMAGE_REF?.trim() ?? "";
 
   for (const instance of live) {
     if (instance.driver !== driver.id) continue; // sweep per-driver
@@ -93,6 +104,32 @@ export async function sweepFleet(
       // TODO: escalate — retry with backoff, then notify (the Cue prod
       // instance's work-item queue is the natural sink, mirroring how
       // qa/prod-smoke.ts files "QA smoke" work items on failure).
+    }
+
+    // Image drift (see SweepResult.imageDrift). Read from the provider, not
+    // from instance.imageRef: HQ's row only records what HQ itself deployed,
+    // so an out-of-band `flyctl machine update` leaves the row agreeing with
+    // CUE_IMAGE_REF while the machine runs something else — the exact drift
+    // this is here to catch. A provider hiccup is NOT drift: on error or an
+    // unreported image we record nothing rather than raise a false alarm.
+    if (expectedImage && driver.currentImage) {
+      try {
+        const running = await driver.currentImage(instance.externalId);
+        if (running && running !== expectedImage) {
+          result.imageDrift.push({
+            instanceId: instance.id,
+            running,
+            expected: expectedImage,
+          });
+          db.recordEvent("fleet_image_drift", instance.customerId, {
+            instanceId: instance.id,
+            running,
+            expected: expectedImage,
+          });
+        }
+      } catch {
+        // Provider unreachable — stay silent (see above).
+      }
     }
 
     // Metered usage — independent of the health probe (a proxy hiccup on
@@ -195,6 +232,7 @@ export async function sweepFleet(
     usageSynced: result.usageSynced,
     creditsUsed: result.creditsUsed,
     exhausted: result.exhausted.length,
+    imageDrift: result.imageDrift,
   });
   return result;
 }
@@ -216,17 +254,31 @@ export async function sweepAndAlert(
   const fetchImpl = opts.fetchImpl ?? fetch;
   const result = await sweepFleet(db, driver, { fetchImpl });
 
-  const needsHuman = result.failed.length > 0 || result.exhausted.length > 0;
+  const needsHuman =
+    result.failed.length > 0 ||
+    result.exhausted.length > 0 ||
+    result.imageDrift.length > 0;
   const alertEmail = opts.alertEmail ?? process.env.HQ_OPS_ALERT_EMAIL?.trim();
   if (needsHuman && alertEmail) {
     const detailLines = [
       ...result.failed.map((f) => `DOWN ${f.url} (instance ${f.instanceId})`),
       ...result.exhausted.map((c) => `EXHAUSTED customer ${c}`),
+      // Drift is a "new signups get the wrong build" alarm, so spell out the
+      // fix rather than just the fact.
+      ...result.imageDrift.map(
+        (d) =>
+          `IMAGE DRIFT instance ${d.instanceId} runs ${d.running} but new ` +
+          `instances get CUE_IMAGE_REF=${d.expected} — reconcile with ` +
+          `\`flyctl secrets set CUE_IMAGE_REF=<ref> --app cue-hq\``,
+      ),
     ];
     const sent = await sendEmail(
       alertEmail,
       opsAlertEmail({
-        subject: `Fleet sweep: ${result.failed.length} down, ${result.exhausted.length} exhausted`,
+        subject:
+          `Fleet sweep: ${result.failed.length} down, ` +
+          `${result.exhausted.length} exhausted, ` +
+          `${result.imageDrift.length} image drift`,
         summary:
           `${result.healthy}/${result.checked} instances healthy; ` +
           `${result.creditsUsed} credits metered this sweep.`,

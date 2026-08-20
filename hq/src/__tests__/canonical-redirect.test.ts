@@ -63,6 +63,14 @@ describe("canonicalHostRedirect (unit)", () => {
     );
   });
 
+  test("/admin is exempt — a redirect would strip the Bearer header", () => {
+    process.env.HQ_CANONICAL_HOST = "justcue.ai";
+    const url = new URL("http://localhost:8790/admin/status");
+    const req = new Request(url, { headers: { host: "localhost:8790" } });
+    expect(canonicalHostRedirect(req, url, "/admin/status")).toBeNull();
+    expect(canonicalHostRedirect(req, url, "/admin")).toBeNull();
+  });
+
   test("host matching is case-insensitive and ignores ports", () => {
     process.env.HQ_CANONICAL_HOST = "justcue.ai";
     const url = new URL("http://localhost:8790/");
@@ -132,6 +140,36 @@ describe("canonical-host redirect (through the handler)", () => {
     const res = await handle(new Request("https://cue-hq.fly.dev/healthz"));
     expect(res.status).toBe(200);
     expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+  });
+
+  // Regression: /admin used to 301 to the canonical host like any other GET.
+  // fetch drops the Authorization header across a cross-origin redirect, so a
+  // Bearer call from inside the machine (localhost / .fly.dev) arrived
+  // unauthenticated and 401'd, while `?token=` survived in the query string —
+  // which read as "the Bearer path is broken" rather than "we redirected it".
+  test("admin API on a non-canonical host authenticates instead of redirecting", async () => {
+    process.env.HQ_CANONICAL_HOST = "justcue.ai";
+    const { handle } = setup();
+    for (const origin of ["http://localhost:8790", "https://cue-hq.fly.dev"]) {
+      const res = await handle(
+        new Request(`${origin}/admin/status?probe=0`, {
+          headers: { Authorization: "Bearer t" },
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+    }
+  });
+
+  test("exempting /admin does not skip its auth — a bad token still 401s", async () => {
+    process.env.HQ_CANONICAL_HOST = "justcue.ai";
+    const { handle } = setup();
+    const res = await handle(
+      new Request("https://cue-hq.fly.dev/admin/status?probe=0", {
+        headers: { Authorization: "Bearer wrong" },
+      }),
+    );
+    expect(res.status).toBe(401);
   });
 
   test("instance-domain hosts are exempt", async () => {
