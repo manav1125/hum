@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildCapabilityPowers,
+  readExtensionReach,
   type CapabilitySignals,
 } from "@/domains/discovery/use-capability-powers";
 
@@ -14,6 +15,26 @@ const NOTHING_ON: CapabilitySignals = {
   phoneReady: false,
   cueLiveActive: false,
   cueLiveReachable: false,
+  extensionReach: "absent",
+};
+
+/** A connected extension, exactly as `/v1/clients` reports one. */
+const EXTENSION_CLIENT = {
+  clientId: "c-1",
+  interfaceId: "chrome-extension",
+  capabilities: ["host_browser"],
+  machineName: null,
+  connectedAt: "2026-08-16T10:00:00.000Z",
+  lastActiveAt: "2026-08-16T10:00:00.000Z",
+};
+
+const MAC_CLIENT = {
+  clientId: "c-2",
+  interfaceId: "macos",
+  capabilities: ["host_bash", "host_file", "host_browser"],
+  machineName: "manav-mbp",
+  connectedAt: "2026-08-16T10:00:00.000Z",
+  lastActiveAt: "2026-08-16T10:00:00.000Z",
 };
 
 function byId(signals: Partial<CapabilitySignals> = {}) {
@@ -83,11 +104,35 @@ describe("buildCapabilityPowers", () => {
     expect(powers.phone.caveat).toBeNull();
   });
 
-  it("keeps the browser extension honest — no signal, so it only teaches", () => {
-    // There is no installed/handshake endpoint for the extension anywhere in
-    // the daemon, so no combination of signals may ever mark it on.
+  it("marks the browser extension on when the daemon reports it connected", () => {
+    const extension = byId({ extensionReach: "connected" }).extension;
+    expect(extension.state).toBe("on");
+    expect(extension.cta).toBe("On ✓");
+    expect(extension.caveat).toBeNull();
+  });
+
+  it("says the extension is not connected only when the clients list said so", () => {
+    const extension = byId({ extensionReach: "absent" }).extension;
+    expect(extension.state).toBe("needs-you");
+    expect(extension.cta).toBe("Learn");
+    expect(extension.caveat).toBe(
+      "Needs the extension — not connected right now.",
+    );
+  });
+
+  it("says it cannot confirm the extension when the clients query failed", () => {
+    // A failed read is not evidence of absence: the copy must not assert the
+    // extension is missing, and the verb must not claim it is on.
+    const extension = byId({ extensionReach: "unknown" }).extension;
+    expect(extension.state).toBe("needs-you");
+    expect(extension.cta).toBe("Learn");
+    expect(extension.caveat).toBe(
+      "Needs the extension — Cue can't confirm it right now.",
+    );
+  });
+
+  it("never infers the extension from any other signal", () => {
     for (const signals of [
-      NOTHING_ON,
       { ...NOTHING_ON, macOnline: true, cueLiveReachable: true },
       {
         ...NOTHING_ON,
@@ -100,7 +145,6 @@ describe("buildCapabilityPowers", () => {
         (p) => p.id === "extension",
       )!;
       expect(extension.state).toBe("needs-you");
-      expect(extension.cta).toBe("Learn");
       expect(extension.to).toBeNull();
     }
   });
@@ -110,5 +154,33 @@ describe("buildCapabilityPowers", () => {
       if (power.id === "extension") continue;
       expect(power.to).toMatch(/^\/assistant\//);
     }
+  });
+});
+
+describe("readExtensionReach", () => {
+  it("reads a connected chrome-extension client with host_browser", () => {
+    expect(readExtensionReach([MAC_CLIENT, EXTENSION_CLIENT], false)).toBe(
+      "connected",
+    );
+  });
+
+  it("reports absent when the list came back without the extension", () => {
+    expect(readExtensionReach([], false)).toBe("absent");
+    expect(readExtensionReach([MAC_CLIENT], false)).toBe("absent");
+  });
+
+  it("does not count a chrome-extension client that lost host_browser", () => {
+    expect(
+      readExtensionReach([{ ...EXTENSION_CLIENT, capabilities: [] }], false),
+    ).toBe("absent");
+  });
+
+  it("reports unknown — never absent — when the query failed or has no data", () => {
+    expect(readExtensionReach(undefined, false)).toBe("unknown");
+    expect(readExtensionReach([], true)).toBe("unknown");
+  });
+
+  it("does not claim connected from data held over a failed refetch", () => {
+    expect(readExtensionReach([EXTENSION_CLIENT], true)).toBe("unknown");
   });
 });

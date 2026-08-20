@@ -33,7 +33,10 @@ const EXCLUDED_PREFIXES = [
   "/v1/admin/",
   "/v1/acp/",
   "/v1/btw",
-  "/v1/clients",
+  // `GET /v1/clients` (the connected-client list) IS proxied and is the only
+  // signal the web app has for "is the browser extension connected right now";
+  // only the force-disconnect write stays out of the web SDK.
+  "/v1/clients/disconnect",
   "/v1/conversations/cli/",
   "/v1/debug",
   "/v1/diagnostics/",
@@ -78,9 +81,7 @@ function hoistInlineDefs(
   }
 
   if (Array.isArray(node)) {
-    return node.map((item) =>
-      hoistInlineDefs(item, componentSchemas, counter),
-    );
+    return node.map((item) => hoistInlineDefs(item, componentSchemas, counter));
   }
 
   const obj = node as Record<string, unknown>;
@@ -228,7 +229,5 @@ console.log(
   `Wrote ${OUTPUT_PATH} (${included} paths included, ${excluded} excluded)`,
 );
 if (counter.value > 0) {
-  console.log(
-    `Hoisted ${counter.value} inline $defs to components.schemas`,
-  );
+  console.log(`Hoisted ${counter.value} inline $defs to components.schemas`);
 }

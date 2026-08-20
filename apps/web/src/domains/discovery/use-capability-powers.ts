@@ -15,15 +15,21 @@
  *  - plugins            → `plugins` (installed)
  *  - phone channel      → `channels/readiness`
  *  - Cue Live           → `isCueLiveAvailable()` + `cuelive/session`
- *  - browser extension  → **no signal exists.** There is no
- *    installed/handshake endpoint and no extension ping, so this power is
- *    rendered as "Learn" / not-detected rather than a fabricated "On ✓".
+ *  - browser extension  → `/v1/clients`, the connected-client list. A
+ *    connected extension is a hub subscriber with `interfaceId:
+ *    "chrome-extension"` holding the `host_browser` capability — the same
+ *    signal `reach-snapshot.ts` gives the model to decide whether the user's
+ *    own browser is reachable. It covers the SSE transport (cloud/platform);
+ *    a self-hosted extension paired over the `/v1/browser-relay` WebSocket is
+ *    not a hub subscriber and reads as not-connected, which under-claims
+ *    rather than over-claims.
  */
 import { useQuery } from "@tanstack/react-query";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import {
   channelsReadinessGetOptions,
+  clientsGetOptions,
   cueliveSessionGetOptions,
   organizerSessionGetOptions,
   pluginsGetOptions,
@@ -40,6 +46,43 @@ import { isCueLiveAvailable } from "@/runtime/cue-live";
  * needs you, neutral = available to explore.
  */
 export type PowerState = "running" | "on" | "needs-you" | "available";
+
+/**
+ * Whether Cue can reach the user's own browser through the extension.
+ *
+ * `unknown` is deliberately not a synonym for `absent`: a clients query that
+ * failed, timed out, or has not answered yet says nothing about whether the
+ * extension is installed, so it may neither claim "On ✓" nor assert absence.
+ */
+export type ExtensionReach = "connected" | "absent" | "unknown";
+
+/** The interface id the Chrome extension registers under on the event hub. */
+const EXTENSION_INTERFACE_ID = "chrome-extension";
+/** The host-proxy capability a browser-driving client carries. */
+const BROWSER_CAPABILITY = "host_browser";
+
+/** `/v1/clients` returns untyped passthrough records; narrow one honestly. */
+function isConnectedExtension(client: Record<string, unknown>): boolean {
+  const capabilities = client.capabilities;
+  return (
+    client.interfaceId === EXTENSION_INTERFACE_ID &&
+    Array.isArray(capabilities) &&
+    capabilities.includes(BROWSER_CAPABILITY)
+  );
+}
+
+/**
+ * The connected-client list → reach. `failed` wins over any data still held
+ * from an earlier success: a stale "connected" is not something we may claim
+ * once the current read errored.
+ */
+export function readExtensionReach(
+  clients: ReadonlyArray<Record<string, unknown>> | undefined,
+  failed: boolean,
+): ExtensionReach {
+  if (failed || clients === undefined) return "unknown";
+  return clients.some(isConnectedExtension) ? "connected" : "absent";
+}
 
 export interface CapabilityPower {
   id:
@@ -93,6 +136,8 @@ export interface CapabilitySignals {
   cueLiveActive: boolean;
   /** Cue Live can be reached at all (desktop bridge, or a connected Mac). */
   cueLiveReachable: boolean;
+  /** Whether the browser extension is connected — or not knowable right now. */
+  extensionReach: ExtensionReach;
 }
 
 /**
@@ -108,6 +153,7 @@ export function buildCapabilityPowers({
   phoneReady,
   cueLiveActive,
   cueLiveReachable,
+  extensionReach,
 }: CapabilitySignals): CapabilityPower[] {
   const organizerState: PowerState = organizerRunning
     ? "running"
@@ -120,6 +166,8 @@ export function buildCapabilityPowers({
     : cueLiveReachable
       ? "available"
       : "needs-you";
+
+  const extensionConnected = extensionReach === "connected";
 
   return [
     {
@@ -177,12 +225,19 @@ export function buildCapabilityPowers({
       glyph: "🌐",
       title: "Drive your browser",
       hqTitle: "Browser extension",
-      line: "The Cue extension fills forms & navigates for you.",
-      // Honest: nothing reports whether the extension is installed, so we never
-      // claim it is. The caveat says what it needs and the verb only teaches.
-      caveat: "Needs the extension — Cue can't detect it from here.",
-      state: "needs-you",
-      cta: "Learn",
+      line: extensionConnected
+        ? "The Cue extension fills forms & navigates for you · connected."
+        : "The Cue extension fills forms & navigates for you.",
+      // "On ✓" only on a connected extension the daemon reports. A clients
+      // query we could not read is `unknown`, and says so — it must not be
+      // dressed up as either an install prompt or a working extension.
+      caveat: extensionConnected
+        ? null
+        : extensionReach === "absent"
+          ? "Needs the extension — not connected right now."
+          : "Needs the extension — Cue can't confirm it right now.",
+      state: extensionConnected ? "on" : "needs-you",
+      cta: extensionConnected ? "On ✓" : "Learn",
       to: null,
     },
     {
@@ -228,6 +283,10 @@ export function useCapabilityPowers(): CapabilityPowersResult {
     ...channelsReadinessGetOptions({ path, query: {} }),
     enabled,
   });
+  const clients = useQuery({
+    ...clientsGetOptions({ path, query: {} }),
+    enabled,
+  });
   const watchers = useWatchers();
   const playbooks = usePlaybooks();
 
@@ -253,12 +312,19 @@ export function useCapabilityPowers(): CapabilityPowersResult {
       ),
       cueLiveActive: cueLive.data?.active === true,
       cueLiveReachable: isCueLiveAvailable() || macOnline,
+      // No assistant yet means the query never ran — that is "can't confirm",
+      // not "absent", which `readExtensionReach` gives us for undefined data.
+      extensionReach: readExtensionReach(
+        clients.data?.clients,
+        clients.isError,
+      ),
     }),
     isLoading:
       organizer.isLoading ||
       cueLive.isLoading ||
       plugins.isLoading ||
       channels.isLoading ||
+      clients.isLoading ||
       watchers.isLoading ||
       playbooks.isLoading,
   };

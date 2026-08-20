@@ -86,7 +86,7 @@ const SAMPLE_POWERS: CapabilityPower[] = [
     title: "Drive your browser",
     hqTitle: "Browser extension",
     line: "The Cue extension fills forms & navigates for you.",
-    caveat: "Needs the extension — Cue can't detect it from here.",
+    caveat: "Needs the extension — not connected right now.",
     state: "needs-you",
     cta: "Learn",
     to: null,
