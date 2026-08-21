@@ -491,6 +491,37 @@ export class AssistantEventHub {
   }
 
   /**
+   * How many live client subscribers would receive an untargeted event for
+   * `conversationId`.
+   *
+   * This is the one fact that splits an undelivered approval in two, and it
+   * can only be known here, at publish time. Zero means nobody was listening
+   * — the prompt was never sent anywhere and the client is not at fault.
+   * Non-zero means it went out and the client did not act on it. Asking after
+   * the fact cannot distinguish these: by the time anyone notices the stall,
+   * a client has usually reconnected and the evidence is gone.
+   *
+   * Mirrors the untargeted branch of `publish`: a subscriber scoped to a
+   * different conversation does not count as an audience.
+   */
+  countClientAudience(conversationId: string | undefined): number {
+    let count = 0;
+    for (const entry of this.subscribers) {
+      if (entry.type !== "client") continue;
+      if (!entry.active) continue;
+      if (
+        conversationId != null &&
+        entry.filter.conversationId != null &&
+        entry.filter.conversationId !== conversationId
+      ) {
+        continue;
+      }
+      count += 1;
+    }
+    return count;
+  }
+
+  /**
    * Return all client subscribers that support the given capability,
    * sorted by `lastActiveAt` descending.
    */
@@ -626,6 +657,8 @@ export function broadcastMessage(
     void createCanonicalRequestForConfirmation(msg, resolvedConversationId);
   }
 
+  recordInteractionAudience(msg, resolvedConversationId);
+
   // Mobile remote-push side effect: mirror review-ready work-item
   // completions and approval requests to registered APNs devices, so the
   // user's phone is paged even when the app holds no SSE connection.
@@ -710,6 +743,56 @@ export function broadcastMessage(
     .catch((err: unknown) => {
       log.warn({ err }, "assistant-events hub subscriber threw during publish");
     });
+}
+
+/**
+ * Message types that put a prompt in front of a person and block the run
+ * until they answer. These are the ones whose non-delivery strands a turn.
+ */
+const USER_PROMPT_MESSAGE_TYPES = new Set([
+  "confirmation_request",
+  "secret_request",
+  "question_request",
+  "contact_prompt_request",
+]);
+
+/**
+ * Record who was listening when a prompt went out.
+ *
+ * A prompt that never reaches a client leaves the run on "Working" with
+ * nothing to click, and the two explanations — nobody was connected, versus
+ * a connected client that ignored it — call for opposite fixes. Only publish
+ * time can tell them apart: by the time the stall is noticed, minutes or
+ * half an hour later, a client has usually reconnected and the audience at
+ * the moment that matters is unrecoverable.
+ *
+ * `audience: 0` here, paired with a later `interaction served late` line from
+ * the pending-interactions route, is a complete account of one stranded turn.
+ */
+export function recordInteractionAudience(
+  msg: ServerMessage,
+  conversationId: string | undefined,
+): void {
+  if (!USER_PROMPT_MESSAGE_TYPES.has(msg.type)) return;
+  try {
+    const audience = assistantEventHub.countClientAudience(conversationId);
+    const record = msg as unknown as Record<string, unknown>;
+    log[audience === 0 ? "warn" : "info"](
+      {
+        kind: msg.type,
+        conversationId,
+        requestId:
+          typeof record.requestId === "string" ? record.requestId : undefined,
+        audience,
+        connectedClients: assistantEventHub.listClients().length,
+      },
+      audience === 0
+        ? "user prompt published with no client listening — the run will sit until a client asks for it"
+        : "user prompt published",
+    );
+  } catch {
+    // Diagnostics must never be able to break a publish.
+  }
 }
 
 function extractConversationId(msg: ServerMessage): string | undefined {

@@ -285,6 +285,7 @@ function handleListPendingInteractions({ queryParams }: RouteHandlerArgs) {
   ];
 
   const confirmations: PendingConfirmationEntry[] = [];
+  const registeredAtByRequestId = new Map<string, number | undefined>();
   let secretRequestId: string | undefined;
   for (const scopeId of scopeConversationIds) {
     const interactions = pendingInteractions.getByConversation(scopeId);
@@ -294,6 +295,10 @@ function handleListPendingInteractions({ queryParams }: RouteHandlerArgs) {
         interaction.kind === "acp_confirmation"
       ) {
         confirmations.push(shapeConfirmation(interaction));
+        registeredAtByRequestId.set(
+          interaction.requestId,
+          interaction.registeredAt,
+        );
       } else if (interaction.kind === "secret" && secretRequestId == null) {
         // Secrets remain scoped to the directly-queried conversation only
         // (the first match wins, matching prior behavior).
@@ -304,6 +309,8 @@ function handleListPendingInteractions({ queryParams }: RouteHandlerArgs) {
     }
   }
 
+  recordLateDiscovery(resolvedConversationId, registeredAtByRequestId);
+
   return {
     // `pendingConfirmation` retains the legacy single-entry shape (first live
     // confirmation) for older clients; `confirmations` carries the full set.
@@ -311,6 +318,49 @@ function handleListPendingInteractions({ queryParams }: RouteHandlerArgs) {
     confirmations,
     pendingSecret: secretRequestId ? { requestId: secretRequestId } : null,
   };
+}
+
+/**
+ * How old a prompt must be, when a client first asks for it, to mean the
+ * client never received the publish.
+ *
+ * A client that got the event renders it immediately and has no reason to
+ * ask. It only asks on history load, on stream reopen, and on the running-turn
+ * watchdog — so an answer here about a prompt that has been waiting longer
+ * than a few seconds is a client discovering something it should already have
+ * had. The threshold sits above the watchdog's own 15s interval so a normal
+ * first poll after a legitimate reconnect is not reported as a miss.
+ */
+export const LATE_DISCOVERY_THRESHOLD_MS = 20_000;
+
+/**
+ * Record a prompt that a client is learning about far too late.
+ *
+ * Pairs with the publish-time `audience` line in the event hub, and together
+ * they say which of the two failures happened. `audience: 0` then a late
+ * discovery is a prompt that was never sent to anyone — a connection problem.
+ * A non-zero audience then a late discovery is a prompt that was delivered to
+ * a live client which did not act on it — a client bug. Neither line alone
+ * distinguishes them, and after the fact neither is recoverable.
+ */
+export function recordLateDiscovery(
+  conversationId: string,
+  registeredAtByRequestId: Map<string, number | undefined>,
+): void {
+  try {
+    const now = Date.now();
+    for (const [requestId, registeredAt] of registeredAtByRequestId) {
+      if (registeredAt == null) continue;
+      const ageMs = now - registeredAt;
+      if (ageMs < LATE_DISCOVERY_THRESHOLD_MS) continue;
+      log.warn(
+        { conversationId, requestId, ageMs },
+        "pending prompt served to a client that is only now learning about it — the publish did not reach it",
+      );
+    }
+  } catch {
+    // Diagnostics must never be able to fail a read.
+  }
 }
 
 // ---------------------------------------------------------------------------
