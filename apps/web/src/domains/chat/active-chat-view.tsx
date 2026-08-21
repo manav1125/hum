@@ -73,6 +73,7 @@ import { useConversationChangeEffects } from "@/domains/chat/hooks/use-conversat
 import { useComposerKeyboard } from "@/domains/chat/hooks/use-composer-keyboard";
 import { useAutoSendEffects } from "@/domains/chat/hooks/use-auto-send-effects";
 import { useInterruptedTurnRecovery } from "@/domains/chat/hooks/use-interrupted-turn-recovery";
+import { usePendingInteractionWatchdog } from "@/domains/chat/hooks/use-pending-interaction-watchdog";
 
 import { ChatContentLayout } from "@/domains/chat/components/chat-content-layout";
 import type { ChatMainPanelProps } from "@/domains/chat/components/chat-route-content";
@@ -259,6 +260,17 @@ export function ActiveChatView() {
       historyResult.pagination.latestPageOldestTimestamp,
     reachability,
     setAssetsRefreshKey,
+  });
+
+  // Fallback for an approval whose SSE event never landed: while a turn is
+  // running with nothing on screen to answer, re-ask the daemon. Without it a
+  // dropped `confirmation_request` leaves the run on "Working" indefinitely —
+  // the history-load and stream-reopen repairs both fire on transitions
+  // someone watching the conversation never makes.
+  usePendingInteractionWatchdog({
+    assistantId,
+    activeConversationId,
+    assistantStateKind: assistantState.kind,
   });
 
   // -------------------------------------------------------------------------
