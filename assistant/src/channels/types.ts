@@ -237,7 +237,14 @@ export type HostProxyCapability =
   | "host_file"
   | "host_cu"
   | "host_browser"
-  | "host_app_control";
+  | "host_app_control"
+  // Read-only screen observation. Deliberately NOT folded into `host_cu`:
+  // that capability is the channel that clicks and types, guarded by
+  // `ax-send-guard`, and welding the two together would make "let Cue watch
+  // me demonstrate" impossible to grant without also granting "let Cue act on
+  // my machine". They are different permissions and a person may reasonably
+  // want one without the other.
+  | "host_observe";
 
 /**
  * Interfaces that support the full desktop host-proxy set (all five
@@ -274,11 +281,18 @@ export function supportsHostProxy(
   id: InterfaceId,
   capability?: HostProxyCapability,
 ): boolean {
-  // macOS supports all five host proxy capabilities including host_browser
-  // and host_app_control. The host_browser proxy is provisioned via the
-  // assistant event hub. When no extension is connected, browser tools fall
-  // through to cdp-inspect/local via the CDP factory's candidate chain.
-  if (id === "macos") return true;
+  // macOS supports the five original host proxy capabilities including
+  // host_browser and host_app_control. The host_browser proxy is provisioned
+  // via the assistant event hub. When no extension is connected, browser tools
+  // fall through to cdp-inspect/local via the CDP factory's candidate chain.
+  //
+  // `host_observe` is deliberately excluded from that blanket. It shipped
+  // after desktop builds already in the field, so claiming it statically would
+  // assert a capability an installed app may not have. Whether a connected
+  // client can service it is answered at runtime by what that client
+  // ADVERTISES (`getMostRecentClientByCapability`), which is the only source
+  // that can tell an old build from a new one.
+  if (id === "macos") return capability !== "host_observe";
   if (id === "chrome-extension" && capability === "host_browser") return true;
   return false;
 }

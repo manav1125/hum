@@ -61,6 +61,7 @@ export interface PendingInteraction {
     | "host_cu"
     | "host_browser"
     | "host_app_control"
+    | "host_observe"
     | "host_transfer"
     | "acp_confirmation";
   confirmationDetails?: ConfirmationDetails;
