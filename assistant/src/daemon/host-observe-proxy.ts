@@ -26,6 +26,14 @@
  * predates this capability simply never advertises it, so the driver asks
  * nothing and captures nothing. There is no version negotiation to get wrong
  * and no failure mode where an old client is asked something it cannot answer.
+ *
+ * That advertisement is the `X-Vellum-Host-Capabilities` header, resolved by
+ * `resolveClientCapabilities` in `channels/types.ts`. It matters that this one
+ * capability is client-declared rather than derived from the interface type
+ * like the other five: deriving it would claim, on behalf of every Mac already
+ * installed, that it can service a request its build has no handler for — and
+ * the daemon would then tell the owner it was watching their screen while
+ * capturing nothing.
  */
 
 import type { ScreenObservationInput } from "../cue-live/observation-capture.js";

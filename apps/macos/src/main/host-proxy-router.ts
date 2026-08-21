@@ -32,6 +32,7 @@ import { hostTransferExecutor } from "./executors/host-transfer-executor";
 import { onLockfileChange, getWatchedLockfile } from "./lockfile-watcher";
 import { HostBrowserExecutor } from "./executors/host-browser-executor";
 import { hostCuExecutor } from "./executors/host-cu-executor";
+import { hostObserveExecutor } from "./executors/host-observe-executor";
 import { hostAppControlExecutor } from "./executors/host-app-control-executor";
 import { shutdownSharedCuHelper } from "./sidecar/shared-cu-helper";
 import { getSessionToken } from "./session-token-store";
@@ -110,6 +111,7 @@ const EXECUTOR_KINDS = [
   "host_browser",
   "host_cu",
   "host_app_control",
+  "host_observe",
 ] as const;
 
 /** Route type → executor kind. Returns null for unknown types. */
@@ -209,6 +211,13 @@ function dispatchMessage(
         state: "missing",
         executionError: "Executor not yet implemented",
       });
+      break;
+    case "host_observe":
+      // Nothing is posted. Unlike the acting channels there is no caller
+      // waiting on a verdict — the daemon's capture source treats a request
+      // that goes unanswered as "could not look" and skips the tick, which is
+      // exactly right. Posting an empty observation instead would assert that
+      // the screen was blank.
       break;
   }
 }
@@ -866,6 +875,7 @@ export function installHostProxyBridge(
   // Computer-use + app-control run through the shared, signed mac-helper (same
   // binary as Cue Live → inherits its Accessibility + Screen-Recording grants).
   setExecutor("host_cu", hostCuExecutor);
+  setExecutor("host_observe", hostObserveExecutor);
   setExecutor("host_app_control", hostAppControlExecutor);
   unsubscribe = onLockfileChange(handleLockfileChange);
 

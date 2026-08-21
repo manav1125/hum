@@ -108,6 +108,12 @@ export class HostProxySseClient {
       "X-Vellum-Client-Id": getDeviceId(),
       "X-Vellum-Interface-Id": "macos",
       "X-Vellum-Machine-Name": hostname(),
+      // Capabilities this BUILD can service that its interface type does not
+      // already imply. The daemon unions these with the interface-derived set
+      // (see `resolveClientCapabilities`), so a build that omits the header —
+      // every desktop shipped before screen observation — is simply never
+      // asked to observe, instead of being asked and timing out.
+      "X-Vellum-Host-Capabilities": "host_observe",
       ...this.authHeaders(),
     };
 

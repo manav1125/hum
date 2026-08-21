@@ -11,11 +11,16 @@
  *   tasks Cue lifted off their screen and why. Every captured item is a
  *   normal work item, so the existing dismiss/cancel/archive machinery on the
  *   work-item routes is how one gets thrown away — no bespoke undo here.
- * - **Submit** one observation. This is the seam for the macOS capture loop
- *   (which lives in the macOS app, not here): the observer posts a frame
- *   and/or a text description of the screen, the daemon gates it, extracts,
- *   and files. The frame is passed to the model and dropped — the daemon
- *   never persists screen bytes.
+ * - **Submit** one observation. A push seam, for an observer that has a frame
+ *   or a description already: it posts, the daemon gates it, extracts, and
+ *   files. The frame is passed to the model and dropped — the daemon never
+ *   persists screen bytes.
+ *
+ * The routine path is a PULL, not this push: starting a session also starts
+ * the observation driver, which asks the connected desktop for one look per
+ * tick over the `host_observe` capability. The cadence and the gate both live
+ * in the daemon, so the desktop only answers "what is on screen" and never
+ * decides when watching happens or whether a look may be used.
  */
 import { z } from "zod";
 
@@ -25,6 +30,7 @@ import {
   stopObservationCaptureSession,
   submitScreenObservation,
 } from "../../cue-live/observation-capture.js";
+import { ensureObservationDriverStarted } from "../../cue-live/observation-driver-lifecycle.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { BadRequestError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
@@ -99,11 +105,15 @@ function handleStart({ body }: RouteHandlerArgs): SessionViewT {
       "Invalid Cue Live observation-capture start request body",
     );
   }
-  return startObservationCaptureSession({
+  const view = startObservationCaptureSession({
     ...(parsed.data.durationMinutes != null
       ? { durationMinutes: parsed.data.durationMinutes }
       : {}),
   });
+  // Only after the session is actually armed. Starting the loop first would
+  // create a timer for a start request that turned out to be rejected.
+  if (view.armed) ensureObservationDriverStarted();
+  return view;
 }
 
 function handleStop(): SessionViewT {

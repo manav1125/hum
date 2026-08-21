@@ -338,6 +338,35 @@ describe("HostProxySseClient", () => {
     expect(capturedHeaders["X-Vellum-Machine-Name"]).toBeTruthy();
   });
 
+  test("MUTATION CHECK: it advertises host_observe so the daemon may ask", async () => {
+    // The daemon does NOT derive `host_observe` from the interface type — a
+    // Mac is not assumed to be able to observe, because every build shipped
+    // before screen observation cannot. This header is the only thing that
+    // turns the capability on, so dropping it silently disables watching
+    // rather than breaking it visibly.
+    let capturedHeaders: Record<string, string> = {};
+    const fakeFetch: typeof globalThis.fetch = (async (
+      _url: string,
+      init?: RequestInit,
+    ) => {
+      capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+      return new Response(null, { status: 500 });
+    }) as unknown as typeof globalThis.fetch;
+
+    const client = new HostProxySseClient({
+      eventsUrl: "http://127.0.0.1:8080/v1/events",
+      authHeaders: () => ({ Authorization: "Bearer my-token" }),
+      fetch: fakeFetch,
+    });
+    client.connect();
+    await flush(50);
+
+    expect(capturedHeaders["X-Vellum-Host-Capabilities"]).toContain(
+      "host_observe",
+    );
+    client.disconnect();
+  });
+
   test("sends correct headers for cloud connection", async () => {
     let capturedUrl = "";
     let capturedHeaders: Record<string, string> = {};

@@ -225,6 +225,12 @@ final class MacHelper: @unchecked Sendable {
         }
         // Prompts for Screen Recording — the only thing that puts Cue in the
         // System Settings list (see CueLive.requestScreenRecording).
+        // Read-only screen observation. Registered on the SYNC router rather
+        // than the async computeruse/appcontrol dispatch because it performs no
+        // action — see ScreenObservation for why it does not reuse that path.
+        router.register("observe.screen") { _ in
+            return ScreenObservation.observe()
+        }
         router.register("cuelive.requestScreenRecording") { [weak self] _ in
             guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
             return self.ensureCueLive().requestScreenRecording()

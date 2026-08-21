@@ -133,6 +133,8 @@ export function startObservationDriver(
         schedule();
       });
     }, intervalMs());
+    // An idle watch loop must not be a reason the process stays alive.
+    timer.unref?.();
   };
 
   schedule();

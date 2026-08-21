@@ -287,14 +287,85 @@ export function supportsHostProxy(
   // fall through to cdp-inspect/local via the CDP factory's candidate chain.
   //
   // `host_observe` is deliberately excluded from that blanket. It shipped
-  // after desktop builds already in the field, so claiming it statically would
-  // assert a capability an installed app may not have. Whether a connected
-  // client can service it is answered at runtime by what that client
-  // ADVERTISES (`getMostRecentClientByCapability`), which is the only source
-  // that can tell an old build from a new one.
+  // after desktop builds already in the field, so an interface type is no
+  // longer enough to establish it: "this client is a Mac" does not answer
+  // "does this particular build handle an observe request?". That question is
+  // answered by {@link resolveClientCapabilities}, which reads what the
+  // connecting client declared about itself.
   if (id === "macos") return capability !== "host_observe";
   if (id === "chrome-extension" && capability === "host_browser") return true;
   return false;
+}
+
+/** Every capability the host-proxy system knows about. */
+export const ALL_HOST_PROXY_CAPABILITIES: readonly HostProxyCapability[] = [
+  "host_bash",
+  "host_file",
+  "host_cu",
+  "host_browser",
+  "host_app_control",
+  "host_observe",
+];
+
+/**
+ * Capabilities a client may claim for ITSELF, on top of the ones its interface
+ * type already establishes.
+ *
+ * This list is an allowlist and must stay one. Everything on it has to be safe
+ * for an untrusted client to assert, because the declaration arrives in a
+ * request header and nothing verifies it beyond the connection's own auth. The
+ * test is not "would a real client lie?" but "what does the daemon do if one
+ * does?" — and for `host_observe` the answer is that it gets asked to look at a
+ * screen and either answers or times out. It gains nothing it could not already
+ * do, because observation is read-only and the OS still gates the read.
+ *
+ * `host_bash`, `host_file`, `host_cu` and `host_app_control` must never appear
+ * here. Those execute on the guardian's machine, and a self-declared capability
+ * is exactly the wrong gate for a channel that acts.
+ */
+export const CLIENT_DECLARABLE_CAPABILITIES: readonly HostProxyCapability[] = [
+  "host_observe",
+];
+
+/**
+ * What a connecting client can actually service.
+ *
+ * Two sources, unioned:
+ *
+ * 1. **Its interface type** — `supportsHostProxy`. This is how the five
+ *    original capabilities have always been resolved, and it stays exactly as
+ *    it was. Every desktop build that has ever shipped handles them.
+ * 2. **Its own declaration** — the `X-Vellum-Host-Capabilities` header,
+ *    intersected with {@link CLIENT_DECLARABLE_CAPABILITIES}.
+ *
+ * The second source exists because the first cannot express version. When a new
+ * capability ships, the installed base does not change, and deriving it from
+ * "this is a Mac" would claim it on behalf of builds that predate it. The
+ * daemon would then arm a capture session, tell the owner "Cue is watching your
+ * screen", and send observe requests into a client that has no handler for
+ * them — a false statement about surveillance, which is the worst thing this
+ * subsystem could get wrong. A build that does not declare the capability is
+ * simply not asked, with no version negotiation to get wrong.
+ *
+ * Unknown or malformed entries are dropped rather than rejected: a client
+ * declaring something this daemon has never heard of is a newer client talking
+ * to an older daemon, which is a normal thing to be and not an error.
+ */
+export function resolveClientCapabilities(
+  id: InterfaceId,
+  declared?: string,
+): HostProxyCapability[] {
+  const claimed = new Set(
+    (declared ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  );
+  return ALL_HOST_PROXY_CAPABILITIES.filter(
+    (cap) =>
+      supportsHostProxy(id, cap) ||
+      (CLIENT_DECLARABLE_CAPABILITIES.includes(cap) && claimed.has(cap)),
+  );
 }
 
 export interface TurnInterfaceContext {

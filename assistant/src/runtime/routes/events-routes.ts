@@ -23,8 +23,10 @@ import { type IntervalHistogram, monitorEventLoopDelay } from "node:perf_hooks";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
 
-import type { HostProxyCapability } from "../../channels/types.js";
-import { parseInterfaceId, supportsHostProxy } from "../../channels/types.js";
+import {
+  parseInterfaceId,
+  resolveClientCapabilities,
+} from "../../channels/types.js";
 import { emitContactChange } from "../../contacts/contact-events.js";
 import { getConversation } from "../../memory/conversation-crud.js";
 import { getOrCreateConversation } from "../../memory/conversation-key-store.js";
@@ -251,6 +253,11 @@ const defaultSseShedReporter: SseShedReporter = (reason, inst) => {
  * Headers (optional):
  *   X-Vellum-Client-Id    -- stable per-install UUID identifying this client.
  *   X-Vellum-Interface-Id -- interface type (e.g. "macos", "ios", "web").
+ *   X-Vellum-Host-Capabilities -- comma-separated host-proxy capabilities this
+ *                      BUILD can service, for capabilities that shipped after
+ *                      clients were already in the field. Only the ones in
+ *                      `CLIENT_DECLARABLE_CAPABILITIES` are honoured; the rest
+ *                      still come from the interface type.
  *
  *   When both are present, the subscriber is registered as a client in the
  *   event hub with metadata (interfaceId, capabilities). The hub handles
@@ -305,6 +312,11 @@ export function handleSubscribeAssistantEvents(
   const rawInterfaceId = headers?.["x-vellum-interface-id"];
   const rawMachineName = headers?.["x-vellum-machine-name"];
   const rawActorPrincipalId = headers?.["x-vellum-actor-principal-id"];
+  // What this build says it can service, beyond what its interface type
+  // already establishes. Absent from every client that predates a given
+  // capability, which is exactly the signal we need. See
+  // `resolveClientCapabilities`.
+  const rawHostCapabilities = headers?.["x-vellum-host-capabilities"];
   const clientId = rawClientId?.trim() || null;
   const interfaceId = clientId
     ? parseInterfaceId(rawInterfaceId?.trim())
@@ -331,14 +343,6 @@ export function handleSubscribeAssistantEvents(
   const heartbeatIntervalMs =
     options?.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   const shedReporter = options?.shedReporter ?? defaultSseShedReporter;
-
-  const ALL_CAPABILITIES: HostProxyCapability[] = [
-    "host_bash",
-    "host_file",
-    "host_cu",
-    "host_app_control",
-    "host_browser",
-  ];
 
   // Resolve the scope. `conversationId` (when supplied) is the
   // assistant-minted internal id — looked up directly; 404 if absent.
@@ -443,8 +447,9 @@ export function handleSubscribeAssistantEvents(
             type: "client" as const,
             clientId,
             interfaceId,
-            capabilities: ALL_CAPABILITIES.filter((cap) =>
-              supportsHostProxy(interfaceId, cap),
+            capabilities: resolveClientCapabilities(
+              interfaceId,
+              rawHostCapabilities,
             ),
             machineName: rawMachineName?.trim() || undefined,
             actorPrincipalId,
@@ -496,8 +501,9 @@ export function handleSubscribeAssistantEvents(
                   type: "client",
                   clientId,
                   interfaceId,
-                  capabilities: ALL_CAPABILITIES.filter((cap) =>
-                    supportsHostProxy(interfaceId, cap),
+                  capabilities: resolveClientCapabilities(
+                    interfaceId,
+                    rawHostCapabilities,
                   ),
                 }
               : { type: "process" };

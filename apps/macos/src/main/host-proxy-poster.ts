@@ -49,6 +49,19 @@ export interface HostBrowserResultPayload {
   isError?: boolean;
 }
 
+/**
+ * One read-only look at the screen. Text-first by design: the daemon's capture
+ * contract prefers accessibility text, and this payload never carries a frame
+ * unless a client genuinely cannot produce text.
+ */
+export interface HostObserveResultPayload {
+  requestId: string;
+  description?: string;
+  imageBase64?: string;
+  mediaType?: string;
+  appName?: string;
+}
+
 export interface HostCuResultPayload {
   requestId: string;
   axTree?: string;
@@ -148,6 +161,12 @@ export class HostProxyPoster {
 
   async postCuResult(result: HostCuResultPayload): Promise<boolean> {
     return this.postJson("/host-cu-result", result);
+  }
+
+  async postObserveResult(
+    result: HostObserveResultPayload,
+  ): Promise<boolean> {
+    return this.postJson("/host-observe-result", result);
   }
 
   async postAppControlResult(

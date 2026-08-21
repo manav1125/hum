@@ -85,6 +85,7 @@ import { ROUTES as HOST_BASH_ROUTES } from "./host-bash-routes.js";
 import { ROUTES as HOST_BROWSER_ROUTES } from "./host-browser-routes.js";
 import { ROUTES as HOST_CU_ROUTES } from "./host-cu-routes.js";
 import { ROUTES as HOST_FILE_ROUTES } from "./host-file-routes.js";
+import { ROUTES as HOST_OBSERVE_ROUTES } from "./host-observe-routes.js";
 import { ROUTES as HOST_TRANSFER_ROUTES } from "./host-transfer-routes.js";
 import { ROUTES as IDENTITY_ROUTES } from "./identity-routes.js";
 import { ROUTES as IMAGE_GENERATION_ROUTES } from "./image-generation-routes.js";
@@ -261,6 +262,7 @@ export const ROUTES: RouteDefinition[] = [
   ...HOST_BROWSER_ROUTES,
   ...HOST_CU_ROUTES,
   ...HOST_FILE_ROUTES,
+  ...HOST_OBSERVE_ROUTES,
   ...HOST_TRANSFER_ROUTES,
   ...IDENTITY_ROUTES,
   ...INFERENCE_PROFILE_SESSION_ROUTES,
