@@ -54,6 +54,7 @@ import { useElectronFeatureFlagBridge } from "@/runtime/electron-feature-flags";
 import { GlobalPushToTalkBridge } from "@/domains/chat/voice/global-push-to-talk-bridge";
 import { VoiceCallHost } from "@/domains/chat/voice/voice-call-host";
 import { TimezoneSync } from "@/components/timezone-sync";
+import { ObservationWatchBanner } from "@/components/observation-watch-banner";
 import { UpdateToast } from "@/components/update-toast";
 import { retireAssistant } from "@/assistant/retire-service";
 import { setSelectedAssistant } from "@/assistant/selection";
@@ -362,6 +363,10 @@ export function RootLayout() {
       }}
     >
       <UpdateToast />
+      {/* Mounted globally, above the outlet: while Cue is watching the screen,
+          the person being watched must be able to see it and stop it from
+          wherever they are — not only on the page that started it. */}
+      <ObservationWatchBanner />
       <div
         className="flex min-w-0 flex-col overflow-hidden w-full"
         style={{ flex: "1 1 0%", minHeight: 0 }}
