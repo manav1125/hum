@@ -72,6 +72,86 @@ describe("events client registration", () => {
     ac.abort();
   });
 
+  // ── Capability advertisement ──────────────────────────────────────────────
+
+  test("MUTATION CHECK: a Mac that declares host_observe is registered with it", () => {
+    // The unit tests cover `resolveClientCapabilities` in isolation; this is
+    // the only check that the declaration actually survives the wire path —
+    // header name included. A typo in the header key would leave every other
+    // test green and screen observation permanently dead.
+    const ac = new AbortController();
+    const hub = new AssistantEventHub();
+
+    handleSubscribeAssistantEvents(
+      {
+        headers: {
+          "x-vellum-client-id": "observing-mac",
+          "x-vellum-interface-id": "macos",
+          "x-vellum-host-capabilities": "host_observe",
+        },
+        abortSignal: ac.signal,
+      },
+      { hub },
+    );
+
+    const entry = hub.listClients().find((c) => c.clientId === "observing-mac");
+    expect(entry?.capabilities).toContain("host_observe");
+    // The interface-derived set must survive alongside the declaration.
+    expect(entry?.capabilities).toContain("host_bash");
+
+    ac.abort();
+  });
+
+  test("MUTATION CHECK: a Mac that declares nothing is not asked to observe", () => {
+    // Every desktop build shipped before screen observation connects exactly
+    // like this. If it were registered with the capability, the daemon would
+    // arm a session and tell its owner Cue was watching their screen while
+    // the client had no handler for the request.
+    const ac = new AbortController();
+    const hub = new AssistantEventHub();
+
+    handleSubscribeAssistantEvents(
+      {
+        headers: {
+          "x-vellum-client-id": "old-mac",
+          "x-vellum-interface-id": "macos",
+        },
+        abortSignal: ac.signal,
+      },
+      { hub },
+    );
+
+    const entry = hub.listClients().find((c) => c.clientId === "old-mac");
+    expect(entry?.capabilities).not.toContain("host_observe");
+    expect(entry?.capabilities).toContain("host_bash");
+
+    ac.abort();
+  });
+
+  test("MUTATION CHECK: a client cannot declare its way into a channel that acts", () => {
+    // The header is unverified. A web client claiming shell access must get
+    // nothing at all.
+    const ac = new AbortController();
+    const hub = new AssistantEventHub();
+
+    handleSubscribeAssistantEvents(
+      {
+        headers: {
+          "x-vellum-client-id": "pushy-web",
+          "x-vellum-interface-id": "web",
+          "x-vellum-host-capabilities": "host_bash,host_cu,host_file",
+        },
+        abortSignal: ac.signal,
+      },
+      { hub },
+    );
+
+    const entry = hub.listClients().find((c) => c.clientId === "pushy-web");
+    expect(entry?.capabilities).toEqual([]);
+
+    ac.abort();
+  });
+
   test("skips registration when no headers are provided (backwards compat)", () => {
     const ac = new AbortController();
     const hub = new AssistantEventHub();
