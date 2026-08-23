@@ -82,6 +82,33 @@ export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
 
   filingAgent: { profile: "cost-optimized" },
   memoryExtraction: { profile: "cost-optimized" },
+  /**
+   * Reading a note for things to do.
+   *
+   * The shape is pinned explicitly rather than left to a profile, and that is
+   * the whole point: extraction is a **structured** task, not a reasoning one.
+   * Naming only a profile meant this inherited whatever effort and token
+   * budget the owner's active brain used — which on a reasoning model was
+   * `effort: high` with a 16k budget, and produced a reply that was entirely
+   * reasoning and no content. The read then reported "I couldn't read this
+   * one", every single time, for a reason no profile name would ever reveal.
+   *
+   * So it mirrors `recall`: low effort, a small budget, no thinking,
+   * temperature 0. Same reasons — a forced-shape answer wants determinism,
+   * and a long budget on this call site buys nothing but latency.
+   */
+  noteExtraction: {
+    // `balanced` for the same reason `recall` uses it: the shape below is
+    // what makes this cheap, not the profile name, and pinning
+    // `cost-optimized` would tie the read to whichever provider that maps to
+    // on a given deployment — which is how it landed on a dead one here.
+    profile: "balanced",
+    maxTokens: 4096,
+    effort: "low",
+    thinking: { enabled: false, streamThinking: false },
+    temperature: 0,
+    disableCache: true,
+  },
   // Structured recap of a meeting transcript via a forced tool call — match
   // the proven cost-optimized forced-tool path that memoryExtraction uses.
   meetingRecap: {

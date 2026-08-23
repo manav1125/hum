@@ -90,6 +90,17 @@ const CATALOG_RECORD: CatalogRecord = {
     description: "Extracts memorable facts from conversation turns.",
     domain: "memory",
   },
+  // Named so it can be read in the spend ledger as a line of its own —
+  // "reading your notes · $0.12 this week". An assistant that spends
+  // someone's money silently is the thing this product refuses to be, and
+  // folding this cost into a neighbouring call site would hide it.
+  noteExtraction: {
+    id: "noteExtraction",
+    displayName: "Reading your notes",
+    description:
+      "Finds tasks, memories and people in a note, as proposals the owner accepts or dismisses. Never writes anything itself.",
+    domain: "memory",
+  },
   meetingRecap: {
     id: "meetingRecap",
     displayName: "Meeting Recap",
