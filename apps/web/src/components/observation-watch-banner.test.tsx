@@ -11,16 +11,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
+
 const ASSISTANT_ID = "asst-1";
 
-// Only the seams this component reads are replaced; everything else stays the
-// real module, so an exhaustive factory cannot silently delete exports for
-// files that load later.
-const idActual = await import("@/assistant/use-active-assistant-id");
-mock.module("@/assistant/use-active-assistant-id", () => ({
-  ...idActual,
-  useActiveAssistantId: () => ASSISTANT_ID,
-}));
+// The banner mounts in the root layout, which is not under
+// `<ActiveAssistantGate>`, so it reads the nullable store rather than the
+// throwing hook. Seed the real store instead of mocking it — that exercises
+// the same path the app takes, and leaves the module registry untouched.
+useResolvedAssistantsStore.setState({ activeAssistantId: ASSISTANT_ID });
 
 type SessionView = {
   armed: boolean;

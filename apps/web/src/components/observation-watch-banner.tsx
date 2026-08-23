@@ -28,7 +28,7 @@ import {
   cueliveObservationSessionGetQueryKey,
   cueliveObservationSessionStopPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
-import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 
 /**
  * How often the banner re-reads the session while it is up.
@@ -49,7 +49,13 @@ function countdown(totalSeconds: number): string {
 }
 
 export function ObservationWatchBanner() {
-  const assistantId = useActiveAssistantId();
+  // This banner mounts in the ROOT layout (that is the whole point — a
+  // watching indicator buried under a gate is off exactly when it matters),
+  // and the root layout is NOT under `<ActiveAssistantGate>`. So read the raw
+  // store, which is nullable, rather than `useActiveAssistantId()`, which
+  // throws. Every read below already tolerates null: the query is disabled
+  // without an id and the banner draws nothing until a session is armed.
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
