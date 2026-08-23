@@ -715,10 +715,16 @@ describe("classifyConversationError", () => {
       expect(result.errorCategory).toBe("provider_billing");
     });
 
-    it("still classifies a generic 403 (no spend-cap prose) as PROVIDER_INVALID_KEY", () => {
+    it("classifies a generic 403 (no spend-cap prose) as PROVIDER_FORBIDDEN", () => {
+      // Not PROVIDER_INVALID_KEY. A 403 usually means the key authenticates
+      // perfectly well and the provider refused this particular request — an
+      // OpenRouter account blocked from `anthropic/*` by ToS, say. Telling
+      // someone their key was rejected sends them to replace the one thing
+      // that is not broken. 401 is the status that means the key itself was
+      // refused, and it still classifies that way.
       const err = new ProviderError("Forbidden", "openrouter", 403);
       const result = classifyConversationError(err, baseCtx);
-      expect(result.code).toBe("PROVIDER_INVALID_KEY");
+      expect(result.code).toBe("PROVIDER_FORBIDDEN");
     });
 
     it("classifies ProviderError with 400 as PROVIDER_API (retryable)", () => {
