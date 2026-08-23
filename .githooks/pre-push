@@ -123,6 +123,35 @@ if [ -z "$CHANGED_FILES" ] && [ -z "$SWIFT_CHANGED_FILES" ]; then
     exit 0
 fi
 
+# --- Preflight: if this hook cannot run its checks, it must BLOCK ------------
+# The checks below stream $CHANGED_FILES into read loops and shell out to
+# bun/tsc/eslint, all of which need a writable temp dir. When the disk is full
+# the shell cannot materialise the redirection, the loop body never executes,
+# every file list comes back empty, and each check "passes" by skipping — the
+# hook then exits 0 and the push is reported as verified.
+#
+# Observed for real on 2026-08-23 at ~600MiB free: five `cannot create temp file
+# for here document` errors, the assistant/cli/gateway lint pass silently
+# skipped, exit 0, push accepted. A guard that cannot run must block, never pass.
+if ! _preflight_tmp="$(mktemp 2>/dev/null)"; then
+    echo ""
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${RED}Pre-push checks cannot run — push blocked${NC}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "Could not create a temp file, so the type and lint checks cannot run."
+    echo "They therefore cannot vouch for this push. This is almost always a"
+    echo "full disk:"
+    echo ""
+    echo "    df -h /System/Volumes/Data"
+    echo ""
+    echo "Free some space and push again, or push with --no-verify to skip."
+    _debug_log "preflight: mktemp FAILED - blocking push"
+    exit 1
+fi
+rm -f "$_preflight_tmp"
+_debug_log "preflight: temp dir writable"
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # --- Swift build check for clients/ ---
@@ -236,7 +265,7 @@ if [ -n "$CHANGED_FILES" ]; then
             ASSISTANT_TS_CHANGED=1
             break
         fi
-    done <<< "$CHANGED_FILES"
+    done < <(printf '%s\n' "$CHANGED_FILES")
 
     if [ $ASSISTANT_TS_CHANGED -eq 1 ]; then
         # assistant/src/daemon/external-skills-bootstrap.ts statically imports
@@ -285,7 +314,7 @@ if [ -n "$CHANGED_FILES" ]; then
             CHROME_EXT_TS_CHANGED=1
             break
         fi
-    done <<< "$CHANGED_FILES"
+    done < <(printf '%s\n' "$CHANGED_FILES")
 
     if [ $CHROME_EXT_TS_CHANGED -eq 1 ]; then
         echo ""
@@ -315,7 +344,7 @@ if [ -n "$CHANGED_FILES" ]; then
             if [[ "$file" == "$lint_pkg/"* ]] && [[ "$file" =~ \.(ts|tsx|js|jsx|mjs)$ ]]; then
                 lint_files+=("${file#${lint_pkg}/}")
             fi
-        done <<< "$CHANGED_FILES"
+        done < <(printf '%s\n' "$CHANGED_FILES")
 
         if [ ${#lint_files[@]} -eq 0 ]; then
             continue
