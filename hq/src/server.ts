@@ -1698,7 +1698,7 @@ export function createHandler(
    * moves off GitHub.
    */
   function handleMacDownload(_method: string): Response {
-    const MAC_RELEASE = "v1.0.0";
+    const MAC_RELEASE = "v1.1.0";
     const target =
       process.env.HQ_MAC_DOWNLOAD_URL ??
       `https://github.com/manav1125/cue-releases/releases/download/${MAC_RELEASE}/Cue-${MAC_RELEASE.slice(
