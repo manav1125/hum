@@ -132,6 +132,18 @@ async function loadDefaultRecallSourceAdapter(
       const { searchWorkspaceSource } = await import("./sources/workspace.js");
       return { source, search: searchWorkspaceSource };
     }
+    case "notes": {
+      const { searchNotesSource } = await import("./sources/notes.js");
+      return { source, search: searchNotesSource };
+    }
+    case "email": {
+      const { searchEmailSource } = await import("./sources/email.js");
+      return { source, search: searchEmailSource };
+    }
+    case "work": {
+      const { searchWorkSource } = await import("./sources/work.js");
+      return { source, search: searchWorkSource };
+    }
   }
 }
 

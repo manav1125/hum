@@ -4,6 +4,9 @@ export const ALL_RECALL_SOURCES: readonly RecallSource[] = [
   "memory",
   "conversations",
   "workspace",
+  "notes",
+  "email",
+  "work",
 ] as const;
 
 const RECALL_SOURCE_SET: ReadonlySet<unknown> = new Set(ALL_RECALL_SOURCES);

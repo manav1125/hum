@@ -60,6 +60,10 @@ const RECALL_SOURCE_DESCRIPTIONS: Record<RecallSource, string> = {
   memory: "durable memory graph facts and relationship/context memories",
   conversations: "past assistant conversations and conversation summaries",
   workspace: "files and text available in the current workspace",
+  notes: "notes the owner wrote, said or forwarded — their own words",
+  email:
+    "mail and other watcher arrivals Cue has seen, including ones it filed as noise. A record of what arrived, not a live mailbox.",
+  work: "work items Cue is doing or has done, with their current state",
 };
 
 export const SEARCH_SOURCES_TOOL_DEFINITION: RecallAgentToolDefinition = {

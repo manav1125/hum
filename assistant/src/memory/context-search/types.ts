@@ -1,6 +1,21 @@
 import type { AssistantConfig } from "../../config/schema.js";
 
-export type RecallSource = "memory" | "conversations" | "workspace";
+/**
+ * Where recall may look.
+ *
+ * `notes`, `email` and `work` were added for R2 ("ask your notes"), and the
+ * name of that feature is a little misleading on purpose: scoping an answer
+ * to one store is how it becomes wrong by omission. "What have we promised
+ * Acme?" is answered out of notes AND mail AND the work already queued, or
+ * it is answered badly.
+ */
+export type RecallSource =
+  | "memory"
+  | "conversations"
+  | "workspace"
+  | "notes"
+  | "email"
+  | "work";
 
 export type RecallDepth = "fast" | "standard" | "deep";
 
