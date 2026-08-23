@@ -281,6 +281,66 @@ describe("signin token lifecycle", () => {
     expect(body.name).toBe("Nat"); // first name, for the "You're in, Nat" landing
   });
 
+  const IOS_UA =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+
+  test("iPhone browser gets the app hand-off page, and the token survives it", async () => {
+    process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
+    const { handle, db } = setup();
+    const c = db.createCustomer({
+      email: "ios@example.com",
+      name: "Ios User",
+      plan: "chief_of_staff",
+    });
+    const raw = "a".repeat(64);
+    db.createSigninToken({
+      customerId: c.id,
+      tokenHash: hashSigninToken(raw),
+      ttlMs: 15 * 60 * 1000,
+    });
+
+    const res = await handle(
+      new Request(`http://hq.local/auth?token=${raw}`, {
+        headers: { "user-agent": IOS_UA },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const html = await res.text();
+    // Hands the still-unspent token to the app over its custom scheme.
+    expect(html).toContain(`vellum-assistant://auth?token=${raw}`);
+    expect(html).toContain(`/auth?browser=1&amp;token=${raw}`);
+    // Crucially the page must NOT have consumed the token — the app resolves
+    // it a moment later via ?native=1, and that is what spends it.
+    expect(db.consumeSigninToken(hashSigninToken(raw))).toBeTruthy();
+  });
+
+  test("?browser=1 keeps the plain web session on iPhone", async () => {
+    process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
+    const { handle } = setup();
+    const res = await handle(
+      new Request("http://hq.local/auth?browser=1&token=deadbeef", {
+        headers: { "user-agent": IOS_UA },
+      }),
+    );
+    expect(res.status).toBe(302); // straight into the normal browser path
+    expect(res.headers.get("location")).toContain("/signin?error=");
+  });
+
+  test("a desktop browser is untouched by the iOS hand-off", async () => {
+    process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
+    const { handle } = setup();
+    const res = await handle(
+      new Request("http://hq.local/auth?token=deadbeef", {
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        },
+      }),
+    );
+    expect(res.status).toBe(302);
+  });
+
   test("native mode answers JSON for a dead link — the app can show a real error", async () => {
     process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
     const { handle } = setup();

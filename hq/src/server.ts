@@ -1524,6 +1524,55 @@ export function createHandler(
    * instance magic link when they have a live instance, /account otherwise.
    * Bad/expired tokens bounce to /signin.
    */
+  /**
+   * The iOS app's custom URL scheme (`BUNDLE_URL_SCHEME` in
+   * `apps/ios/App/App/Config/App.xcconfig`). Overridable for the dev/staging
+   * targets, which register their own suffixed scheme.
+   */
+  function iosAppScheme(): string {
+    return process.env.HQ_IOS_APP_SCHEME ?? "vellum-assistant";
+  }
+
+  /** Minimal attribute escape — the values here are URLs we built ourselves. */
+  function escapeHtmlAttr(v: string): string {
+    return v
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  /** iPhone/iPad — the only platform that gets the custom-scheme hand-off. */
+  function isIosUserAgent(req: Request): boolean {
+    return /iPhone|iPad|iPod/i.test(req.headers.get("user-agent") ?? "");
+  }
+
+  /**
+   * The sign-in hand-off page. Fires the app scheme immediately (works when
+   * the page is the top-level document) and keeps a real button for the
+   * in-app browsers that only follow a scheme on a user gesture. The token is
+   * still unspent when this renders — the app resolves it via
+   * `/auth?native=1&token=…`, which is what consumes it.
+   */
+  function iosHandoffPage(rawToken: string): string {
+    const deepLink = `${iosAppScheme()}://auth?token=${encodeURIComponent(rawToken)}`;
+    const webLink = `/auth?browser=1&token=${encodeURIComponent(rawToken)}`;
+    const j = (v: string) => JSON.stringify(v);
+    return `<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Opening Cue…</title></head>
+<body style="margin:0;background:#E7EAEF;font-family:-apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px">
+<div style="max-width:360px;width:100%;background:#fff;border:1px solid #E1E5EC;border-radius:14px;padding:32px 28px;text-align:center">
+  <div style="font-size:20px;font-weight:600;letter-spacing:-.4px;color:#101828">Opening Cue…</div>
+  <p style="font-size:15px;line-height:1.6;color:#43505F;margin:12px 0 0">If the app doesn't come forward, tap below.</p>
+  <a id="app" href="${escapeHtmlAttr(deepLink)}" style="display:block;text-align:center;background:#3D6EE8;color:#fff;border-radius:11px;padding:14px;font-size:15px;font-weight:600;text-decoration:none;margin-top:22px">Open in Cue</a>
+  <a href="${escapeHtmlAttr(webLink)}" style="display:inline-block;font-size:13px;color:#8D99A5;margin-top:16px;text-decoration:none">Continue in the browser</a>
+</div>
+<script>window.location.replace(${j(deepLink)});</script>
+</body></html>`;
+  }
+
   async function handleAuth(req: Request, url: URL): Promise<Response> {
     if (!isSessionConfigured()) {
       return json({ error: "signin not configured (HQ_SESSION_SECRET)" }, 503);
@@ -1551,6 +1600,25 @@ export function createHandler(
       return native
         ? json({ ok: false, error: "missing_token" }, 400)
         : redirectTo("/signin");
+    // iOS hand-off (P0 2026-08-23): the universal link only opens the app when
+    // the tap happens somewhere iOS resolves applinks — Apple Mail does, but
+    // Gmail/Outlook/Slack open their own in-app browser (SFSafariViewController),
+    // which never consults the AASA, and once a user has picked "open in
+    // browser" for justcue.ai iOS remembers it forever. Both cases dead-ended
+    // in Safari with no way back to the app. So on iPhone/iPad we serve an
+    // interstitial that hands the token to the app over its custom URL scheme
+    // (`vellum-assistant://auth?token=…`, which the shell's appUrlOpen handler
+    // already accepts) before the token is spent. Custom schemes work from
+    // in-app browsers where universal links do not. `?browser=1` is the escape
+    // hatch back to the plain web session, and non-iOS is untouched.
+    if (!native && isIosUserAgent(req) && url.searchParams.get("browser") !== "1") {
+      return new Response(iosHandoffPage(raw), {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    }
     const consumed = db.consumeSigninToken(hashSigninToken(raw));
     if (!consumed) return fail("link_expired");
     const customer = db.getCustomer(consumed.customerId);
