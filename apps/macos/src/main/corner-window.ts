@@ -17,6 +17,7 @@ import {
 import { readSelection, type Selection } from "./selection-read";
 import { readSetting } from "./settings";
 import { restoreBounds, track as trackWindowState } from "./window-state";
+import { isCornerEnabled } from "./desktop-surface-flags";
 
 /**
  * The floating corner — one exchange, then finished.
@@ -84,11 +85,6 @@ const envFlagOverride = (): boolean | null => {
  * `ç` in every app that does not have it bound. Registering that for someone
  * who has not asked for the feature would be taking something away from them.
  */
-export const isCornerEnabled = (): boolean => {
-  const override = envFlagOverride();
-  if (override !== null) return override;
-  return readSetting("featureFlags")?.[CORNER_FLAG_KEY] === true;
-};
 
 /**
  * Sized to the content, not to a round number: the quote block is capped and
@@ -285,3 +281,9 @@ export const __resetForTesting = (): void => {
   pendingScreen = null;
   pendingOffer = false;
 };
+
+/**
+ * Re-exported so callers keep importing the corner's gate from the corner.
+ * The logic lives in `desktop-surface-flags` — see that file for why.
+ */
+export { isCornerEnabled };

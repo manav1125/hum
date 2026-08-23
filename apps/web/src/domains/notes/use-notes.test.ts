@@ -33,12 +33,15 @@ function resolve(input: {
   isPending: boolean;
   isError: boolean;
   local?: Note[];
+  /** Defaults to `fetching` — a query that is actually in flight. */
+  fetchStatus?: "fetching" | "paused" | "idle";
 }) {
   const view = resolveNotesView(
     {
       ...(input.serverData ? { data: input.serverData } : {}),
       isPending: input.isPending,
       isError: input.isError,
+      fetchStatus: input.fetchStatus ?? "fetching",
     },
     input.local as never,
     "all",
@@ -93,6 +96,55 @@ describe("it always resolves", () => {
     expect(
       resolve({ isPending: true, isError: false, local: [note("a")] }),
     ).toEqual({ status: "ready", source: "local" });
+  });
+
+  /**
+   * The bug that actually reached production, and the half the original
+   * regression test above missed: it bounded the LOCAL read and left the
+   * query alone.
+   *
+   * `useNotes` runs `enabled: Boolean(assistantId)`. A disabled query in
+   * react-query reports `isPending: true` with `fetchStatus: "idle"` — for
+   * ever, because nothing is in flight to settle it. The resolver mapped any
+   * `isPending` to "loading", so an empty assistant id sat the page on
+   * "Loading…" with no bound at all. Manav hit exactly this on 2026-08-23.
+   */
+  describe("REGRESSION: a disabled query is not a waiting one", () => {
+    test("never asked, nothing local → unreachable, not a spinner", () => {
+      expect(
+        resolve({ isPending: true, isError: false, local: [], fetchStatus: "idle" }),
+      ).toEqual({ status: "unreachable", source: null });
+    });
+
+    test("never asked, but this device holds notes → show them", () => {
+      expect(
+        resolve({
+          isPending: true,
+          isError: false,
+          local: [note("a")],
+          fetchStatus: "idle",
+        }),
+      ).toEqual({ status: "ready", source: "local" });
+    });
+
+    test("never asked and the local read has not answered → still loading", () => {
+      // Bounded by the store's open timeout, so this one does resolve. We
+      // wait for the device before claiming we cannot reach anything.
+      expect(
+        resolve({ isPending: true, isError: false, fetchStatus: "idle" }),
+      ).toEqual({ status: "loading", source: null });
+    });
+
+    test("a real in-flight request still reads as loading", () => {
+      expect(
+        resolve({
+          isPending: true,
+          isError: false,
+          local: [],
+          fetchStatus: "fetching",
+        }),
+      ).toEqual({ status: "loading", source: null });
+    });
   });
 });
 

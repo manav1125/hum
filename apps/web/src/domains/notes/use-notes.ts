@@ -72,8 +72,9 @@ import type {
  */
 export interface NotesView {
   /**
-   *  · `loading`     — genuinely still waiting. Always resolves: both the
-   *                    query and the local read are bounded.
+   *  · `loading`     — genuinely still waiting, and only ever on the local
+   *                    read, which the store bounds. A query that is merely
+   *                    disabled never settles and so may never render here.
    *  · `ready`       — a list, from `source`.
    *  · `unreachable` — the daemon could not be reached AND this device holds
    *                    no snapshot. Say so; never draw an empty list.
@@ -96,6 +97,15 @@ export function resolveNotesView(
     data?: { notes: Note[]; counts: NoteCounts };
     isPending: boolean;
     isError: boolean;
+    /**
+     * react-query's second axis. A **disabled** query — ours is
+     * `enabled: Boolean(assistantId)` — reports `isPending` for as long as it
+     * stays disabled, because "pending" means *no data yet*, not *a request is
+     * in flight*. `fetchStatus: "idle"` is the only thing that separates
+     * "nobody asked" from "asking". Optional so a caller that cannot supply it
+     * keeps the old behaviour rather than silently reading as never-asked.
+     */
+    fetchStatus?: "fetching" | "paused" | "idle";
   },
   /** `undefined` = the local read has not answered yet. */
   local: LocalNote[] | undefined,
@@ -110,10 +120,14 @@ export function resolveNotesView(
     };
   }
 
-  // The only state that may say "loading", and both halves are bounded: the
-  // query by react-query's retries, the local read by the store's open
-  // timeout. An unreadable store answers with an empty array, never never.
-  if (query.isPending && local === undefined) {
+  // A query that was never asked is not a query that is waiting. Everything
+  // below reads this rather than `isPending` alone — see the field's note.
+  const neverAsked = query.isPending && query.fetchStatus === "idle";
+
+  // Waiting on the local read, which is bounded by the store's open timeout —
+  // an unreadable store answers with an empty array, never never. Worth doing
+  // even when the daemon was never asked: this device may still hold the pile.
+  if (local === undefined && (query.isPending || query.isError)) {
     return { status: "loading", source: null, notes: [], counts: null };
   }
 
@@ -130,7 +144,14 @@ export function resolveNotesView(
   // Nothing local, and the daemon errored: we genuinely do not know what is
   // there. "No notes" here would be a guess dressed as a fact — about the
   // pile someone would most panic to see empty.
-  if (query.isError) {
+  // Nothing local, and either the daemon errored or it was never asked at all.
+  // Both mean the same thing to the reader — *we do not know what is there* —
+  // and "no notes" would be a guess dressed as a fact about the pile someone
+  // would most panic to see empty. `neverAsked` belongs here and NOT in the
+  // loading branch below: a disabled query never settles, so treating it as
+  // loading is an unbounded spinner, which is the one thing this resolver
+  // exists to prevent.
+  if (query.isError || neverAsked) {
     return { status: "unreachable", source: null, notes: [], counts: null };
   }
 
@@ -155,6 +176,7 @@ export function useNotes(
     data?: { notes: Note[]; counts: NoteCounts };
     isPending: boolean;
     isError: boolean;
+    fetchStatus: "fetching" | "paused" | "idle";
   };
 
   const [local, setLocal] = useState<LocalNote[] | undefined>(undefined);

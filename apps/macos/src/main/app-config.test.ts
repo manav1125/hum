@@ -107,6 +107,53 @@ describe("getRendererRootUrl", () => {
     );
   });
 
+  /**
+   * The white floating panel, 2026-08-23.
+   *
+   * A magic-link connect persists the instance URL with its `?cueToken=…`
+   * still attached. `selfHostRendererBase` used to hand that whole string to
+   * auxiliary windows, which append `/<subpath>` by concatenation — so the
+   * route landed inside the query and every one of them loaded the SPA root
+   * instead. In the root they sit outside `ActiveAssistantGate`, throw, and
+   * paint white.
+   */
+  describe("REGRESSION: a token in the persisted URL must not swallow the route", () => {
+    const WITH_TOKEN = "https://manav.justcue.app/assistant/?cueToken=abc123";
+
+    // The outer beforeEach forces the self-host opt-out; this suite is about
+    // the connected path, so it hands control back to the persisted reader.
+    beforeEach(() => {
+      delete process.env.CUE_SERVER_URL;
+    });
+
+    test("the base for auxiliary windows drops the query", () => {
+      setPersistedSelfHostUrlReader(() => WITH_TOKEN);
+      expect(getRendererBaseProd()).toBe("https://manav.justcue.app/assistant");
+    });
+
+    test("appending a floating route resolves to that route, not the root", () => {
+      setPersistedSelfHostUrlReader(() => WITH_TOKEN);
+      const url = new URL(`${getRendererBaseProd()}/floating/corner`);
+      expect(url.pathname).toBe("/assistant/floating/corner");
+      expect(url.search).toBe("");
+    });
+
+    test("the MAIN window still carries the token — it is the credential", () => {
+      setPersistedSelfHostUrlReader(() => WITH_TOKEN);
+      expect(getRendererRootUrl(true)).toContain("cueToken=abc123");
+    });
+
+    test("an instance pasted as a bare origin still gets the /assistant prefix", () => {
+      setPersistedSelfHostUrlReader(() => "https://manav.justcue.app");
+      expect(getRendererBaseProd()).toBe("https://manav.justcue.app/assistant");
+    });
+
+    test("the prefix is never doubled", () => {
+      setPersistedSelfHostUrlReader(() => "https://manav.justcue.app/assistant");
+      expect(getRendererBaseProd()).toBe("https://manav.justcue.app/assistant");
+    });
+  });
+
   test("dev loads the standalone Vite fallback with a trailing slash to match Vite's base", () => {
     expect(getRendererRootUrl(false)).toBe("http://localhost:5173/assistant/");
   });

@@ -10,6 +10,7 @@ import {
 import { onSettingChange, readSetting, writeSetting } from "./settings";
 import { getStatus, onStatusChange } from "./status";
 import { restoreBounds, track as trackWindowState } from "./window-state";
+import { isCompanionEnabled } from "./desktop-surface-flags";
 
 /**
  * Floating desktop companion (slice 1) — an always-on-top, frameless,
@@ -76,12 +77,6 @@ const envFlagOverride = (): boolean | null => {
  * at tray-menu-build time and on every sync so toggling the flag takes
  * effect without an app restart (matching the tray's other flag gates).
  */
-export const isCompanionEnabled = (): boolean => {
-  const override = envFlagOverride();
-  if (override !== null) return override;
-  return readSetting("featureFlags")?.[COMPANION_FLAG_KEY] === true;
-};
-
 /**
  * The persisted show/hide choice. Defaults to visible so enabling the flag
  * is sufficient to see the companion; hiding from the tray (or the window's
@@ -313,3 +308,9 @@ export const __resetForTesting = (): void => {
   installed = false;
   expanded = false;
 };
+
+/**
+ * Re-exported so the tray keeps importing its gate from the window it gates.
+ * The logic itself lives in `desktop-surface-flags` — see that file for why.
+ */
+export { isCompanionEnabled };

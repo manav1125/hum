@@ -82,12 +82,53 @@ export const resolveSelfHostUrl = (): URL | null => {
   }
 };
 
+/** The prefix every SPA route is served under. See `selfHostRendererBase`. */
+const RENDERER_BASE_PATH = "/assistant";
+
 /**
  * The self-host base WITHOUT a trailing slash, so auxiliary windows can append
- * `/<subpath>` (`/about`, `/conversations/<id>`, …) the same way they do for
- * the bundled `app://` base. Returns `null` when self-host is disabled.
+ * `/<subpath>` (`/about`, `/floating/corner`, …) the same way they do for the
+ * bundled `app://` base. Returns `null` when self-host is disabled.
+ *
+ * **Origin and path only — the query and hash are dropped**, and that is the
+ * whole point of this function existing separately from `selfHostRootUrl`.
+ * The persisted instance URL is whatever the magic link put in the box, so in
+ * practice it carries `?cueToken=…`. Appending a subpath by string
+ * concatenation then puts the route INSIDE the query:
+ *
+ *     "https://host/assistant/?cueToken=abc" + "/floating/corner"
+ *      → path "/assistant/", query "cueToken=abc/floating/corner"
+ *
+ * — so the window loads the SPA ROOT instead of the route it asked for. It
+ * lands in the gated app tree, throws `useActiveAssistantId() called outside
+ * ActiveAssistantGate`, and paints white. That is the white, unclickable
+ * floating panel, and it hit all six auxiliary windows on any self-hosted
+ * install: About, quick-input, the command palette, the dictation overlay,
+ * the companion, and the corner the moment it was switched on.
+ *
+ * The `/assistant` suffix is normalised on rather than assumed — an instance
+ * pasted as a bare origin is the same instance as one pasted with the suffix.
  */
 const selfHostRendererBase = (): string | null => {
+  const url = resolveSelfHostUrl();
+  if (!url) return null;
+  const path = url.pathname.replace(/\/+$/, "");
+  const base = `${url.origin}${path}`;
+  return base.endsWith(RENDERER_BASE_PATH)
+    ? base
+    : `${base}${RENDERER_BASE_PATH}`;
+};
+
+/**
+ * The URL the MAIN window loads — deliberately the instance URL as persisted,
+ * query and all, because the magic-link token in it is what authenticates the
+ * first load. Only the trailing slash is normalised.
+ *
+ * Kept separate from `selfHostRendererBase` rather than shared: the main
+ * window wants the credential, and every other window wants a clean base to
+ * append a route to. Collapsing the two is the bug described above.
+ */
+const selfHostRootUrl = (): string | null => {
   const url = resolveSelfHostUrl();
   if (!url) return null;
   return url.toString().replace(/\/+$/, "");
@@ -143,7 +184,7 @@ export const getRendererRootUrl = (isPackaged: boolean): string => {
   // (mirrors capacitor's `server.url`). When self-host is disabled, the
   // `app://` protocol handler maps the slashless `/assistant` to index.html,
   // so the legacy base loads as-is.
-  const selfHost = selfHostRendererBase();
+  const selfHost = selfHostRootUrl();
   if (selfHost) return `${selfHost}/`;
   return getRendererBaseProd();
 };
