@@ -85,7 +85,9 @@
         font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, Roboto, sans-serif;
         -webkit-font-smoothing: antialiased; overflow: hidden;
       }
-      #app { position: relative; height: 100%; width: 100%; }
+      /* Height is re-set in px from visualViewport whenever the keyboard
+       * opens — see syncViewport(). The 100% here is the pre-JS default. */
+      #app { position: relative; height: 100%; width: 100%; overflow: hidden; }
       .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 
       /* ---- screen router: one visible at a time ---- */
@@ -96,6 +98,10 @@
         opacity: 0; transition: opacity 0.45s ease;
       }
       .screen[data-active] { display: flex; opacity: 1; }
+      /* With the keyboard up the visible box can be shorter than the card;
+       * scroll it inside its own screen rather than letting the native scroll
+       * view lift the whole page off the top of the display. */
+      .screen[data-active] { overflow-y: auto; -webkit-overflow-scrolling: touch; }
       .screen.splash { background: var(--splash-bg); }
       .card { position: relative; z-index: 2; width: 100%; max-width: 400px; display: flex; flex-direction: column; align-items: stretch; }
       .card.center { align-items: center; text-align: center; }
@@ -590,13 +596,53 @@
           catch (e) { return u; }
         }
 
+        // ---- native bridge --------------------------------------------
+        // `Capacitor.Plugins` is populated by @capacitor/core's
+        // registerPlugin(), which only runs on a page that loads the core JS
+        // bundle. This shell is hand-written HTML with no bundler and no
+        // script tags, so `Capacitor.Plugins` is ALWAYS an empty object here —
+        // every `Capacitor.Plugins.App` / `.Haptics` guard silently took the
+        // "plugin unavailable" branch. That is why the sign-in link opened the
+        // app and then sat on the same screen: the appUrlOpen listener was
+        // never registered, and boot()'s getLaunchUrl() call was skipped, so
+        // the token never reached resolveAndConnect (HQ logged no native
+        // resolve at all). Haptics were dead for the same reason.
+        //
+        // The bridge WKUserScript that the native runtime injects does expose
+        // the low-level entry points — `Capacitor.addListener(plugin, event,
+        // cb)` and `Capacitor.nativePromise(plugin, method, opts)` — so go
+        // through those, preferring a registered proxy if one ever does exist.
+        function nativePlugin(name) {
+          var cap = window.Capacitor;
+          if (!cap) return null;
+          var registered = cap.Plugins && cap.Plugins[name];
+          if (registered) return registered;
+          if (typeof cap.nativePromise !== "function") return null;
+          return new Proxy({}, {
+            get: function (_t, method) {
+              // Never let the proxy answer for `then` — a stray
+              // Promise.resolve() on it would treat the plugin as a thenable
+              // and call a native method that does not exist.
+              if (typeof method !== "string" || method === "then") return undefined;
+              if (method === "addListener") {
+                return function (event, cb) {
+                  if (typeof cap.addListener !== "function") return;
+                  return cap.addListener(name, event, cb);
+                };
+              }
+              return function (options) {
+                return cap.nativePromise(name, String(method), options || {});
+              };
+            },
+          });
+        }
+
         // ---- haptics (sensory map) ------------------------------------
         // @capacitor/haptics is bridged natively; on web / when the plugin is
         // absent every call is a guarded no-op. Impact styles + notification
         // types are the plugin's string enums.
         function hapticsPlugin() {
-          try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics) || null; }
-          catch (e) { return null; }
+          return nativePlugin("Haptics");
         }
         function hImpact(style) { var h = hapticsPlugin(); if (h && h.impact) { try { h.impact({ style: style }); } catch (e) {} } }
         function hLight() { hImpact("LIGHT"); }     // orbit capture, address complete
@@ -715,16 +761,31 @@
 
         // Universal link comes in via the Capacitor App plugin on device;
         // also honour ?token= directly (browser QA + a link opened in-webview).
-        function handleUrl(u) {
+        function tokenFromUrl(u) {
+          var token = null;
           try {
             var url = new URL(u);
-            var token = url.searchParams.get("token") || url.searchParams.get("cueToken");
-            if (token) { resolveAndConnect(token); return true; }
+            token = url.searchParams.get("token") || url.searchParams.get("cueToken");
           } catch (e) {}
+          // Custom-scheme URLs (vellum-assistant://auth?token=…) are not a
+          // "special" scheme, so don't depend on URL/searchParams agreeing
+          // about where the query starts — fall back to reading it off the
+          // string. A link that reaches the app and is then dropped on a
+          // parser technicality is the worst failure mode this screen has.
+          if (!token) {
+            var m = /[?&](?:token|cueToken)=([^&#]+)/.exec(String(u || ""));
+            if (m) { try { token = decodeURIComponent(m[1]); } catch (e2) { token = m[1]; } }
+          }
+          return token || null;
+        }
+        function handleUrl(u) {
+          var token = tokenFromUrl(u);
+          if (token) { resolveAndConnect(token); return true; }
           return false;
         }
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-          window.Capacitor.Plugins.App.addListener("appUrlOpen", function (data) {
+        var appPlugin = nativePlugin("App");
+        if (appPlugin) {
+          appPlugin.addListener("appUrlOpen", function (data) {
             if (data && data.url) handleUrl(data.url);
           });
         }
@@ -825,7 +886,7 @@
 
         // Pure helpers exposed for the regression test (see
         // capacitor-shell/connect-logic.test.ts). Not used by the UI.
-        window.CueShell = { isEmail: isEmail, withoutToken: withoutToken, parseCueSubdomain: parseCueSubdomain };
+        window.CueShell = { isEmail: isEmail, withoutToken: withoutToken, parseCueSubdomain: parseCueSubdomain, tokenFromUrl: tokenFromUrl, nativePlugin: nativePlugin };
 
         // ---- nav buttons ----------------------------------------------
         document.querySelectorAll("[data-goto]").forEach(function (b) {
@@ -849,6 +910,57 @@
         // tap anywhere on the splash to skip
         if (screens.splash) screens.splash.addEventListener("click", function () { if (current === "splash") leaveSplash(); });
 
+        // ---- keyboard / visual viewport --------------------------------
+        // No @capacitor/keyboard here, so when the email field takes focus
+        // WKWebView does not resize the web view — it scrolls its own native
+        // scroll view up to reveal the caret. `overflow:hidden` on body does
+        // not stop that: the page has nowhere to scroll, so the whole layout
+        // gets lifted and the sign-in card ends up jammed above the status bar
+        // with the field the user is typing into off-screen entirely.
+        //
+        // Fix: size #app to visualViewport.height (the area actually above the
+        // keyboard) so the card lays out inside the visible box, and reset the
+        // native scroll offset it tries to apply. iOS applies that scroll a
+        // beat AFTER focus, so re-assert on the next frame and once more on a
+        // short delay rather than only on the event.
+        function resetNativeScroll() {
+          try {
+            window.scrollTo(0, 0);
+            if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+            if (document.documentElement) document.documentElement.scrollTop = 0;
+            if (document.body) document.body.scrollTop = 0;
+          } catch (e) {}
+        }
+        function syncViewport() {
+          var vv = window.visualViewport;
+          var app = el("app");
+          if (app) app.style.height = (vv ? vv.height : window.innerHeight) + "px";
+          resetNativeScroll();
+        }
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener("resize", syncViewport);
+          window.visualViewport.addEventListener("scroll", resetNativeScroll);
+        }
+        window.addEventListener("resize", syncViewport);
+        window.addEventListener("orientationchange", function () {
+          setTimeout(syncViewport, 120);
+        });
+        document.addEventListener("focusin", function (ev) {
+          syncViewport();
+          requestAnimationFrame(syncViewport);
+          setTimeout(syncViewport, 120);
+          setTimeout(function () {
+            // Once the box is correct, put the focused field in view within
+            // the screen's own scroller (not the native one).
+            var t = ev.target;
+            if (t && t.scrollIntoView) t.scrollIntoView({ block: "center" });
+          }, 220);
+        });
+        document.addEventListener("focusout", function () {
+          setTimeout(syncViewport, 120);
+        });
+        syncViewport();
+
         // ---- boot ------------------------------------------------------
         // 1. A magic link that opened the app (?token=) wins → connect.
         // 2. A saved instance → hand straight to native (it loads the instance;
@@ -860,10 +972,9 @@
           // Cold launch via the magic link: the app may have started FROM the
           // link, so the appUrlOpen event can fire before this listener exists.
           // Ask the App plugin for the launch URL and handle it if it's a link.
-          var App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
-          if (App && App.getLaunchUrl) {
-            App.getLaunchUrl().then(function (r) {
-              if (r && r.url && handleUrl(r.url)) return;
+          if (appPlugin) {
+            appPlugin.getLaunchUrl().then(function (r) {
+              if (r && r.url) handleUrl(r.url);
             }).catch(function () {});
           }
           var saved = null;

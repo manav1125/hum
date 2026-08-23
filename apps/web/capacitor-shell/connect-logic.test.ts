@@ -12,9 +12,16 @@ const script = html.slice(
   html.lastIndexOf("</script>"),
 );
 
-function loadShell() {
+interface BridgeCall {
+  plugin: string;
+  name: string;
+}
+
+function loadShell(opts: { capacitor?: "none" | "bridge-only" | "plugins" } = {}) {
   const store = new Map<string, string>();
   const noop = () => undefined;
+  const listeners: BridgeCall[] = [];
+  const nativeCalls: BridgeCall[] = [];
   const stubEl = () => ({
     style: { setProperty: noop, width: "" },
     addEventListener: noop,
@@ -29,7 +36,42 @@ function loadShell() {
     disabled: false,
     onclick: null,
   });
+  // The shipped app has NO @capacitor/core bundle on this page, so
+  // `Capacitor.Plugins` is an empty object and only the injected native
+  // bridge's low-level entry points exist. "bridge-only" is what the device
+  // actually looks like; "plugins" is the (never-seen) registered-proxy case.
+  const capacitor =
+    opts.capacitor === "none"
+      ? undefined
+      : opts.capacitor === "plugins"
+        ? {
+            Plugins: {
+              App: {
+                addListener: (name: string) => {
+                  listeners.push({ plugin: "App", name });
+                },
+                getLaunchUrl: () => Promise.resolve({ url: "" }),
+              },
+            },
+          }
+        : {
+            Plugins: {},
+            addListener: (plugin: string, name: string) => {
+              listeners.push({ plugin, name });
+              return { remove: noop };
+            },
+            nativePromise: (plugin: string, name: string) => {
+              nativeCalls.push({ plugin, name });
+              return Promise.resolve({});
+            },
+          };
   const win: Record<string, unknown> = {
+    Capacitor: capacitor,
+    addEventListener: noop,
+    removeEventListener: noop,
+    requestAnimationFrame: noop,
+    innerHeight: 812,
+    scrollTo: noop,
     location: { search: "", href: "https://localhost/", replace: noop },
     localStorage: {
       getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
@@ -39,6 +81,7 @@ function loadShell() {
       querySelectorAll: () => [],
       getElementById: stubEl,
       createElement: stubEl,
+      addEventListener: noop,
     },
     URL,
     URLSearchParams,
@@ -53,11 +96,15 @@ function loadShell() {
     "URLSearchParams",
     script,
   )(win, win.document, win.localStorage, win.location, URL, URLSearchParams);
-  return (win as { CueShell: Record<string, (s: string) => unknown> }).CueShell;
+  return {
+    C: (win as { CueShell: Record<string, (s: string) => unknown> }).CueShell,
+    listeners,
+    nativeCalls,
+  };
 }
 
 describe("mobile connect shell — pure logic", () => {
-  const C = loadShell();
+  const { C } = loadShell();
 
   test("accepts valid emails, rejects junk", () => {
     expect(C.isEmail("you@example.com")).toBe(true);
@@ -84,5 +131,53 @@ describe("mobile connect shell — pure logic", () => {
         "https://cue-you.justcue.app/assistant/?cueToken=a.b.c&cueExp=9",
       ),
     ).toBe("https://cue-you.justcue.app/assistant/");
+  });
+});
+
+describe("mobile connect shell — the magic link reaches the app", () => {
+  test("reads the token out of every URL shape the app can be opened with", () => {
+    const { C } = loadShell();
+    // Universal link.
+    expect(C.tokenFromUrl("https://justcue.ai/auth?token=abc123")).toBe(
+      "abc123",
+    );
+    // Custom scheme — the hand-off HQ serves to iOS browsers.
+    expect(C.tokenFromUrl("vellum-assistant://auth?token=abc123")).toBe(
+      "abc123",
+    );
+    // Scheme with no host at all, and extra params either side.
+    expect(
+      C.tokenFromUrl("vellum-assistant://?x=1&token=abc123&y=2"),
+    ).toBe("abc123");
+    expect(C.tokenFromUrl("https://cue.example/?cueToken=jwt.value")).toBe(
+      "jwt.value",
+    );
+    expect(C.tokenFromUrl("https://justcue.ai/auth")).toBeNull();
+    expect(C.tokenFromUrl("")).toBeNull();
+  });
+
+  // The regression that made the sign-in link open the app and then sit
+  // there: the shell reached for `Capacitor.Plugins.App`, which is only
+  // populated by @capacitor/core's registerPlugin() — and this page loads no
+  // bundle, so it was always empty. No listener, no resolve, no sign-in.
+  test("registers appUrlOpen through the low-level bridge when Plugins is empty", () => {
+    const { listeners } = loadShell({ capacitor: "bridge-only" });
+    expect(listeners).toContainEqual({ plugin: "App", name: "appUrlOpen" });
+  });
+
+  test("still uses a registered plugin proxy when one exists", () => {
+    const { listeners } = loadShell({ capacitor: "plugins" });
+    expect(listeners).toContainEqual({ plugin: "App", name: "appUrlOpen" });
+  });
+
+  test("asks the bridge for the launch URL on a cold start from the link", () => {
+    const { nativeCalls } = loadShell({ capacitor: "bridge-only" });
+    expect(nativeCalls).toContainEqual({ plugin: "App", name: "getLaunchUrl" });
+  });
+
+  test("degrades quietly with no native bridge at all (plain browser QA)", () => {
+    const { C, listeners } = loadShell({ capacitor: "none" });
+    expect(listeners).toHaveLength(0);
+    expect(C.nativePlugin("App")).toBeNull();
   });
 });

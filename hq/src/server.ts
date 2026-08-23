@@ -1623,7 +1623,15 @@ export function createHandler(
     if (!consumed) return fail("link_expired");
     const customer = db.getCustomer(consumed.customerId);
     if (!customer) return fail("link_expired");
-    db.recordEvent("site_session_created", customer.id, { native });
+    // Record the UA on the browser path too. When the iOS hand-off does not
+    // fire, the only question worth answering is "what did the tap actually
+    // look like to us" — a client whose UA has no iPhone in it (a link
+    // scanner, a desktop, a rewriting mail app) is invisible otherwise, and
+    // the 2026-08-23 report cost a round trip for exactly that reason.
+    db.recordEvent("site_session_created", customer.id, {
+      native,
+      ...(native ? {} : { ua: (req.headers.get("user-agent") ?? "").slice(0, 180) }),
+    });
     const magic = await mintMagicLinkForCustomer({ db, fetchImpl }, customer);
     if (native) {
       if (!magic.ok) return json({ ok: false, error: "no_instance" }, 409);
