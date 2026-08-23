@@ -504,7 +504,32 @@ export async function generateMeetingRecap(
     conversationId,
   );
 
-  // f. Return the recap. `memoryNodeIds` from the generic extraction are not
+  // f. Land the meeting in Notes as well, so it has a destination the owner
+  //    can read rather than only a set of tasks. The transcript is kept apart
+  //    from the summary (R3 / N3): Cue's prose is labelled as Cue's, and the
+  //    words that were actually said stay quotable.
+  //
+  //    Additive on purpose. R3's rule is that an arrival becomes a note and
+  //    never a task, and step (e) above already mints work items from this
+  //    same recap — a pipeline that predates Notes and has its own extraction.
+  //    Removing it is a product decision about shipped behaviour, not a
+  //    refactor, so it is left alone and flagged rather than changed here.
+  try {
+    const { landArrivalAsNote } = await import("../../notes/note-arrivals.js");
+    landArrivalAsNote({
+      channel: "meeting",
+      title: opts.title ?? "Meeting — recap",
+      body: recapBody.summary,
+      transcript: trimmed,
+      bodyIsSummary: true,
+    });
+  } catch (err) {
+    // Best-effort, like every other step here: the recap the user already has
+    // must not fail because a note could not be written.
+    log.warn({ err, conversationId }, "Could not land the meeting as a note");
+  }
+
+  // g. Return the recap. `memoryNodeIds` from the generic extraction are not
   //    surfaced individually (runGraphExtraction returns counts, not ids); the
   //    field is populated in stub mode and left empty here. Memory is still
   //    written and tagged via `sourceConversations: [conversationId]`.

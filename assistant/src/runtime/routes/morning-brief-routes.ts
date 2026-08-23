@@ -34,6 +34,7 @@ import {
   fetchTodaysEvents,
 } from "../../calendar/todays-events.js";
 import { readLatestInboxRunSummary } from "../../home/inbox-run-summary.js";
+import { buildNotesBeat, type NotesBeat } from "../../notes/note-ritual.js";
 import { resolveOAuthConnection } from "../../oauth/connection-resolver.js";
 import { getLogger } from "../../util/logger.js";
 import { getAgentByAssignee } from "../../work-items/agent-store.js";
@@ -112,6 +113,20 @@ export interface MorningBrief {
   day: DayEntry[];
   /** False when no calendar connection was reachable — `day` is then work items only. */
   calendarAvailable: boolean;
+  /**
+   * What Cue found in the owner's notes that they have not looked at yet, or
+   * `null` when there is nothing waiting.
+   *
+   * This beat is the fix for the flaw acceptance introduces: requiring the
+   * owner to accept every extraction means unreviewed ones pile up, and
+   * "Waiting on you · 3" only helps someone who goes to Notes. The brief is a
+   * surface that comes to *them*, which is what makes the acceptance rule
+   * workable instead of a way for findings to rot quietly.
+   *
+   * `null` rather than a zero-state: a section that says "0 things from your
+   * notes" every morning teaches people to skip it.
+   */
+  notes: NotesBeat | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +538,9 @@ export async function buildMorningBrief(opts?: {
     ask,
     day,
     calendarAvailable: events != null,
+    // Reads only. Everything it surfaces is still a proposal — the brief
+    // hands the owner a reason to look, never a decision already taken.
+    notes: buildNotesBeat(now.getTime()),
   };
 }
 
@@ -571,6 +589,21 @@ const dayEntrySchema = z.object({
   kind: z.enum(["event", "work_item"]),
 });
 
+const notesBeatSchema = z.object({
+  noteCount: z.number().int(),
+  found: z.number().int(),
+  dueSoon: z
+    .number()
+    .int()
+    .describe(
+      "How many are due within a day. The reason to look now rather than eventually — lead the sentence with it, never with the tally.",
+    ),
+  sentence: z
+    .string()
+    .describe("Already written in the owner's terms. Render it as-is."),
+  items: z.array(z.record(z.string(), z.unknown())),
+});
+
 const morningBriefResponseSchema = z.object({
   generatedAt: z.string(),
   since: z.string(),
@@ -578,6 +611,11 @@ const morningBriefResponseSchema = z.object({
   ask: askSchema.nullable(),
   day: z.array(dayEntrySchema),
   calendarAvailable: z.boolean(),
+  notes: notesBeatSchema
+    .nullable()
+    .describe(
+      "What Cue found in your notes that you haven't looked at, or null when nothing is waiting. This is what makes 'nothing files without you' workable: the brief comes to you, so unreviewed proposals cannot rot unseen in a surface you have to remember to visit.",
+    ),
 });
 
 export const ROUTES: RouteDefinition[] = [
