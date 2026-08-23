@@ -32,7 +32,10 @@
       "label": "Pre-chat Onboarding Experiment 2026-06-06",
       "description": "Pre-chat onboarding experiment with control and variant-a arms. Control shows the full funnel; variant-a shows the condensed pared-down flow.",
       "defaultEnabled": "control",
-      "values": ["control", "variant-a"]
+      "values": [
+        "control",
+        "variant-a"
+      ]
     },
     {
       "id": "experiment-activation-flow-2026-06-03",
@@ -41,7 +44,11 @@
       "label": "Activation Flow Experiment 2026-06-03",
       "description": "Multivariate activation-flow experiment. control = standard flow; variant-a = activation rail; personal-page = preseeded personal-page app (read by the daemon, hence scope \"both\"). Targeted via LaunchDarkly.",
       "defaultEnabled": "control",
-      "values": ["control", "variant-a", "personal-page"]
+      "values": [
+        "control",
+        "variant-a",
+        "personal-page"
+      ]
     },
     {
       "id": "local-docker-enabled",
@@ -465,6 +472,14 @@
       "key": "desktop-companion",
       "label": "Desktop Companion",
       "description": "Show the always-on floating Cue companion: a small always-on-top orb pinned to a screen corner (Electron desktop only), with a menu-bar toggle, status-aware idle/active states, and Talk / Open Cue quick actions. Slice 1 of the desktop companion surface.",
+      "defaultEnabled": false
+    },
+    {
+      "id": "desktop-corner",
+      "scope": "client",
+      "key": "desktop-corner",
+      "label": "Floating corner",
+      "description": "The floating corner: one exchange summoned with \u2325C, reading whatever you have selected, then finished. Replaces the Desktop Companion orb. Off by default \u2014 turning it on claims \u2325C system-wide (rebindable in Keyboard Shortcuts).",
       "defaultEnabled": false
     }
   ]

@@ -466,6 +466,14 @@
       "label": "Desktop Companion",
       "description": "Show the always-on floating Cue companion: a small always-on-top orb pinned to a screen corner (Electron desktop only), with a menu-bar toggle, status-aware idle/active states, and Talk / Open Cue quick actions. Slice 1 of the desktop companion surface.",
       "defaultEnabled": false
+    },
+    {
+      "id": "desktop-corner",
+      "scope": "client",
+      "key": "desktop-corner",
+      "label": "Floating corner",
+      "description": "The floating corner: one exchange summoned with \u2325C, reading whatever you have selected, then finished. Replaces the Desktop Companion orb. Off by default \u2014 turning it on claims \u2325C system-wide (rebindable in Keyboard Shortcuts).",
+      "defaultEnabled": false
     }
   ]
 }

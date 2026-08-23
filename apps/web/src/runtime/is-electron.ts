@@ -55,6 +55,9 @@ import type {
   UpdateState,
   UpdateStatus,
   VellumCommand,
+  CornerContext,
+  CornerSelection,
+  NeedsYouItem,
 } from "@vellumai/ipc-contract";
 
 export type {
@@ -328,6 +331,30 @@ declare global {
         hide(): Promise<void>;
         getStatus(): Promise<AssistantStatus>;
         onStatus(callback: (status: AssistantStatus) => void): () => void;
+      };
+      /**
+       * The floating corner — `⌥C`, one exchange, then finished. Optional
+       * like the rest: older preloads predate it, and the route renders
+       * harmlessly in a browser where the whole bridge is absent.
+       * See `apps/web/src/domains/corner/corner-bridge.ts`.
+       */
+      /**
+       * The menu-bar "needs you" count — the surface that waits, so the
+       * corner never has to interrupt. Optional like the rest.
+       */
+      needsYou?: {
+        set(payload: { count: number; items: NeedsYouItem[] }): void;
+      };
+      corner?: {
+        getSelection(): Promise<CornerSelection | null>;
+        onSelection(
+          callback: (selection: CornerSelection | null) => void,
+        ): () => void;
+        getContext(): Promise<CornerContext>;
+        onContext(callback: (context: CornerContext) => void): () => void;
+        setScreenReading(granted: boolean): Promise<void>;
+        hide(): Promise<void>;
+        openInCue(text: string): Promise<void>;
       };
       /**
        * Embedded VentureVerse app view (desktop inline embedding). Drives a
