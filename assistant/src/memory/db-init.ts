@@ -187,6 +187,7 @@ import {
   migrateNormalizePhoneIdentities,
   migrateNormalizeSlackExternalContent,
   migrateNormalizeUserFileByPrincipal,
+  migrateNotes,
   migrateNotificationDeliveryThreadDecision,
   migrateOAuthAppsClientSecretPath,
   migrateOAuthProvidersAvailableScopes,
@@ -620,6 +621,7 @@ export function initializeDb(): void {
     migrateVolumeValve,
     migrateRitualSnapshots,
     migrateScheduleScriptEnv,
+    migrateNotes,
     // 324–328: the memory-DB split. These run every boot AFTER every
     // creator/ALTER migration above (the legacy `CREATE TABLE IF NOT
     // EXISTS` creators recreate empty main-side shadows each boot; the

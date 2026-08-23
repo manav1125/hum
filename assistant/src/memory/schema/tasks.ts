@@ -128,6 +128,13 @@ export const workItems = sqliteTable("work_items", {
   // NOT auto_filed_by/auto_file_confidence: those mean "assigned to a
   // project", a different axis entirely.
   arrivalId: text("arrival_id"),
+  // 332-notes. The `notes` row this item was ACCEPTED out of. Provenance runs
+  // one way only: the task remembers the note, never the reverse, so deleting
+  // a note leaves this id dangling on purpose and the card reads "from a note
+  // you deleted". Cascading would mean tidying your notes silently empties
+  // your HQ. Null on every item captured any other way and on every pre-332
+  // row.
+  noteId: text("note_id"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

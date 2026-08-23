@@ -195,6 +195,17 @@ export interface WorkItem {
    * "kept for you" count dishonest.
    */
   arrivalId: string | null;
+  /**
+   * The `notes` row this item was accepted out of, or null for every item
+   * captured any other way.
+   *
+   * **Provenance is one-way.** The task remembers the note; the note never
+   * owns the task. Deleting a note deliberately leaves this id dangling and
+   * the card says "from a note you deleted" — cascading would make tidying
+   * your notes silently empty your HQ, which is how notes become load-bearing
+   * infrastructure by accident.
+   */
+  noteId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -236,6 +247,8 @@ export function createWorkItem(opts: {
   lastChasedAt?: number;
   /** The `arrivals` row this item was surfaced from (see {@link WorkItem}). */
   arrivalId?: string;
+  /** The `notes` row this item was accepted out of (see {@link WorkItem}). */
+  noteId?: string;
   /** Audit-trail attribution for the created event (default "system"). */
   actor?: string;
 }): WorkItem {
@@ -292,6 +305,7 @@ export function createWorkItem(opts: {
     waitingOn: opts.waitingOn ?? null,
     lastChasedAt: opts.lastChasedAt ?? null,
     arrivalId: opts.arrivalId ?? null,
+    noteId: opts.noteId ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -321,6 +335,8 @@ export function createWorkItemWithPermissions(opts: {
   /** The conversation this item was created from (see {@link WorkItem}). */
   originConversationId?: string;
   requiredTools?: string;
+  /** The `notes` row this item was accepted out of (see {@link WorkItem}). */
+  noteId?: string;
   /** 'parked' = user parked this task; it must never auto-run (see WorkItem). */
   autoRunEligibility?: "parked";
 }): WorkItem {

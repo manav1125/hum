@@ -324,6 +324,7 @@ export { migrateMoveMemoryJobsToMemoryDb } from "./328-move-memory-jobs-to-memor
 export { migrateMemoryNodeInjectionEvents } from "./329-memory-node-injection-events.js";
 export { migrateRitualSnapshots } from "./330-ritual-snapshots.js";
 export { migrateScheduleScriptEnv } from "./331-schedule-script-env.js";
+export { migrateNotes } from "./332-notes.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,
