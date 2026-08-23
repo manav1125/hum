@@ -17,6 +17,7 @@ import { isCueLiveEnabled, triggerSummon } from "./cue-live-service";
 import { getWatchedLockfile } from "./lockfile-watcher";
 import { dispatchToMain } from "./main-window";
 import { menuIcon } from "./menu-icon";
+import { getNeedsYou, hiddenNeedsYouCount, listedNeedsYou } from "./needs-you";
 import { readSetting } from "./settings";
 import {
   getStatus,
@@ -243,6 +244,45 @@ const buildTrayMenu = (
       dispatchToMain({ kind: "openCueLive" });
     },
   });
+
+  // What is waiting on the owner — the pull-down that exists so the floating
+  // corner never has to interrupt. Approvals reach someone here rather than
+  // by a panel seizing focus over their work, which is the whole R6 ruling:
+  // one surface you summon, one that waits.
+  //
+  // The count is the renderer's, published from the same hook HQ's badge
+  // reads. The menu bar must never become a second, louder number.
+  const needsYou = getNeedsYou();
+  if (needsYou.count > 0) {
+    items.push({ type: "separator" });
+    items.push({
+      label: `${needsYou.count} ${needsYou.count === 1 ? "thing needs" : "things need"} you`,
+      enabled: false,
+    });
+    for (const item of listedNeedsYou()) {
+      items.push({
+        label: item.detail ? `${item.title} — ${item.detail}` : item.title,
+        click: async () => {
+          await handlers.ensureMainWindow();
+          dispatchToMain({ kind: "home" });
+        },
+      });
+    }
+    const hidden = hiddenNeedsYouCount();
+    if (hidden > 0) {
+      // Said out loud rather than silently truncated: a count that disagrees
+      // with its own list is the small dishonesty this surface exists to
+      // avoid committing.
+      items.push({ label: `and ${hidden} more`, enabled: false });
+    }
+    items.push({
+      label: "Open HQ",
+      click: async () => {
+        await handlers.ensureMainWindow();
+        dispatchToMain({ kind: "home" });
+      },
+    });
+  }
 
   // Floating desktop companion (slice 1). Gated on the `desktop-companion`
   // feature flag at menu-build time — flag off means these items simply

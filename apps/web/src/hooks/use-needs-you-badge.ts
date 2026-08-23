@@ -1,9 +1,12 @@
+import { useEffect } from "react";
+
 import { useQuery } from "@tanstack/react-query";
 
 import {
   pendinginteractionsGetOptions,
   workitemsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
+import { setNeedsYou } from "@/runtime/needs-you";
 
 /**
  * How many things are actually waiting on the user right now.
@@ -54,6 +57,40 @@ export function useNeedsYouBadge(assistantId: string | null): {
 
   const approvals = interactions.data?.interactions?.length ?? 0;
   const awaitingReview = review.data?.items?.length ?? 0;
+  const count = approvals + awaitingReview;
 
-  return { count: approvals + awaitingReview, approvals };
+  /**
+   * Publish to the macOS menu bar from HERE, and only from here.
+   *
+   * The floating corner never appears unbidden — a panel that seizes focus
+   * over your work to ask for money is the behaviour that gets an app quit —
+   * so approvals reach the owner as a count they pull down instead. That
+   * count has to be THIS one. Computing it a second time in main, or from a
+   * different query, would give the menu bar a number that disagrees with the
+   * sidebar, and two disagreeing counts mean neither is believed.
+   *
+   * No-op off Electron, so this is safe to run unconditionally.
+   */
+  useEffect(() => {
+    const items = [
+      // A parked approval names the tool it is waiting on where it has one:
+      // "Approve web_fetch" is something someone can decide from a menu,
+      // "Approve request" is not.
+      ...(interactions.data?.interactions ?? []).map((item) => ({
+        id: item.requestId,
+        title: item.toolName
+          ? `Approve ${item.toolName}`
+          : "Waiting for your decision",
+        detail: item.riskLevel ? `${item.riskLevel} risk` : "parked mid-run",
+      })),
+      ...(review.data?.items ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        detail: "waiting for review",
+      })),
+    ];
+    setNeedsYou({ count, items });
+  }, [count, interactions.data, review.data]);
+
+  return { count, approvals };
 }

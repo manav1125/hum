@@ -77,6 +77,15 @@ export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
 export const GLOBAL_SHORTCUT_DEFAULTS: Record<string, string> = {
   globalHotkey: "CmdOrCtrl+Shift+G",
   quickInput: "CmdOrCtrl+Shift+/",
+  // The floating corner. `⌥C` rather than the `⌥Space` the design asked for:
+  // Cue Live's summon is `⌃⌥Space`, and two summons one modifier apart means
+  // a slipped finger starts a continuous watching session instead of opening
+  // a panel — the exact drift the corner must never make. Owner decision,
+  // 2026-08-20: move the new thing, leave the shipped one alone.
+  //
+  // `⌥C` types `ç` when it is not registered, which is why this binding is
+  // rebindable from day one (`HOTKEY_CATALOG` in `hotkeys.ts`).
+  cornerSummon: "Alt+C",
 };
 
 /**

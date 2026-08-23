@@ -72,6 +72,8 @@ import {
   talkToCue,
   toggleCompanionWindow,
 } from "./companion-window";
+import { installCornerWindow } from "./corner-window";
+import { installNeedsYou } from "./needs-you";
 import { installDictationOverlay } from "./dictation-overlay-window";
 import { installDock } from "./dock";
 import { installEscapeMonitor, setDictationRecording } from "./escape-monitor";
@@ -592,6 +594,14 @@ app
     // reflect renderer publishes) and before the tray (which renders the
     // flag-gated Show/Hide + Talk items through the handlers below).
     installCompanionWindow();
+    // The floating corner. Its IPC surface only; the window itself opens
+    // solely from the `cornerSummon` global shortcut — it never appears
+    // unbidden, and there is deliberately no other opener to call.
+    installCornerWindow();
+    // The menu-bar count the corner exists so as never to interrupt with.
+    // Main stores what the renderer publishes; it never counts for itself,
+    // or the menu bar becomes a second number that disagrees with HQ.
+    installNeedsYou();
     installTray({
       toggleMainWindow: toggleMainWindowVisibility,
       ensureMainWindow: ensureMainWindowVisible,

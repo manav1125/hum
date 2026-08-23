@@ -53,6 +53,21 @@ export interface AppSettings {
    */
   companionVisible: boolean;
   /**
+   * Whether the floating corner may read the window in front of you (F1).
+   *
+   * Three states, and the third is the point: `true` granted, `false`
+   * declined, **absent means never asked**. The offer is made once, on the
+   * second summon — never in onboarding, where nobody can judge it — and a
+   * decline stays declined until the owner changes it. Re-asking is how a
+   * permission prompt becomes something people click through to make stop.
+   */
+  cornerScreenReading?: boolean;
+  /**
+   * How many times the corner has been summoned, so the screen-reading offer
+   * can land on the second use rather than the first.
+   */
+  cornerSummonCount?: number;
+  /**
    * The Cue instance this install is connected to, e.g.
    * `https://cue-ada-1234.justcue.app/assistant/`. Set once, when the owner
    * connects; absent means "not connected yet" and the app opens its own
@@ -117,6 +132,15 @@ const schema: Schema<AppSettings> = {
   companionVisible: {
     type: "boolean",
     default: true,
+  },
+  // No default: "never asked" has to be distinguishable from "declined", and
+  // a default of false would erase that difference on first launch.
+  cornerScreenReading: {
+    type: "boolean",
+  },
+  cornerSummonCount: {
+    type: "number",
+    default: 0,
   },
   // No default: an unconnected install must have no instance, not a guess.
   selfHostUrl: {

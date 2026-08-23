@@ -2,6 +2,7 @@ import { app, globalShortcut } from "electron";
 
 import { GLOBAL_SHORTCUT_DEFAULTS } from "./commands";
 import log from "./logger";
+import { isCornerEnabled, summonCorner } from "./corner-window";
 import { ensureVisible } from "./main-window";
 import { toggleQuickInput } from "./quick-input-window";
 import { onSettingChange, readHotkeyOverride } from "./settings";
@@ -45,6 +46,14 @@ const registerAll = (): void => {
       continue;
     }
 
+    // The corner claims `⌥C` system-wide, and `⌥C` types `ç` in every app
+    // that does not have it bound. Registering that for someone who has not
+    // switched the feature on would take a character away from them, so the
+    // binding follows the flag rather than merely the window.
+    if (key === "cornerSummon" && !isCornerEnabled()) {
+      continue;
+    }
+
     const handler = HANDLERS[key];
     if (!handler) {
       continue;
@@ -69,6 +78,12 @@ const HANDLERS: Record<string, () => void> = {
   quickInput: () => {
     toggleQuickInput();
   },
+  // The corner's single summon. It reads the selection before it shows, so
+  // the handler is async — fire-and-forget is right here: a global shortcut
+  // has nobody to report to.
+  cornerSummon: () => {
+    void summonCorner();
+  },
 };
 
 let teardown: (() => void) | null = null;
@@ -85,6 +100,11 @@ export const installGlobalShortcuts = (): void => {
   const unsubscribe = onSettingChange("hotkeys", () => {
     registerAll();
   });
+  // Flag flips have to reach the registration too, or turning the corner on
+  // would leave its summon dead until the next launch.
+  const unsubscribeFlags = onSettingChange("featureFlags", () => {
+    registerAll();
+  });
 
   const onQuit = (): void => {
     unregisterAll();
@@ -93,6 +113,7 @@ export const installGlobalShortcuts = (): void => {
 
   teardown = () => {
     unsubscribe();
+    unsubscribeFlags();
     app.off("will-quit", onQuit);
     onQuit();
   };

@@ -8,6 +8,8 @@ import type {
   ConnectivityState,
   ConnectorStatus,
   ConnectorTool,
+  CornerContext,
+  CornerSelection,
   CueLiveGoal,
   CueLivePermissions,
   CueLiveSettingsPane,
@@ -24,6 +26,7 @@ import type {
   HelperState,
   HotkeyEvent,
   LocalWakeOptions,
+  NeedsYouItem,
   NotificationActionEvent,
   PowerEvent,
   ResolvedHotkey,
@@ -652,6 +655,64 @@ const bridge: VellumBridge = {
         ipcRenderer.off("vellum:companion:status", handler);
       };
     },
+  },
+  /**
+   * The floating corner. Main reads the selection while the owner's own app
+   * is still frontmost and then shows the panel, so the renderer both pulls
+   * (for a cold window whose route chunk is still loading) and listens (for a
+   * window that was already open). See main/corner-window.ts.
+   */
+  /**
+   * What is waiting on the owner, published to the menu bar. One-way and
+   * fire-and-forget, like the dock badge — the renderer owns the number and
+   * main owns the presentation. See main/needs-you.ts for why main must
+   * never count for itself.
+   */
+  needsYou: {
+    set: (payload: { count: number; items: NeedsYouItem[] }): void => {
+      ipcRenderer.send("vellum:needsYou:set", payload);
+    },
+  },
+  corner: {
+    getSelection: (): Promise<CornerSelection | null> =>
+      ipcRenderer.invoke(
+        "vellum:corner:getSelection",
+      ) as Promise<CornerSelection | null>,
+    onSelection: (callback: (selection: CornerSelection | null) => void) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        selection: CornerSelection | null,
+      ): void => {
+        callback(selection);
+      };
+      ipcRenderer.on("vellum:corner:selection", handler);
+      return () => {
+        ipcRenderer.off("vellum:corner:selection", handler);
+      };
+    },
+    getContext: (): Promise<CornerContext> =>
+      ipcRenderer.invoke("vellum:corner:getContext") as Promise<CornerContext>,
+    onContext: (callback: (context: CornerContext) => void) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        context: CornerContext,
+      ): void => {
+        callback(context);
+      };
+      ipcRenderer.on("vellum:corner:context", handler);
+      return () => {
+        ipcRenderer.off("vellum:corner:context", handler);
+      };
+    },
+    setScreenReading: (granted: boolean): Promise<void> =>
+      ipcRenderer.invoke(
+        "vellum:corner:setScreenReading",
+        granted,
+      ) as Promise<void>,
+    hide: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:corner:hide") as Promise<void>,
+    openInCue: (text: string): Promise<void> =>
+      ipcRenderer.invoke("vellum:corner:openInCue", text) as Promise<void>,
   },
   /**
    * Embedded VentureVerse app view (desktop inline embedding). The SPA's app

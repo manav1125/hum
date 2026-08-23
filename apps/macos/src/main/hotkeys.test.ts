@@ -73,6 +73,7 @@ describe("resolveHotkeyCatalog", () => {
     expect(catalog.filter((c) => c.rebindable).map((c) => c.key)).toEqual([
       "globalHotkey",
       "quickInput",
+      "cornerSummon",
       "newConversation",
       "currentConversation",
       "markCurrentUnread",
@@ -82,6 +83,13 @@ describe("resolveHotkeyCatalog", () => {
       "previousConversation",
       "nextConversation",
     ]);
+
+    // The corner's binding is asserted by name: it is the one default that
+    // types a character (`ç`) in apps where it is not registered, so a silent
+    // change to it is a change someone feels while writing.
+    const corner = catalog.find((c) => c.key === "cornerSummon");
+    expect(corner?.defaultAccelerator).toBe("Alt+C");
+    expect(corner?.rebindable).toBe(true);
 
     const newConversation = catalog.find((c) => c.key === "newConversation");
     expect(newConversation?.defaultAccelerator).toBe("CmdOrCtrl+N");
