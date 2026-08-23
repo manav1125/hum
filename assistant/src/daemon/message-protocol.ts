@@ -35,6 +35,7 @@ export * from "./message-types/integrations.js";
 export * from "./message-types/meet.js";
 export * from "./message-types/memory.js";
 export * from "./message-types/messages.js";
+export * from "./message-types/notes.js";
 export * from "./message-types/notifications.js";
 export * from "./message-types/schedules.js";
 export * from "./message-types/settings.js";
@@ -105,6 +106,7 @@ import type {
   _MessagesClientMessages,
   _MessagesServerMessages,
 } from "./message-types/messages.js";
+import type { _NotesServerMessages } from "./message-types/notes.js";
 import type {
   _NotificationsClientMessages,
   _NotificationsServerMessages,
@@ -204,6 +206,7 @@ export type ServerMessage =
   | _SettingsServerMessages
   | _DiagnosticsServerMessages
   | _InboxServerMessages
+  | _NotesServerMessages
   | _NotificationsServerMessages
   | _UpgradesServerMessages
   | _AcpServerMessages

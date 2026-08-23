@@ -7027,6 +7027,47 @@ paths:
                       additionalProperties: false
                   calendarAvailable:
                     type: boolean
+                  notes:
+                    anyOf:
+                      - type: object
+                        properties:
+                          noteCount:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          found:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          dueSoon:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                            description:
+                              How many are due within a day. The reason to look now rather than eventually — lead the sentence with it,
+                              never with the tally.
+                          sentence:
+                            type: string
+                            description: Already written in the owner's terms. Render it as-is.
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              propertyNames:
+                                type: string
+                              additionalProperties: {}
+                        required:
+                          - noteCount
+                          - found
+                          - dueSoon
+                          - sentence
+                          - items
+                        additionalProperties: false
+                      - type: "null"
+                    description:
+                      "What Cue found in your notes that you haven't looked at, or null when nothing is waiting. This is what
+                      makes 'nothing files without you' workable: the brief comes to you, so unreviewed proposals cannot
+                      rot unseen in a surface you have to remember to visit."
                 required:
                   - generatedAt
                   - since
@@ -7034,6 +7075,7 @@ paths:
                   - ask
                   - day
                   - calendarAvailable
+                  - notes
                 additionalProperties: false
       parameters:
         - name: sinceHours
@@ -22916,6 +22958,59 @@ paths:
               required:
                 - requestId
               additionalProperties: false
+  /v1/host-observe-result:
+    post:
+      operationId: hostobserveresult_post
+      summary: Submit host observation result
+      description:
+        Resolve a pending host screen-observation request by requestId. Returns 200 even when no pending
+        interaction matches (late delivery is tolerated).
+      tags:
+        - host
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+                required:
+                  - accepted
+                additionalProperties: false
+        "400":
+          description: x-vellum-client-id header is missing for a targeted host observe request.
+        "403":
+          description:
+            Submitting client does not match the targeted client, or the submitting actor's principal does not match
+            the target client's actor.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                requestId:
+                  type: string
+                  description: Pending observe request ID
+                description:
+                  type: string
+                  description: Accessibility text read from the focused window
+                imageBase64:
+                  type: string
+                  description: Base64 screenshot, for a client that can only capture pixels
+                mediaType:
+                  type: string
+                  description: Media type of imageBase64
+                appName:
+                  type: string
+                  description: Frontmost application at the time of the read
+              required:
+                - requestId
+              additionalProperties: false
   /v1/host-transfer-result:
     post:
       operationId: hosttransferresult_post
@@ -32475,6 +32570,2668 @@ paths:
                   - actions
                   - generatedAt
                 additionalProperties: false
+  /v1/notes:
+    get:
+      operationId: notes_get
+      summary: The note list, newest first
+      description: >-
+        Notes ordered by when the thought happened, not when the row was made — a Halo capture, a forwarded mail and an
+        import all carry their own time.
+
+
+        `filter=waiting` is the pile that acceptance creates: notes with proposals nobody has looked at. It exists
+        because requiring acceptance means unreviewed findings would otherwise rot invisibly.
+
+
+        `filter=unfiled` is a resting state, not a backlog to work through.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        body:
+                          type: string
+                        source:
+                          type: string
+                          enum:
+                            - typed
+                            - voice
+                            - selection
+                            - arrival
+                            - import
+                          description:
+                            How it got here. An arrival obeys acceptance exactly like something typed by hand — this only drives the
+                            card's provenance line.
+                        sourceDetail:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The app a selection came from, the channel an arrival used, the tool an import came out of.
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Null is a legitimate resting state, forever. Unfiled is not a backlog.
+                        audioPath:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Local path. Audio never leaves the machine.
+                        audioDurationMs:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        transcript:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            What was actually said — quotes, not Cue's prose. Kept apart from `body` so a summary can never be
+                            laundered as a transcript.
+                        bodyIsSummary:
+                          type: boolean
+                          description: True when `body` is Cue's summary rather than the owner's words. A summary is always labelled as one.
+                        extractionState:
+                          type: string
+                          enum:
+                            - idle
+                            - reading
+                            - done
+                            - failed
+                          description:
+                            "`done` with no extractions = nothing to file, which is the common case and not a failure. `failed` = the
+                            request failed and the note is saved. Never render these as the same state."
+                        lastReadHash:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        lastReadAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        occurredAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: When the thought happened, which is not always when the row was made. The list sorts on this.
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - title
+                        - body
+                        - source
+                        - sourceDetail
+                        - projectId
+                        - audioPath
+                        - audioDurationMs
+                        - transcript
+                        - bodyIsSummary
+                        - extractionState
+                        - lastReadHash
+                        - lastReadAt
+                        - occurredAt
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                  counts:
+                    type: object
+                    properties:
+                      notes:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      tasks:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: Accepted task proposals, counted.
+                      memories:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: Accepted memory proposals, counted.
+                      waiting:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description:
+                          Notes carrying at least one undecided proposal — 'Waiting on you · 3'. The honest consequence of requiring
+                          acceptance.
+                      unfiled:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      recorded:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - notes
+                      - tasks
+                      - memories
+                      - waiting
+                      - unfiled
+                      - recorded
+                    additionalProperties: false
+                required:
+                  - notes
+                  - counts
+                additionalProperties: false
+      parameters:
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+          description: all (default) | waiting | unfiled | recorded
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: number
+    post:
+      operationId: notes_post
+      summary: Write a note
+      description: >-
+        Saves and returns immediately. Nothing is read, proposed or filed here: **capture never asks where it goes**,
+        and a note must exist the instant the owner stops writing. Reading happens on close or on demand, later and
+        separately.
+
+
+        Pass a client-minted `id` to make the write idempotent — that is how a note captured offline is pushed safely
+        once the connection is back.
+      tags:
+        - notes
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      body:
+                        type: string
+                      source:
+                        type: string
+                        enum:
+                          - typed
+                          - voice
+                          - selection
+                          - arrival
+                          - import
+                        description:
+                          How it got here. An arrival obeys acceptance exactly like something typed by hand — this only drives the
+                          card's provenance line.
+                      sourceDetail:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The app a selection came from, the channel an arrival used, the tool an import came out of.
+                      projectId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Null is a legitimate resting state, forever. Unfiled is not a backlog.
+                      audioPath:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Local path. Audio never leaves the machine.
+                      audioDurationMs:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      transcript:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          What was actually said — quotes, not Cue's prose. Kept apart from `body` so a summary can never be
+                          laundered as a transcript.
+                      bodyIsSummary:
+                        type: boolean
+                        description: True when `body` is Cue's summary rather than the owner's words. A summary is always labelled as one.
+                      extractionState:
+                        type: string
+                        enum:
+                          - idle
+                          - reading
+                          - done
+                          - failed
+                        description:
+                          "`done` with no extractions = nothing to file, which is the common case and not a failure. `failed` = the
+                          request failed and the note is saved. Never render these as the same state."
+                      lastReadHash:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastReadAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      occurredAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: When the thought happened, which is not always when the row was made. The list sorts on this.
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - body
+                      - source
+                      - sourceDetail
+                      - projectId
+                      - audioPath
+                      - audioDurationMs
+                      - transcript
+                      - bodyIsSummary
+                      - extractionState
+                      - lastReadHash
+                      - lastReadAt
+                      - occurredAt
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - note
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  description:
+                    "A client-minted id. Capture works with no signal, so a note gets its id on the device that wrote it —
+                    which makes this write idempotent: the same note pushed twice (a retry after a dropped connection, a
+                    relaunch mid-sync) resolves to one row, and the existing row wins rather than being overwritten."
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                body:
+                  type: string
+                title:
+                  type: string
+                source:
+                  type: string
+                  enum:
+                    - typed
+                    - voice
+                    - selection
+                    - arrival
+                    - import
+                sourceDetail:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                projectId:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                audioPath:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                audioDurationMs:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    - type: "null"
+                transcript:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                bodyIsSummary:
+                  type: boolean
+                occurredAt:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+              required:
+                - body
+              additionalProperties: false
+  /v1/notes/{id}:
+    delete:
+      operationId: notes_by_id_delete
+      summary: Delete a note
+      description:
+        Removes the note and its proposals. **Work accepted out of it is not touched** — provenance is one-way, so
+        the task keeps pointing back and renders 'from a note you deleted'. Cascading would mean tidying your notes
+        silently empties your HQ.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                required:
+                  - deleted
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    get:
+      operationId: notes_by_id_get
+      summary: One note and its proposals
+      description:
+        The note, plus every proposal Cue has made about it — including ones already accepted or dismissed, so the
+        card can say what it produced.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      body:
+                        type: string
+                      source:
+                        type: string
+                        enum:
+                          - typed
+                          - voice
+                          - selection
+                          - arrival
+                          - import
+                        description:
+                          How it got here. An arrival obeys acceptance exactly like something typed by hand — this only drives the
+                          card's provenance line.
+                      sourceDetail:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The app a selection came from, the channel an arrival used, the tool an import came out of.
+                      projectId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Null is a legitimate resting state, forever. Unfiled is not a backlog.
+                      audioPath:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Local path. Audio never leaves the machine.
+                      audioDurationMs:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      transcript:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          What was actually said — quotes, not Cue's prose. Kept apart from `body` so a summary can never be
+                          laundered as a transcript.
+                      bodyIsSummary:
+                        type: boolean
+                        description: True when `body` is Cue's summary rather than the owner's words. A summary is always labelled as one.
+                      extractionState:
+                        type: string
+                        enum:
+                          - idle
+                          - reading
+                          - done
+                          - failed
+                        description:
+                          "`done` with no extractions = nothing to file, which is the common case and not a failure. `failed` = the
+                          request failed and the note is saved. Never render these as the same state."
+                      lastReadHash:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastReadAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      occurredAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: When the thought happened, which is not always when the row was made. The list sorts on this.
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - body
+                      - source
+                      - sourceDetail
+                      - projectId
+                      - audioPath
+                      - audioDurationMs
+                      - transcript
+                      - bodyIsSummary
+                      - extractionState
+                      - lastReadHash
+                      - lastReadAt
+                      - occurredAt
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                  extractions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        noteId:
+                          type: string
+                        kind:
+                          type: string
+                          enum:
+                            - task
+                            - memory
+                            - person_trait
+                        payload:
+                          type: object
+                          propertyNames:
+                            type: string
+                          additionalProperties: {}
+                        confidenceTier:
+                          type: string
+                          enum:
+                            - confident
+                            - unsure
+                          description:
+                            A tier, never a percentage. `confident` draws as a solid card with a pre-ticked box; `unsure` draws dashed
+                            and hollow with `reason` and an explicit Add.
+                        reason:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Why Cue is unsure, in plain words. Null for `confident`.
+                        state:
+                          type: string
+                          enum:
+                            - proposed
+                            - accepted
+                            - dismissed
+                        conflict:
+                          anyOf:
+                            - type: object
+                              properties:
+                                existing:
+                                  type: string
+                                existingSource:
+                                  type: string
+                                existingAt:
+                                  anyOf:
+                                    - type: integer
+                                      minimum: -9007199254740991
+                                      maximum: 9007199254740991
+                                    - type: "null"
+                                incoming:
+                                  type: string
+                                incomingSource:
+                                  type: string
+                                incomingAt:
+                                  anyOf:
+                                    - type: integer
+                                      minimum: -9007199254740991
+                                      maximum: 9007199254740991
+                                    - type: "null"
+                              required:
+                                - existing
+                                - existingSource
+                                - existingAt
+                                - incoming
+                                - incomingSource
+                                - incomingAt
+                              additionalProperties: false
+                            - type: "null"
+                          description:
+                            Set when this disagrees with something Cue already believes. The one place accepting can destroy rather
+                            than add — offer three answers, never two.
+                        conflictResolution:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - replace
+                                - keep_both
+                                - ignore
+                            - type: "null"
+                        acceptedRefType:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - work_item
+                                - memory_page
+                                - contact
+                            - type: "null"
+                        acceptedRefId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        decidedAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                      required:
+                        - id
+                        - noteId
+                        - kind
+                        - payload
+                        - confidenceTier
+                        - reason
+                        - state
+                        - conflict
+                        - conflictResolution
+                        - acceptedRefType
+                        - acceptedRefId
+                        - createdAt
+                        - decidedAt
+                      additionalProperties: false
+                required:
+                  - note
+                  - extractions
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: notes_by_id_patch
+      summary: Edit a note, or file it
+      description:
+        "Pass `projectId: null` to unfile. Editing the body does not trigger a read — reading is on close or on
+        demand, so that a model call never lands mid-sentence on unfinished text."
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      body:
+                        type: string
+                      source:
+                        type: string
+                        enum:
+                          - typed
+                          - voice
+                          - selection
+                          - arrival
+                          - import
+                        description:
+                          How it got here. An arrival obeys acceptance exactly like something typed by hand — this only drives the
+                          card's provenance line.
+                      sourceDetail:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The app a selection came from, the channel an arrival used, the tool an import came out of.
+                      projectId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Null is a legitimate resting state, forever. Unfiled is not a backlog.
+                      audioPath:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Local path. Audio never leaves the machine.
+                      audioDurationMs:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      transcript:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          What was actually said — quotes, not Cue's prose. Kept apart from `body` so a summary can never be
+                          laundered as a transcript.
+                      bodyIsSummary:
+                        type: boolean
+                        description: True when `body` is Cue's summary rather than the owner's words. A summary is always labelled as one.
+                      extractionState:
+                        type: string
+                        enum:
+                          - idle
+                          - reading
+                          - done
+                          - failed
+                        description:
+                          "`done` with no extractions = nothing to file, which is the common case and not a failure. `failed` = the
+                          request failed and the note is saved. Never render these as the same state."
+                      lastReadHash:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastReadAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      occurredAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: When the thought happened, which is not always when the row was made. The list sorts on this.
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - body
+                      - source
+                      - sourceDetail
+                      - projectId
+                      - audioPath
+                      - audioDurationMs
+                      - transcript
+                      - bodyIsSummary
+                      - extractionState
+                      - lastReadHash
+                      - lastReadAt
+                      - occurredAt
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - note
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                body:
+                  type: string
+                projectId:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                audioPath:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                transcript:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                bodyIsSummary:
+                  type: boolean
+              additionalProperties: false
+  /v1/notes/{id}/alignment:
+    get:
+      operationId: notes_by_id_alignment_get
+      summary: Where each summary sentence came from in the recording
+      description: >-
+        Makes a summary **checkable against its source** instead of asking to be believed: tap a sentence, hear that
+        moment.
+
+
+        `atMs` is null where a sentence could not be located. That is honest and renders as a sentence you cannot tap —
+        a link that played the wrong moment would defeat the entire point of being able to check.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sentences:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        text:
+                          type: string
+                        atMs:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                      required:
+                        - text
+                        - atMs
+                      additionalProperties: false
+                required:
+                  - sentences
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/notes/{id}/create-options:
+    get:
+      operationId: notes_by_id_createoptions_get
+      summary: What Cue could make from this note
+      description: >-
+        A note is a brief. This connects three surfaces that were islands — Notes → Create → Library — with provenance
+        running the whole way: the deck knows its brief, the brief knows its note, so a deck can always answer 'where
+        did this come from?'
+
+
+        The options are the note's **plausible** outputs, not a menu of everything Create can do: a note about a
+        customer offers a deck and an email, not a video style. Never more than four.
+
+
+        Provenance stays one-way — deleting the note never deletes the deck.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind:
+                          type: string
+                          enum:
+                            - deck
+                            - one_pager
+                            - email
+                            - plan
+                            - doc
+                        label:
+                          type: string
+                        prompt:
+                          type: string
+                          description: The brief to hand Create. Says the note is the source and that nothing outside it may be invented.
+                      required:
+                        - kind
+                        - label
+                        - prompt
+                      additionalProperties: false
+                required:
+                  - options
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/notes/{id}/extractions/{extractionId}/accept:
+    post:
+      operationId: notes_by_id_extractions_by_extractionId_accept_post
+      summary: Accept one proposal
+      description: >-
+        **The only route in Notes that writes to HQ, memory or People.** A task becomes a work item carrying this note's
+        id; a memory becomes a concept page; a person trait lands on the contact.
+
+
+        When the proposal carries a `conflict`, pass `resolution`: `replace` (the old value was wrong), `keep_both` (the
+        default — prices and dates legitimately change, so Cue keeps the history and uses the newer) or `ignore` (record
+        nothing). Omitting it on a conflicting proposal defaults to `keep_both`, because a caller that forgot to ask
+        must never be the reason a true fact is overwritten.
+
+
+        If the write fails the proposal stays `proposed` — it is never marked accepted for something that did not
+        happen.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - accepted
+                      - dismissed
+                      - already_decided
+                      - failed
+                  extraction:
+                    anyOf:
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          noteId:
+                            type: string
+                          kind:
+                            type: string
+                            enum:
+                              - task
+                              - memory
+                              - person_trait
+                          payload:
+                            type: object
+                            propertyNames:
+                              type: string
+                            additionalProperties: {}
+                          confidenceTier:
+                            type: string
+                            enum:
+                              - confident
+                              - unsure
+                            description:
+                              A tier, never a percentage. `confident` draws as a solid card with a pre-ticked box; `unsure` draws dashed
+                              and hollow with `reason` and an explicit Add.
+                          reason:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description: Why Cue is unsure, in plain words. Null for `confident`.
+                          state:
+                            type: string
+                            enum:
+                              - proposed
+                              - accepted
+                              - dismissed
+                          conflict:
+                            anyOf:
+                              - type: object
+                                properties:
+                                  existing:
+                                    type: string
+                                  existingSource:
+                                    type: string
+                                  existingAt:
+                                    anyOf:
+                                      - type: integer
+                                        minimum: -9007199254740991
+                                        maximum: 9007199254740991
+                                      - type: "null"
+                                  incoming:
+                                    type: string
+                                  incomingSource:
+                                    type: string
+                                  incomingAt:
+                                    anyOf:
+                                      - type: integer
+                                        minimum: -9007199254740991
+                                        maximum: 9007199254740991
+                                      - type: "null"
+                                required:
+                                  - existing
+                                  - existingSource
+                                  - existingAt
+                                  - incoming
+                                  - incomingSource
+                                  - incomingAt
+                                additionalProperties: false
+                              - type: "null"
+                            description:
+                              Set when this disagrees with something Cue already believes. The one place accepting can destroy rather
+                              than add — offer three answers, never two.
+                          conflictResolution:
+                            anyOf:
+                              - type: string
+                                enum:
+                                  - replace
+                                  - keep_both
+                                  - ignore
+                              - type: "null"
+                          acceptedRefType:
+                            anyOf:
+                              - type: string
+                                enum:
+                                  - work_item
+                                  - memory_page
+                                  - contact
+                              - type: "null"
+                          acceptedRefId:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          createdAt:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          decidedAt:
+                            anyOf:
+                              - type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              - type: "null"
+                        required:
+                          - id
+                          - noteId
+                          - kind
+                          - payload
+                          - confidenceTier
+                          - reason
+                          - state
+                          - conflict
+                          - conflictResolution
+                          - acceptedRefType
+                          - acceptedRefId
+                          - createdAt
+                          - decidedAt
+                        additionalProperties: false
+                      - type: "null"
+                  refType:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - work_item
+                          - memory_page
+                          - contact
+                      - type: "null"
+                  refId:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  error:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                required:
+                  - status
+                  - extraction
+                  - refType
+                  - refId
+                  - error
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: extractionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resolution:
+                  type: string
+                  enum:
+                    - replace
+                    - keep_both
+                    - ignore
+              additionalProperties: false
+  /v1/notes/{id}/extractions/{extractionId}/dismiss:
+    post:
+      operationId: notes_by_id_extractions_by_extractionId_dismiss_post
+      summary: Dismiss one proposal
+      description: Writes nothing anywhere. That is the entire point.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - dismissed
+                      - already_decided
+                  extraction:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      noteId:
+                        type: string
+                      kind:
+                        type: string
+                        enum:
+                          - task
+                          - memory
+                          - person_trait
+                      payload:
+                        type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                      confidenceTier:
+                        type: string
+                        enum:
+                          - confident
+                          - unsure
+                        description:
+                          A tier, never a percentage. `confident` draws as a solid card with a pre-ticked box; `unsure` draws dashed
+                          and hollow with `reason` and an explicit Add.
+                      reason:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Why Cue is unsure, in plain words. Null for `confident`.
+                      state:
+                        type: string
+                        enum:
+                          - proposed
+                          - accepted
+                          - dismissed
+                      conflict:
+                        anyOf:
+                          - type: object
+                            properties:
+                              existing:
+                                type: string
+                              existingSource:
+                                type: string
+                              existingAt:
+                                anyOf:
+                                  - type: integer
+                                    minimum: -9007199254740991
+                                    maximum: 9007199254740991
+                                  - type: "null"
+                              incoming:
+                                type: string
+                              incomingSource:
+                                type: string
+                              incomingAt:
+                                anyOf:
+                                  - type: integer
+                                    minimum: -9007199254740991
+                                    maximum: 9007199254740991
+                                  - type: "null"
+                            required:
+                              - existing
+                              - existingSource
+                              - existingAt
+                              - incoming
+                              - incomingSource
+                              - incomingAt
+                            additionalProperties: false
+                          - type: "null"
+                        description:
+                          Set when this disagrees with something Cue already believes. The one place accepting can destroy rather
+                          than add — offer three answers, never two.
+                      conflictResolution:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - replace
+                              - keep_both
+                              - ignore
+                          - type: "null"
+                      acceptedRefType:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - work_item
+                              - memory_page
+                              - contact
+                          - type: "null"
+                      acceptedRefId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      decidedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                    required:
+                      - id
+                      - noteId
+                      - kind
+                      - payload
+                      - confidenceTier
+                      - reason
+                      - state
+                      - conflict
+                      - conflictResolution
+                      - acceptedRefType
+                      - acceptedRefId
+                      - createdAt
+                      - decidedAt
+                    additionalProperties: false
+                required:
+                  - status
+                  - extraction
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: extractionId
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/notes/{id}/extractions/{extractionId}/undo:
+    post:
+      operationId: notes_by_id_extractions_by_extractionId_undo_post
+      summary: Take back an acceptance
+      description: >-
+        Undo is a **reversal, not a delete**. It exists so pressing Accept is not a decision you have to be sure about —
+        which is only true while the thing acceptance created is still exactly as it left it.
+
+
+        So it is bounded, and it says why it refused. Once Cue has started the task, or the memory page has been edited
+        around the line, taking it back would destroy work rather than reverse a click — `too_late` carries a sentence
+        explaining that. A refusal someone understands beats an undo that silently does the wrong thing.
+
+
+        It removes exactly what acceptance wrote, recorded at the time rather than reconstructed now: a rebuilt line
+        drifts the moment the formatting changes, and removing the wrong line is worse than none.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - undone
+                      - not_accepted
+                      - too_late
+                      - failed
+                  extraction:
+                    anyOf:
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          noteId:
+                            type: string
+                          kind:
+                            type: string
+                            enum:
+                              - task
+                              - memory
+                              - person_trait
+                          payload:
+                            type: object
+                            propertyNames:
+                              type: string
+                            additionalProperties: {}
+                          confidenceTier:
+                            type: string
+                            enum:
+                              - confident
+                              - unsure
+                            description:
+                              A tier, never a percentage. `confident` draws as a solid card with a pre-ticked box; `unsure` draws dashed
+                              and hollow with `reason` and an explicit Add.
+                          reason:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description: Why Cue is unsure, in plain words. Null for `confident`.
+                          state:
+                            type: string
+                            enum:
+                              - proposed
+                              - accepted
+                              - dismissed
+                          conflict:
+                            anyOf:
+                              - type: object
+                                properties:
+                                  existing:
+                                    type: string
+                                  existingSource:
+                                    type: string
+                                  existingAt:
+                                    anyOf:
+                                      - type: integer
+                                        minimum: -9007199254740991
+                                        maximum: 9007199254740991
+                                      - type: "null"
+                                  incoming:
+                                    type: string
+                                  incomingSource:
+                                    type: string
+                                  incomingAt:
+                                    anyOf:
+                                      - type: integer
+                                        minimum: -9007199254740991
+                                        maximum: 9007199254740991
+                                      - type: "null"
+                                required:
+                                  - existing
+                                  - existingSource
+                                  - existingAt
+                                  - incoming
+                                  - incomingSource
+                                  - incomingAt
+                                additionalProperties: false
+                              - type: "null"
+                            description:
+                              Set when this disagrees with something Cue already believes. The one place accepting can destroy rather
+                              than add — offer three answers, never two.
+                          conflictResolution:
+                            anyOf:
+                              - type: string
+                                enum:
+                                  - replace
+                                  - keep_both
+                                  - ignore
+                              - type: "null"
+                          acceptedRefType:
+                            anyOf:
+                              - type: string
+                                enum:
+                                  - work_item
+                                  - memory_page
+                                  - contact
+                              - type: "null"
+                          acceptedRefId:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          createdAt:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          decidedAt:
+                            anyOf:
+                              - type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              - type: "null"
+                        required:
+                          - id
+                          - noteId
+                          - kind
+                          - payload
+                          - confidenceTier
+                          - reason
+                          - state
+                          - conflict
+                          - conflictResolution
+                          - acceptedRefType
+                          - acceptedRefId
+                          - createdAt
+                          - decidedAt
+                        additionalProperties: false
+                      - type: "null"
+                  reason:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                required:
+                  - status
+                  - extraction
+                  - reason
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: extractionId
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/notes/{id}/read:
+    post:
+      operationId: notes_by_id_read_post
+      summary: Find things to do in this note
+      description: >-
+        Runs the read — on close, or when the owner explicitly asks. **Proposes only; writes nothing anywhere else.**
+
+
+        Unchanged text is never re-read (`status: "skipped"`), so reopening and closing a note without editing it costs
+        nothing. Pass `force: true` for the explicit 'find things to do' action.
+
+
+        Read `status` carefully: `done` with an empty `extractions` array is a successful read that found nothing — the
+        common case — while `failed` means the request failed and the note is still saved. They are different sentences
+        to a person.
+
+
+        Spend appears in the ledger under 'Reading your notes'.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - skipped
+                      - done
+                      - failed
+                  skippedReason:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - unchanged
+                          - disabled
+                          - missing
+                      - type: "null"
+                  extractions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        noteId:
+                          type: string
+                        kind:
+                          type: string
+                          enum:
+                            - task
+                            - memory
+                            - person_trait
+                        payload:
+                          type: object
+                          propertyNames:
+                            type: string
+                          additionalProperties: {}
+                        confidenceTier:
+                          type: string
+                          enum:
+                            - confident
+                            - unsure
+                          description:
+                            A tier, never a percentage. `confident` draws as a solid card with a pre-ticked box; `unsure` draws dashed
+                            and hollow with `reason` and an explicit Add.
+                        reason:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Why Cue is unsure, in plain words. Null for `confident`.
+                        state:
+                          type: string
+                          enum:
+                            - proposed
+                            - accepted
+                            - dismissed
+                        conflict:
+                          anyOf:
+                            - type: object
+                              properties:
+                                existing:
+                                  type: string
+                                existingSource:
+                                  type: string
+                                existingAt:
+                                  anyOf:
+                                    - type: integer
+                                      minimum: -9007199254740991
+                                      maximum: 9007199254740991
+                                    - type: "null"
+                                incoming:
+                                  type: string
+                                incomingSource:
+                                  type: string
+                                incomingAt:
+                                  anyOf:
+                                    - type: integer
+                                      minimum: -9007199254740991
+                                      maximum: 9007199254740991
+                                    - type: "null"
+                              required:
+                                - existing
+                                - existingSource
+                                - existingAt
+                                - incoming
+                                - incomingSource
+                                - incomingAt
+                              additionalProperties: false
+                            - type: "null"
+                          description:
+                            Set when this disagrees with something Cue already believes. The one place accepting can destroy rather
+                            than add — offer three answers, never two.
+                        conflictResolution:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - replace
+                                - keep_both
+                                - ignore
+                            - type: "null"
+                        acceptedRefType:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - work_item
+                                - memory_page
+                                - contact
+                            - type: "null"
+                        acceptedRefId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        decidedAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                      required:
+                        - id
+                        - noteId
+                        - kind
+                        - payload
+                        - confidenceTier
+                        - reason
+                        - state
+                        - conflict
+                        - conflictResolution
+                        - acceptedRefType
+                        - acceptedRefId
+                        - createdAt
+                        - decidedAt
+                      additionalProperties: false
+                required:
+                  - status
+                  - skippedReason
+                  - extractions
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force:
+                  type: boolean
+              additionalProperties: false
+  /v1/notes/{id}/tidy:
+    post:
+      operationId: notes_by_id_tidy_post
+      summary: Propose a tidied version — only when asked
+      description: >-
+        **Writes nothing.** Returns both texts so the client can show a diff and offer three answers: use the tidied
+        one, keep mine, keep both.
+
+
+        Cue never touches the owner's text unless asked. Nothing calls this on a timer, on save or on close, and there
+        is deliberately no `✧` button in the editor inviting a rewrite — the tidy lives in `⋯`, where you go looking for
+        it. An assistant that silently rewrites what you typed makes the note untrustworthy as a record of what you
+        actually thought, which is the only reason to keep notes at all.
+
+
+        `refused` means the model gave back something that was not a tidy — it added or lost too much — so the owner's
+        words were kept. That is different from `failed`, which means the request did not complete.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - tidied
+                      - refused
+                      - failed
+                  original:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  tidied:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                required:
+                  - status
+                  - original
+                  - tidied
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/notes/{id}/tidy/apply:
+    post:
+      operationId: notes_by_id_tidy_apply_post
+      summary: Record what the owner chose about a tidy
+      description: >-
+        `use_tidied` swaps the body **and keeps the original**, so 'keep mine' still works tomorrow — the tidy is a
+        version, not a replacement, and that promise has to survive the session it was made in. The note is then marked
+        as carrying Cue's words rather than the owner's, so every surface labels it.
+
+
+        `keep_both` appends the tidied text below the original. `keep_mine` writes nothing at all.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      body:
+                        type: string
+                      source:
+                        type: string
+                        enum:
+                          - typed
+                          - voice
+                          - selection
+                          - arrival
+                          - import
+                        description:
+                          How it got here. An arrival obeys acceptance exactly like something typed by hand — this only drives the
+                          card's provenance line.
+                      sourceDetail:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The app a selection came from, the channel an arrival used, the tool an import came out of.
+                      projectId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Null is a legitimate resting state, forever. Unfiled is not a backlog.
+                      audioPath:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Local path. Audio never leaves the machine.
+                      audioDurationMs:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      transcript:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          What was actually said — quotes, not Cue's prose. Kept apart from `body` so a summary can never be
+                          laundered as a transcript.
+                      bodyIsSummary:
+                        type: boolean
+                        description: True when `body` is Cue's summary rather than the owner's words. A summary is always labelled as one.
+                      extractionState:
+                        type: string
+                        enum:
+                          - idle
+                          - reading
+                          - done
+                          - failed
+                        description:
+                          "`done` with no extractions = nothing to file, which is the common case and not a failure. `failed` = the
+                          request failed and the note is saved. Never render these as the same state."
+                      lastReadHash:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastReadAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      occurredAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: When the thought happened, which is not always when the row was made. The list sorts on this.
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - body
+                      - source
+                      - sourceDetail
+                      - projectId
+                      - audioPath
+                      - audioDurationMs
+                      - transcript
+                      - bodyIsSummary
+                      - extractionState
+                      - lastReadHash
+                      - lastReadAt
+                      - occurredAt
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - note
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                choice:
+                  type: string
+                  enum:
+                    - use_tidied
+                    - keep_mine
+                    - keep_both
+                tidied:
+                  type: string
+              required:
+                - choice
+                - tidied
+              additionalProperties: false
+  /v1/notes/accept-rates:
+    get:
+      operationId: notes_acceptrates_get
+      summary: Accept rate per extraction type
+      description: >-
+        The number that says whether this feature works, available from day one rather than retrofitted after a week of
+        not knowing. Split by kind and tier because they fail differently: a low `unsure` accept rate means the tier is
+        doing its job, a low `confident` rate means the extractor is wrong.
+
+
+        If it is low, the answer is fewer and better extractions — not more prompting.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind:
+                          type: string
+                          enum:
+                            - task
+                            - memory
+                            - person_trait
+                        confidenceTier:
+                          type: string
+                          enum:
+                            - confident
+                            - unsure
+                        proposed:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        accepted:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        dismissed:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - kind
+                        - confidenceTier
+                        - proposed
+                        - accepted
+                        - dismissed
+                      additionalProperties: false
+                required:
+                  - rates
+                additionalProperties: false
+      parameters:
+        - name: sinceMs
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Only count proposals made at or after this epoch ms.
+  /v1/notes/arrivals:
+    post:
+      operationId: notes_arrivals_post
+      summary: Land an inbound capture as a note
+      description: >-
+        Halo, forwarded mail and meeting capture all land here.
+
+
+        **An arrival becomes a NOTE, never a task.** That restraint is what stops inbound capture becoming the
+        silent-write problem at volume — a wearable that hears six hours of your day, turned straight into work items,
+        fills your HQ with things you never agreed to. As a note it obeys acceptance exactly like something you typed.
+
+
+        It is also what gives Halo a real destination: a wearable that captures your day needs somewhere for the day to
+        land, and a note is the right shape — unstructured, reviewable, already wired to become work.
+
+
+        `bodyIsSummary` defaults to true for `halo` and `meeting`: both arrive as Cue's prose over someone's speech, and
+        prose not labelled a summary reads as a quote.
+      tags:
+        - notes
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note:
+                    anyOf:
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          title:
+                            type: string
+                          body:
+                            type: string
+                          source:
+                            type: string
+                            enum:
+                              - typed
+                              - voice
+                              - selection
+                              - arrival
+                              - import
+                            description:
+                              How it got here. An arrival obeys acceptance exactly like something typed by hand — this only drives the
+                              card's provenance line.
+                          sourceDetail:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description: The app a selection came from, the channel an arrival used, the tool an import came out of.
+                          projectId:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description: Null is a legitimate resting state, forever. Unfiled is not a backlog.
+                          audioPath:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description: Local path. Audio never leaves the machine.
+                          audioDurationMs:
+                            anyOf:
+                              - type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              - type: "null"
+                          transcript:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description:
+                              What was actually said — quotes, not Cue's prose. Kept apart from `body` so a summary can never be
+                              laundered as a transcript.
+                          bodyIsSummary:
+                            type: boolean
+                            description: True when `body` is Cue's summary rather than the owner's words. A summary is always labelled as one.
+                          extractionState:
+                            type: string
+                            enum:
+                              - idle
+                              - reading
+                              - done
+                              - failed
+                            description:
+                              "`done` with no extractions = nothing to file, which is the common case and not a failure. `failed` = the
+                              request failed and the note is saved. Never render these as the same state."
+                          lastReadHash:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          lastReadAt:
+                            anyOf:
+                              - type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              - type: "null"
+                          occurredAt:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                            description: When the thought happened, which is not always when the row was made. The list sorts on this.
+                          createdAt:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          updatedAt:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                        required:
+                          - id
+                          - title
+                          - body
+                          - source
+                          - sourceDetail
+                          - projectId
+                          - audioPath
+                          - audioDurationMs
+                          - transcript
+                          - bodyIsSummary
+                          - extractionState
+                          - lastReadHash
+                          - lastReadAt
+                          - occurredAt
+                          - createdAt
+                          - updatedAt
+                        additionalProperties: false
+                      - type: "null"
+                required:
+                  - note
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel:
+                  type: string
+                  enum:
+                    - halo
+                    - email
+                    - meeting
+                title:
+                  type: string
+                body:
+                  type: string
+                occurredAt:
+                  description:
+                    When it HAPPENED. A kitchen conversation at 09:14 that syncs at 18:00 belongs at 09:14, or the day reads
+                    out of order.
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                audioPath:
+                  description: Local path. Audio never leaves the device.
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                audioDurationMs:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    - type: "null"
+                transcript:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                bodyIsSummary:
+                  type: boolean
+                projectId:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+              required:
+                - channel
+                - title
+                - body
+              additionalProperties: false
+  /v1/notes/ask:
+    post:
+      operationId: notes_ask_post
+      summary: Ask a question across notes, mail, work and memory
+      description: >-
+        Answers out of the owner's notes AND their mail AND the work already queued AND memory. Scoping it to notes
+        alone would make the answer **wrong by omission** — the five-month-old note that nobody would have gone looking
+        for is the whole point, and it only surfaces because the question was asked of everything at once.
+
+
+        **Every claim is numbered to a citation, and an unsourced sentence never renders** — that is enforced on the
+        model's output in code, not requested in the prompt. A true sentence the model forgot to cite is dropped, which
+        is the right way to be wrong here.
+
+
+        `nothing_found` and `failed` are different answers and must be shown differently: one is about the question, the
+        other about the request.
+
+
+        **Nothing is saved.** Asking a question must not quietly create a note, and the answer itself is not persisted
+        anywhere.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - answered
+                      - nothing_found
+                      - failed
+                  answer:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  citations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        n:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: Matches the [n] markers in `answer`.
+                        source:
+                          type: string
+                        title:
+                          type: string
+                        locator:
+                          type: string
+                          description:
+                            Resolvable by the client — `notes/<id>`, `work/<id>`, `arrivals/<id>` — so a citation is something you can
+                            open rather than a claim you must believe.
+                        excerpt:
+                          type: string
+                        timestampMs:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        stale:
+                          type: boolean
+                          description: Old enough that its age is part of judging it. Say so in the UI; do not hide it and do not drop it.
+                      required:
+                        - n
+                        - source
+                        - title
+                        - locator
+                        - excerpt
+                        - timestampMs
+                        - stale
+                      additionalProperties: false
+                required:
+                  - status
+                  - answer
+                  - citations
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question:
+                  type: string
+              required:
+                - question
+              additionalProperties: false
+  /v1/notes/extractions/waiting:
+    get:
+      operationId: notes_extractions_waiting_get
+      summary: Every proposal nobody has decided yet
+      description:
+        What 'Waiting on you' reads — in Notes, and in the morning brief and weekly review. Acceptance only works
+        if the pile is visible from the surfaces that come to you, not just from the one you have to remember to visit.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  extractions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        noteId:
+                          type: string
+                        kind:
+                          type: string
+                          enum:
+                            - task
+                            - memory
+                            - person_trait
+                        payload:
+                          type: object
+                          propertyNames:
+                            type: string
+                          additionalProperties: {}
+                        confidenceTier:
+                          type: string
+                          enum:
+                            - confident
+                            - unsure
+                          description:
+                            A tier, never a percentage. `confident` draws as a solid card with a pre-ticked box; `unsure` draws dashed
+                            and hollow with `reason` and an explicit Add.
+                        reason:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Why Cue is unsure, in plain words. Null for `confident`.
+                        state:
+                          type: string
+                          enum:
+                            - proposed
+                            - accepted
+                            - dismissed
+                        conflict:
+                          anyOf:
+                            - type: object
+                              properties:
+                                existing:
+                                  type: string
+                                existingSource:
+                                  type: string
+                                existingAt:
+                                  anyOf:
+                                    - type: integer
+                                      minimum: -9007199254740991
+                                      maximum: 9007199254740991
+                                    - type: "null"
+                                incoming:
+                                  type: string
+                                incomingSource:
+                                  type: string
+                                incomingAt:
+                                  anyOf:
+                                    - type: integer
+                                      minimum: -9007199254740991
+                                      maximum: 9007199254740991
+                                    - type: "null"
+                              required:
+                                - existing
+                                - existingSource
+                                - existingAt
+                                - incoming
+                                - incomingSource
+                                - incomingAt
+                              additionalProperties: false
+                            - type: "null"
+                          description:
+                            Set when this disagrees with something Cue already believes. The one place accepting can destroy rather
+                            than add — offer three answers, never two.
+                        conflictResolution:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - replace
+                                - keep_both
+                                - ignore
+                            - type: "null"
+                        acceptedRefType:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - work_item
+                                - memory_page
+                                - contact
+                            - type: "null"
+                        acceptedRefId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        decidedAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                      required:
+                        - id
+                        - noteId
+                        - kind
+                        - payload
+                        - confidenceTier
+                        - reason
+                        - state
+                        - conflict
+                        - conflictResolution
+                        - acceptedRefType
+                        - acceptedRefId
+                        - createdAt
+                        - decidedAt
+                      additionalProperties: false
+                required:
+                  - extractions
+                additionalProperties: false
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+  /v1/notes/import:
+    post:
+      operationId: notes_import_post
+      summary: Bring an existing pile of notes in
+      description: >-
+        Turns Notes from a feature that needs six months of discipline into one that is worth something on night one.
+
+
+        **Imported notes are searchable immediately, always.** The only question `window` answers is what gets PROPOSED
+        as work, and it defaults to `last_month` deliberately: proposing 73 tasks from two years of archive makes
+        someone's HQ unusable on their first day, and a two-year-old "call the dentist" is not a live commitment.
+
+
+        An import creates NOTES, never tasks — imported findings obey acceptance exactly like something typed by hand.
+
+
+        Parsing happens here, on the owner's own machine. Nothing is uploaded.
+      tags:
+        - notes
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  skipped:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  queuedForReading:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      How many fall inside the window and will be read. Shown BEFORE anything is proposed, so 'only the last
+                      month' is checkable rather than a promise to trust.
+                  window:
+                    type: string
+                    enum:
+                      - last_month
+                      - all
+                      - none
+                required:
+                  - imported
+                  - skipped
+                  - queuedForReading
+                  - window
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      title:
+                        type: string
+                      body:
+                        type: string
+                      occurredAt:
+                        description:
+                          The note's own date from the export. Without it every imported note dates from the import, which puts a
+                          decade of writing at the top of today's list and makes the window meaningless.
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - body
+                    additionalProperties: false
+                tool:
+                  type: string
+                  enum:
+                    - apple-notes
+                    - notion
+                    - obsidian
+                    - mem
+                    - markdown
+                    - unknown
+                window:
+                  type: string
+                  enum:
+                    - last_month
+                    - all
+                    - none
+              required:
+                - notes
+              additionalProperties: false
+  /v1/notes/voice:
+    post:
+      operationId: notes_voice_post
+      summary: Turn a recording into a note
+      description: >-
+        The same note, entered by speaking.
+
+
+        **A summary is never laundered as a transcript.** What was said and what Cue made of it are two artefacts:
+        `transcript` is quotes, `body` is Cue's prose, and `bodyIsSummary` says which the body is. Collapsing them is
+        how someone quotes a sentence to a colleague that nobody actually said.
+
+
+        Short recordings are not summarised at all — 'don't lead with price' IS the summary, and paraphrasing it takes
+        the owner's words away for nothing.
+
+
+        **Audio is local.** `audioPath` points at this device and is nullable precisely so 'delete audio, keep note' is
+        always available.
+
+
+        `empty` means nothing intelligible was in the recording — people misfire, and that is not an error.
+      tags:
+        - notes
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - created
+                      - empty
+                      - no_provider
+                      - failed
+                  note:
+                    anyOf:
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          title:
+                            type: string
+                          body:
+                            type: string
+                          source:
+                            type: string
+                            enum:
+                              - typed
+                              - voice
+                              - selection
+                              - arrival
+                              - import
+                            description:
+                              How it got here. An arrival obeys acceptance exactly like something typed by hand — this only drives the
+                              card's provenance line.
+                          sourceDetail:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description: The app a selection came from, the channel an arrival used, the tool an import came out of.
+                          projectId:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description: Null is a legitimate resting state, forever. Unfiled is not a backlog.
+                          audioPath:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description: Local path. Audio never leaves the machine.
+                          audioDurationMs:
+                            anyOf:
+                              - type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              - type: "null"
+                          transcript:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                            description:
+                              What was actually said — quotes, not Cue's prose. Kept apart from `body` so a summary can never be
+                              laundered as a transcript.
+                          bodyIsSummary:
+                            type: boolean
+                            description: True when `body` is Cue's summary rather than the owner's words. A summary is always labelled as one.
+                          extractionState:
+                            type: string
+                            enum:
+                              - idle
+                              - reading
+                              - done
+                              - failed
+                            description:
+                              "`done` with no extractions = nothing to file, which is the common case and not a failure. `failed` = the
+                              request failed and the note is saved. Never render these as the same state."
+                          lastReadHash:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          lastReadAt:
+                            anyOf:
+                              - type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              - type: "null"
+                          occurredAt:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                            description: When the thought happened, which is not always when the row was made. The list sorts on this.
+                          createdAt:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          updatedAt:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                        required:
+                          - id
+                          - title
+                          - body
+                          - source
+                          - sourceDetail
+                          - projectId
+                          - audioPath
+                          - audioDurationMs
+                          - transcript
+                          - bodyIsSummary
+                          - extractionState
+                          - lastReadHash
+                          - lastReadAt
+                          - occurredAt
+                          - createdAt
+                          - updatedAt
+                        additionalProperties: false
+                      - type: "null"
+                  reason:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                required:
+                  - status
+                  - note
+                  - reason
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                audioBase64:
+                  type: string
+                mimeType:
+                  type: string
+                audioPath:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                audioDurationMs:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    - type: "null"
+                occurredAt:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                projectId:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+              required:
+                - audioBase64
+                - mimeType
+              additionalProperties: false
+  /v1/notes/week:
+    get:
+      operationId: notes_week_get
+      summary: What the week's notes actually did
+      description: >-
+        The weekly review's line — 'you took 14 notes, 9 became work, 5 were just thinking'.
+
+
+        The second half matters as much as the first. A review that counted only conversions would teach people that
+        unfiled notes are debt, and they are not: the walking-to-work thought is the highest-value note in the system.
+
+
+        `becameWork` counts NOTES that produced an accepted task, not accepted proposals — otherwise one note with three
+        tasks reads as three notes that became work.
+
+
+        Null when no notes were taken: a weekly that says 'you took 0 notes' is a line people learn to skip.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  week:
+                    anyOf:
+                      - type: object
+                        properties:
+                          taken:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          becameWork:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          line:
+                            type: string
+                            description: Already written. Render it as-is.
+                        required:
+                          - taken
+                          - becameWork
+                          - line
+                        additionalProperties: false
+                      - type: "null"
+                required:
+                  - week
+                additionalProperties: false
+      parameters:
+        - name: sinceMs
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Start of the window, epoch ms. Defaults to seven days ago.
   /v1/notification-intent-result:
     post:
       operationId: notificationintentresult_post

@@ -55,6 +55,43 @@ import type {
  * revokes the assistant's other device-bound tokens, so callers must gate it
  * behind explicit user confirmation, never silent auto-repair.
  */
+/**
+ * What the owner had highlighted when they summoned the corner.
+ *
+ * The panel quotes `text` verbatim above the actions, so a wrong selection is
+ * obvious before anything acts on it, and prints `wordCount` beside it
+ * ("YOU SELECTED · 41 WORDS"). `appName` is where it came from, and is null
+ * when that could not be determined — provenance is nice to have and must
+ * never cost the selection.
+ */
+/** One thing waiting on the owner, as the menu bar lists it. */
+export interface NeedsYouItem {
+  id: string;
+  title: string;
+  /** "waiting 2 days", "before your 10:30" — why it is worth a look now. */
+  detail?: string;
+}
+
+/**
+ * What the corner knows about the window in front, and whether this is the
+ * summon that should offer to read it.
+ *
+ * `consent` has three states because "never asked" and "declined" are
+ * different: the offer is made once, on the second summon, and a decline
+ * stays declined until the owner changes it.
+ */
+export interface CornerContext {
+  screen: { description: string; appName: string | null } | null;
+  offerScreenReading: boolean;
+  consent: "granted" | "declined" | "unasked";
+}
+
+export interface CornerSelection {
+  text: string;
+  wordCount: number;
+  appName: string | null;
+}
+
 export interface LocalWakeOptions {
   repairGuardian?: boolean;
 }
@@ -227,6 +264,21 @@ export interface VellumBridge {
     setBadge(count: number): void;
     setSignedIn(signedIn: boolean): void;
   };
+  /**
+   * What is waiting on the owner, published to the menu bar.
+   *
+   * The corner **never appears unbidden** — a panel that seizes focus over
+   * your work to ask for money is the behaviour that gets an app quit. So
+   * approvals reach you as a count you pull down instead: one surface you
+   * summon, one that waits.
+   *
+   * This carries **the same post-valve number HQ's badge shows**, published
+   * from the one hook both already read, so the menu bar can never become a
+   * second and louder count that disagrees with the app.
+   */
+  needsYou: {
+    set(payload: { count: number; items: NeedsYouItem[] }): void;
+  };
   localMode: {
     hatch(
       species: string,
@@ -329,6 +381,31 @@ export interface VellumBridge {
     hide(): Promise<void>;
     getStatus(): Promise<AssistantStatus>;
     onStatus(callback: (status: AssistantStatus) => void): () => void;
+  };
+  /**
+   * The floating corner: one exchange, summoned with `⌥C`, then finished.
+   * Rendered by the SPA's `/assistant/floating/corner` route.
+   *
+   * `getSelection` pulls whatever the owner had highlighted when they
+   * summoned — main reads it BEFORE showing the panel, while their own app is
+   * still frontmost, and `onSelection` carries the same value for a window
+   * that is already open. `null` means nothing was selected, which is an
+   * ordinary state and not an error. `hide` closes the panel and deliberately
+   * cancels nothing: work in flight keeps running and reports in HQ.
+   * `openInCue` hands the exchange to the app — the escape hatch that stops
+   * the panel growing back into a thread.
+   */
+  corner: {
+    getSelection(): Promise<CornerSelection | null>;
+    onSelection(
+      callback: (selection: CornerSelection | null) => void,
+    ): () => void;
+    getContext(): Promise<CornerContext>;
+    onContext(callback: (context: CornerContext) => void): () => void;
+    /** Answer the screen-reading invite. Recorded once and honoured. */
+    setScreenReading(granted: boolean): Promise<void>;
+    hide(): Promise<void>;
+    openInCue(text: string): Promise<void>;
   };
   /**
    * Embedded VentureVerse app view (desktop inline embedding). The SPA's app
