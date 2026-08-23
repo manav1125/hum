@@ -29,10 +29,15 @@
  * project.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { useQuery } from "@tanstack/react-query";
+
+import { projectsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 
 import {
   ArrowLeft,
+  Check,
   Download,
   Inbox,
   Mic,
@@ -52,7 +57,7 @@ import {
   useDeleteNote,
   useUpdateNote,
 } from "@/hooks/use-note-capture";
-import type { Note, NoteFilter } from "@/types/notes";
+import type { Note, NoteFilter, NoteProduced } from "@/types/notes";
 
 import { NoteAcceptRate } from "./note-accept-rate";
 import { NoteAskPanel } from "./note-ask-panel";
@@ -74,6 +79,8 @@ const C = {
   t3: "var(--mv1-t3)",
   blueS: "var(--mv1-blue-strong)",
   green: "var(--mv1-green)",
+  // Small text takes the -text variant, never the bright fill (§6).
+  amberText: "var(--mv1-amber-text)",
 } as const;
 
 const serif = "'Instrument Serif', Georgia, serif";
@@ -112,6 +119,22 @@ function NotesPageDesktop() {
   const [importing, setImporting] = useState(false);
 
   const list = useNotes(assistantId, filter);
+  /**
+   * Names for the project chips. A card that says "▤ Renew Acme" tells you
+   * where a thought lives; one that says "filed" tells you nothing. Failure
+   * is silent on purpose — the chip falls back to filed/unfiled and the list
+   * still renders, because a project name is not worth an error state.
+   */
+  const projects = useQuery({
+    ...projectsGetOptions({ path: { assistant_id: assistantId } }),
+    enabled: Boolean(assistantId),
+  });
+  const projectNames = useMemo(() => {
+    const map = new Map<string, string>();
+    const rows = (projects.data as { projects?: Array<{ id: string; name: string }> } | undefined)?.projects;
+    for (const p of rows ?? []) map.set(p.id, p.name);
+    return map;
+  }, [projects.data]);
   const createNote = useCreateNote();
   const sync = useNoteSync(assistantId);
 
@@ -262,7 +285,11 @@ function NotesPageDesktop() {
           <EmptyState filter={filter} onStart={() => void startNote()} />
         ) : (
           <>
-            <NoteList notes={notes} onOpen={setOpenNoteId} />
+            <NoteList
+              notes={notes}
+              projectNames={projectNames}
+              onOpen={setOpenNoteId}
+            />
             {/* The number that says whether this feature works. It renders
                 only once something has actually been decided — inventing a
                 rate from three decisions would be worse than showing none. */}
@@ -289,11 +316,55 @@ function NotesPageDesktop() {
  * happened. The lane is a heading, not a second store — a separate inbox is
  * how a capture surface becomes a thing to process.
  */
+/**
+ * Group a page of notes by the day the thought happened.
+ *
+ * Deliberately on `occurredAt` rather than `createdAt`: a Halo capture and an
+ * import both carry their own time, and filing a walk-to-work thought under
+ * the moment the row was written would put it on the wrong day.
+ *
+ * Order is preserved from the caller (newest first), so the groups come out
+ * newest first without a second sort. Arrivals are filtered out before this
+ * runs — they have their own lane above.
+ */
+function groupByDay(notes: Note[]): Array<[string, Note[]]> {
+  const startOfDay = (ms: number): number => {
+    const d = new Date(ms);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const today = startOfDay(Date.now());
+  const day = 24 * 60 * 60 * 1000;
+
+  const label = (ms: number): string => {
+    const at = startOfDay(ms);
+    if (at === today) return "Today";
+    if (at === today - day) return "Yesterday";
+    return new Date(ms).toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const groups: Array<[string, Note[]]> = [];
+  for (const note of notes) {
+    const key = label(note.occurredAt);
+    const last = groups[groups.length - 1];
+    if (last && last[0] === key) last[1].push(note);
+    else groups.push([key, [note]]);
+  }
+  return groups;
+}
+
 function NoteList({
   notes,
+  projectNames,
   onOpen,
 }: {
   notes: Note[];
+  /** id → name, so a card can name its room rather than say "filed". */
+  projectNames: Map<string, string>;
   onOpen: (id: string) => void;
 }) {
   const arrivals = notes.filter((note) => note.source === "arrival");
@@ -315,7 +386,16 @@ function NoteList({
           <ul className="flex flex-col gap-2">
             {arrivals.map((note) => (
               <li key={note.id}>
-                <NoteCard note={note} onOpen={() => onOpen(note.id)} />
+                <NoteCard
+                  note={note}
+                  projectName={
+                    note.projectId
+                      ? (projectNames.get(note.projectId) ?? null)
+                      : null
+                  }
+                  onOpen={() => onOpen(note.id)}
+                  onFile={() => onOpen(note.id)}
+                />
               </li>
             ))}
           </ul>
@@ -326,13 +406,35 @@ function NoteList({
         </section>
       ) : null}
 
-      <ul className="flex flex-col gap-2">
-        {rest.map((note) => (
-          <li key={note.id}>
-            <NoteCard note={note} onOpen={() => onOpen(note.id)} />
-          </li>
-        ))}
-      </ul>
+      {/* N1 groups by the day the thought happened — TODAY, yesterday, then
+          the date. Scanning "what was I thinking on Tuesday" is most of what
+          this list is for, and a flat run of timestamps does not answer it. */}
+      {groupByDay(rest).map(([label, group]) => (
+        <section key={label} className="flex flex-col gap-2">
+          <p
+            className="mt-1 text-[10.5px] font-semibold tracking-wide uppercase"
+            style={{ color: C.t3 }}
+          >
+            {label}
+          </p>
+          <ul className="flex flex-col gap-2">
+            {group.map((note) => (
+              <li key={note.id}>
+                <NoteCard
+                  note={note}
+                  projectName={
+                    note.projectId
+                      ? (projectNames.get(note.projectId) ?? null)
+                      : null
+                  }
+                  onOpen={() => onOpen(note.id)}
+                  onFile={() => onOpen(note.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </>
   );
 }
@@ -476,40 +578,127 @@ function EmptyState({
   );
 }
 
-function NoteCard({ note, onOpen }: { note: Note; onOpen: () => void }) {
-  const preview = note.body.split("\n").slice(1).join(" ").trim();
+/** `1:04` from a duration in ms — the shape N1 prints beside a recording. */
+function clock(ms: number): string {
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/**
+ * What the note produced — N1's `✓ 3 tasks · 2 memories · 1 waiting`.
+ *
+ * Nothing is drawn when a note has produced nothing, which is the common and
+ * legitimate case: "a note is allowed to just be a note" (N2·2), and a row of
+ * zeroes would read as failure. `waiting` is the one item that gets emphasis,
+ * because it is the only one asking for something.
+ */
+function Produced({ produced }: { produced: NoteProduced }): React.ReactElement | null {
+  const parts: string[] = [];
+  if (produced.tasks > 0)
+    parts.push(`${produced.tasks} ${produced.tasks === 1 ? "task" : "tasks"}`);
+  if (produced.memories > 0)
+    parts.push(
+      `${produced.memories} ${produced.memories === 1 ? "memory" : "memories"}`,
+    );
+  if (produced.traits > 0)
+    parts.push(`${produced.traits} about people`);
+
+  if (parts.length === 0 && produced.waiting === 0) return null;
+
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-[11.5px]">
+      {parts.length > 0 ? (
+        <span style={{ color: C.t2 }}>
+          <Check size={11} className="mr-0.5 inline align-[-1px]" aria-hidden />
+          {parts.join(" · ")}
+        </span>
+      ) : null}
+      {produced.waiting > 0 ? (
+        <span style={{ color: C.amberText }}>
+          {parts.length > 0 ? "· " : ""}
+          {produced.waiting} waiting
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** How a note got here, in the words N1 puts on the card. */
+const SOURCE_BADGE: Partial<Record<Note["source"], string>> = {
+  selection: "from ⌥C",
+  voice: "spoken",
+  arrival: "arrived",
+  import: "imported",
+};
+
+/**
+ * One note in the list.
+ *
+ * N1 asks the card to answer three things at a glance: when the thought
+ * happened, where it is filed, and **what it produced** — that last one is the
+ * card-level version of the header's whole argument, and a card without it is
+ * a filename. Unfiled notes carry `File it ›` rather than being nagged: filing
+ * is optional forever, so it is an offer, not a chore badge.
+ */
+function NoteCard({
+  note,
+  projectName,
+  onOpen,
+  onFile,
+}: {
+  note: Note;
+  projectName: string | null;
+  onOpen: () => void;
+  onFile?: () => void;
+}) {
+  const preview = note.body.split("\n").slice(1).join(" ").trim();
+  const badge = SOURCE_BADGE[note.source];
+  return (
+    <div
       className="w-full rounded-lg border px-3 py-2.5 text-left"
       style={{ borderColor: C.line, background: C.card }}
     >
-      <div className="flex items-baseline gap-2">
-        {note.audioPath ? (
-          <Mic size={12} style={{ color: C.t3 }} />
-        ) : (
-          <PenLine size={12} style={{ color: C.t3 }} />
-        )}
-        <span className="text-[11px]" style={{ color: C.t3 }}>
-          {note.projectId ? "filed" : "unfiled"} ·{" "}
-          {new Date(note.occurredAt).toLocaleString(undefined, {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
-      </div>
-      <p className="mt-1 text-[14px] font-medium" style={{ color: C.t1 }}>
-        {note.title}
-      </p>
-      {preview ? (
-        <p className="mt-0.5 line-clamp-2 text-[13px]" style={{ color: C.t2 }}>
-          {preview}
+      <button type="button" onClick={onOpen} className="w-full text-left">
+        <div className="flex items-baseline gap-2">
+          {note.audioPath ? (
+            <Mic size={12} style={{ color: C.t3 }} />
+          ) : (
+            <PenLine size={12} style={{ color: C.t3 }} />
+          )}
+          <span className="text-[11px]" style={{ color: C.t3 }}>
+            {projectName ?? (note.projectId ? "filed" : "unfiled")}
+            {" · "}
+            {new Date(note.occurredAt).toLocaleTimeString(undefined, {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+            {note.audioPath && note.audioDurationMs
+              ? ` · ${clock(note.audioDurationMs)} kept`
+              : ""}
+            {badge ? ` · ${badge}` : ""}
+          </span>
+        </div>
+        <p className="mt-1 text-[14px] font-medium" style={{ color: C.t1 }}>
+          {note.title}
         </p>
+        {preview ? (
+          <p className="mt-0.5 line-clamp-2 text-[13px]" style={{ color: C.t2 }}>
+            {preview}
+          </p>
+        ) : null}
+        {note.produced ? <Produced produced={note.produced} /> : null}
+      </button>
+      {!note.projectId && onFile ? (
+        <button
+          type="button"
+          onClick={onFile}
+          className="mt-1.5 text-[11.5px] font-medium"
+          style={{ color: C.blueS }}
+        >
+          File it ›
+        </button>
       ) : null}
-    </button>
+    </div>
   );
 }
 

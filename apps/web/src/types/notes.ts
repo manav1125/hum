@@ -44,6 +44,23 @@ export interface Note {
   occurredAt: number;
   createdAt: number;
   updatedAt: number;
+  /** What this note turned into. See {@link NoteProduced}. */
+  produced?: NoteProduced;
+}
+
+/**
+ * What a note produced — N1: "each card states what it produced".
+ *
+ * The same argument the header count makes ("62 notes · they've produced 78
+ * tasks and 31 memories"), at the scale where someone decides whether to open
+ * a note. `waiting` is undecided proposals, kept separate from the accepted
+ * kinds because "3 tasks" and "1 still to look at" are different facts.
+ */
+export interface NoteProduced {
+  tasks: number;
+  memories: number;
+  traits: number;
+  waiting: number;
 }
 
 /** What Cue already believed, against what this note says. Never one without the other. */

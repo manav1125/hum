@@ -184,6 +184,93 @@ describe("listNotes filters", () => {
   });
 });
 
+/**
+ * N1: "each card states what it produced".
+ *
+ * The same argument the header count makes, at the scale where someone
+ * decides whether to open a note — so it has to be right per note, not just
+ * in aggregate.
+ */
+describe("listNotes reports what each note produced", () => {
+  test("accepted extractions count by kind; proposals count as waiting", () => {
+    const note = createNote({ body: "a" });
+    const task = createExtraction({
+      noteId: note.id,
+      kind: "task",
+      payload: {},
+    });
+    const memory = createExtraction({
+      noteId: note.id,
+      kind: "memory",
+      payload: {},
+    });
+    recordExtractionDecision(task.id, "accepted");
+    recordExtractionDecision(memory.id, "accepted");
+    // Left undecided on purpose: this is the visible cost of the acceptance
+    // rule, and it must not be silently folded into the accepted counts.
+    createExtraction({ noteId: note.id, kind: "task", payload: {} });
+
+    const [row] = listNotes();
+    expect(row?.produced).toEqual({
+      tasks: 1,
+      memories: 1,
+      traits: 0,
+      waiting: 1,
+    });
+  });
+
+  test("a dismissed proposal counts as neither produced nor waiting", () => {
+    const note = createNote({ body: "a" });
+    const dropped = createExtraction({
+      noteId: note.id,
+      kind: "task",
+      payload: {},
+    });
+    recordExtractionDecision(dropped.id, "dismissed");
+
+    expect(listNotes()[0]?.produced).toEqual({
+      tasks: 0,
+      memories: 0,
+      traits: 0,
+      waiting: 0,
+    });
+  });
+
+  test("a note that produced nothing gets explicit zeros, never undefined", () => {
+    // The card has to tell "nothing found in this one" from "not read yet",
+    // and a missing object cannot say either.
+    createNote({ body: "just thinking" });
+    expect(listNotes()[0]?.produced).toEqual({
+      tasks: 0,
+      memories: 0,
+      traits: 0,
+      waiting: 0,
+    });
+  });
+
+  test("counts do not bleed between notes on the same page", () => {
+    const a = createNote({ body: "a" });
+    const b = createNote({ body: "b" });
+    const t = createExtraction({ noteId: a.id, kind: "task", payload: {} });
+    recordExtractionDecision(t.id, "accepted");
+    createExtraction({ noteId: b.id, kind: "person_trait", payload: {} });
+
+    const byId = new Map(listNotes().map((n) => [n.id, n.produced]));
+    expect(byId.get(a.id)).toEqual({
+      tasks: 1,
+      memories: 0,
+      traits: 0,
+      waiting: 0,
+    });
+    expect(byId.get(b.id)).toEqual({
+      tasks: 0,
+      memories: 0,
+      traits: 0,
+      waiting: 1,
+    });
+  });
+});
+
 describe("getNoteCounts", () => {
   test("counts what notes PRODUCED — the header line's whole argument", () => {
     const note = createNote({ body: "a" });

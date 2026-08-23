@@ -14,7 +14,7 @@
  * See `memory/schema/notes.ts` for the shape and the reasoning behind it.
  */
 
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "../memory/db-connection.js";
 import { noteExtractions, notes } from "../memory/schema.js";
@@ -61,6 +61,30 @@ export interface Note {
   occurredAt: number;
   createdAt: number;
   updatedAt: number;
+  /**
+   * What this note turned into. Present on list rows; see {@link NoteProduced}.
+   */
+  produced?: NoteProduced;
+}
+
+/**
+ * What a note produced, per note.
+ *
+ * N1's card "states what it produced" — `✓ 3 tasks · 2 memories · 1 waiting`
+ * — and that is the same argument the header count makes ("62 notes ·
+ * they've produced 78 tasks and 31 memories"), at the scale where someone
+ * actually decides whether to open a note. A card without it is a filename.
+ *
+ * `waiting` is the count of proposals still undecided, which is the visible
+ * consequence of the rule that nothing files without acceptance. It is
+ * counted separately from the accepted kinds rather than lumped in: "3 tasks"
+ * and "1 still to look at" mean different things to whoever is scanning.
+ */
+export interface NoteProduced {
+  tasks: number;
+  memories: number;
+  traits: number;
+  waiting: number;
 }
 
 /**
@@ -358,7 +382,70 @@ export function listNotes(options: ListNotesOptions = {}): Note[] {
     .limit(limit)
     .offset(options.offset ?? 0)
     .all();
-  return rows.map(toNote);
+
+  return attachProduced(rows.map(toNote));
+}
+
+/**
+ * Fill in {@link NoteProduced} for a page of notes.
+ *
+ * One grouped query for the whole page rather than a subquery per row: the
+ * list is the surface someone opens first and most often, and a per-card
+ * count that costs a query per card is how a list gets slow exactly as it
+ * starts being worth having. Notes with nothing yet get explicit zeros, so
+ * the card can tell "nothing found in this one" from "not read yet" without
+ * a second call.
+ */
+function attachProduced(page: Note[]): Note[] {
+  if (page.length === 0) return page;
+  const db = getDb();
+  const ids = page.map((n) => n.id);
+
+  const counts = db
+    .select({
+      noteId: noteExtractions.noteId,
+      kind: noteExtractions.kind,
+      state: noteExtractions.state,
+      n: sql<number>`COUNT(*)`,
+    })
+    .from(noteExtractions)
+    .where(inArray(noteExtractions.noteId, ids))
+    .groupBy(
+      noteExtractions.noteId,
+      noteExtractions.kind,
+      noteExtractions.state,
+    )
+    .all();
+
+  const byNote = new Map<string, NoteProduced>();
+  for (const id of ids) {
+    byNote.set(id, { tasks: 0, memories: 0, traits: 0, waiting: 0 });
+  }
+  for (const row of counts) {
+    const acc = byNote.get(row.noteId);
+    if (!acc) continue;
+    const n = Number(row.n);
+    // Undecided proposals are the visible cost of the acceptance rule, so
+    // they are counted whatever kind they are.
+    if (row.state === "proposed") {
+      acc.waiting += n;
+      continue;
+    }
+    if (row.state !== "accepted") continue;
+    if (row.kind === "task") acc.tasks += n;
+    else if (row.kind === "memory") acc.memories += n;
+    else if (row.kind === "person_trait") acc.traits += n;
+  }
+
+  return page.map((note) => ({
+    ...note,
+    produced: byNote.get(note.id) ?? {
+      tasks: 0,
+      memories: 0,
+      traits: 0,
+      waiting: 0,
+    },
+  }));
 }
 
 /**

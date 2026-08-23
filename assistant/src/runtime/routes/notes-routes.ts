@@ -116,6 +116,22 @@ const noteSchema = z.object({
     ),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
+  produced: z
+    .object({
+      tasks: z.number(),
+      memories: z.number(),
+      traits: z.number(),
+      waiting: z.number(),
+    })
+    .optional()
+    .describe(
+      "What this note turned into — N1's card 'states what it produced'. " +
+        "`waiting` counts proposals still undecided, which is the visible " +
+        "cost of nothing filing without acceptance, and is deliberately " +
+        "separate from the accepted kinds: '3 tasks' and '1 still to look " +
+        "at' mean different things to someone scanning the list. Present on " +
+        "list rows.",
+    ),
 });
 
 const conflictSchema = z.object({

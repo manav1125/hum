@@ -1586,6 +1586,20 @@ paths:
                           type: string
                         contentId:
                           type: string
+                        sourceConversation:
+                          description: The conversation this app was first created in. Present only when that conversation still exists.
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            title:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                          required:
+                            - id
+                            - title
+                          additionalProperties: false
                       required:
                         - id
                         - name
@@ -32680,6 +32694,28 @@ paths:
                           type: integer
                           minimum: -9007199254740991
                           maximum: 9007199254740991
+                        produced:
+                          description:
+                            "What this note turned into — N1's card 'states what it produced'. `waiting` counts proposals still
+                            undecided, which is the visible cost of nothing filing without acceptance, and is
+                            deliberately separate from the accepted kinds: '3 tasks' and '1 still to look at' mean
+                            different things to someone scanning the list. Present on list rows."
+                          type: object
+                          properties:
+                            tasks:
+                              type: number
+                            memories:
+                              type: number
+                            traits:
+                              type: number
+                            waiting:
+                              type: number
+                          required:
+                            - tasks
+                            - memories
+                            - traits
+                            - waiting
+                          additionalProperties: false
                       required:
                         - id
                         - title
@@ -32869,6 +32905,28 @@ paths:
                         type: integer
                         minimum: -9007199254740991
                         maximum: 9007199254740991
+                      produced:
+                        description:
+                          "What this note turned into — N1's card 'states what it produced'. `waiting` counts proposals still
+                          undecided, which is the visible cost of nothing filing without acceptance, and is deliberately
+                          separate from the accepted kinds: '3 tasks' and '1 still to look at' mean different things to
+                          someone scanning the list. Present on list rows."
+                        type: object
+                        properties:
+                          tasks:
+                            type: number
+                          memories:
+                            type: number
+                          traits:
+                            type: number
+                          waiting:
+                            type: number
+                        required:
+                          - tasks
+                          - memories
+                          - traits
+                          - waiting
+                        additionalProperties: false
                     required:
                       - id
                       - title
@@ -33077,6 +33135,28 @@ paths:
                         type: integer
                         minimum: -9007199254740991
                         maximum: 9007199254740991
+                      produced:
+                        description:
+                          "What this note turned into — N1's card 'states what it produced'. `waiting` counts proposals still
+                          undecided, which is the visible cost of nothing filing without acceptance, and is deliberately
+                          separate from the accepted kinds: '3 tasks' and '1 still to look at' mean different things to
+                          someone scanning the list. Present on list rows."
+                        type: object
+                        properties:
+                          tasks:
+                            type: number
+                          memories:
+                            type: number
+                          traits:
+                            type: number
+                          waiting:
+                            type: number
+                        required:
+                          - tasks
+                          - memories
+                          - traits
+                          - waiting
+                        additionalProperties: false
                     required:
                       - id
                       - title
@@ -33325,6 +33405,28 @@ paths:
                         type: integer
                         minimum: -9007199254740991
                         maximum: 9007199254740991
+                      produced:
+                        description:
+                          "What this note turned into — N1's card 'states what it produced'. `waiting` counts proposals still
+                          undecided, which is the visible cost of nothing filing without acceptance, and is deliberately
+                          separate from the accepted kinds: '3 tasks' and '1 still to look at' mean different things to
+                          someone scanning the list. Present on list rows."
+                        type: object
+                        properties:
+                          tasks:
+                            type: number
+                          memories:
+                            type: number
+                          traits:
+                            type: number
+                          waiting:
+                            type: number
+                        required:
+                          - tasks
+                          - memories
+                          - traits
+                          - waiting
+                        additionalProperties: false
                     required:
                       - id
                       - title
@@ -34350,6 +34452,28 @@ paths:
                         type: integer
                         minimum: -9007199254740991
                         maximum: 9007199254740991
+                      produced:
+                        description:
+                          "What this note turned into — N1's card 'states what it produced'. `waiting` counts proposals still
+                          undecided, which is the visible cost of nothing filing without acceptance, and is deliberately
+                          separate from the accepted kinds: '3 tasks' and '1 still to look at' mean different things to
+                          someone scanning the list. Present on list rows."
+                        type: object
+                        properties:
+                          tasks:
+                            type: number
+                          memories:
+                            type: number
+                          traits:
+                            type: number
+                          waiting:
+                            type: number
+                        required:
+                          - tasks
+                          - memories
+                          - traits
+                          - waiting
+                        additionalProperties: false
                     required:
                       - id
                       - title
@@ -34576,6 +34700,28 @@ paths:
                             type: integer
                             minimum: -9007199254740991
                             maximum: 9007199254740991
+                          produced:
+                            description:
+                              "What this note turned into — N1's card 'states what it produced'. `waiting` counts proposals still
+                              undecided, which is the visible cost of nothing filing without acceptance, and is
+                              deliberately separate from the accepted kinds: '3 tasks' and '1 still to look at' mean
+                              different things to someone scanning the list. Present on list rows."
+                            type: object
+                            properties:
+                              tasks:
+                                type: number
+                              memories:
+                                type: number
+                              traits:
+                                type: number
+                              waiting:
+                                type: number
+                            required:
+                              - tasks
+                              - memories
+                              - traits
+                              - waiting
+                            additionalProperties: false
                         required:
                           - id
                           - title
@@ -35113,6 +35259,28 @@ paths:
                             type: integer
                             minimum: -9007199254740991
                             maximum: 9007199254740991
+                          produced:
+                            description:
+                              "What this note turned into — N1's card 'states what it produced'. `waiting` counts proposals still
+                              undecided, which is the visible cost of nothing filing without acceptance, and is
+                              deliberately separate from the accepted kinds: '3 tasks' and '1 still to look at' mean
+                              different things to someone scanning the list. Present on list rows."
+                            type: object
+                            properties:
+                              tasks:
+                                type: number
+                              memories:
+                                type: number
+                              traits:
+                                type: number
+                              waiting:
+                                type: number
+                            required:
+                              - tasks
+                              - memories
+                              - traits
+                              - waiting
+                            additionalProperties: false
                         required:
                           - id
                           - title
