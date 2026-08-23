@@ -256,6 +256,12 @@ export function CornerPage() {
             <ReadWindow screen={context.screen} />
           ) : null}
           <OutcomeView outcome={outcome} />
+          {/* F2·E: the words land as you speak, so you can see it hearing you
+              correctly before you let go. Rendered above the composer rather
+              than inside it — this is what was heard, not what you typed, and
+              the two must not look like the same field. Absent entirely when
+              streaming is unavailable; the hold still works. */}
+          <LiveWords text={talk.partial} listening={talk.state === "listening"} />
         </div>
 
         {outcome.state === "idle" || outcome.state === "failed" ? (
@@ -371,6 +377,40 @@ function QuotedSelection({ selection }: { selection: CornerSelection }) {
         {selection.text}
       </blockquote>
     </div>
+  );
+}
+
+/**
+ * What Cue has heard so far this hold.
+ *
+ * Deliberately quiet: no card, no border, no icon of its own — it sits where
+ * the answer will, in the same measure, so releasing the key replaces words
+ * with words rather than redrawing the panel. The trailing caret is the only
+ * motion, and it stops the moment the key is up.
+ */
+function LiveWords({
+  text,
+  listening,
+}: {
+  text: string;
+  listening: boolean;
+}): React.ReactElement | null {
+  if (!listening || !text) return null;
+  return (
+    <p
+      className="px-3 pt-1 text-[13px] leading-snug"
+      style={{ color: C.t1 }}
+      aria-live="polite"
+    >
+      {text}
+      <span
+        className="ml-0.5 inline-block motion-safe:animate-pulse"
+        style={{ color: C.amberText }}
+        aria-hidden
+      >
+        ▍
+      </span>
+    </p>
   );
 }
 

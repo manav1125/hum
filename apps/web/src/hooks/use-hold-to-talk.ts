@@ -19,6 +19,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useLiveTranscript } from "@/hooks/use-live-transcript";
+
 import { notesVoicePost } from "@/generated/daemon/sdk.gen";
 
 export type HoldToTalkState = "idle" | "listening" | "transcribing";
@@ -44,8 +46,14 @@ export function useHoldToTalk({
   assistantId: string;
   onTranscript: (text: string) => void;
   modifier?: "Alt" | "Control" | "Shift";
-}): { state: HoldToTalkState; error: string | null } {
+}): {
+  state: HoldToTalkState;
+  error: string | null;
+  /** Words heard so far this hold — see {@link useLiveTranscript}. */
+  partial: string;
+} {
   const [state, setState] = useState<HoldToTalkState>("idle");
+  const live = useLiveTranscript();
   const [error, setError] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -54,13 +62,14 @@ export function useHoldToTalk({
   const startingRef = useRef(false);
 
   const hardStop = useCallback(() => {
+    live.stop();
     const recorder = recorderRef.current;
     recorderRef.current = null;
     startingRef.current = false;
     if (!recorder) return null;
     recorder.stream.getTracks().forEach((track) => track.stop());
     return recorder;
-  }, []);
+  }, [live]);
 
   const finish = useCallback(async () => {
     const recorder = recorderRef.current;
@@ -136,12 +145,15 @@ export function useHoldToTalk({
       recorder.start();
       recorderRef.current = recorder;
       startingRef.current = false;
+      // Display only, and started AFTER the recorder so a streaming failure can
+      // never cost the recording. See `useLiveTranscript`.
+      live.start();
       setState("listening");
     } catch {
       startingRef.current = false;
       setError("I couldn't reach your microphone. Nothing was recorded.");
     }
-  }, []);
+  }, [live]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -177,5 +189,5 @@ export function useHoldToTalk({
     };
   }, [begin, finish, hardStop, modifier]);
 
-  return { state, error };
+  return { state, error, partial: live.text };
 }

@@ -20,6 +20,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useLiveTranscript } from "@/hooks/use-live-transcript";
+
 import { useMutation } from "@tanstack/react-query";
 import { Loader2, Mic } from "lucide-react";
 
@@ -68,6 +70,7 @@ export function NoteRecorder({
 }) {
   const invalidate = useInvalidateNotes();
   const [state, setState] = useState<State>({ kind: "idle" });
+  const live = useLiveTranscript();
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
@@ -91,11 +94,12 @@ export function NoteRecorder({
    * indicator that outlives the gesture is the thing this design refuses.
    */
   const stopTracks = useCallback(() => {
+    live.stop();
     const recorder = recorderRef.current;
     if (!recorder) return;
     recorder.stream.getTracks().forEach((track) => track.stop());
     recorderRef.current = null;
-  }, []);
+  }, [live]);
 
   // The mic cannot survive this component. If the panel closes, navigates or
   // crashes mid-press, the recording stops with it.
@@ -113,6 +117,10 @@ export function NoteRecorder({
       };
       recorder.start();
       recorderRef.current = recorder;
+      // After the recorder, never before: this is a display mirror and a
+      // failure to start it must not cost the recording. See
+      // `useLiveTranscript`.
+      live.start();
       setState({ kind: "listening" });
     } catch {
       setState({
@@ -121,7 +129,7 @@ export function NoteRecorder({
           "I couldn't reach your microphone. Nothing was recorded — check the mic permission and try again.",
       });
     }
-  }, [state.kind]);
+  }, [state.kind, live]);
 
   const finish = useCallback(async () => {
     const recorder = recorderRef.current;
@@ -218,6 +226,26 @@ export function NoteRecorder({
       {state.kind === "failed" ? (
         <p className="mt-1.5 text-[11.5px]" style={{ color: C.amberText }}>
           {state.reason}
+        </p>
+      ) : null}
+      {/* S1·B draws the words appearing under "Listening", and F2·E gives the
+          reason: you can see it hearing you correctly before you let go. A
+          button that only changes colour is not evidence of that. Absent when
+          streaming is unavailable — the hold still records either way. */}
+      {listening && live.text ? (
+        <p
+          className="mt-1.5 text-[13px] leading-snug"
+          style={{ color: C.t1 }}
+          aria-live="polite"
+        >
+          {live.text}
+          <span
+            className="ml-0.5 inline-block motion-safe:animate-pulse"
+            style={{ color: C.danger }}
+            aria-hidden
+          >
+            ▍
+          </span>
         </p>
       ) : null}
       {listening ? (
