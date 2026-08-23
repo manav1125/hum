@@ -98,10 +98,13 @@
         opacity: 0; transition: opacity 0.45s ease;
       }
       .screen[data-active] { display: flex; opacity: 1; }
-      /* With the keyboard up the visible box can be shorter than the card;
+      /* With the keyboard up the visible box can be shorter than the card, so
        * scroll it inside its own screen rather than letting the native scroll
-       * view lift the whole page off the top of the display. */
-      .screen[data-active] { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+       * view lift the whole page off the top of the display. Gated on the
+       * keyboard being up: the idle screens carry decorative elements that
+       * sit outside the box on purpose, and an always-scrollable screen would
+       * let the user drag the orbit around. */
+      #app[data-kb] .screen[data-active] { overflow-y: auto; -webkit-overflow-scrolling: touch; }
       .screen.splash { background: var(--splash-bg); }
       .card { position: relative; z-index: 2; width: 100%; max-width: 400px; display: flex; flex-direction: column; align-items: stretch; }
       .card.center { align-items: center; text-align: center; }
@@ -886,7 +889,7 @@
 
         // Pure helpers exposed for the regression test (see
         // capacitor-shell/connect-logic.test.ts). Not used by the UI.
-        window.CueShell = { isEmail: isEmail, withoutToken: withoutToken, parseCueSubdomain: parseCueSubdomain, tokenFromUrl: tokenFromUrl, nativePlugin: nativePlugin };
+        window.CueShell = { isEmail: isEmail, withoutToken: withoutToken, parseCueSubdomain: parseCueSubdomain, tokenFromUrl: tokenFromUrl, nativePlugin: nativePlugin, syncViewport: syncViewport };
 
         // ---- nav buttons ----------------------------------------------
         document.querySelectorAll("[data-goto]").forEach(function (b) {
@@ -934,7 +937,15 @@
         function syncViewport() {
           var vv = window.visualViewport;
           var app = el("app");
-          if (app) app.style.height = (vv ? vv.height : window.innerHeight) + "px";
+          var h = vv ? vv.height : window.innerHeight;
+          if (app) {
+            app.style.height = h + "px";
+            // A viewport materially shorter than the window means the keyboard
+            // (or another inset) is up. 80px of slack keeps the URL-bar-style
+            // small changes from arming the scroller.
+            if (h < window.innerHeight - 80) app.setAttribute("data-kb", "");
+            else app.removeAttribute("data-kb");
+          }
           resetNativeScroll();
         }
         if (window.visualViewport) {

@@ -22,20 +22,32 @@ function loadShell(opts: { capacitor?: "none" | "bridge-only" | "plugins" } = {}
   const noop = () => undefined;
   const listeners: BridgeCall[] = [];
   const nativeCalls: BridgeCall[] = [];
-  const stubEl = () => ({
-    style: { setProperty: noop, width: "" },
-    addEventListener: noop,
-    setAttribute: noop,
-    removeAttribute: noop,
-    getAttribute: () => null,
-    focus: noop,
-    appendChild: noop,
-    childElementCount: 0,
-    textContent: "",
-    value: "",
-    disabled: false,
-    onclick: null,
-  });
+  const stubEl = () => {
+    const attrs = new Map<string, string>();
+    return {
+      style: { setProperty: noop, width: "", height: "" },
+      attrs,
+      addEventListener: noop,
+      setAttribute: (k: string, v: string) => void attrs.set(k, v),
+      removeAttribute: (k: string) => void attrs.delete(k),
+      getAttribute: (k: string) => attrs.get(k) ?? null,
+      focus: noop,
+      appendChild: noop,
+      childElementCount: 0,
+      textContent: "",
+      value: "",
+      disabled: false,
+      onclick: null,
+    };
+  };
+  // getElementById must be stable — syncViewport sets a style and an attribute
+  // on #app and the assertions need to see the same object back.
+  type StubEl = ReturnType<typeof stubEl>;
+  const els = new Map<string, StubEl>();
+  const getEl = (id: string) => {
+    if (!els.has(id)) els.set(id, stubEl());
+    return els.get(id)!;
+  };
   // The shipped app has NO @capacitor/core bundle on this page, so
   // `Capacitor.Plugins` is an empty object and only the injected native
   // bridge's low-level entry points exist. "bridge-only" is what the device
@@ -79,7 +91,7 @@ function loadShell(opts: { capacitor?: "none" | "bridge-only" | "plugins" } = {}
     },
     document: {
       querySelectorAll: () => [],
-      getElementById: stubEl,
+      getElementById: getEl,
       createElement: stubEl,
       addEventListener: noop,
     },
@@ -97,9 +109,11 @@ function loadShell(opts: { capacitor?: "none" | "bridge-only" | "plugins" } = {}
     script,
   )(win, win.document, win.localStorage, win.location, URL, URLSearchParams);
   return {
-    C: (win as { CueShell: Record<string, (s: string) => unknown> }).CueShell,
+    C: (win as { CueShell: Record<string, (s?: unknown) => unknown> }).CueShell,
     listeners,
     nativeCalls,
+    win,
+    getEl,
   };
 }
 
@@ -179,5 +193,45 @@ describe("mobile connect shell — the magic link reaches the app", () => {
     const { C, listeners } = loadShell({ capacitor: "none" });
     expect(listeners).toHaveLength(0);
     expect(C.nativePlugin("App")).toBeNull();
+  });
+});
+
+// The sign-in card scrolled off the top of the screen the moment the keyboard
+// opened: no @capacitor/keyboard here, so WKWebView does not resize the web
+// view — it scrolls its own native scroll view to reveal the caret, and
+// `overflow:hidden` cannot stop it. Sizing #app to the visual viewport is what
+// keeps the field the user is typing into on screen.
+describe("mobile connect shell — the keyboard does not eat the form", () => {
+  test("sizes the app to the visible viewport and arms the scroller", () => {
+    const { C, win, getEl } = loadShell();
+    (win as Record<string, unknown>).innerHeight = 812;
+    (win as Record<string, unknown>).visualViewport = { height: 420 };
+
+    C.syncViewport();
+
+    const app = getEl("app");
+    expect(app.style.height).toBe("420px");
+    expect(app.getAttribute("data-kb")).toBe("");
+  });
+
+  test("releases the scroller when the keyboard closes again", () => {
+    const { C, win, getEl } = loadShell();
+    (win as Record<string, unknown>).innerHeight = 812;
+    (win as Record<string, unknown>).visualViewport = { height: 420 };
+    C.syncViewport();
+    (win as Record<string, unknown>).visualViewport = { height: 812 };
+    C.syncViewport();
+
+    const app = getEl("app");
+    expect(app.style.height).toBe("812px");
+    expect(app.getAttribute("data-kb")).toBeNull();
+  });
+
+  test("a small inset (not the keyboard) does not arm the scroller", () => {
+    const { C, win, getEl } = loadShell();
+    (win as Record<string, unknown>).innerHeight = 812;
+    (win as Record<string, unknown>).visualViewport = { height: 780 };
+    C.syncViewport();
+    expect(getEl("app").getAttribute("data-kb")).toBeNull();
   });
 });
