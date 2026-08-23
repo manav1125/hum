@@ -357,6 +357,54 @@ function groupByDay(notes: Note[]): Array<[string, Note[]]> {
   return groups;
 }
 
+/**
+ * Where arrivals come from, on demand.
+ *
+ * Collapsed by default: the answer matters the first time and never again,
+ * so it is a disclosure rather than a permanent paragraph taking up the top
+ * of the list. Each line names its source and what it does with your data,
+ * because "a note appeared on its own" is a sentence that deserves one.
+ */
+function ArrivalProvenance(): React.ReactElement {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-[11px]"
+        style={{ color: C.blueS }}
+        aria-expanded={open}
+      >
+        {open ? "Hide" : "Where these come from ›"}
+      </button>
+      {open ? (
+        <ul
+          className="mt-1 flex w-full basis-full flex-col gap-1 text-[11.5px]"
+          style={{ color: C.t2 }}
+        >
+          <li>
+            <strong style={{ color: C.t1 }}>Halo</strong> — what it caught,
+            with the audio kept on your device.
+          </li>
+          <li>
+            <strong style={{ color: C.t1 }}>Forwarded email</strong> — anything
+            you send to your notes address.
+          </li>
+          <li>
+            <strong style={{ color: C.t1 }}>Meeting capture</strong> — the
+            recap from a meeting Cue sat in.
+          </li>
+          <li style={{ color: C.t3 }}>
+            All three land as notes and obey acceptance exactly like something
+            you typed. None of them files work on its own.
+          </li>
+        </ul>
+      ) : null}
+    </>
+  );
+}
+
 function NoteList({
   notes,
   projectNames,
@@ -382,6 +430,11 @@ function NoteList({
             >
               Came in · {arrivals.length}
             </p>
+            {/* R3's "Where these come from ›". Notes that appear without you
+                writing them need to say how they got there, in the product
+                rather than in a help page — otherwise the honest question
+                ("what is this and who put it here?") has nowhere to go. */}
+            <ArrivalProvenance />
           </div>
           <ul className="flex flex-col gap-2">
             {arrivals.map((note) => (
