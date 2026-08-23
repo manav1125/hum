@@ -252,7 +252,14 @@ export function readWorkView(search: string | URLSearchParams): WorkView {
  * job; the shape of this array is what makes a single column the natural one.
  */
 export interface SidebarDestination {
-  key: "people" | "library" | "apps" | "connectors" | "skills" | "agents";
+  key:
+    | "notes"
+    | "people"
+    | "library"
+    | "apps"
+    | "connectors"
+    | "skills"
+    | "agents";
   label: string;
   to: string;
   /**
@@ -302,6 +309,24 @@ export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
     label: "Library",
     to: routes.library.root,
     match: (p) => p.includes("/library"),
+  },
+  {
+    /**
+     * The THIRD accumulating destination, and it sits after the People/Library
+     * pair rather than between them — the pair is the design's own block and
+     * `nav-model.test.ts` guards it.
+     *
+     * Notes passes the same admission test People and Library pass: it gets
+     * richer on its own, you browse it, and it is worth more at month six than
+     * at month one. It is deliberately NOT in {@link PRIMARY_NAV} — three is
+     * the ceiling there and it is full — and it has no Your Cue leaf, because
+     * a leaf is for things you go and change, not places that accumulate. Its
+     * phone door is the drawer (see {@link MOBILE_DRAWER_DESTINATION_KEYS}).
+     */
+    key: "notes",
+    label: "Notes",
+    to: routes.notes,
+    match: (p) => p === routes.notes || p.startsWith(`${routes.notes}/`),
   },
   {
     /**
@@ -377,7 +402,14 @@ export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
  * `your-cue-reachable.test.tsx`), and a rule nobody can run is a rule that
  * fails a third time.
  */
-export const MOBILE_DRAWER_DESTINATION_KEYS: readonly string[] = ["apps"];
+export const MOBILE_DRAWER_DESTINATION_KEYS: readonly string[] = [
+  // Notes, like Apps, was added to the rail with no Your Cue leaf behind it —
+  // it is a destination you visit, not a thing you configure, so a leaf would
+  // be the wrong shape. The drawer is its phone door, which is also what the
+  // design specifies: "same three-tab shell, Notes reached from the ⓶ menu."
+  "notes",
+  "apps",
+];
 
 // --- The door ---------------------------------------------------------------
 

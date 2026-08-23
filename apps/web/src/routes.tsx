@@ -367,6 +367,19 @@ export const routeTree = [
         ),
     },
   },
+  // The floating corner — one exchange summoned with ⌥C, then finished.
+  // Same standalone shape as the other floating windows. Gated by the
+  // `desktop-corner` flag in main, which also owns the summon: this route
+  // has no way to open its own window.
+  {
+    path: "/assistant/floating/corner",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/domains/corner/corner-page").then((m) => m.CornerPage),
+    },
+  },
 
   // Legacy direct path retained so old dev windows do not blank during
   // rolling Electron/web updates.
@@ -873,6 +886,17 @@ export const routeTree = [
                         element: <Navigate to={routes.guardrails} replace />,
                       },
                       {
+                        // Notes — the capture surface. A Tier-2 destination
+                        // beside People and Library.
+                        path: "notes",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/notes/notes-page").then(
+                              (m) => m.NotesPage,
+                            ),
+                        },
+                      },
+                      {
                         path: "people",
                         lazy: {
                           Component: () =>
@@ -922,9 +946,9 @@ export const routeTree = [
                         path: "rituals",
                         lazy: {
                           Component: () =>
-                            import(
-                              "@/mobile-v3/rituals/rituals-archive-page"
-                            ).then((m) => m.Mv3RitualsArchivePage),
+                            import("@/mobile-v3/rituals/rituals-archive-page").then(
+                              (m) => m.Mv3RitualsArchivePage,
+                            ),
                         },
                       },
                       {
@@ -1460,18 +1484,18 @@ export const routeTree = [
                         path: "apps",
                         lazy: {
                           Component: () =>
-                            import(
-                              "@/domains/ventureverse/ventureverse-apps-page"
-                            ).then((m) => m.VentureverseAppsPage),
+                            import("@/domains/ventureverse/ventureverse-apps-page").then(
+                              (m) => m.VentureverseAppsPage,
+                            ),
                         },
                       },
                       {
                         path: "apps/:slug",
                         lazy: {
                           Component: () =>
-                            import(
-                              "@/domains/ventureverse/ventureverse-app-embed-page"
-                            ).then((m) => m.VentureverseAppEmbedPage),
+                            import("@/domains/ventureverse/ventureverse-app-embed-page").then(
+                              (m) => m.VentureverseAppEmbedPage,
+                            ),
                         },
                       },
                       {

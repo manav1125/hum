@@ -1,0 +1,366 @@
+/**
+ * Typed client bindings for Notes.
+ *
+ * This file is the single place the web app names the wire shape, the same
+ * role `hooks/use-activity-list.ts` plays for Mission Control. The generated
+ * SDK names its operations off the URL (`notesByIdReadPost`), which is fine
+ * for transport and unreadable at a call site, so the hooks below give each
+ * one the name the feature actually uses.
+ *
+ * Two things the rest of the domain depends on and must not re-derive:
+ *
+ *   · **`extractionState: "done"` with no proposals is "nothing to file".**
+ *     `"failed"` is "I couldn't read this one just now — your note is
+ *     saved." One is about the note, the other about the request, and the
+ *     UI has a separate branch for each.
+ *   · **`confidenceTier` is drawn, never printed.** There is no number on
+ *     the wire to render, and there must never be one: "82% sure" is a fact
+ *     about the model, not about the owner's work.
+ */
+
+import { useCallback, useEffect, useState } from "react";
+
+import { useMutation, useQuery } from "@tanstack/react-query";
+
+import {
+  notesByIdExtractionsByExtractionIdAcceptPostMutation,
+  notesByIdExtractionsByExtractionIdDismissPostMutation,
+  notesByIdExtractionsByExtractionIdUndoPostMutation,
+  notesByIdGetOptions,
+  notesByIdReadPostMutation,
+  notesExtractionsWaitingGetOptions,
+  notesGetOptions,
+} from "@/generated/daemon/@tanstack/react-query.gen";
+
+import { useInvalidateNotes } from "@/hooks/use-invalidate-notes";
+import {
+  enqueue,
+  listLocalNotes,
+  mirrorServerNotes,
+  type LocalNote,
+} from "@/stores/note-local-store";
+import { drainQueue, isOnline, startNoteSync } from "@/stores/note-sync";
+import type {
+  Note,
+  NoteConflictResolution,
+  NoteCounts,
+  NoteExtraction,
+  NoteFilter,
+  ReadNoteResult,
+} from "@/types/notes";
+
+/**
+ * The list, the header's counts, and — the part that took two tries to get
+ * right — an honest answer about which of those it actually has.
+ *
+ * Online it is the daemon's answer, mirrored into the local store on the way
+ * through so this device always holds a current snapshot. Offline it is that
+ * snapshot: "reading everything already on the phone" is one of the things
+ * the offline split promises, so the list renders with no signal.
+ *
+ * **`status` exists because an empty list and a failed request are not the
+ * same thing.** Rendering the empty state — "Say the thing you'd otherwise
+ * forget" — when the request merely failed tells someone they have no notes
+ * when the truth is that we could not ask. That is the same lie as reporting
+ * "nothing to file" for a read that errored, one level up, and it is exactly
+ * the mistake this feature is built to avoid.
+ *
+ * The counts are only trustworthy from the daemon, which is the only place
+ * that can see accepted proposals. From the local snapshot they are omitted
+ * rather than estimated: the header line is the feature's central claim, and
+ * a guessed one is worse than none.
+ */
+export interface NotesView {
+  /**
+   *  · `loading`     — genuinely still waiting. Always resolves: both the
+   *                    query and the local read are bounded.
+   *  · `ready`       — a list, from `source`.
+   *  · `unreachable` — the daemon could not be reached AND this device holds
+   *                    no snapshot. Say so; never draw an empty list.
+   */
+  status: "loading" | "ready" | "unreachable";
+  source: "server" | "local" | null;
+  notes: Note[];
+  counts: NoteCounts | null;
+}
+
+/**
+ * The resolution rules, as one pure function.
+ *
+ * Exported and used by the hook itself rather than re-derived in a test —
+ * a test that restates these branches can pass while the hook does the
+ * opposite, which is worse than no test at all.
+ */
+export function resolveNotesView(
+  query: {
+    data?: { notes: Note[]; counts: NoteCounts };
+    isPending: boolean;
+    isError: boolean;
+  },
+  /** `undefined` = the local read has not answered yet. */
+  local: LocalNote[] | undefined,
+  filter: NoteFilter,
+): NotesView {
+  if (query.data) {
+    return {
+      status: "ready",
+      source: "server",
+      notes: query.data.notes,
+      counts: query.data.counts,
+    };
+  }
+
+  // The only state that may say "loading", and both halves are bounded: the
+  // query by react-query's retries, the local read by the store's open
+  // timeout. An unreadable store answers with an empty array, never never.
+  if (query.isPending && local === undefined) {
+    return { status: "loading", source: null, notes: [], counts: null };
+  }
+
+  // Being unable to reach the daemon must not hide what this device holds.
+  if (local && local.length > 0) {
+    return {
+      status: "ready",
+      source: "local",
+      notes: applyFilter(local, filter),
+      counts: null,
+    };
+  }
+
+  // Nothing local, and the daemon errored: we genuinely do not know what is
+  // there. "No notes" here would be a guess dressed as a fact — about the
+  // pile someone would most panic to see empty.
+  if (query.isError) {
+    return { status: "unreachable", source: null, notes: [], counts: null };
+  }
+
+  if (query.isPending) {
+    return { status: "loading", source: null, notes: [], counts: null };
+  }
+
+  return { status: "ready", source: "local", notes: [], counts: null };
+}
+
+export function useNotes(
+  assistantId: string,
+  filter: NoteFilter = "all",
+): NotesView {
+  const query = useQuery({
+    ...notesGetOptions({
+      path: { assistant_id: assistantId },
+      query: { filter },
+    }),
+    enabled: Boolean(assistantId),
+  }) as unknown as {
+    data?: { notes: Note[]; counts: NoteCounts };
+    isPending: boolean;
+    isError: boolean;
+  };
+
+  const [local, setLocal] = useState<LocalNote[] | undefined>(undefined);
+
+  // Mirror every successful fetch, so the offline list is the last thing the
+  // daemon said rather than only what this device happened to write.
+  useEffect(() => {
+    if (query.data?.notes) void mirrorServerNotes(query.data.notes);
+  }, [query.data]);
+
+  // Read the local snapshot once, always. It is the fallback for both the
+  // offline case and the daemon-unreachable case, so it must not be
+  // conditional on the query's state. A failed read answers `[]` — a device
+  // whose store cannot be opened has no notes on it, which is an answer.
+  useEffect(() => {
+    let cancelled = false;
+    void listLocalNotes()
+      .catch(() => [] as LocalNote[])
+      .then((notes) => {
+        if (!cancelled) setLocal(notes);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return resolveNotesView(query, local, filter);
+}
+
+/**
+ * The filters, applied locally.
+ *
+ * `waiting` is deliberately absent: whether a note has undecided proposals is
+ * a fact only the daemon holds, and a filter that silently returned nothing
+ * would read as "you are all caught up" when it means "I cannot tell".
+ */
+function applyFilter(notes: LocalNote[], filter: NoteFilter): LocalNote[] {
+  if (filter === "unfiled") return notes.filter((n) => !n.projectId);
+  if (filter === "recorded") return notes.filter((n) => n.audioPath);
+  return notes;
+}
+
+/**
+ * What is still waiting to reach the daemon — the "3 notes waiting to be
+ * read" line, and the honest version of an offline state.
+ *
+ * Deliberately not a spinner and not a retry countdown: the note is already
+ * saved, so there is nothing for the owner to wait for. It drains when the
+ * connection returns.
+ */
+export function useNoteSync(assistantId: string) {
+  const [online, setOnline] = useState(isOnline);
+  const [pending, setPending] = useState(0);
+
+  const refreshPending = useCallback(async () => {
+    const notes = await listLocalNotes();
+    setPending(notes.filter((n) => n.pending).length);
+  }, []);
+
+  useEffect(() => {
+    const teardown = startNoteSync(assistantId);
+    const onOnline = () => {
+      setOnline(true);
+      void drainQueue(assistantId).then(refreshPending);
+    };
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    void refreshPending();
+    return () => {
+      teardown();
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [assistantId, refreshPending]);
+
+  return { online, pending, refreshPending };
+}
+
+export function useNote(assistantId: string, noteId: string | null) {
+  return useQuery({
+    ...notesByIdGetOptions({
+      path: { assistant_id: assistantId, id: noteId ?? "" },
+    }),
+    enabled: Boolean(assistantId && noteId),
+  }) as unknown as {
+    data?: { note: Note; extractions: NoteExtraction[] };
+    isPending: boolean;
+  };
+}
+
+/**
+ * Every undecided proposal, across every note.
+ *
+ * Requiring acceptance means unreviewed findings pile up somewhere; this is
+ * what makes the pile visible. The morning brief reads the same endpoint, so
+ * the count in Notes and the count in the brief can never disagree.
+ */
+export function useWaitingExtractions(assistantId: string) {
+  return useQuery({
+    ...notesExtractionsWaitingGetOptions({
+      path: { assistant_id: assistantId },
+    }),
+    enabled: Boolean(assistantId),
+  }) as unknown as { data?: { extractions: NoteExtraction[] } };
+}
+
+/**
+ * Read a note for things to do — on close, or when the owner asks.
+ *
+ * Never called on a timer. Unchanged text returns `skipped`, so closing a
+ * note you did not edit costs nothing at all.
+ *
+ * **Offline this queues rather than fails.** Intelligence is on the "waits"
+ * side of the offline split: the note is already saved, and it will be read
+ * when there is a connection. Returning a `skipped` outcome rather than a
+ * failure keeps the rail honest — nothing went wrong, the reading simply has
+ * not happened yet.
+ */
+export function useReadNote() {
+  const invalidate = useInvalidateNotes();
+  const online = useMutation({
+    ...notesByIdReadPostMutation(),
+    onSuccess: invalidate,
+  }) as unknown as {
+    mutateAsync: (vars: {
+      path: { assistant_id: string; id: string };
+      body: { force?: boolean };
+    }) => Promise<ReadNoteResult>;
+    isPending: boolean;
+  };
+
+  const mutateAsync = useCallback(
+    async (vars: {
+      path: { assistant_id: string; id: string };
+      body: { force?: boolean };
+    }): Promise<ReadNoteResult> => {
+      if (!isOnline()) {
+        await enqueue({ op: "read", noteId: vars.path.id, at: Date.now() });
+        return { status: "skipped", skippedReason: "offline", extractions: [] };
+      }
+      return online.mutateAsync(vars);
+    },
+    [online],
+  );
+
+  return { mutateAsync, isPending: online.isPending };
+}
+
+/**
+ * Accept one proposal — the only call in this file that puts anything into
+ * HQ, memory or People.
+ */
+export function useAcceptExtraction() {
+  const invalidate = useInvalidateNotes();
+  return useMutation({
+    ...notesByIdExtractionsByExtractionIdAcceptPostMutation(),
+    onSuccess: invalidate,
+  }) as unknown as {
+    mutateAsync: (vars: {
+      path: { assistant_id: string; id: string; extractionId: string };
+      body: { resolution?: NoteConflictResolution };
+    }) => Promise<{
+      status: "accepted" | "dismissed" | "already_decided" | "failed";
+      refType: string | null;
+      refId: string | null;
+      error: string | null;
+    }>;
+    isPending: boolean;
+  };
+}
+
+/** Dismiss one proposal. Writes nothing anywhere. */
+export function useDismissExtraction() {
+  const invalidate = useInvalidateNotes();
+  return useMutation({
+    ...notesByIdExtractionsByExtractionIdDismissPostMutation(),
+    onSuccess: invalidate,
+  }) as unknown as {
+    mutateAsync: (vars: {
+      path: { assistant_id: string; id: string; extractionId: string };
+    }) => Promise<{ status: string }>;
+    isPending: boolean;
+  };
+}
+
+/**
+ * Take back an acceptance.
+ *
+ * A reversal rather than a delete, so it can refuse: once Cue has started the
+ * task, or the memory page has been edited around the line, taking it back
+ * would destroy work instead of undoing a click. `too_late` carries the
+ * sentence explaining that, and the rail shows it beside the claim.
+ */
+export function useUndoExtraction() {
+  const invalidate = useInvalidateNotes();
+  return useMutation({
+    ...notesByIdExtractionsByExtractionIdUndoPostMutation(),
+    onSuccess: invalidate,
+  }) as unknown as {
+    mutateAsync: (vars: {
+      path: { assistant_id: string; id: string; extractionId: string };
+    }) => Promise<{
+      status: "undone" | "not_accepted" | "too_late" | "failed";
+      reason: string | null;
+    }>;
+    isPending: boolean;
+  };
+}

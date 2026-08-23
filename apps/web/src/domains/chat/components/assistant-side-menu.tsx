@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   LayoutList,
   MessagesSquare,
+  NotebookPen,
   Pin,
   Plug,
   Rocket,
@@ -235,9 +236,10 @@ const PRIMARY_ICON: Record<PrimaryNavKey, typeof Target> = {
 };
 
 const SIDEBAR_ICON: Record<
-  "people" | "library" | "apps" | "connectors" | "skills" | "agents",
+  "notes" | "people" | "library" | "apps" | "connectors" | "skills" | "agents",
   typeof Target
 > = {
+  notes: NotebookPen,
   people: Users,
   library: LayoutGrid,
   apps: Blocks,

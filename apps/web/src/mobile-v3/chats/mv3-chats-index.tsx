@@ -31,7 +31,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutGrid, Plus, Search, X } from "lucide-react";
+import { LayoutGrid, NotebookPen, Plus, Search, X } from "lucide-react";
 
 import { workitemsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
@@ -452,6 +452,14 @@ export function Mv3ChatsIndex({
     onLeaveForSurface?.();
     void navigate(routes.ventureverseApps.root);
   };
+
+  // Notes is the second rail row with no other phone door. It is ungated —
+  // unlike Apps there is no flag behind it — so the row is always here.
+  const openNotes = () => {
+    haptic.light();
+    onLeaveForSurface?.();
+    void navigate(routes.notes);
+  };
   const [loadMore, setLoadMore] = useState<{
     busy: boolean;
     exhausted: boolean;
@@ -716,6 +724,55 @@ export function Mv3ChatsIndex({
           </div>
         ) : null}
       </div>
+
+      {/* Notes — the phone door for the rail's Notes row. The desktop rail
+          renders only when `!isMobile`, so without this the destination would
+          be unreachable on a phone entirely, which is exactly how Apps was
+          shipped invisible. Hidden while searching, for the same reason Apps
+          and the Bookmarked filter are: the field searches CHATS, and a
+          destination sitting above the results would read as a match. */}
+      {!searching ? (
+        <div
+          style={{
+            padding: "0 16px 10px",
+            flexShrink: 0,
+            position: "relative",
+            zIndex: 2,
+          }}
+        >
+          <GlassCard
+            radius={18}
+            padding="13px 15px"
+            role="button"
+            aria-label="Open Notes"
+            tabIndex={0}
+            onClick={openNotes}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openNotes();
+              }
+            }}
+            style={{ cursor: "pointer", minHeight: 44 }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                minWidth: 0,
+              }}
+            >
+              <NotebookPen
+                size={16}
+                aria-hidden
+                style={{ flexShrink: 0, color: "var(--mv3-muted)" }}
+              />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Notes</span>
+            </div>
+          </GlassCard>
+        </div>
+      ) : null}
 
       {/* Apps — the destination row (see `appsEnabled` above). Hidden while
           searching, like the Bookmarked filter: the field searches CHATS, and a

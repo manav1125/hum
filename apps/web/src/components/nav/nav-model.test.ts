@@ -178,10 +178,11 @@ describe("the sidebar's Tier-2 rows are one column", () => {
   // accumulation test: Apps (2026-08-10), then Connectors/Skills/Agents
   // (2026-08-11, "key places to understand the breadth of the product"). Apps
   // is flag-gated dark; the other three are ungated product-surface rows.
-  test("the six rows, in order — People, Library, Apps, Connectors, Skills, Agents", () => {
+  test("the seven rows, in order — People, Library, Notes, Apps, Connectors, Skills, Agents", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
       "people",
       "library",
+      "notes",
       "apps",
       "connectors",
       "skills",
@@ -191,6 +192,7 @@ describe("the sidebar's Tier-2 rows are one column", () => {
 
   test("only Apps is flag-gated — every other row is ungated", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.flag ?? null)).toEqual([
+      null,
       null,
       null,
       "ventureverseApps",
@@ -207,6 +209,7 @@ describe("the sidebar's Tier-2 rows are one column", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.to)).toEqual([
       routes.people,
       routes.library.root,
+      routes.notes,
       routes.ventureverseApps.root,
       routes.connectors,
       routes.skills,
@@ -246,11 +249,13 @@ describe("People is ungated — the owner overruled design", () => {
   });
 
   test("People sits beside Library, People first, per the final brief", () => {
-    // The brief's block is `👤 People / ▦ Library`; the owner-added rows (Apps,
-    // then Connectors/Skills/Agents) join BELOW the pair, never between them.
+    // The brief's block is `👤 People / ▦ Library`; everything added since —
+    // Notes (the third accumulating destination) and then the owner-added
+    // configuration rows — joins BELOW the pair, never between them.
     expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
       "people",
       "library",
+      "notes",
       "apps",
       "connectors",
       "skills",

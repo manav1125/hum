@@ -169,6 +169,12 @@ export const routes = {
   // Trust console's slot; the old /trust URL redirects here.
   guardrails: r("/assistant/guardrails"),
   trust: r("/assistant/trust"),
+  /**
+   * Notes — the capture surface. A Tier-2 destination beside People and
+   * Library because it passes the same test they do: it accumulates on its
+   * own and is worth more at month six than month one.
+   */
+  notes: r("/assistant/notes"),
   people: r("/assistant/people"),
   /**
    * One person (design v24 frame F4). A real URL rather than in-page state so

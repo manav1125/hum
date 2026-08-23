@@ -54,6 +54,7 @@ import {
   actsSummaryGetOptions,
   ledgerAutonomyGetOptions,
   missionsGetOptions,
+  notesWeekGetOptions,
   usageTotalsGetOptions,
   workitemsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -132,6 +133,21 @@ export function Mv3WeeklyPage() {
 
   const slipped = useMemo(() => listSlipped(items, now), [items, now]);
 
+  /**
+   * What the week's notes did.
+   *
+   * The half that matters as much as the conversions is the one that stayed a
+   * note: a review counting only what became work teaches people that unfiled
+   * notes are debt, and they are not — the walking-to-work thought is the
+   * highest-value note in the system. The daemon writes the sentence; this
+   * renders it as-is so the two cannot drift.
+   */
+  const notesWeek = useQuery({
+    ...notesWeekGetOptions({ path: { assistant_id: assistantId } }),
+    enabled: Boolean(assistantId),
+    staleTime: 5 * 60_000,
+  }) as unknown as { data?: { week: { line: string } | null } };
+
   const rings = useMemo(
     () =>
       (missions.data?.missions ?? [])
@@ -202,8 +218,19 @@ export function Mv3WeeklyPage() {
             ‹ HQ
           </button>
         </div>
-        <div style={{ ...microLabel, fontSize: 9.5, color: "var(--mv3-muted)", marginTop: 4 }}>
-          WEEK TO {new Date(now).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+        <div
+          style={{
+            ...microLabel,
+            fontSize: 9.5,
+            color: "var(--mv3-muted)",
+            marginTop: 4,
+          }}
+        >
+          WEEK TO{" "}
+          {new Date(now).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          })}
         </div>
         <div
           style={{
@@ -215,7 +242,9 @@ export function Mv3WeeklyPage() {
         >
           Your week
         </div>
-        <div style={{ fontSize: 11.5, color: "var(--mv3-muted)", marginTop: 3 }}>
+        <div
+          style={{ fontSize: 11.5, color: "var(--mv3-muted)", marginTop: 3 }}
+        >
           {PAGES} pages · swipe
         </div>
       </div>
@@ -266,10 +295,17 @@ export function Mv3WeeklyPage() {
               ))}
             </div>
           )}
-          <div style={{ fontSize: 9.5, color: "var(--mv3-muted)", marginTop: 9, lineHeight: 1.5 }}>
-            A ring is items done over items total. Cue has no numeric target
-            for a mission&rsquo;s metric, so the metric shows as the words you
-            wrote — never as a delta it can&rsquo;t compute.
+          <div
+            style={{
+              fontSize: 9.5,
+              color: "var(--mv3-muted)",
+              marginTop: 9,
+              lineHeight: 1.5,
+            }}
+          >
+            A ring is items done over items total. Cue has no numeric target for
+            a mission&rsquo;s metric, so the metric shows as the words you wrote
+            — never as a delta it can&rsquo;t compute.
           </div>
         </Page>
 
@@ -281,9 +317,7 @@ export function Mv3WeeklyPage() {
             <GlassCard radius={15} style={{ marginTop: 7 }}>
               <Row label="You cleared" value={youCleared} big />
               <Row label="Cue finished alone" value={cueFinished} big />
-              {cueShare !== null && (
-                <ShareBar cuePercent={cueShare} />
-              )}
+              {cueShare !== null && <ShareBar cuePercent={cueShare} />}
               <Row
                 label="Cue’s share"
                 value={cueShare === null ? "—" : `${cueShare}%`}
@@ -303,7 +337,14 @@ export function Mv3WeeklyPage() {
               <Row label="Acts you reversed" value={acts.data?.reversed ?? 0} />
             </GlassCard>
           )}
-          <div style={{ fontSize: 9.5, color: "var(--mv3-muted)", marginTop: 9, lineHeight: 1.5 }}>
+          <div
+            style={{
+              fontSize: 9.5,
+              color: "var(--mv3-muted)",
+              marginTop: 9,
+              lineHeight: 1.5,
+            }}
+          >
             Work items carry no completion date, so &ldquo;you cleared&rdquo;
             counts items finished by hand and last touched this week — close,
             not exact. Spend is model tokens only; tool cost isn&rsquo;t
@@ -312,6 +353,17 @@ export function Mv3WeeklyPage() {
         </Page>
 
         <Page>
+          {notesWeek.data?.week ? (
+            <div style={{ marginBottom: 14 }}>
+              <Eyebrow>FROM YOUR NOTES</Eyebrow>
+              <GlassCard radius={15} style={{ marginTop: 7 }}>
+                <div style={{ fontSize: 12, lineHeight: 1.55 }}>
+                  {notesWeek.data.week.line}
+                </div>
+              </GlassCard>
+            </div>
+          ) : null}
+
           <Eyebrow tone="amber">WHAT SLIPPED</Eyebrow>
           {work.isError ? (
             <Fail>Your work items didn&rsquo;t load, so this is unknown.</Fail>
@@ -441,8 +493,7 @@ export function Mv3WeeklyPage() {
               borderRadius: 99,
               border: "none",
               padding: 0,
-              background:
-                i === page ? "var(--mv3-text)" : "var(--mv3-track)",
+              background: i === page ? "var(--mv3-text)" : "var(--mv3-track)",
               cursor: "pointer",
             }}
           />
@@ -492,14 +543,13 @@ function Ring({
   const hasMetric = total > 0;
   const pct = hasMetric ? Math.round((done / total) * 100) : 0;
   const glyph = !hasMetric ? "◼" : failed > 0 ? "!" : pct >= 100 ? "✓" : null;
-  const stroke =
-    !hasMetric
-      ? "var(--mv3-muted)"
-      : failed > 0
-        ? "var(--mv3-amber)"
-        : pct >= 100
-          ? "var(--mv3-green)"
-          : "var(--mv3-accent)";
+  const stroke = !hasMetric
+    ? "var(--mv3-muted)"
+    : failed > 0
+      ? "var(--mv3-amber)"
+      : pct >= 100
+        ? "var(--mv3-green)"
+        : "var(--mv3-accent)";
   const C = 2 * Math.PI * 12.5;
 
   return (
@@ -514,7 +564,14 @@ function Ring({
         textAlign: "center",
       }}
     >
-      <div style={{ position: "relative", width: 32, height: 32, margin: "0 auto" }}>
+      <div
+        style={{
+          position: "relative",
+          width: 32,
+          height: 32,
+          margin: "0 auto",
+        }}
+      >
         <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden>
           <circle
             cx="16"
@@ -610,9 +667,14 @@ function ShareBar({ cuePercent }: { cuePercent: number }) {
       aria-hidden
     >
       <span
-        style={{ width: `${100 - cuePercent}%`, background: "var(--mv3-muted)" }}
+        style={{
+          width: `${100 - cuePercent}%`,
+          background: "var(--mv3-muted)",
+        }}
       />
-      <span style={{ width: `${cuePercent}%`, background: "var(--mv3-green)" }} />
+      <span
+        style={{ width: `${cuePercent}%`, background: "var(--mv3-green)" }}
+      />
     </div>
   );
 }
@@ -673,9 +735,7 @@ function Eyebrow({
         : tone === "violet"
           ? "var(--mv3-violet-text)"
           : "var(--mv3-muted)";
-  return (
-    <div style={{ ...microLabel, fontSize: 9, color }}>{children}</div>
-  );
+  return <div style={{ ...microLabel, fontSize: 9, color }}>{children}</div>;
 }
 
 function Muted({ children }: { children: React.ReactNode }) {
