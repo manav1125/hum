@@ -392,3 +392,60 @@ creation. All three were a gate that a second code path walked around. Our
   it — ours does not help, and a `toolConfirmation` notification that is missed or dismissed
   leaves the card in a window behind everything. **This is a focus-stealing behaviour change,
   so it is a product call, not a bug fix.** [tree]
+
+---
+
+# 9. The adoption wave — 2026-08-25
+
+Companion excluded throughout (owned by a separate session). Everything below was
+verified in our own tree before being treated as ours; several upstream items turned out
+not to apply, and saying so is part of the record.
+
+## 9.1 Taken
+
+| Fix | What was actually wrong here |
+|---|---|
+| **Gate denials audited as low risk** | `executor.ts` seeded `riskLevel = Low` and replaced it only after the permission check, so every pre-execution gate denial recorded a level nobody computed. 75 rows on prod, including 13 parked Composio proxy sends and 12 bash egress denials — the guardrail working, filed as harmless. |
+| **A stopped gateway read as a bad credential** | Any non-zero exit from `gateway token refresh\|relink` mapped to 401, which `requiresGuardianReprovision()` treats as terminal. Reopening the Mac app offered to re-provision credentials that were fine. The CLI now probes and exits 69 for an unreachable gateway; the connect screen answers that with a plain wake and one retry. |
+| **A second daemon started silently** | A failed bind on the runtime HTTP port was caught and startup continued IPC-only, so two daemons could run one workspace — both schedulers, both memory workers. `EADDRINUSE` alone is not proof, so the daemon probes `/healthz` and aborts only when a daemon provably holds the port. |
+| **A dead spawn read as ready** | Consequence of the above, and closed with it: `/healthz` is answered by whoever holds the port, so an aborted spawn was reported "Assistant ready". Now gated on the spawned process still being alive. |
+| **MCP servers that connect and refuse everything** | `checkServerHealth` asked only whether the transport opened, which is what let eight servers sit green for days while nothing went through. It now lists tools — the cheapest call requiring the server to honour the session — reports the count, and names a refusal as a refusal. The probe session is also no longer leaked on every non-healthy path. |
+| **Deleting a credential inference depends on** | Silent: `resolveAuth` returns `credential_not_found`, the connection resolves to null, routing moves on. `credentials/delete` now refuses while any `api_key` connection authenticates with the key, and names them. |
+| **A torn image-cache write wedged a conversation** | Non-atomic `writeFileSync` under a content hash, returned unvalidated, and compaction bakes what it returns into rebuilt history — after which every request carried bytes the provider rejects. Now atomic write, JPEG framing checked on read and after conversion, and compaction sniffs bytes and reads the source format from them rather than the filename. |
+| **A plugin upgrade wiped config, data and the off switch** | `rm` + `rename` replaced the whole directory. `PRESERVED_ENTRIES` already named exactly what the host owns and **nothing imported it**. The third entry is the serious one: auto-update runs unattended, so a plugin the owner disabled came back on by itself. |
+| **The subagent prompt line** | We carried upstream's deleted framing inside `01-parallel-tool-calls`, and it contradicted our own skill, whose `avoid-when` says to skip a subagent when the task is small enough to do inline. |
+| **A security invariant had been red since 2026-08-20** | `tools/credentials/env-references.ts` imports `secure-keys` and was never allowlisted, so the test that catches unauthorized importers had stopped catching anything. Found while checking whether tonight's credential change had broken it. |
+
+## 9.2 Checked and already covered — no work needed
+
+- **Image-bearing voice legs.** `agent/vision-tier.ts` already routes on the property
+  upstream's fix turns on, scanning the full history rather than the trailing message, and
+  already declines to re-route a model that is not *known* text-only. Ours is the more
+  general form: every agent round, not only voice legs. [tree]
+- **Ingress secret gate on replay paths.** `checkIngressForSecrets` runs on all three live
+  ingress paths and no channel-history backfill writer exists here. The invariant was
+  written down anyway (`runtime/AGENTS.md`), because the failure shape recurs. [tree]
+
+## 9.3 Checked and not applicable
+
+- **STT provider-owned turn-end** (`f531bae4f2`): needs a provider that owns turn end.
+  We have no flux provider and no `providerTurnEndActive` capability. [tree]
+- **Plugin credential scoping** (`1ae37bb102`): plugins here have no credential API. [tree]
+- **`needsAttention` conversations filter**: our needs-you signal is built from ritual
+  snapshots and push categories, not a conversations filter. Porting it would be inventing
+  a feature, not adopting a fix. [tree]
+
+## 9.4 Looked at and deliberately left
+
+- **Plugin disable does not stop in-process work.** Upstream now awaits a source reconcile
+  so a live worker is dropped before the response returns. Ours writes the sentinel and
+  reports `restartRequired`, and the code says so on purpose — "same restart rule
+  install/uninstall/upgrade carry". Honest, and changing it is a design decision rather
+  than a bug fix. [tree]
+- **Approvals raising the app window.** We raise it from the notification's `click` and
+  `action` handlers, so only once the user has already noticed. Upstream raises it when the
+  confirmation is raised. The gap is real and may be the open half of the dropped-approval
+  investigation, but making the app steal focus is a product call. [tree]
+- **Risk classification centralization** (`LUM-3326`/`LUM-3327`). We forked deliberately
+  this month with `connector-risk-classifier.ts`, which solved a live outage a single
+  per-server number could not. Converging or staying forked is a decision, not a fix.
