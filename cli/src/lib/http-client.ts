@@ -27,6 +27,30 @@ export async function httpHealthCheck(
 }
 
 /**
+ * Whether a gateway is answering at all, regardless of what it answers.
+ *
+ * This is deliberately weaker than {@link httpHealthCheck}: any HTTP response
+ * means the gateway is *there*, including a 4xx or 5xx. The question it exists
+ * to answer is "is there a server at this URL", so that a failure to obtain a
+ * token can be reported as an outage rather than as a rejected credential.
+ * Only the absence of a response — connection refused, DNS failure, timeout —
+ * counts as unreachable.
+ */
+export async function gatewayReachable(
+  gatewayUrl: string,
+  timeoutMs = 1500,
+): Promise<boolean> {
+  try {
+    await loopbackSafeFetch(`${gatewayUrl.replace(/\/+$/, "")}/healthz`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Poll the daemon's `/healthz` endpoint until it responds with 200 or the
  * timeout is reached.
  *

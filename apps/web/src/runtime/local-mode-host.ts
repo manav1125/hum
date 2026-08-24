@@ -104,6 +104,19 @@ export function requiresGuardianReprovision(error: unknown): boolean {
 }
 
 /**
+ * True when the connect failed because the gateway is not answering at all.
+ *
+ * This is the "quit the app, reopen it" case: the local gateway is stopped, so
+ * the CLI cannot obtain a token, and nothing is wrong with the credentials.
+ * It is a distinct class from {@link requiresGuardianReprovision} on purpose —
+ * re-provisioning replaces working credentials to fix a process that simply is
+ * not running. The answer here is a plain wake.
+ */
+export function isGatewayUnavailableError(error: unknown): boolean {
+  return error instanceof GuardianTokenError && error.status === 503;
+}
+
+/**
  * Provision a local assistant for the requested species.
  *
  * Both hosts spawn the Vellum CLI in a trusted process and return the same

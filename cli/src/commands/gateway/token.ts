@@ -8,6 +8,44 @@ import {
   leaseGuardianToken,
   resetGuardianBootstrap,
 } from "../../lib/guardian-token.js";
+import { gatewayReachable } from "../../lib/http-client.js";
+
+/**
+ * Exit code meaning "the gateway is not answering", as distinct from "the
+ * gateway refused these credentials".
+ *
+ * 69 is `EX_UNAVAILABLE` from sysexits(3). The counterpart lives in
+ * `packages/local-mode/src/guardian-token.ts`, which maps it to HTTP 503; the
+ * two are duplicated rather than shared because the CLI and that package have
+ * no common dependency, and the constant is part of this command's contract.
+ * An older CLI that never emits it degrades to the previous behaviour rather
+ * than to a wrong answer.
+ */
+const EXIT_GATEWAY_UNAVAILABLE = 69;
+
+/**
+ * Fail the command, separating an outage from a rejected credential.
+ *
+ * Every failure here used to exit 1, which the callers read as "these
+ * credentials are gone" and answered with a re-provision — for an assistant
+ * whose credentials were fine and whose gateway was merely stopped. Asking
+ * whether the gateway is answering is the cheapest way to tell the two apart,
+ * and it asks the real question instead of inferring one from an exit code
+ * that never carried it.
+ */
+async function failClassified(
+  gatewayUrl: string,
+  refusedMessage: string,
+): Promise<never> {
+  if (!(await gatewayReachable(gatewayUrl))) {
+    console.error(
+      `Gateway not reachable at ${gatewayUrl}. It is probably not running.`,
+    );
+    process.exit(EXIT_GATEWAY_UNAVAILABLE);
+  }
+  console.error(refusedMessage);
+  process.exit(1);
+}
 
 function printUsage(): void {
   console.log("Usage: vellum gateway token <subcommand> <assistantId>");
@@ -74,8 +112,7 @@ export async function gatewayToken(): Promise<void> {
   if (subcommand === "refresh") {
     const refreshed = await refreshGuardianToken(gatewayUrl, entry.assistantId);
     if (!refreshed) {
-      console.error("Failed to refresh guardian token.");
-      process.exit(1);
+      return failClassified(gatewayUrl, "Failed to refresh guardian token.");
     }
     console.log(refreshed.accessToken);
     return;
@@ -90,10 +127,18 @@ export async function gatewayToken(): Promise<void> {
   } catch {
     // Lock may already be clear; the lease below is the real check.
   }
-  const leased = await leaseGuardianToken(
-    gatewayUrl,
-    entry.assistantId,
-    entry.guardianBootstrapSecret,
-  );
+  let leased;
+  try {
+    leased = await leaseGuardianToken(
+      gatewayUrl,
+      entry.assistantId,
+      entry.guardianBootstrapSecret,
+    );
+  } catch (err) {
+    return failClassified(
+      gatewayUrl,
+      `Failed to re-lease guardian token: ${(err as Error).message}`,
+    );
+  }
   console.log(leased.accessToken);
 }

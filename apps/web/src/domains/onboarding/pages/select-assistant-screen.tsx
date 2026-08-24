@@ -15,6 +15,7 @@ import { formatRelativeDate } from "@/utils/format-date";
 import { useOnboardingLogin } from "@/hooks/use-onboarding-login";
 import { isElectron } from "@/runtime/is-electron";
 import {
+  isGatewayUnavailableError,
   requiresGuardianReprovision,
   wakeLocalAssistantHost,
 } from "@/runtime/local-mode-host";
@@ -82,7 +83,10 @@ export function SelectAssistantScreen() {
     setSelected(match?.id ?? accessibleAssistants[0].id);
   }, [selected, accessibleAssistants, currentOrganizationId]);
 
-  const handleConnect = async (assistant: ResolvedAssistant) => {
+  const handleConnect = async (
+    assistant: ResolvedAssistant,
+    { allowWakeRetry = true }: { allowWakeRetry?: boolean } = {},
+  ) => {
     setConnecting(true);
     setError(null);
     try {
@@ -98,6 +102,28 @@ export function SelectAssistantScreen() {
       // gone/unrefreshable on disk, or the gateway rejected it at the
       // /auth/token mint (a 401 from a signing-key mismatch). Otherwise keep
       // the generic message — repair can't help.
+      // A gateway that is not answering needs starting, not repairing. This
+      // is the ordinary "quit and reopen the app" state: the local gateway is
+      // stopped, the credentials are untouched, and offering to re-provision
+      // them would replace the one thing that is not broken. Wake it and try
+      // the connect again, once.
+      if (
+        assistant.isLocal &&
+        isGatewayUnavailableError(err) &&
+        allowWakeRetry
+      ) {
+        const woken = await wakeLocalAssistantHost(assistant.id);
+        if (woken.ok) {
+          void handleConnect(assistant, { allowWakeRetry: false });
+          return;
+        }
+        setError(
+          woken.error ??
+            "This assistant is not running and could not be started.",
+        );
+        setConnecting(false);
+        return;
+      }
       if (
         assistant.isLocal &&
         (requiresGuardianReprovision(err) ||
@@ -105,6 +131,8 @@ export function SelectAssistantScreen() {
         isGuardianRepairable(assistant.id)
       ) {
         setRecoveryAssistant(assistant);
+      } else if (assistant.isLocal && isGatewayUnavailableError(err)) {
+        setError("This assistant is not running. Start it and try again.");
       } else {
         setError("Failed to connect. Please try again.");
       }

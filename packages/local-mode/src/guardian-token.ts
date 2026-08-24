@@ -6,6 +6,19 @@ import type { CliInvocation } from "./util";
 
 const GUARDIAN_TOKEN_REFRESH_TIMEOUT_MS = 15_000;
 
+/**
+ * The CLI's exit code for "the gateway is not answering", as distinct from
+ * "the gateway refused these credentials". Defined in
+ * `cli/src/commands/gateway/token.ts`, duplicated here because the two have no
+ * common dependency.
+ *
+ * It matters which of the two a failure is. `requiresGuardianReprovision()`
+ * treats 401 as terminal — only re-provisioning recovers — so reporting a
+ * stopped gateway as 401 sends someone to replace credentials that are
+ * perfectly good. A gateway that is merely down needs starting, not repairing.
+ */
+const CLI_EXIT_GATEWAY_UNAVAILABLE = 69;
+
 interface GuardianTokenData {
   accessToken: string;
   accessTokenExpiresAt: string | number;
@@ -99,6 +112,7 @@ function runTokenSubcommand(
     );
 
     let stdout = "";
+    let stderr = "";
     let done = false;
 
     const finish = (result: TokenResult) => {
@@ -121,6 +135,13 @@ function runTokenSubcommand(
       stdout += chunk.toString();
     });
 
+    // Drained, not ignored: stderr is piped, so leaving it unread lets the
+    // child block once the pipe buffer fills. It also carries the only
+    // description of what went wrong.
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
     child.on("close", (code) => {
       if (code === 0) {
         const accessToken = stdout.trim();
@@ -129,11 +150,21 @@ function runTokenSubcommand(
         } else {
           finish({ ok: false, status: 500, error: "CLI returned empty token" });
         }
+      } else if (code === CLI_EXIT_GATEWAY_UNAVAILABLE) {
+        // An outage, not a credential problem. 503 keeps the caller on the
+        // retry path instead of the re-provision one.
+        finish({
+          ok: false,
+          status: 503,
+          error:
+            stderr.trim() ||
+            `Gateway unavailable while trying to ${subcommand} the guardian token`,
+        });
       } else {
         finish({
           ok: false,
           status: 401,
-          error: `Failed to ${subcommand} guardian token`,
+          error: stderr.trim() || `Failed to ${subcommand} guardian token`,
         });
       }
     });
