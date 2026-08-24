@@ -67,6 +67,51 @@ describe("hasExtractableSignal", () => {
     expect(hasExtractableSignal("send")).toBe(false);
   });
 });
+/**
+ * The two silent misses found by driving this on production, 2026-08-24.
+ *
+ * A miss here is total and invisible: the read finishes `done` with nothing
+ * found, which the owner reads as "Cue looked and there was nothing in it".
+ */
+describe("hasExtractableSignal: the gate must not drop real notes", () => {
+  test("REGRESSION: person traits were unreachable — the gate was task-only", () => {
+    // The extractor proposes tasks, memories AND person traits, but every
+    // pattern was task grammar, so a note that is purely facts about someone
+    // could never be read at all.
+    expect(hasExtractableSignal("Priya prefers Signal to email")).toBe(true);
+    expect(hasExtractableSignal("Dana always reads the appendix first")).toBe(
+      true,
+    );
+    expect(hasExtractableSignal("Rachel is allergic to shellfish")).toBe(true);
+    expect(hasExtractableSignal("Sam works at Stripe now")).toBe(true);
+  });
+
+  test("REGRESSION: 'ring' was dropped where 'call' was kept", () => {
+    expect(
+      hasExtractableSignal("Ring the landlord on Tuesday about the lease"),
+    ).toBe(true);
+  });
+
+  test("more ordinary ways of saying do-a-thing", () => {
+    for (const body of [
+      "email the deck to Dana",
+      "book the flights before the review",
+      "renew the domain",
+      "confirm the 24-month position",
+      "chase the SOC 2 report",
+    ]) {
+      expect(hasExtractableSignal(body)).toBe(true);
+    }
+  });
+
+  test("still free for text that genuinely holds nothing", () => {
+    // The gate exists to save a model call on musing, and it still does — the
+    // bias moved toward reading, it did not disappear.
+    expect(hasExtractableSignal("")).toBe(false);
+    expect(hasExtractableSignal("hmm")).toBe(false);
+    expect(hasExtractableSignal("weather was good today")).toBe(false);
+  });
+});
 
 describe("parseExtractionResponse", () => {
   test("no JSON array at all is a FAILURE, not an empty result", () => {

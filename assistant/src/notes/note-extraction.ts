@@ -125,6 +125,28 @@ export function isNoteExtractionDisabled(
  * usually the owner talking to themselves ("decide by Friday", "don't lead
  * with price"), which is a different grammar.
  */
+/**
+ * Signals that a note is worth a model call.
+ *
+ * **This gate decides whether a note is ever read at all**, so a miss here is
+ * silent and total: the read finishes `done` with nothing found, which reads
+ * to the owner as "Cue looked and there was nothing in it". Driving it on
+ * production found two ways it was lying.
+ *
+ * 1. **It was task-only while the extractor is three-kind.** Extraction
+ *    proposes tasks, memories AND person traits, but every pattern below was
+ *    task grammar — so "Priya prefers Signal to email", a textbook person
+ *    trait, could never be read. A note that is purely facts about people was
+ *    invisible to the whole feature.
+ * 2. **The verb list was too narrow to trust.** It had `call` but not `ring`,
+ *    so "Ring the landlord on Tuesday about the lease" — an unambiguous
+ *    commitment with a day attached — was dropped without a model call.
+ *
+ * The bias is now deliberately toward reading. A false positive costs one
+ * cheap flash call that returns nothing; a false negative costs the owner a
+ * commitment they wrote down and trusted us to find. Those are not remotely
+ * the same price, which is the whole argument for keeping this list loose.
+ */
 const ACTION_SIGNAL_RES: readonly RegExp[] = [
   /\b(need|needs|needed)\s+to\b/i,
   /\bi(?:'|’)?ll\b/i,
@@ -146,6 +168,25 @@ const ACTION_SIGNAL_RES: readonly RegExp[] = [
   /\bdeadline\b|\bdue\b|\basap\b/i,
   /\bagreed?\b|\bpromised?\b|\bcommitted?\b/i,
   /\$\s?\d|\b\d+\s*%/,
+
+  // More ways to say "do a thing". `call` was here and `ring` was not, which
+  // is the arbitrariness this block exists to reduce.
+  /\bring\b|\bphone\b|\btext\b|\bemail\b|\bmessage\b|\bping\b|\bdm\b/i,
+  /\bchase\b|\bnudge\b|\bremind\b|\bconfirm\b|\bcheck\b/i,
+  /\bbook\b|\bschedule\b|\barrange\b|\border\b|\bpay\b|\brenew\b|\bcancel\b/i,
+  /\bsubmit\b|\bfile\b|\bsign\b|\bapprove\b|\breview\b|\bfix\b|\bwrite\b/i,
+  /\bbefore\s+(the\s+)?\w+\b.*\b(call|meeting|review|standup)\b/i,
+  /\bon\s+(mon|tues|wednes|thurs|fri|satur|sun)day\b/i,
+
+  // A note can also be worth reading because of what it says about a PERSON
+  // or a fact, not because it asks for an action. Without these the person
+  // trait and memory kinds were unreachable — see this block's header.
+  /\b(prefers?|likes?|dislikes?|hates?|avoids?)\b/i,
+  /\b(always|never|usually|tends\s+to)\b/i,
+  /\bworks?\s+(at|for|on)\b|\blives?\s+in\b|\bbased\s+in\b/i,
+  /\b(birthday|anniversary|allergic|vegetarian|vegan|coeliac|celiac)\b/i,
+  /\bhis\b|\bher\b|\btheir\b/i,
+  /\bis\s+(the|a|an)\b/i,
 ];
 
 /**
