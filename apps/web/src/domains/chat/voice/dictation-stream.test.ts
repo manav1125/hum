@@ -9,7 +9,12 @@ let ingressUrl: string | null = "http://localhost:8500";
 let actorToken: string | null = "actor-jwt";
 let pcmSupported = true;
 
+// Spread the real module: an exhaustive factory drops every export it does
+// not name, and this file's import graph reaches `setSelfHostedConnection`
+// through `lifecycle-service`, which then fails to import at all.
+const connectionActual = await import("@/lib/self-hosted/connection");
 mock.module("@/lib/self-hosted/connection", () => ({
+  ...connectionActual,
   getSelfHostedIngressUrl: () => ingressUrl,
   getSelfHostedActorToken: () => actorToken,
 }));
@@ -172,10 +177,20 @@ describe("buildSttStreamWsUrl", () => {
 // ---------------------------------------------------------------------------
 
 describe("startDictationStream", () => {
-  test("returns null without a self-hosted ingress, token, or worklet support", () => {
+  // No stored ingress is NOT a reason to refuse: `dictation-stream` falls back
+  // to the page origin on purpose, because the desktop app has no self-host
+  // record and is the setup the feature exists for. The preconditions that
+  // genuinely stop it are the token and worklet support.
+  test("falls back to the page origin when no ingress is stored", () => {
     ingressUrl = null;
-    expect(startDictationStream({ onPartial: () => undefined })).toBeNull();
 
+    const handle = startDictationStream({ onPartial: () => undefined });
+
+    expect(handle).not.toBeNull();
+    handle?.stop();
+  });
+
+  test("returns null without a token or worklet support", () => {
     ingressUrl = "http://localhost:8500";
     actorToken = null;
     expect(startDictationStream({ onPartial: () => undefined })).toBeNull();
