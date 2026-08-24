@@ -356,6 +356,19 @@ export const routeTree = [
   // panel; gated by the `desktop-companion` flag). Same pattern as the
   // other floating windows: sibling of `/assistant`, outside auth
   // middleware and RootLayout for fast load.
+  // Scratch route for checking the creature against design C1 while it is
+  // being built. Removed before this lands.
+  {
+    path: "/assistant/floating/__creature",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/domains/companion/__creature-preview").then(
+          (m) => m.CreaturePreview,
+        ),
+    },
+  },
   {
     path: "/assistant/floating/companion",
     ErrorBoundary: RouteErrorBoundary,
