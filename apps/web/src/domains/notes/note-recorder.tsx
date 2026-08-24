@@ -145,9 +145,20 @@ export function NoteRecorder({
     });
     stopTracks();
 
-    // Too short to be a thought. Silently returning to idle is right: people
-    // brush the button, and an error for that is noise.
+    // Too short to be a thought. A brush of the button is noise and stays
+    // silent — but a deliberate CLICK is the commonest way to meet this
+    // control for the first time, and answering that with nothing at all is
+    // indistinguishable from a dead button. Manav reported exactly that:
+    // "recording ... does nothing". So a real press that was simply too
+    // short gets told what the gesture is.
     if (durationMs < 400 || blob.size === 0) {
+      if (durationMs >= 120) {
+        setState({
+          kind: "failed",
+          reason: "Hold the button down while you talk — let go to keep it.",
+        });
+        return;
+      }
       setState({ kind: "idle" });
       return;
     }
