@@ -12,6 +12,22 @@ The single HTTP send endpoint is `POST /v1/messages`. Key behaviors:
 
 Do NOT add new send endpoints. All message ingress should go through `POST /v1/messages` (HTTP).
 
+### Hardening applied at ingress must be mirrored on every replay path
+
+`checkIngressForSecrets` (`security/secret-ingress.ts`) drops a message whose body
+carries a credential. It runs on the live ingress paths — `signals/user-message.ts`,
+the inbound stage `secret-ingress-check.ts`, and `conversation-routes.ts`.
+
+Any _other_ writer of an externally-authored body must run it too. A channel history
+backfill, a replay, an import, a migration that copies message bodies forward: each is a
+second writer, and each bypasses a gate that only ever guarded the front door. Upstream
+shipped exactly this bug — Slack history backfill called `addMessage` with the raw body,
+reproducing verbatim the credentials ingress had refused weeks earlier (LUM-3419).
+
+This is the shape our own gate failures keep taking: a guard that exists, is correct, and
+is simply not on the path the data actually took. Before adding a writer of message
+content, state which gates the live path applies and apply them.
+
 ### SSE backpressure shedding must be observable
 
 SSE handlers built on `ReadableStream` shed slow subscribers when `controller.desiredSize <= 0` to keep daemon memory bounded. Every shed site must emit a log line + Sentry capture so the daemon-side shed can be time-correlated with the client-side idle watchdog (otherwise stalls are invisible from both sides). See [WHATWG Streams — Backpressure](https://streams.spec.whatwg.org/#pipe-chains) and [Node `monitorEventLoopDelay`](https://nodejs.org/api/perf_hooks.html#perf_hooksmonitoreventloopdelayoptions).
