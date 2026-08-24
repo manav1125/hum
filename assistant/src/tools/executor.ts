@@ -5,8 +5,8 @@ import { bridgeCesApproval } from "../credential-execution/approval-bridge.js";
 import { isCesShellLockdownEnabled } from "../credential-execution/feature-gates.js";
 import type { LedgerOutcome } from "../ledger/consequential-action.js";
 import { recordConsequentialToolAction } from "../ledger/record-tool-action.js";
+import { classifyRisk } from "../permissions/checker.js";
 import { PermissionPrompter } from "../permissions/prompter.js";
-import { RiskLevel } from "../permissions/types.js";
 import { isUntrustedTrustClass } from "../runtime/actor-trust-resolver.js";
 import { redactSensitiveFields } from "../security/redaction.js";
 import { getCesClient } from "../security/secure-keys.js";
@@ -33,6 +33,16 @@ import {
 } from "./types.js";
 
 const log = getLogger("tool-executor");
+
+/**
+ * Recorded when this invocation's risk is not known yet, or could not be
+ * determined at all.
+ *
+ * `risk_level` is a plain TEXT column, so this is a value the audit can carry
+ * rather than a level it has to pretend to. Nothing compares against it —
+ * every gate that records a risk level only records it.
+ */
+const UNCLASSIFIED_RISK = "unclassified";
 
 export class ToolExecutor {
   private prompter: PermissionPrompter;
@@ -62,7 +72,10 @@ export class ToolExecutor {
   ): Promise<ToolExecutionResult> {
     const startTime = Date.now();
     let decision = "allow";
-    let riskLevel: string = RiskLevel.Low;
+    // Until the classifier answers, this invocation's risk is *unknown*. It is
+    // deliberately not the low level: every audit row written before the
+    // classification lands would otherwise claim a level nobody computed.
+    let riskLevel: string = UNCLASSIFIED_RISK;
     let permRiskMeta:
       | {
           riskLevel: string;
@@ -125,6 +138,34 @@ export class ToolExecutor {
         provenance: extra?.provenance,
       });
     };
+
+    // Classify BEFORE the gates so a gate denial audits the real risk.
+    //
+    // The gates record `riskLevel` into `tool_invocations` but never branch on
+    // it, so this changes what the row says and no decision. It used to say
+    // `low` for everything a gate stopped — which meant a parked outbound send
+    // and a blocked network-egress shell, the two denials most worth reading
+    // later, were both filed as harmless. `classifyRisk` is cached on
+    // (tool, input, workingDir), so the permission checker's own call below is
+    // a cache hit rather than a second classification.
+    //
+    // A classification that cannot complete (aborted turn, gateway
+    // unreachable) leaves `UNCLASSIFIED_RISK` standing. That is the honest
+    // answer and it is never treated as a level: the permission check still
+    // classifies for itself and still fails closed.
+    try {
+      const { level } = await classifyRisk(
+        name,
+        input,
+        context.workingDir,
+        undefined,
+        undefined,
+        context.signal,
+      );
+      riskLevel = level;
+    } catch {
+      riskLevel = UNCLASSIFIED_RISK;
+    }
 
     // Run pre-execution approval gates (abort, guardian policy,
     // allowed-tool-set, task-run preflight, tool registry lookup).

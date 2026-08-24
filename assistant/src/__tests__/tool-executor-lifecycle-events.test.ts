@@ -65,7 +65,20 @@ mock.module("../util/logger.js", () => ({
 }));
 
 mock.module("../permissions/checker.js", () => ({
-  classifyRisk: async () => ({ level: checkerRisk }),
+  // Honours the abort signal because the real `classifyRisk` does
+  // (`signal?.throwIfAborted()` is its first statement). A mock that resolves
+  // through an aborted turn hides the caller's handling of that case.
+  classifyRisk: async (
+    _toolName: string,
+    _input: Record<string, unknown>,
+    _workingDir?: string,
+    _preParsed?: unknown,
+    _manifestOverride?: unknown,
+    signal?: AbortSignal,
+  ) => {
+    signal?.throwIfAborted();
+    return { level: checkerRisk };
+  },
   check: async () => ({ decision: checkerDecision, reason: checkerReason }),
   generateAllowlistOptions: () => [
     { label: "exact", description: "exact", pattern: "exact" },
@@ -447,6 +460,47 @@ describe("ToolExecutor lifecycle events", () => {
     expect(errorEvent.errorMessage).toContain("Unknown tool: unknown_tool");
     expect(errorEvent.decision).toBe("error");
     expect(errorEvent.isExpected).toBe(true);
+  });
+
+  // The risk level on a gate denial used to be the seeded placeholder, because
+  // classification only happened inside the permission check, which runs after
+  // the gates. Every denial a gate made therefore audited as `low` whatever it
+  // actually was — and gates are what stop a parked outbound send and a
+  // network-egress shell, the two denials most worth reading afterwards.
+  test("a gate denial audits the classified risk, not the seeded placeholder", async () => {
+    checkerRisk = "high";
+
+    const events: ToolLifecycleEvent[] = [];
+    const executor = new ToolExecutor(makePrompter());
+
+    await executor.execute("unknown_tool", { test: true }, makeContext(events));
+
+    const errorEvent = events[1];
+    if (errorEvent.type !== "error") throw new Error("Expected error event");
+    expect(errorEvent.riskLevel).toBe("high");
+  });
+
+  // An unknowable risk must not read as a low one. `classifyRisk` throws when
+  // the turn is already aborted, which is the cheapest way to reach the case
+  // that matters: the gateway being unreachable.
+  test("records an unclassified risk when classification cannot complete", async () => {
+    checkerRisk = "high";
+
+    const events: ToolLifecycleEvent[] = [];
+    const executor = new ToolExecutor(makePrompter());
+    const controller = new AbortController();
+    controller.abort();
+
+    await executor.execute(
+      "unknown_tool",
+      { test: true },
+      makeContext(events, { signal: controller.signal }),
+    );
+
+    const errorEvent = events.find((event) => event.type === "error");
+    if (!errorEvent || errorEvent.type !== "error")
+      throw new Error("Expected error event");
+    expect(errorEvent.riskLevel).toBe("unclassified");
   });
 
   test("bash tool resolves to sandbox executionTarget", async () => {
