@@ -403,14 +403,17 @@ function LiveWords({
   text: string;
   listening: boolean;
 }): React.ReactElement | null {
-  if (!listening || !text) return null;
+  // Same three-way split as the Notes recorder: a live stream that has not
+  // heard anything yet is not the same as no stream at all, and neither may
+  // render as an ordinary silent panel.
+  if (!listening) return null;
   return (
     <p
       className="px-3 pt-1 text-[13px] leading-snug"
       style={{ color: C.t1 }}
       aria-live="polite"
     >
-      {text}
+      {text || "Listening…"}
       <span
         className="ml-0.5 inline-block motion-safe:animate-pulse"
         style={{ color: C.amberText }}

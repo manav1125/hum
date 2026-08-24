@@ -141,9 +141,6 @@ export function resolveNotesView(
     };
   }
 
-  // Nothing local, and the daemon errored: we genuinely do not know what is
-  // there. "No notes" here would be a guess dressed as a fact — about the
-  // pile someone would most panic to see empty.
   // Nothing local, and either the daemon errored or it was never asked at all.
   // Both mean the same thing to the reader — *we do not know what is there* —
   // and "no notes" would be a guess dressed as a fact about the pile someone
@@ -265,6 +262,10 @@ export function useNote(assistantId: string, noteId: string | null) {
   }) as unknown as {
     data?: { note: Note; extractions: NoteExtraction[] };
     isPending: boolean;
+    isError: boolean;
+    /** See the note on `resolveNotesView`: a disabled query sits here. */
+    fetchStatus: "fetching" | "paused" | "idle";
+    refetch: () => void;
   };
 }
 

@@ -232,13 +232,19 @@ export function NoteRecorder({
           reason: you can see it hearing you correctly before you let go. A
           button that only changes colour is not evidence of that. Absent when
           streaming is unavailable — the hold still records either way. */}
-      {listening && live.text ? (
+      {/* Three different things, and they must not look the same:
+          words arriving, a live stream that has not heard anything yet, and
+          no stream at all. The last one is the reason this branch exists —
+          "Listening" with a silent screen is indistinguishable from broken,
+          which is exactly how it read to Manav. If we cannot show the words
+          we say so, and say that the recording is still being kept. */}
+      {listening && live.isLive ? (
         <p
           className="mt-1.5 text-[13px] leading-snug"
-          style={{ color: C.t1 }}
+          style={{ color: live.text ? C.t1 : C.t3 }}
           aria-live="polite"
         >
-          {live.text}
+          {live.text || "Listening…"}
           <span
             className="ml-0.5 inline-block motion-safe:animate-pulse"
             style={{ color: C.danger }}
@@ -246,6 +252,11 @@ export function NoteRecorder({
           >
             ▍
           </span>
+        </p>
+      ) : listening ? (
+        <p className="mt-1.5 text-[12px] leading-snug" style={{ color: C.t3 }}>
+          Recording. I can&rsquo;t show the words as you say them here — you
+          &rsquo;ll get them written down when you let go.
         </p>
       ) : null}
       {listening ? (

@@ -861,10 +861,55 @@ function NoteView({
   }, [assistantId, noteId, loaded?.body, onClose, readNote, updateNote]);
 
   if (!loaded) {
+    // The same rule the list obeys, which this view was quietly breaking: a
+    // request that FAILED must never render as one still in flight. `loaded`
+    // is only ever `data?.note`, so before this every error — and every
+    // never-asked query, which reports `isPending` for ever — drew "Loading…"
+    // with no bound and no way out. Manav hit exactly that opening a note.
+    const stillWorking = detail.isPending && detail.fetchStatus !== "idle";
+    if (stillWorking) {
+      return (
+        <p className="text-[13px]" style={{ color: C.t3 }}>
+          Loading…
+        </p>
+      );
+    }
     return (
-      <p className="text-[13px]" style={{ color: C.t3 }}>
-        Loading…
-      </p>
+      <div className="flex flex-col gap-2">
+        <div
+          className="rounded-lg border px-3 py-2.5"
+          style={{ borderColor: C.line2, background: C.sunken }}
+        >
+          <p className="text-[13px] font-medium" style={{ color: C.t1 }}>
+            I couldn&rsquo;t open this note just now.
+          </p>
+          <p
+            className="mt-0.5 text-[12px] leading-relaxed"
+            style={{ color: C.t2 }}
+          >
+            This is about the connection, not about the note — nothing has been
+            lost, and it is still here.
+          </p>
+          <div className="mt-2 flex gap-3">
+            <button
+              type="button"
+              onClick={() => detail.refetch()}
+              className="text-[11.5px] font-medium"
+              style={{ color: C.blueS }}
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-[11.5px] font-medium"
+              style={{ color: C.t3 }}
+            >
+              Back to notes
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
