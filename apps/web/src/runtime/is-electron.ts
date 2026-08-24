@@ -331,6 +331,26 @@ declare global {
         hide(): Promise<void>;
         getStatus(): Promise<AssistantStatus>;
         onStatus(callback: (status: AssistantStatus) => void): () => void;
+        /**
+         * Every phase change, published by main.
+         *
+         * The renderer never invents a phase — including hover. Main tracks
+         * the pointer through `setIgnoreMouseEvents(true, {forward:true})`,
+         * which is what lets it know where the pointer is without the window
+         * having claimed a canvas many times the size of the pill. See
+         * `apps/macos/src/main/companion-hit-test.ts`.
+         */
+        onState?(
+          callback: (state: Record<string, unknown>) => void,
+        ): () => void;
+        /**
+         * Whether the pointer is over anything actually drawn.
+         *
+         * The other half of the forwarding trick: main hands the canvas back
+         * whenever this says no, so the empty region stays transparent to
+         * clicks meant for the application behind.
+         */
+        setPointerOver?(over: boolean): void;
       };
       /**
        * The floating corner — `⌥C`, one exchange, then finished. Optional

@@ -1,203 +1,147 @@
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-} from "react";
-
-import { ChevronDown, Mic } from "lucide-react";
-
-import { VoiceOrb } from "@vellumai/design-library/components/voice-orb";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   companionOpenCue,
   companionTalk,
   getCompanionStatus,
-  setCompanionExpanded,
   subscribeCompanionStatus,
   type AssistantStatus,
 } from "@/domains/companion/companion-bridge";
 
+import { CompanionSurface, outrank } from "./companion-surface";
+import type { CompanionPhase } from "./companion-surface";
+
 /**
- * Floating desktop companion (slice 1) — the page rendered inside the
- * Electron companion BrowserWindow: a small always-on-top, non-activating
- * panel pinned to a screen corner (see `apps/macos/src/main/companion-window.ts`).
+ * The always-on companion, rendered inside its Electron canvas.
  *
- * Two presentations, both painted on a transparent canvas:
+ * Design `C1`–`C3`. The page's whole job is to draw the phase main gives it and
+ * report back what the pointer is over; it decides almost nothing itself, and
+ * that is deliberate:
  *
- *  - **Collapsed** (72×72 window): the Cue orb. The thin ring around the
- *    orb is a CSS drag region (`-webkit-app-region: drag`) so the user can
- *    reposition the window; the orb itself is a click target (drag regions
- *    swallow clicks, so the two cannot overlap) that expands the card.
- *  - **Expanded** (260×148 window): a mini card with a drag-handle strip,
- *    the orb + status line, and two actions — "Talk" (IPC → surface the
- *    main window's voice room) and "Open Cue" (IPC → focus main window).
- *    No chat composer in slice 1.
+ *   · **Hover comes from main.** The window forwards mouse-move while letting
+ *     presses through (`setIgnoreMouseEvents(true, {forward:true})`), so main
+ *     knows where the pointer is without the window having claimed the canvas.
+ *     A renderer that decided its own hover would have to claim all of it to
+ *     find out, and that is how three of upstream's five bugs stole clicks
+ *     from other applications.
+ *   · **Growth and card-growth come from main.** Only main knows which display
+ *     the creature is parked on, and therefore which way it has room to unfurl.
+ *   · **The size comes from main**, as one number: everything the surface draws
+ *     derives from the creature's box, so the two processes never hold two
+ *     copies of a scale.
  *
- * The window resize itself is main's job — the page only reports the
- * desired presentation over `setCompanionExpanded` and renders whichever
- * layout matches its local state.
- *
- * Status-aware: the orb reuses the assistant status the SPA already
- * publishes to the Electron main process for the tray (idle / thinking /
- * error…), pushed back to this window over the companion bridge — no
- * polling of its own. `thinking` renders the orb's thinking motion
- * (active run); everything else renders the calm idle core.
- *
- * Standalone route (no auth, no RootLayout) like Quick Input and the
- * dictation overlay, so the panel loads instantly. Off-Electron the bridge
- * no-ops and the page is an inert orb.
- *
- * Design TODO (slice 2+): replace the plain status ring with the mascot
- * treatment from the companion design exploration (status-driven
- * animations, attention nudges), and light up `listening`/`speaking` once
- * voice runs inline in the companion.
+ * The canvas itself is transparent and the surface is anchored to the near
+ * edge — the cross-process constant `COMPANION_NEAR_EDGE`. Main places the
+ * window by it and this anchors by it, so the creature lands exactly where
+ * main believes it is.
  */
 
-const DRAG_REGION = { WebkitAppRegion: "drag" } as CSSProperties;
-const NO_DRAG_REGION = { WebkitAppRegion: "no-drag" } as CSSProperties;
+/** Kept in step with `companion-geometry.ts`. See that file for why. */
+const BASE_AVATAR_BOX = 44;
+const BASE_CANVAS_PAD = 24;
+const NEAR_EDGE = BASE_AVATAR_BOX / 2 + BASE_CANVAS_PAD;
 
-/** Map the tray's assistant status onto the orb's motion vocabulary. */
-const orbStateFor = (status: AssistantStatus): "idle" | "thinking" =>
-  status === "thinking" ? "thinking" : "idle";
+interface CompanionState {
+  phase: CompanionPhase;
+  avatarBox: number;
+  growth: "right" | "left";
+  cardGrowth: "up" | "down";
+  line?: string;
+  detail?: string;
+  answer?: string;
+  source?: string;
+  quiet?: boolean;
+}
 
-const STATUS_LABEL: Record<AssistantStatus, string> = {
-  idle: "Idle",
-  thinking: "Working…",
-  error: "Needs attention",
-  disconnected: "Disconnected",
-  authFailed: "Reconnect needed",
+const RESTING: CompanionState = {
+  phase: "resting",
+  avatarBox: 66,
+  growth: "right",
+  cardGrowth: "up",
 };
 
-export function CompanionPage() {
-  const [status, setStatus] = useState<AssistantStatus>("idle");
-  const [expanded, setExpanded] = useState(false);
+export function CompanionPage(): React.ReactElement {
+  const [state, setState] = useState<CompanionState>(RESTING);
+  const [status, setStatus] = useState<AssistantStatus | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+
+  // Main publishes every phase change; the renderer never invents one.
+  useEffect(() => {
+    const api = window.vellum?.companion;
+    if (!api?.onState) return;
+    return api.onState((next) => {
+      setState((prev) => ({ ...prev, ...(next as Partial<CompanionState>) }));
+    });
+  }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeCompanionStatus(setStatus);
-    // The route chunk loads lazily after the window is created, so the
-    // first pushed status can predate the subscription. Pull the current
-    // one to catch up — pushed statuses are newer, so never overwrite one.
-    let sawPush = false;
-    const wrapped = (pulled: AssistantStatus | null) => {
-      if (pulled && !sawPush) setStatus(pulled);
-    };
-    const markPush = subscribeCompanionStatus(() => {
-      sawPush = true;
-    });
-    void getCompanionStatus().then(wrapped);
-    return () => {
-      unsubscribe();
-      markPush();
-    };
+    void getCompanionStatus().then((s) => s && setStatus(s));
+    return subscribeCompanionStatus((s) => setStatus(s));
   }, []);
 
-  const applyExpanded = useCallback((value: boolean) => {
-    setExpanded(value);
-    void setCompanionExpanded(value);
+  /**
+   * Tell main whether the pointer is over anything drawn.
+   *
+   * This is the other half of the forwarding trick: main hands the canvas back
+   * whenever this says no, which is what keeps the empty region transparent to
+   * clicks meant for the app behind.
+   */
+  const report = useCallback((over: boolean) => {
+    window.vellum?.companion?.setPointerOver?.(over);
   }, []);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        applyExpanded(false);
-      }
-    },
-    [applyExpanded],
-  );
+  // A phase change can take the drawn area out from under a stationary
+  // pointer — no mouse-move follows, so nothing recomputes on its own. Report
+  // again on every phase so main can re-decide. Upstream shipped this leak.
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    report(r.width > 0 && r.height > 0 && state.phase !== "resting");
+  }, [state.phase, report]);
 
-  if (!expanded) {
-    return (
-      // The 8px padding ring is the drag region; the orb button inside it
-      // is no-drag so clicks land.
-      <div
-        className="flex h-screen w-screen items-center justify-center bg-transparent p-2"
-        style={DRAG_REGION}
-        onKeyDown={handleKeyDown}
-      >
-        <button
-          type="button"
-          aria-label="Expand Cue companion"
-          onClick={() => applyExpanded(true)}
-          className="rounded-full outline-none"
-          style={NO_DRAG_REGION}
-        >
-          <VoiceOrb state={orbStateFor(status)} size={52} label={STATUS_LABEL[status]} />
-        </button>
-      </div>
-    );
-  }
+  const busy = status === "thinking";
+  const phase = busy ? outrank(state.phase, "working") : state.phase;
 
   return (
     <div
-      className="flex h-screen w-screen items-stretch bg-transparent p-1"
-      onKeyDown={handleKeyDown}
+      style={{
+        position: "fixed",
+        inset: 0,
+        // The canvas is transparent; only the surface paints. A background
+        // here would be a rectangle across the desktop.
+        background: "transparent",
+        // Anchored by the cross-process constant, on the near edge for each
+        // growth direction — the asymmetry is what lets the creature reach the
+        // top of the screen (see `companion-geometry.ts`).
+        display: "flex",
+        alignItems: state.cardGrowth === "up" ? "flex-end" : "flex-start",
+        justifyContent: state.growth === "right" ? "flex-start" : "flex-end",
+        padding: NEAR_EDGE - state.avatarBox / 2,
+        overflow: "hidden",
+      }}
     >
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-base)] shadow-lg">
-        {/* Drag-handle strip: the card's only drag region. */}
-        <div
-          className="flex items-center justify-between px-3 pt-2"
-          style={DRAG_REGION}
-        >
-          <span className="text-[11px] font-medium text-[var(--content-tertiary)]">
-            Cue
-          </span>
-          <button
-            type="button"
-            aria-label="Collapse Cue companion"
-            onClick={() => applyExpanded(false)}
-            className="flex size-5 items-center justify-center rounded-full text-[var(--content-tertiary)] hover:text-[var(--content-default)]"
-            style={NO_DRAG_REGION}
-          >
-            <ChevronDown size={14} />
-          </button>
-        </div>
-
-        <div className="flex min-h-0 flex-1 items-center gap-3 px-3">
-          <VoiceOrb
-            state={orbStateFor(status)}
-            size={44}
-            label={STATUS_LABEL[status]}
-            className="shrink-0"
-          />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-[var(--content-default)]">
-              Cue
-            </p>
-            <p
-              className="truncate text-[11px] text-[var(--content-secondary)]"
-              data-testid="companion-status"
-            >
-              {STATUS_LABEL[status]}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 px-3 pb-3" style={NO_DRAG_REGION}>
-          <button
-            type="button"
-            onClick={() => {
-              void companionTalk();
-              applyExpanded(false);
-            }}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-[var(--surface-accent)] px-3 py-1.5 text-xs font-medium text-[var(--content-on-accent)]"
-          >
-            <Mic size={13} />
-            Talk
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              void companionOpenCue();
-              applyExpanded(false);
-            }}
-            className="flex flex-1 items-center justify-center rounded-full border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--content-default)]"
-          >
-            Open Cue
-          </button>
-        </div>
+      <div
+        ref={surfaceRef}
+        onMouseEnter={() => report(true)}
+        onMouseLeave={() => report(false)}
+        // The creature is the drag handle; main ends the drag on a global
+        // mouse-up, never on one this page has to receive.
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      >
+        <CompanionSurface
+          phase={phase}
+          avatarBox={state.avatarBox}
+          growth={state.growth}
+          cardGrowth={state.cardGrowth}
+          {...(state.line !== undefined ? { line: state.line } : {})}
+          {...(state.detail !== undefined ? { detail: state.detail } : {})}
+          {...(state.answer !== undefined ? { answer: state.answer } : {})}
+          {...(state.source !== undefined ? { source: state.source } : {})}
+          {...(state.quiet !== undefined ? { quiet: state.quiet } : {})}
+          onOpen={() => void companionOpenCue()}
+          onStop={() => void companionTalk()}
+        />
       </div>
     </div>
   );
