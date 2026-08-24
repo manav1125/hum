@@ -81,6 +81,7 @@ const C = {
   green: "var(--mv1-green)",
   // Small text takes the -text variant, never the bright fill (§6).
   amberText: "var(--mv1-amber-text)",
+  danger: "var(--mv1-danger)",
 } as const;
 
 const serif = "'Instrument Serif', Georgia, serif";
@@ -116,6 +117,18 @@ function NotesPageDesktop() {
   const assistantId = useActiveAssistantId();
   const [filter, setFilter] = useState<NoteFilter>("all");
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  /**
+   * The live capture, while a hold is in progress. Owner decision
+   * (2026-08-24): speaking should open a note and fill it as you talk, rather
+   * than leaving you holding a button over an unchanged list. This departs
+   * from S1·B, which puts the words on the control and opens the note after —
+   * asked for three times, so it is the spec that was wrong here, not the
+   * build.
+   */
+  const [liveCapture, setLiveCapture] = useState<{
+    text: string;
+    isLive: boolean;
+  } | null>(null);
   const [importing, setImporting] = useState(false);
 
   /**
@@ -226,7 +239,11 @@ function NotesPageDesktop() {
           <Download size={13} />
           Import
         </button>
-        <NoteRecorder assistantId={assistantId} onCreated={setOpenNoteId} />
+        <NoteRecorder
+          assistantId={assistantId}
+          onCreated={setOpenNoteId}
+          onLive={setLiveCapture}
+        />
         <div className="ml-auto flex flex-wrap gap-1">
           {FILTERS.filter(({ key }) => sync.online || key !== "waiting").map(
             ({ key, label }) => {
@@ -298,7 +315,9 @@ function NotesPageDesktop() {
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {list.status === "loading" ? (
+        {liveCapture ? (
+          <LiveNote {...liveCapture} />
+        ) : list.status === "loading" ? (
           <p className="text-[13px]" style={{ color: C.t3 }}>
             Loading…
           </p>
@@ -453,6 +472,71 @@ function ArrivalProvenance(): React.ReactElement {
         </ul>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The note taking shape while you speak.
+ *
+ * Owner decision (2026-08-24), overriding S1·B: holding the mic opens a note
+ * and fills it, instead of putting the words on the control and opening the
+ * note afterwards. The reason is the one he gave three times — a button that
+ * changes colour over an unchanged list gives you no sense that anything is
+ * being captured.
+ *
+ * It is deliberately NOT a saved note yet. Nothing is written until you let
+ * go and the audio comes back, so a brush of the button leaves no debris —
+ * the pile of empty "Untitled note" rows is exactly what that would create.
+ */
+function LiveNote({
+  text,
+  isLive,
+}: {
+  text: string;
+  isLive: boolean;
+}): React.ReactElement {
+  return (
+    <div
+      className="rounded-lg border px-4 py-3.5"
+      style={{ borderColor: C.danger, background: C.card }}
+    >
+      <div className="flex items-center gap-2">
+        <Mic size={13} style={{ color: C.danger }} />
+        <span
+          className="text-[10.5px] font-semibold tracking-wide uppercase"
+          style={{ color: C.danger }}
+        >
+          Recording
+        </span>
+      </div>
+
+      {isLive ? (
+        <p
+          className="mt-2 text-[15px] leading-relaxed"
+          style={{ color: text ? C.t1 : C.t3 }}
+          aria-live="polite"
+        >
+          {text || "Listening…"}
+          <span
+            className="ml-0.5 inline-block motion-safe:animate-pulse"
+            style={{ color: C.danger }}
+            aria-hidden
+          >
+            ▍
+          </span>
+        </p>
+      ) : (
+        <p className="mt-2 text-[13px] leading-relaxed" style={{ color: C.t2 }}>
+          I can&rsquo;t show the words as you say them on this connection —
+          keep going, and you&rsquo;ll get them written down the moment you let
+          go.
+        </p>
+      )}
+
+      <p className="mt-3 text-[11px]" style={{ color: C.t3 }}>
+        Let go to keep it. The mic stops the moment you do.
+      </p>
+    </div>
   );
 }
 

@@ -35,6 +35,7 @@ import {
   type LiveVoiceCaptureResult,
 } from "@/domains/chat/voice/live-voice/pcm-capture";
 import { LIVE_VOICE_AUDIO_FORMAT } from "@/domains/chat/voice/live-voice/protocol";
+import { getGatewayToken } from "@/lib/auth/gateway-session";
 import {
   getSelfHostedActorToken,
   getSelfHostedIngressUrl,
@@ -123,14 +124,27 @@ export function startDictationStream(
   { onPartial }: StartDictationStreamArgs,
   options: DictationStreamOptions = {},
 ): DictationStreamHandle | null {
-  const ingressUrl = getSelfHostedIngressUrl();
-  const token = getSelfHostedActorToken();
+  // The page is SERVED BY the instance, so its own origin is a valid ingress
+  // whenever the resolved connection has not filled one in — which is the
+  // case on a magic-link self-host, where `ingress_url` comes from a platform
+  // record that does not exist. Without this the desktop app fell straight to
+  // "I can't show the words as you say them" on the one setup the feature is
+  // actually for.
+  const ingressUrl =
+    getSelfHostedIngressUrl() ??
+    (typeof window !== "undefined" ? window.location.origin : null);
+  const token = getSelfHostedActorToken() ?? getGatewayToken();
+
   if (!ingressUrl || !token || !isPcmCaptureSupported()) {
-    // Expected on cloud-hosted assistants and plain browsers — log once
-    // per session attempt so a missing-partials report is diagnosable.
-    console.info(
-      "dictation-stream: skipping (no self-hosted ingress/token or no AudioWorklet)",
-    );
+    // Name the missing piece. "Skipping" told whoever read the log nothing
+    // about WHICH of three preconditions failed, which is the difference
+    // between a one-line fix and an afternoon.
+    const missing = [
+      !ingressUrl && "no ingress url",
+      !token && "no actor/gateway token",
+      !isPcmCaptureSupported() && "no AudioWorklet/getUserMedia",
+    ].filter(Boolean);
+    console.info(`dictation-stream: skipping — ${missing.join(", ")}`);
     return null;
   }
 

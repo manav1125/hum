@@ -64,9 +64,16 @@ function toBase64(buffer: ArrayBuffer): string {
 export function NoteRecorder({
   assistantId,
   onCreated,
+  onLive,
 }: {
   assistantId: string;
   onCreated: (noteId: string) => void;
+  /**
+   * Reports the live capture so the page can open a note-shaped surface and
+   * fill it as you speak, rather than leaving you holding a button with the
+   * list still underneath. `null` means not recording.
+   */
+  onLive?: (live: { text: string; isLive: boolean } | null) => void;
 }) {
   const invalidate = useInvalidateNotes();
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -130,6 +137,12 @@ export function NoteRecorder({
       });
     }
   }, [state.kind, live]);
+
+  const listening = state.kind === "listening";
+  useEffect(() => {
+    if (!onLive) return;
+    onLive(listening ? { text: live.text, isLive: live.isLive } : null);
+  }, [onLive, listening, live.text, live.isLive]);
 
   const finish = useCallback(async () => {
     const recorder = recorderRef.current;
@@ -202,7 +215,6 @@ export function NoteRecorder({
     }
   }, [assistantId, invalidate, onCreated, send, state.kind, stopTracks]);
 
-  const listening = state.kind === "listening";
 
   return (
     <div>
