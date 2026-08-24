@@ -20,6 +20,7 @@ import {
   fetchManagedCatalog,
   type ManagedCredentialDescriptor,
 } from "../../credential-execution/managed-catalog.js";
+import { getDb } from "../../memory/db-connection.js";
 import { syncManualTokenConnection } from "../../oauth/manual-token-connection.js";
 import {
   disconnectOAuthProvider,
@@ -27,6 +28,7 @@ import {
   listConnections,
   type OAuthConnectionRow,
 } from "../../oauth/oauth-store.js";
+import { connectionsUsingCredential } from "../../providers/inference/connections.js";
 import { credentialKey } from "../../security/credential-key.js";
 import {
   deleteSecureKeyAsync,
@@ -377,6 +379,26 @@ async function handleCredentialsDelete({ body }: RouteHandlerArgs) {
   assertMetadataWritable();
 
   const key = credentialKey(service, field);
+
+  // Refuse while inference depends on it. Deleting the key an LLM connection
+  // authenticates with does not fail loudly — `resolveAuth` returns
+  // `credential_not_found`, the connection resolves to null, and routing
+  // quietly moves on — so the damage surfaces later, somewhere else, as a
+  // model that stopped answering. Naming the connections is the difference
+  // between an obvious mistake and a long hunt.
+  const dependents = connectionsUsingCredential(getDb(), key);
+  if (dependents.length > 0) {
+    throw new BadRequestError(
+      `Cannot delete ${service}:${field} — ${
+        dependents.length === 1 ? "connection" : "connections"
+      } ${dependents.map((name) => `"${name}"`).join(", ")} ${
+        dependents.length === 1 ? "authenticates" : "authenticate"
+      } with it. Point ${
+        dependents.length === 1 ? "it" : "them"
+      } at another credential, or delete the connection first.`,
+    );
+  }
+
   const existing = await getSecureKeyAsync(key);
   const deleteResult =
     existing != null ? await deleteSecureKeyAsync(key) : "not-found";

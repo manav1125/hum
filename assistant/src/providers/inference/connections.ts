@@ -67,6 +67,31 @@ export function listConnections(
   });
 }
 
+/**
+ * The names of provider connections that authenticate with this credential.
+ *
+ * Deleting a credential an inference connection depends on does not fail
+ * loudly: `resolveAuth` returns `credential_not_found`, the connection
+ * resolves to null, and the turn falls through to whatever routing does next.
+ * The symptom shows up later and somewhere else, which is how a key that
+ * never reached inference cost days to find here once already.
+ *
+ * Only `api_key` auth names a credential; `platform`, `none` and OAuth
+ * subscriptions resolve elsewhere and are not affected by the delete.
+ */
+export function connectionsUsingCredential(
+  db: DrizzleDb,
+  credential: string,
+): string[] {
+  return listConnections(db)
+    .filter(
+      (connection) =>
+        connection.auth.type === "api_key" &&
+        connection.auth.credential === credential,
+    )
+    .map((connection) => connection.name);
+}
+
 export function getConnection(
   db: DrizzleDb,
   name: string,
