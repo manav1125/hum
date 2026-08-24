@@ -26,6 +26,7 @@
 import { execFile } from "node:child_process";
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -39,7 +40,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
+import { PRESERVED_ENTRIES } from "../../plugins/plugin-tree-walk.js";
 import { ensureBun } from "../../util/bun-runtime.js";
+import { getLogger } from "../../util/logger.js";
 import { getWorkspacePluginsDir } from "../../util/platform.js";
 import {
   type DependencyInstaller,
@@ -57,6 +60,8 @@ import {
   type ResolvedPluginSource,
   resolveMarketplaceSource,
 } from "./plugin-marketplace.js";
+
+const log = getLogger("plugin-install");
 
 const execFileAsync = promisify(execFile);
 
@@ -506,12 +511,62 @@ export async function installPlugin(
   // Ensure the served `plugins/` directory exists: staging now lives outside
   // it, so the target's parent is no longer created as a side effect.
   mkdirSync(pluginsDir, { recursive: true });
+  carryHostStateIntoStaging(target, stagingDir);
   if (existsSync(target)) {
     rmSync(target, { recursive: true, force: true });
   }
   renameSync(stagingDir, target);
 
   return { name, target, fileCount, ref, commit, committedAt };
+}
+
+/**
+ * Host-owned state that belongs to the install rather than to the pin.
+ *
+ * Derived from {@link PRESERVED_ENTRIES}, which is the one list of what the
+ * host owns inside a plugin directory, minus `install-meta.json`: the
+ * installer writes a fresh sidecar recording the commit it just placed, and
+ * carrying the old one forward would make an upgrade that happened look like
+ * one that had not.
+ */
+const HOST_OWNED_ENTRIES = PRESERVED_ENTRIES.filter(
+  (entry) => entry !== "install-meta.json",
+);
+
+/**
+ * Move the live install's own state into staging, so the swap keeps it.
+ *
+ * The swap is `rm` then `rename`, which replaces the whole plugin directory —
+ * the pin's tree and nothing else. Everything the host put there went with it:
+ * the owner's `config.json`, the plugin's `data/`, and `.disabled`.
+ *
+ * That last one is the reason this is not merely annoying. Auto-update runs
+ * unattended, so a plugin the owner deliberately switched off came back on by
+ * itself, at some hour nobody was watching, with no record that anything had
+ * decided to re-enable it.
+ *
+ * A live entry wins over one the pin ships, since it is the newer of the two
+ * and the owner's. A pin-shipped default survives a first install, where there
+ * is no live entry to prefer.
+ */
+function carryHostStateIntoStaging(target: string, stagingDir: string): void {
+  if (!existsSync(target)) return;
+  for (const entry of HOST_OWNED_ENTRIES) {
+    const live = join(target, entry);
+    if (!existsSync(live)) continue;
+    const staged = join(stagingDir, entry);
+    try {
+      rmSync(staged, { recursive: true, force: true });
+      cpSync(live, staged, { recursive: true });
+    } catch (err) {
+      // Losing the carry-over is bad; losing the upgrade with a half-populated
+      // staging dir is worse. Report and continue with the pin's own copy.
+      log.warn(
+        { err, entry, target },
+        "Failed to preserve plugin state across upgrade",
+      );
+    }
+  }
 }
 
 /** Cap on any single git invocation; a shallow fetch is well under this. */

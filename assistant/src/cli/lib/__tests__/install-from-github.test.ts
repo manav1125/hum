@@ -295,6 +295,95 @@ describe("installPlugin — install lifecycle", () => {
     expect(existsSync(join(target, "README.md"))).toBe(true);
   });
 
+  // The swap is rm + rename, so the whole plugin directory is replaced by the
+  // pin's tree. Everything the host put there went with it.
+  test("--force keeps the owner's config, data and disabled state", async () => {
+    // GIVEN an install carrying host-owned state alongside the pin's files
+    const target = join(pluginsDir, "caveman");
+    mkdirSync(join(target, "data"), { recursive: true });
+    writeFileSync(join(target, "package.json"), '{"name":"caveman"}');
+    writeFileSync(join(target, "config.json"), '{"apiKey":"mine"}');
+    writeFileSync(join(target, "data", "state.json"), '{"seen":42}');
+    writeFileSync(join(target, ".disabled"), "");
+
+    const fetch = makeContentsFetch({ tree: {}, manifest: CAVEMAN_MANIFEST });
+    const runGit = fakeGitRunner({
+      tree: { "package.json": '{"name":"caveman"}', "README.md": "# caveman" },
+      commit: CAVEMAN_SHA,
+    });
+
+    // WHEN the plugin is upgraded in place
+    await installPlugin(
+      { name: "caveman", force: true, ref: "main" },
+      { fetch, runGit, workspacePluginsDir: pluginsDir },
+    );
+
+    // THEN the pin's tree landed
+    expect(existsSync(join(target, "README.md"))).toBe(true);
+    // AND the owner's state came with it
+    expect(readFileSync(join(target, "config.json"), "utf-8")).toBe(
+      '{"apiKey":"mine"}',
+    );
+    expect(readFileSync(join(target, "data", "state.json"), "utf-8")).toBe(
+      '{"seen":42}',
+    );
+    // The one that is not merely annoying: auto-update runs unattended, so
+    // losing this silently switched a plugin the owner disabled back on.
+    expect(existsSync(join(target, ".disabled"))).toBe(true);
+  });
+
+  test("a first install keeps the defaults the pin ships", async () => {
+    // GIVEN nothing installed, and a pin that ships its own config.json
+    const target = join(pluginsDir, "caveman");
+    const fetch = makeContentsFetch({ tree: {}, manifest: CAVEMAN_MANIFEST });
+    const runGit = fakeGitRunner({
+      tree: {
+        "package.json": '{"name":"caveman"}',
+        "config.json": '{"apiKey":"default"}',
+      },
+      commit: CAVEMAN_SHA,
+    });
+
+    // WHEN it is installed for the first time
+    await installPlugin(
+      { name: "caveman", force: true, ref: "main" },
+      { fetch, runGit, workspacePluginsDir: pluginsDir },
+    );
+
+    // THEN there was no live copy to prefer, so the shipped default stands
+    expect(readFileSync(join(target, "config.json"), "utf-8")).toBe(
+      '{"apiKey":"default"}',
+    );
+  });
+
+  // The installer writes a fresh sidecar for the commit it just placed;
+  // carrying the old one forward would make an upgrade look like a no-op.
+  test("install-meta is the new install's, not the old one's", async () => {
+    const target = join(pluginsDir, "caveman");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "package.json"), '{"name":"caveman"}');
+    writeFileSync(
+      join(target, "install-meta.json"),
+      JSON.stringify({ commit: "0000000000000000000000000000000000000000" }),
+    );
+
+    const fetch = makeContentsFetch({ tree: {}, manifest: CAVEMAN_MANIFEST });
+    const runGit = fakeGitRunner({
+      tree: { "package.json": '{"name":"caveman"}' },
+      commit: CAVEMAN_SHA,
+    });
+
+    await installPlugin(
+      { name: "caveman", force: true, ref: "main" },
+      { fetch, runGit, workspacePluginsDir: pluginsDir },
+    );
+
+    const meta = JSON.parse(
+      readFileSync(join(target, "install-meta.json"), "utf-8"),
+    ) as { commit?: string };
+    expect(meta.commit).toBe(CAVEMAN_SHA);
+  });
+
   test("--force preserves the existing install when the clone fails", async () => {
     // GIVEN a working copy already on disk
     const target = join(pluginsDir, "caveman");
