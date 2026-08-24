@@ -64,7 +64,7 @@ import { NoteAskPanel } from "./note-ask-panel";
 import { NoteCreateOptions } from "./note-create-options";
 import { NoteImportPanel } from "./note-import-panel";
 import { NoteRail } from "./note-rail";
-import { NoteRecorder } from "./note-recorder";
+import { NoteRecordingSession } from "./note-recording-session";
 import { NoteRecordingPanel } from "./note-recording-panel";
 import { NoteTidySheet } from "./note-tidy-sheet";
 import { useNote, useNotes, useNoteSync, useReadNote } from "./use-notes";
@@ -125,11 +125,12 @@ function NotesPageDesktop() {
    * asked for three times, so it is the spec that was wrong here, not the
    * build.
    */
-  const [liveCapture, setLiveCapture] = useState<{
-    text: string;
-    isLive: boolean;
-    cancel: () => void;
-  } | null>(null);
+  /**
+   * Recording is a SESSION, not a hold (design `01b`): you start it, watch
+   * the note form, and stop it. Hold-to-talk belongs to the corner (`F2·E`),
+   * and applying it here is what made the mic latch on with no way out.
+   */
+  const [recording, setRecording] = useState(false);
   const [importing, setImporting] = useState(false);
 
   /**
@@ -240,11 +241,15 @@ function NotesPageDesktop() {
           <Download size={13} />
           Import
         </button>
-        <NoteRecorder
-          assistantId={assistantId}
-          onCreated={setOpenNoteId}
-          onLive={setLiveCapture}
-        />
+        <button
+          type="button"
+          onClick={() => setRecording(true)}
+          className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium"
+          style={{ borderColor: C.line2, color: C.t1 }}
+        >
+          <Mic size={13} />
+          Record
+        </button>
         <div className="ml-auto flex flex-wrap gap-1">
           {FILTERS.filter(({ key }) => sync.online || key !== "waiting").map(
             ({ key, label }) => {
@@ -316,8 +321,15 @@ function NotesPageDesktop() {
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {liveCapture ? (
-          <LiveNote {...liveCapture} />
+        {recording ? (
+          <NoteRecordingSession
+            assistantId={assistantId}
+            onDone={(id) => {
+              setRecording(false);
+              setOpenNoteId(id);
+            }}
+            onCancel={() => setRecording(false)}
+          />
         ) : list.status === "loading" ? (
           <p className="text-[13px]" style={{ color: C.t3 }}>
             Loading…
@@ -476,84 +488,6 @@ function ArrivalProvenance(): React.ReactElement {
   );
 }
 
-/**
- * The note taking shape while you speak.
- *
- * Owner decision (2026-08-24), overriding S1·B: holding the mic opens a note
- * and fills it, instead of putting the words on the control and opening the
- * note afterwards. The reason is the one he gave three times — a button that
- * changes colour over an unchanged list gives you no sense that anything is
- * being captured.
- *
- * It is deliberately NOT a saved note yet. Nothing is written until you let
- * go and the audio comes back, so a brush of the button leaves no debris —
- * the pile of empty "Untitled note" rows is exactly what that would create.
- */
-function LiveNote({
-  text,
-  isLive,
-  cancel,
-}: {
-  text: string;
-  isLive: boolean;
-  cancel: () => void;
-}): React.ReactElement {
-  return (
-    <div
-      className="rounded-lg border px-4 py-3.5"
-      style={{ borderColor: C.danger, background: C.card }}
-    >
-      <div className="flex items-center gap-2">
-        <Mic size={13} style={{ color: C.danger }} />
-        <span
-          className="text-[10.5px] font-semibold tracking-wide uppercase"
-          style={{ color: C.danger }}
-        >
-          Recording
-        </span>
-      </div>
-
-      {isLive ? (
-        <p
-          className="mt-2 text-[15px] leading-relaxed"
-          style={{ color: text ? C.t1 : C.t3 }}
-          aria-live="polite"
-        >
-          {text || "Listening…"}
-          <span
-            className="ml-0.5 inline-block motion-safe:animate-pulse"
-            style={{ color: C.danger }}
-            aria-hidden
-          >
-            ▍
-          </span>
-        </p>
-      ) : (
-        <p className="mt-2 text-[13px] leading-relaxed" style={{ color: C.t2 }}>
-          I can&rsquo;t show the words as you say them on this connection —
-          keep going, and you&rsquo;ll get them written down the moment you let
-          go.
-        </p>
-      )}
-
-      <div className="mt-3 flex items-center gap-3">
-        <p className="text-[11px]" style={{ color: C.t3 }}>
-          Let go to keep it. The mic stops the moment you do.
-        </p>
-        {/* There was no way out of a recording at all — you could only turn
-            one into a note. `esc` does the same thing. */}
-        <button
-          type="button"
-          onClick={cancel}
-          className="text-[11px] font-medium"
-          style={{ color: C.blueS }}
-        >
-          Cancel · esc
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function NoteList({
   notes,
