@@ -120,7 +120,23 @@ function handleMcpReload(_args: { body?: Record<string, unknown> }): {
 
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
 
-async function checkServerHealth(
+/**
+ * Health for an MCP server, measured by whether it will actually serve.
+ *
+ * Connecting is not the question. An MCP server accepts the transport and
+ * only then decides whether it likes your credentials, so a server that
+ * rejects every single call still connects — and this check used to answer
+ * "✓ Connected" for it. Eight servers on one instance sat that way for days,
+ * every status surface reporting them healthy, while nothing the agent asked
+ * for went through. The way that was eventually diagnosed was by counting
+ * registered tools, so counting tools is what this does now.
+ *
+ * `listTools()` is the cheapest call that requires the server to honour the
+ * session, and it throws when the server refuses. A connected server that
+ * cannot list is reported as broken, and the tool count is included so the
+ * answer carries its own evidence.
+ */
+export async function checkServerHealth(
   serverId: string,
   config: McpServerConfig,
   timeoutMs = HEALTH_CHECK_TIMEOUT_MS,
@@ -136,8 +152,19 @@ async function checkServerHealth(
     ]);
 
     if (client.isConnected) {
-      await client.disconnect();
-      return "✓ Connected";
+      try {
+        const tools = await client.listTools();
+        return tools.length > 0
+          ? `✓ Connected · ${tools.length} tool${tools.length === 1 ? "" : "s"}`
+          : "! Connected, but offers no tools";
+      } catch (err) {
+        // Connected and refusing to serve. Naming it as an error is the whole
+        // point: this is the state that previously read as healthy.
+        const message = err instanceof Error ? err.message : String(err);
+        return `✗ Connected but not serving: ${message}`;
+      } finally {
+        await client.disconnect().catch(() => {});
+      }
     }
 
     const err = client.lastError;
