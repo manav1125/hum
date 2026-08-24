@@ -306,6 +306,55 @@ async function startCesProcess(
 }
 
 // Entry point for the daemon process itself
+/**
+ * Whether another Cue daemon is already answering on the runtime HTTP port.
+ *
+ * A bind failure alone does not say who holds the port, and the two answers
+ * call for opposite behaviour. Something else on the machine holding it is a
+ * transport failure: the daemon degrades to IPC-only and keeps running, which
+ * is the startup philosophy in AGENTS.md. *Another daemon* holding it is the
+ * documented exception — two daemons against one workspace both run the
+ * scheduler, the memory worker and background wake, so every side effect
+ * happens twice against a database neither owns exclusively, and the second
+ * one is invisible to health checks and unreachable by stop commands.
+ *
+ * So the question is asked rather than inferred: `/healthz` answering
+ * `{"status":"ok"}` on the port we just failed to bind is a daemon. Anything
+ * else — no answer, a different body, a non-200 — is not proof, and the
+ * daemon takes the degraded path it always did.
+ */
+export async function portHeldByAnotherDaemon(
+  hostname: string,
+  port: number,
+): Promise<boolean> {
+  // A wildcard bind address is not dialable; probe the loopback the other
+  // daemon would also be listening on.
+  const host =
+    hostname === "0.0.0.0" || hostname === "::" || hostname === ""
+      ? "127.0.0.1"
+      : hostname;
+  const authority = host.includes(":") ? `[${host}]` : host;
+  try {
+    const response = await fetch(`http://${authority}:${port}/healthz`, {
+      signal: AbortSignal.timeout(1_500),
+    });
+    if (!response.ok) return false;
+    const body = (await response.json()) as { status?: unknown };
+    return body?.status === "ok";
+  } catch {
+    return false;
+  }
+}
+
+function isAddressInUse(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as NodeJS.ErrnoException).code === "EADDRINUSE"
+  );
+}
+
 export async function runDaemon(): Promise<void> {
   const startupStartedAt = Date.now();
   // dotenv loads before the first log call so the lazy root logger
@@ -405,6 +454,16 @@ export async function runDaemon(): Promise<void> {
         "Daemon startup: runtime HTTP server listening",
       );
     } catch (err) {
+      if (
+        isAddressInUse(err) &&
+        (await portHeldByAnotherDaemon(httpHostname, httpPort))
+      ) {
+        log.fatal(
+          { err, port: httpPort },
+          "Runtime HTTP port is held by another daemon — aborting startup to prevent duplicate background processing against the same workspace",
+        );
+        throw err;
+      }
       log.warn(
         { err, port: httpPort },
         "Failed to start runtime HTTP server, continuing without it",

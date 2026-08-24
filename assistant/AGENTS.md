@@ -16,7 +16,12 @@ When you introduce a new env var that the assistant process needs to read at run
 
 The daemon must **never** block startup due to **subsystem** failures (DB, Qdrant, plugins, feature flags, etc.). If an individual subsystem fails, log the error and continue in degraded mode so the process remains reachable for health checks and diagnostics.
 
-**Exception — duplicate daemon detection:** If the daemon cannot establish **any** client-facing transport because another daemon already holds both the IPC socket and HTTP port, it must exit immediately. A daemon with no transport is unmanageable (invisible to health checks, unreachable by stop commands) yet still runs background jobs (scheduler, memory worker, background wake) against the shared database, causing duplicate side effects.
+**Exception — duplicate daemon detection:** If another daemon already owns this workspace's transports, this one must exit immediately rather than degrade. A second daemon is unmanageable (invisible to health checks, unreachable by stop commands) yet still runs background jobs (scheduler, memory worker, background wake) against the shared database, causing duplicate side effects.
+
+Two independent detections, because either transport alone is enough to prove it:
+
+- **IPC socket** — `EADDRINUSE` on the CLI socket aborts startup (`daemon/server.ts`).
+- **Runtime HTTP port** — `EADDRINUSE` alone is _not_ enough, because something unrelated on the machine may hold the port and that case must still degrade to IPC-only. `portHeldByAnotherDaemon()` (`daemon/lifecycle.ts`) probes `/healthz` and aborts only when it answers `{"status":"ok"}` — i.e. only when a daemon is provably there. Anything else keeps the degraded path.
 
 ## Post-execution hooks
 

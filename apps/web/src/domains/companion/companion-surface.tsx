@@ -1,0 +1,416 @@
+import type { CSSProperties, ReactNode } from "react";
+
+import { CompanionCreature, CompanionCreatureKeyframes } from "./companion-creature";
+import type { CreatureTone } from "./companion-creature";
+
+/**
+ * The companion surface — design `C2`, on `C3`'s geometry.
+ *
+ * **One object changing shape.** The creature holds one x-position in every
+ * phase and only `width` animates; the typing card is the single phase that
+ * grows vertically. That is what makes this read as one creature changing
+ * shape rather than several surfaces sharing a colour — and it is the property
+ * to protect as phases gain content.
+ *
+ * **Presentational, and deliberately so.** Every phase comes from the caller,
+ * including `hover`: in the real window the pointer is tracked by the main
+ * process through `setIgnoreMouseEvents(true, { forward: true })`, which
+ * delivers mouse-move while letting presses through to whatever is behind. A
+ * surface that decided its own hover would have to claim the whole canvas to
+ * find out, and a canvas many times the size of the pill claiming clicks is
+ * three of upstream's five bugs.
+ *
+ * **Solid, not glass** (`C3`, Q3). Upstream tried and the platform refused:
+ * native vibrancy fills the whole oversized canvas, and `backdrop-filter`
+ * samples only what is inside the page — and the desktop is not in the page.
+ * So the body is solid ink and the identity is carried by the creature and its
+ * glow, not by a painted fake blur.
+ */
+
+/** The surface's own values, from the design's markup. */
+const INK = "#101321";
+const HAIRLINE = "1px solid rgba(255,255,255,.13)";
+const PILL_SHADOW = "0 14px 34px -14px rgba(0,0,0,.55)";
+const CARD_SHADOW = "0 24px 54px -20px rgba(0,0,0,.65)";
+const CARD_WIDTH = 360;
+/** The pill's padding at the creature's end, from the design's markup. */
+const SEAT = 6;
+
+const T1 = "#F4F4F6";
+/** The standing muted-on-dark token. Never used as a background. */
+const T2 = "#9A9AA8";
+const ACCENT = "#3D6EE8";
+
+export type CompanionPhase =
+  | "resting"
+  | "hover"
+  | "listening"
+  | "working"
+  | "typing"
+  | "watching"
+  | "summary"
+  /** Cue moved first (`C7`). The one entrance with a flourish. */
+  | "nudge"
+  /** Mirrors a real Notes / Halo / meeting session (`C11`). */
+  | "recording"
+  /** Waiting on an approval the app has been raised for (`C6`, `C9`). */
+  | "waiting"
+  | "couldnt"
+  | "offline";
+
+/**
+ * Precedence, upstream's order kept.
+ *
+ * A half-typed sentence and a live call are both something you are in the
+ * middle of, so they outrank a session that is merely reporting. `hover` is
+ * bottom because it is a hint, and being outranked costs it nothing.
+ */
+const RANK: Record<CompanionPhase, number> = {
+  typing: 100,
+  recording: 95,
+  listening: 90,
+  waiting: 85,
+  watching: 80,
+  summary: 70,
+  couldnt: 65,
+  nudge: 60,
+  working: 50,
+  offline: 40,
+  hover: 10,
+  resting: 0,
+};
+
+export function outrank(a: CompanionPhase, b: CompanionPhase): CompanionPhase {
+  return RANK[a] >= RANK[b] ? a : b;
+}
+
+const TONE_FOR: Partial<Record<CompanionPhase, CreatureTone>> = {
+  watching: "watching",
+  recording: "recording",
+  offline: "offline",
+  couldnt: "amber",
+  waiting: "amber",
+};
+
+export interface CompanionSurfaceProps {
+  phase: CompanionPhase;
+  /** The creature's box in points — the whole of the surface's scale. */
+  avatarBox: number;
+  /** Which way the pill unfurls. Main decides; only main knows the display. */
+  growth: "right" | "left";
+  /** Which way the typing card unfurls. Main decides, for the same reason. */
+  cardGrowth: "up" | "down";
+  /** The words beside the creature, where the finer phase lives. */
+  line?: string;
+  /** A second, quieter line — the consequence, or the source. */
+  detail?: string;
+  /** The answer in the typing card. */
+  answer?: string;
+  /** Where the answer came from. An unsourced answer never renders. */
+  source?: string;
+  /** Character traits, composed live. */
+  weight?: "fine" | "regular" | "bold";
+  blink?: "calm" | "lively";
+  /** Quiet hours: the creature still sits there, but it never moves first. */
+  quiet?: boolean;
+  onStop?: () => void;
+  onOpen?: () => void;
+  onDismiss?: () => void;
+  onUndo?: () => void;
+}
+
+export function CompanionSurface(props: CompanionSurfaceProps): React.ReactElement {
+  const { phase, avatarBox, growth, cardGrowth, quiet = false } = props;
+  const scale = avatarBox / 44;
+
+  const creature = (
+    <CompanionCreature
+      box={avatarBox}
+      working={phase === "working" || phase === "summary"}
+      listening={phase === "listening" || phase === "recording"}
+      gazing={phase === "hover"}
+      tone={TONE_FOR[phase] ?? "normal"}
+      weight={props.weight ?? "regular"}
+      blink={props.blink ?? "calm"}
+      still={quiet}
+    />
+  );
+
+  // The creature sits INSIDE the pill, not beside it. That is what makes the
+  // surface one object changing shape: the body unfurls around a creature that
+  // never moves, rather than a pill sliding out from under a separate disc.
+  // The pill's own padding (6px at the creature's end) is why its edge sits
+  // that far outside — see `SEAT`.
+  const seat = SEAT * scale;
+
+  if (phase === "resting") {
+    return (
+      <div style={{ display: "inline-flex" }}>
+        <CompanionCreatureKeyframes />
+        {creature}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        // Reversing the row is half of growing leftward — the other half is
+        // main anchoring the window by the right edge. Both halves, or the
+        // creature draws where main does not believe it is (upstream
+        // `db9392ef`).
+        flexDirection: growth === "right" ? "row" : "row-reverse",
+        alignItems:
+          phase === "typing"
+            ? cardGrowth === "up"
+              ? "flex-end"
+              : "flex-start"
+            : "center",
+        // Hold the creature's x: the pill's edge hangs `seat` outside it.
+        marginLeft: growth === "right" ? -seat : 0,
+        marginRight: growth === "left" ? -seat : 0,
+        // Only width animates. Text never slides; it fades in place.
+        transition: "width 240ms cubic-bezier(.22,1,.36,1)",
+      }}
+    >
+      <CompanionCreatureKeyframes />
+      {phase === "typing" ? (
+        <TypingCard {...props} scale={scale} creature={creature} />
+      ) : (
+        <Pill {...props} scale={scale} creature={creature} />
+      )}
+    </div>
+  );
+}
+
+/** The horizontal states: everything that is not the typing card. */
+function Pill(
+  props: CompanionSurfaceProps & { scale: number; creature: ReactNode },
+): React.ReactElement {
+  const { phase, scale, line, detail, growth, creature } = props;
+  const pad =
+    growth === "right"
+      ? `${SEAT}px ${20 * scale}px ${SEAT}px ${SEAT}px`
+      : `${SEAT}px ${SEAT}px ${SEAT}px ${20 * scale}px`;
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        flexDirection: growth === "right" ? "row" : "row-reverse",
+        gap: 12 * scale,
+        background: INK,
+        border: HAIRLINE,
+        borderRadius: 99,
+        padding: pad,
+        boxShadow: PILL_SHADOW,
+        // Type scales with the creature only to `large`, then caps: at huge
+        // and ridiculous the creature grows but the words do not shout (C12).
+        fontSize: Math.min(13 * scale, 13 * 2),
+      }}
+    >
+      {creature}
+      {phase === "hover" ? (
+        <HoverAffordances scale={scale} />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {line ? <span style={{ color: T1, whiteSpace: "nowrap" }}>{line}</span> : null}
+          {detail ? (
+            <span style={{ color: T2, fontSize: "0.86em", whiteSpace: "nowrap" }}>
+              {detail}
+            </span>
+          ) : null}
+        </div>
+      )}
+
+      {phase === "watching" ? <ConsentLine onStop={props.onStop} /> : null}
+      {phase === "recording" ? (
+        <TextButton onClick={props.onStop}>Stop</TextButton>
+      ) : null}
+      {phase === "working" ? (
+        <TextButton onClick={props.onStop}>Stop</TextButton>
+      ) : null}
+      {phase === "nudge" ? (
+        <>
+          <TextButton onClick={props.onOpen}>Open ›</TextButton>
+          {/* A nudge never carries buttons that act — one line, one Open, one
+              ✕. Acting needs the card or the app, so a stray click cannot
+              approve anything (C7, and C9's protocol). */}
+          <TextButton onClick={props.onDismiss} muted aria-label="Dismiss">
+            ✕
+          </TextButton>
+        </>
+      ) : null}
+      {phase === "couldnt" ? (
+        <TextButton onClick={props.onOpen}>Try again ›</TextButton>
+      ) : null}
+    </div>
+  );
+}
+
+function HoverAffordances({ scale }: { scale: number }): React.ReactElement {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14 * scale }}>
+      <span style={{ color: T1, whiteSpace: "nowrap" }}>◎ Hold to talk</span>
+      <span style={{ color: T1, whiteSpace: "nowrap" }}>✎ Type</span>
+      {/* `␣` (U+2423) is missing from several mono faces and falls back to a
+          tofu box; the system UI stack has it. */}
+      <span style={{ color: T2, fontSize: "0.86em", letterSpacing: ".04em" }}>
+        ⌥␣
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The consent line, ours (`Q5`).
+ *
+ * Upstream's amber ring says *that* a capture is running. This says **what it
+ * can and cannot see**, and it renders the entire time the watch is on — in
+ * the product, every time, not on a privacy page.
+ */
+function ConsentLine({ onStop }: { onStop?: () => void }): React.ReactElement {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <span
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: "#3ECF8E",
+          flex: "0 0 auto",
+        }}
+        aria-hidden
+      />
+      <span style={{ color: T2, whiteSpace: "nowrap" }}>
+        Reading this window only, while it&rsquo;s open
+      </span>
+      <TextButton onClick={onStop}>Stop</TextButton>
+    </span>
+  );
+}
+
+/**
+ * The typing card — the only phase that grows vertically.
+ *
+ * The retired corner's rules migrate here intact (`Q1`): one exchange then
+ * done, every answer cites its source, Undo sits next to the claim rather than
+ * in a toast that expires, and "Open in Cue ›" is the handoff when something is
+ * genuinely bigger. It never grows a thread.
+ */
+function TypingCard(
+  props: CompanionSurfaceProps & { scale: number; creature: ReactNode },
+): React.ReactElement {
+  const { answer, source, scale, creature, growth } = props;
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        flexDirection: growth === "right" ? "row" : "row-reverse",
+        alignItems: "flex-end",
+        gap: 0,
+      }}
+    >
+      <div style={{ flex: "0 0 auto", padding: SEAT }}>{creature}</div>
+    <div
+      style={{
+        width: CARD_WIDTH * Math.min(scale, 2),
+        background: INK,
+        border: HAIRLINE,
+        borderRadius: 20,
+        padding: "14px 15px",
+        boxShadow: CARD_SHADOW,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      {answer ? (
+        <p style={{ margin: 0, color: T1, fontSize: 14, lineHeight: 1.5 }}>{answer}</p>
+      ) : null}
+
+      {source ? (
+        <p style={{ margin: 0, color: T2, fontSize: 11.5 }}>
+          {source}
+          {" · "}
+          <TextButton onClick={props.onOpen}>show</TextButton>
+          {" · "}
+          <TextButton onClick={props.onUndo}>Undo</TextButton>
+        </p>
+      ) : null}
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          background: "rgba(255,255,255,.05)",
+          border: HAIRLINE,
+          borderRadius: 12,
+          padding: "9px 10px",
+        }}
+      >
+        <span style={{ color: T2, fontSize: 13, flex: 1 }}>
+          Reply, or ⌘↵ to keep as a note…
+        </span>
+        <span
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            background: ACCENT,
+            color: "#fff",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            flex: "0 0 auto",
+          }}
+          aria-hidden
+        >
+          ↑
+        </span>
+      </div>
+
+      <p style={{ margin: 0, color: T2, fontSize: 11 }}>
+        One exchange, then done ·{" "}
+        <TextButton onClick={props.onOpen}>Open in Cue ›</TextButton>
+      </p>
+    </div>
+    </div>
+  );
+}
+
+function TextButton({
+  children,
+  onClick,
+  muted = false,
+  ...rest
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  muted?: boolean;
+} & Record<string, unknown>): React.ReactElement {
+  const style: CSSProperties = {
+    background: "none",
+    border: 0,
+    padding: 0,
+    // ≥44pt effective target, bought with invisible padding rather than a
+    // bigger glyph (C12).
+    margin: "-12px",
+    paddingLeft: 12,
+    paddingRight: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    color: muted ? T2 : ACCENT,
+    font: "inherit",
+    cursor: "pointer",
+  };
+  return (
+    <button type="button" onClick={onClick} style={style} {...rest}>
+      {children}
+    </button>
+  );
+}
