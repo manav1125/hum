@@ -472,8 +472,8 @@
       "scope": "client",
       "key": "desktop-corner",
       "label": "Floating corner",
-      "description": "The floating corner: one exchange summoned with \u2325C, reading whatever you have selected, then finished. Replaces the Desktop Companion orb. Claims \u2325C system-wide (rebindable in Keyboard Shortcuts). On by default: it replaces the Desktop Companion orb, which stands down whenever this is on.",
-      "defaultEnabled": true
+      "description": "The floating corner: one exchange summoned with \u2325C, reading whatever you have selected, then finished. Replaces the Desktop Companion orb. Claims \u2325C system-wide (rebindable in Keyboard Shortcuts). Off until the desktop build that can host it ships \u2014 the corner is Electron main-process code, so enabling it on an older app claims the hotkey for a panel that cannot load. It replaces the Desktop Companion orb, which stands down whenever this is on.",
+      "defaultEnabled": false
     }
   ]
 }
