@@ -50,7 +50,9 @@ import { computeContentId } from "../../util/content-id.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { publishAppsChanged } from "../sync/resource-sync-events.js";
+import type { SourceConversation } from "./artifact-provenance.js";
 import {
+  resolveExistingConversations,
   resolveSourceConversation,
   sourceConversationSchema,
 } from "./artifact-provenance.js";
@@ -96,10 +98,26 @@ function listAppsFiltered(apps?: AppDefinition[]): Array<{
   updatedAt: number;
   version: string;
   contentId: string;
+  sourceConversation?: SourceConversation;
 }> {
-  return (apps ?? listApps()).map((a) => {
+  const resolved = apps ?? listApps();
+
+  // One batched lookup for the whole listing rather than a query per app —
+  // the Library asks for every app at once. `conversationIds[0]` is the
+  // thread the app was first built in, which is what `apps/:id/open` already
+  // reports; listing it here is what lets a Library card offer the way back
+  // without opening the app first.
+  const sources = resolveExistingConversations(
+    resolved.map((a) => a.conversationIds?.[0] ?? ""),
+  );
+
+  return resolved.map((a) => {
     const version = a.version ?? "1.0.0";
     const contentId = computeContentId(a.name);
+    const originId = a.conversationIds?.[0];
+    // Only threads that still exist come back from the resolver, so a card
+    // never links into a conversation the user has deleted.
+    const sourceConversation = originId ? sources.get(originId) : undefined;
     return {
       id: a.id,
       name: a.name,
@@ -109,6 +127,7 @@ function listAppsFiltered(apps?: AppDefinition[]): Array<{
       updatedAt: a.updatedAt,
       version,
       contentId,
+      ...(sourceConversation ? { sourceConversation } : {}),
     };
   });
 }
@@ -657,7 +676,9 @@ async function handleOpenApp({ pathParams }: RouteHandlerArgs) {
   // merely opened or refreshed it, so they are NOT the origin and are never
   // substituted in. Resolves to undefined when that thread has been deleted —
   // the viewer then shows no link rather than one that lands nowhere.
-  const sourceConversation = resolveSourceConversation(app.conversationIds?.[0]);
+  const sourceConversation = resolveSourceConversation(
+    app.conversationIds?.[0],
+  );
 
   return {
     appId: app.id,
@@ -774,6 +795,11 @@ export const ROUTES: RouteDefinition[] = [
           updatedAt: z.number(),
           version: z.string(),
           contentId: z.string(),
+          sourceConversation: sourceConversationSchema
+            .optional()
+            .describe(
+              "The conversation this app was first created in. Present only when that conversation still exists.",
+            ),
         }),
       ),
     }),

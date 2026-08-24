@@ -1,5 +1,14 @@
-import { ArrowUp, Ellipsis, Globe, Pin, PinOff, Trash2 } from "lucide-react";
+import {
+  ArrowUp,
+  Ellipsis,
+  Globe,
+  MessageSquare,
+  Pin,
+  PinOff,
+  Trash2,
+} from "lucide-react";
 import { type MouseEvent, useCallback, useState } from "react";
+import { Link } from "react-router";
 
 import { AppPreviewThumbnail } from "@/components/app-card";
 import { useIsMobile } from "@/hooks/use-is-mobile";
@@ -7,6 +16,7 @@ import type { AppSummary } from "@/types/app-types";
 import { getCachedAppHtml } from "@/utils/app-html-cache";
 import { formatFriendlyDate } from "@/utils/format-date";
 import { cn } from "@/utils/misc";
+import { routes } from "@/utils/routes";
 import { shareApp } from "@/utils/share-app";
 import {
   BottomSheet,
@@ -48,8 +58,8 @@ export function LibraryAppCard({
     if (isSharing) return;
     setIsSharing(true);
     try {
-      await shareApp(assistantId, app.id, app.name);
-      toast.success("App exported", { description: `${app.name}.vellum` });
+      const filename = await shareApp(assistantId, app.id, app.name);
+      toast.success("App exported", { description: filename });
     } catch (err) {
       toast.error("Failed to share app", {
         description: err instanceof Error ? err.message : undefined,
@@ -61,6 +71,11 @@ export function LibraryAppCard({
 
   const [menuOpen, setMenuOpen] = useState(false);
   const isMobile = useIsMobile();
+
+  // The thread this app was first built in. Present only when the daemon
+  // confirmed that conversation still exists, so the link always resolves —
+  // an app whose thread was deleted shows no row rather than a dead end.
+  const source = app.sourceConversation;
 
   // Coarse artifact type for the S3 corner badge — apps carry no explicit
   // type, so infer one from the name/icon keywords (Deck / Site / App).
@@ -132,18 +147,35 @@ export function LibraryAppCard({
         />
       </div>
 
-      <button
-        type="button"
-        onClick={() => onOpen(app.id)}
-        className="flex cursor-pointer flex-col gap-0.5 px-0.5 text-left outline-none"
-      >
-        <span className="truncate text-body-large-default text-[color:var(--content-emphasised)]">
-          {app.name}
-        </span>
-        <span className="text-body-small-default text-[color:var(--content-tertiary)]">
-          {formatFriendlyDate(new Date(app.createdAt))}
-        </span>
-      </button>
+      <div className="flex flex-col gap-0.5 px-0.5">
+        <button
+          type="button"
+          onClick={() => onOpen(app.id)}
+          className="flex cursor-pointer flex-col gap-0.5 text-left outline-none"
+        >
+          <span className="truncate text-body-large-default text-[color:var(--content-emphasised)]">
+            {app.name}
+          </span>
+          <span className="text-body-small-default text-[color:var(--content-tertiary)]">
+            {formatFriendlyDate(new Date(app.createdAt))}
+          </span>
+        </button>
+
+        {source ? (
+          <Link
+            to={routes.conversation(source.id)}
+            title={`Open the conversation this app came from: ${
+              source.title ?? "Untitled conversation"
+            }`}
+            className="mt-0.5 flex min-w-0 items-center gap-1 text-body-small-default text-[color:var(--content-tertiary)] outline-none hover:text-[color:var(--content-emphasised)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          >
+            <MessageSquare size={12} className="shrink-0" />
+            <span className="truncate">
+              From {source.title ?? "Untitled conversation"}
+            </span>
+          </Link>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -207,7 +239,7 @@ export function LibraryAppCardActionsMenu({
                   <span className="flex flex-col gap-0.5 overflow-visible whitespace-normal">
                     <span>Share</span>
                     <span className="text-body-small-default text-[var(--content-tertiary)]">
-                      Export as .vellum file
+                      Export as .cue file
                     </span>
                   </span>
                 }

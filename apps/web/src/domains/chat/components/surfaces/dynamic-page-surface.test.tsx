@@ -4,7 +4,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { Surface } from "@/domains/chat/types/types";
 
+const actualAppHtmlCache = await import("@/utils/app-html-cache");
 mock.module("@/utils/app-html-cache", () => ({
+  ...actualAppHtmlCache,
   getCachedAppHtml: () => Promise.resolve("<html></html>"),
   clearAppHtmlCache: () => {},
 }));
