@@ -18,7 +18,10 @@
  * On any parse or resolution failure we abort the compaction and return
  * `compacted: false` — never silently lose messages.
  */
-import { optimizeImageForTransport } from "../agent/image-optimize.js";
+import {
+  optimizeImageForTransport,
+  sniffImageMime,
+} from "../agent/image-optimize.js";
 import type { CompactionConfig } from "../config/schemas/compaction.js";
 import type { LLMCallSite } from "../config/schemas/llm.js";
 import { filterMessagesForUntrustedActor } from "../daemon/message-provenance.js";
@@ -819,7 +822,11 @@ async function buildRetainedImageBlocks(
       missing.push(name);
       continue;
     }
-    const sourceMime = guessMimeFromFilename(name);
+    // Read the format out of the bytes; the filename is only a fallback. An
+    // extension that lies (or is absent, which used to default to PNG) makes
+    // the provider reject the request — and once these bytes are written into
+    // a compacted history, that rejection repeats on every later turn.
+    const sourceMime = sniffImageMime(content) ?? guessMimeFromFilename(name);
     // Run the same downscale pass the agent uses when first sending an
     // image. Without this, attachments that exceed the provider's per-image
     // byte limit (Anthropic: 5 MB) crash the next turn after compaction.
@@ -827,6 +834,15 @@ async function buildRetainedImageBlocks(
       content.toString("base64"),
       sourceMime,
     );
+    // Last check before this becomes permanent. Compaction is the one path
+    // that writes an image into rebuilt history, so bytes that are not a
+    // recognisable image must be dropped here rather than wedging the
+    // conversation for good. Reported as missing, which the caller already
+    // surfaces, rather than dropped in silence.
+    if (!sniffImageMime(Buffer.from(optimized.data, "base64"))) {
+      missing.push(name);
+      continue;
+    }
     blocks.push({
       type: "image",
       source: {

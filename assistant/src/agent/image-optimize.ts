@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -34,13 +35,85 @@ function getCacheDir(): string {
   return join(tmpdir(), "vellum-optimized-images");
 }
 
+/**
+ * Whether these bytes are a complete JPEG.
+ *
+ * A cache entry is only useful if a provider will accept it, and the way this
+ * cache produced unacceptable entries was truncation: a torn write left a file
+ * that opens, reads, and base64-encodes perfectly while being half an image.
+ * Checking the start-of-image and end-of-image markers costs four bytes of
+ * comparison and is the difference between catching that here and having a
+ * provider reject the whole request later.
+ *
+ * SOI is `FF D8`; EOI is `FF D9`. A JPEG that has both, in that order, with
+ * something between them, is at minimum not truncated.
+ */
+function isCompleteJpeg(bytes: Buffer): boolean {
+  return (
+    bytes.length > 4 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[bytes.length - 2] === 0xff &&
+    bytes[bytes.length - 1] === 0xd9
+  );
+}
+
+/**
+ * The image format these bytes actually are, or null if they are not a format
+ * any provider accepts.
+ *
+ * Filenames lie and extensions go missing, so anything about to be declared to
+ * a provider as `image/png` should have been read as a PNG first. Declaring
+ * the wrong type is not a soft failure: the provider rejects the request, and
+ * when the bytes have been written into a compacted history the rejection
+ * repeats on every later turn.
+ *
+ * Magic numbers only — the first bytes of each container, plus WEBP's RIFF
+ * wrapper, which needs its `WEBP` tag checked at offset 8 to distinguish it
+ * from any other RIFF payload.
+ */
+export function sniffImageMime(bytes: Buffer): string | null {
+  if (bytes.length < 12) return null;
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+    return "image/gif";
+  }
+  if (
+    bytes.toString("ascii", 0, 4) === "RIFF" &&
+    bytes.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
 function readFromCache(
   key: string,
 ): { data: string; mediaType: string } | null {
+  const cachePath = join(getCacheDir(), `${key}.jpg`);
   try {
-    const cachePath = join(getCacheDir(), `${key}.jpg`);
     if (!existsSync(cachePath)) return null;
     const buf = readFileSync(cachePath) as Buffer;
+    if (!isCompleteJpeg(buf)) {
+      // A poisoned entry is worse than a miss, because compaction bakes what
+      // this returns into the rebuilt history: every later request then
+      // carries bytes the provider rejects, and the conversation cannot be
+      // used again. Drop it and let the caller re-convert.
+      try {
+        unlinkSync(cachePath);
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
     return { data: buf.toString("base64"), mediaType: "image/jpeg" };
   } catch {
     return null;
@@ -48,13 +121,27 @@ function readFromCache(
 }
 
 function writeToCache(key: string, optimizedBytes: Buffer): void {
+  const dir = getCacheDir();
+  // Write to a unique temp name and rename into place. `writeFileSync` to the
+  // final path is not atomic, so a crash or a concurrent reader could observe
+  // a half-written entry — and this cache is content-addressed, so that
+  // truncated file would be served for that image for as long as it survived.
+  // Rename within one directory is atomic, so a reader sees the old entry or
+  // the new one, never a partial.
+  const tempPath = join(dir, `.${key}.${randomBytes(6).toString("hex")}.tmp`);
   try {
-    const dir = getCacheDir();
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${key}.jpg`), optimizedBytes);
+    writeFileSync(tempPath, optimizedBytes);
+    renameSync(tempPath, join(dir, `${key}.jpg`));
     evictIfNeeded(dir);
   } catch {
-    // Cache write failure is non-fatal.
+    // Cache write failure is non-fatal — but the temp file must not be left
+    // behind, or a failing disk accumulates them until it is full.
+    try {
+      unlinkSync(tempPath);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -181,7 +268,10 @@ export async function optimizeImageForTransport(
 
   // Run sips (macOS). On other platforms this gracefully returns null.
   const optimized = await runSips(rawBytes);
-  if (!optimized) {
+  if (!optimized || !isCompleteJpeg(optimized)) {
+    // A sips run that exits 0 having written a truncated file (killed
+    // mid-write, disk full) must not be cached or sent. The original bytes
+    // are known-good; returning them costs size, not correctness.
     return { data: base64Data, mediaType };
   }
 
