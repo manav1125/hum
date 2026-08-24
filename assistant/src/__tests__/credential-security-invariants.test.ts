@@ -194,6 +194,7 @@ describe("Invariant 2: no generic plaintext secret read API", () => {
       "mcp/mcp-oauth-provider.ts", // MCP OAuth token/client/discovery persistence
       "runtime/routes/integrations/slack/token.ts", // shared Slack token resolver (bot/user token lookup for CLI use routes)
       "mcp/client.ts", // MCP client cached-token lookup
+      "tools/credentials/env-references.ts", // ${credential:…} substitution into an unattended child's env, gated by isToolAllowed
       "oauth/token-persistence.ts", // OAuth token persistence (set/delete tokens)
       "oauth/credential-token-resolver.ts", // centralized access-token key resolution for OAuth and manual-token providers
       "oauth/connection-resolver.ts", // resolve OAuthConnection from oauth-store (access_token lookup)
