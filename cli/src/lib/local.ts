@@ -18,6 +18,7 @@ import {
 import { GATEWAY_PORT } from "./constants.js";
 import { httpHealthCheck, waitForDaemonReady } from "./http-client.js";
 import {
+  isProcessAlive,
   resolveProcessState,
   stopProcess,
   stopProcessByPidFile,
@@ -364,6 +365,23 @@ function applyDaemonEnvOverrides(
       options.defaultWorkspaceConfigPath;
   }
   applyIpcSocketDirOverride(env);
+}
+
+/**
+ * Whether a readiness answer actually came from the daemon we just spawned.
+ *
+ * `/healthz` is answered by whoever holds the port, not by whoever we started.
+ * A daemon that aborts during startup — the duplicate-daemon case, where
+ * another daemon already owns the runtime HTTP port — leaves the port answered
+ * by that other process, so the probe returns 200 for a process that is gone.
+ * Reporting "ready" then is not a small inaccuracy: the next thing the caller
+ * does is act as though the assistant it started is running.
+ *
+ * The pid file holds the spawned pid by this point, so asking whether that
+ * process is alive is the question the probe cannot answer for itself.
+ */
+function spawnedDaemonStillAlive(pidFile: string): boolean {
+  return isProcessAlive(pidFile).alive;
 }
 
 function logDaemonReadiness(ready: boolean): void {
@@ -1015,6 +1033,16 @@ export async function startLocalDaemon(
     // Wait for daemon to respond on HTTP (up to 60s — fresh installs
     // may need 30-60s for Qdrant download, migrations, and first-time init)
     let daemonReady = await waitForDaemonReady(resources.daemonPort, 60000);
+
+    // A ready port is not a ready daemon when the daemon we started is gone:
+    // something else is holding that port and answering for it.
+    if (daemonReady && !spawnedDaemonStillAlive(pidFile)) {
+      console.log(
+        "   ⚠️  The assistant exited during startup — the port is being answered\n" +
+          "      by another process. Check the log for the reason it aborted.",
+      );
+      daemonReady = false;
+    }
 
     // Dev fallback: if the bundled daemon did not become ready in time,
     // fall back to source daemon startup so local `./build.sh run` still works.
