@@ -351,3 +351,44 @@ creation. All three were a gate that a second code path walked around. Our
 | **Decide** | §1.1 companion vs corner | Upstream GA'd what our flags call legacy |
 | **Decide** | §2.2 risk centralization | We forked deliberately; acknowledge it or converge |
 | **Ignore** | Windows, i18n, Figma-matching web work | Not our platform or not our design system |
+
+## 8.1 What was done on 2026-08-24, and what was found instead
+
+**Done.**
+
+- **§2.1 risk placeholder — fixed** (`8d283faaec`). Classification moved ahead of the gates;
+  the gate handler records `riskLevel` and never compares it, so the audit row changed and no
+  decision did. A classification that cannot complete now records `unclassified` rather than
+  resolving to a level. Two regression tests, and the lifecycle-events mock for `classifyRisk`
+  now honours the abort signal the real function honours on its first line.
+- **§3 ingress-mirroring invariant — recorded** (`44d8f62a42`) in `runtime/AGENTS.md`.
+
+**Investigated and found already covered — no work needed.**
+
+- **§5 image-bearing voice legs.** `assistant/src/agent/vision-tier.ts` already routes on the
+  exact property upstream's fix turns on, and states it outright: the trigger is scanned "over
+  the FULL history, not just the trailing message, because providers serialize every historical
+  image into the request … An image pasted three turns ago still breaks a text-only model
+  today." It also declines to re-route when the resolved model is not *known* text-only, which
+  is upstream's own second-commit caution ("don't pin when the pin target can't take an image
+  either") arrived at independently. Ours is the more general form: it covers every agent
+  round, not only voice legs. [tree]
+
+**Found, and left as decisions rather than taken.**
+
+- **§6 the delegation framing is ours too.** Not as upstream's `01-delegate-subagents` section —
+  we carry the same sentence inside `01-parallel-tool-calls`
+  (`prompts/templates/system-sections.ts:462`), including the exact clause upstream removed:
+  "an unnecessary subagent is cheaper than serialized work". Upstream's grounds for deleting it
+  were that it ships in every conversation including heartbeats and scheduled runs and drives
+  excessive spawning and token burn. That is plausible for us — context overflow is a known
+  ceiling here — but it is a global change to how the agent behaves and its effect cannot be
+  measured from a code read. **Recommend removing the delegation sentence and leaving the rest
+  of the parallel-tool-calls section intact.** [tree]
+- **Approvals raising the window — the gap is narrower than upstream's, and real.** We already
+  call `ensureVisible()` from `notifications.ts`, but only on the notification's `click` and
+  `action` handlers: the window is raised once the user has *already noticed*. Upstream raises
+  it when the confirmation is raised. For the dropped-approval case — where the user never saw
+  it — ours does not help, and a `toolConfirmation` notification that is missed or dismissed
+  leaves the card in a window behind everything. **This is a focus-stealing behaviour change,
+  so it is a product call, not a bug fix.** [tree]
