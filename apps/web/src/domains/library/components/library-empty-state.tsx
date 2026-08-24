@@ -1,12 +1,14 @@
 /**
  * Empty state shown when the library has no apps or documents.
- * Provides entry points to start a conversation or import a .vellum bundle.
+ * Provides entry points to start a conversation or import a .cue bundle.
  */
 
 import { LayoutGrid, Upload } from "lucide-react";
 import { type ChangeEvent, type RefObject } from "react";
 
 import { Button } from "@vellumai/design-library";
+
+import { BUNDLE_ACCEPT } from "@/utils/bundle-format";
 
 interface LibraryEmptyStateProps {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -26,7 +28,7 @@ export function LibraryEmptyState({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".vellum"
+        accept={BUNDLE_ACCEPT}
         className="hidden"
         onChange={onImportBundle}
       />

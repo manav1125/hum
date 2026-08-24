@@ -19,6 +19,7 @@ import {
 } from "react";
 
 import { DeployDialogs } from "@/components/deploy-dialogs";
+import { BUNDLE_ACCEPT } from "@/utils/bundle-format";
 import { useAttachmentPreview } from "@/hooks/use-attachment-preview";
 import {
   type CoverKind,
@@ -421,7 +422,7 @@ export function LibraryView({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".vellum"
+          accept={BUNDLE_ACCEPT}
           className="hidden"
           onChange={handleImportBundle}
         />

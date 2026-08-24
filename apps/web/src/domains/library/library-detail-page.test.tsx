@@ -38,12 +38,16 @@ mock.module("@/hooks/use-edit-app", () => ({
   useEditApp: () => () => {},
 }));
 
+const actualAppHtmlCache = await import("@/utils/app-html-cache");
 mock.module("@/utils/app-html-cache", () => ({
+  ...actualAppHtmlCache,
   primeAppHtmlCache: () => {},
 }));
 
+// Exhaustive by necessity, and safe: `share-app` exports only `shareApp`, and
+// importing the real module here would pull in the `sdk.gen` this file mocks.
 mock.module("@/utils/share-app", () => ({
-  shareApp: async () => {},
+  shareApp: async () => "Test App.cue",
 }));
 
 const { LibraryDetailPage, describeOpenFailure } = await import(

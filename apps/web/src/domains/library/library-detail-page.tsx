@@ -148,8 +148,8 @@ export function LibraryDetailPage() {
     if (!app || isSharing) return;
     setIsSharing(true);
     try {
-      await shareApp(assistantId, app.appId, app.name);
-      toast.success("App exported", { description: `${app.name}.vellum` });
+      const filename = await shareApp(assistantId, app.appId, app.name);
+      toast.success("App exported", { description: filename });
     } catch (err) {
       toast.error("Failed to share app", {
         description: err instanceof Error ? err.message : undefined,

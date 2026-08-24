@@ -101,8 +101,17 @@ module.exports = {
   ],
   fileAssociations: [
     {
-      ext: "vellum",
+      ext: "cue",
       name: "Cue Bundle",
+      role: "Viewer",
+    },
+    // Bundles exported before the rename are still on disk and still open
+    // fine — the daemon reads the bytes, never the filename. Dropping this
+    // association would make an existing file stop opening on double-click
+    // for no reason other than its name.
+    {
+      ext: "vellum",
+      name: "Cue Bundle (legacy)",
       role: "Viewer",
     },
   ],

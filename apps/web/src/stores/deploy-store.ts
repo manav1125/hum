@@ -2,7 +2,7 @@
  * Zustand store for the app share/deploy lifecycle.
  *
  * Owns the in-flight UI state for two operations:
- * - **Share** — export an app to a `.vellum` bundle.
+ * - **Share** — export an app to a `.cue` bundle.
  * - **Deploy** — publish an app to Vercel (with an intermediate token
  *   dialog when the org doesn't yet have a Vercel token stored).
  *
@@ -113,8 +113,8 @@ const useDeployStoreBase = create<DeployStore>()((set, get) => ({
     if (get().isSharing) return;
     set({ isSharing: true });
     try {
-      await shareAppApi(assistantId, appId, appName);
-      toast.success("App exported", { description: `${appName}.vellum` });
+      const filename = await shareAppApi(assistantId, appId, appName);
+      toast.success("App exported", { description: filename });
     } catch (err) {
       toast.error("Failed to share app", {
         description: err instanceof Error ? err.message : undefined,

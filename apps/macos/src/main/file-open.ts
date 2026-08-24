@@ -7,7 +7,7 @@ import { ensureVisible as ensureMainWindowVisible } from "./main-window";
 /**
  * Inbound file-open events — `.vellum` bundle double-clicks in Finder.
  *
- * The OS delivers `open-file` when the user double-clicks a `.vellum`
+ * The OS delivers `open-file` when the user double-clicks a `.cue`
  * bundle (or drags it onto the Dock icon). This module captures the
  * file path, validates it, and routes it to the renderer via the same
  * buffer/broadcast/subscriber pattern used by `deep-links.ts`.
