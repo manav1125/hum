@@ -44,24 +44,25 @@ export const COMPANION_FLAG_ENV = "VELLUM_FLAG_DESKTOP_COMPANION";
 /**
  * The floating corner: one exchange summoned with ⌥C, then finished.
  *
- * Checked at tray-menu-build time and on every settings sync, so toggling
- * takes effect without an app restart.
+ * **Being retired** in favour of the always-on companion (owner decision,
+ * 2026-08-24). Kept behind its flag while the companion's screens are drawn,
+ * so the work already built stays reachable — but it no longer suppresses
+ * anything, and whether the ⌥C summon survives *inside* the companion is Q1
+ * of the design brief.
  */
 export const isCornerEnabled = (): boolean =>
   flagEnabled(CORNER_FLAG_KEY, CORNER_FLAG_ENV);
 
 /**
- * The legacy always-on orb, **which the corner replaces**.
+ * The always-on companion — **the direction, as of the owner's decision on
+ * 2026-08-24** (`docs/design/companion-always-on/00-BRIEF.md`).
  *
- * Yields to the corner whenever the corner is on. The stored flag is sticky:
- * an install that switched the companion on before the corner existed keeps
- * that `true` for ever, and would otherwise run both panels at once the day
- * the corner ships. `VELLUM_FLAG_DESKTOP_COMPANION` still force-overrides in
- * either direction, so the two can be compared side by side deliberately.
+ * This used to yield to the corner, on the reasoning that the corner replaced
+ * it. That is now backwards: we are building the creature that lives on the
+ * desktop, and the summoned corner is the surface being retired. Nothing here
+ * yields — the companion stands on its own flag.
+ *
+ * `VELLUM_FLAG_DESKTOP_COMPANION` still force-overrides in either direction.
  */
-export const isCompanionEnabled = (): boolean => {
-  const override = envFlagOverride(COMPANION_FLAG_ENV);
-  if (override !== null) return override;
-  if (isCornerEnabled()) return false;
-  return readSetting("featureFlags")?.[COMPANION_FLAG_KEY] === true;
-};
+export const isCompanionEnabled = (): boolean =>
+  flagEnabled(COMPANION_FLAG_KEY, COMPANION_FLAG_ENV);

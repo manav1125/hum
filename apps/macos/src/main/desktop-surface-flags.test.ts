@@ -51,23 +51,35 @@ describe("absent means off", () => {
   });
 });
 
-describe("the corner replaces the orb", () => {
-  test("corner on, companion's stored true is overruled", () => {
-    // Exactly Manav's machine on 2026-08-23: `desktop-companion: true` left
-    // over from before the corner existed.
+describe("the companion stands on its own flag", () => {
+  /**
+   * Reversed on 2026-08-24. This suite used to assert the opposite — that the
+   * corner suppressed the companion, because the corner was said to replace
+   * it. The owner's decision went the other way: the always-on companion is
+   * the direction and the summoned corner is what retires. A surface that
+   * silently switches another one off is the wrong shape either way round;
+   * now nothing yields.
+   */
+  test("both on is allowed — neither suppresses the other", () => {
     setFlags({ "desktop-corner": true, "desktop-companion": true });
     expect(isCornerEnabled()).toBe(true);
+    expect(isCompanionEnabled()).toBe(true);
+  });
+
+  test("the companion does not need the corner off", () => {
+    setFlags({ "desktop-corner": true, "desktop-companion": false });
     expect(isCompanionEnabled()).toBe(false);
   });
 
-  test("corner off, the orb still works — nothing is taken away early", () => {
+  test("corner off, companion on — the shipping shape", () => {
     setFlags({ "desktop-corner": false, "desktop-companion": true });
     expect(isCompanionEnabled()).toBe(true);
+    expect(isCornerEnabled()).toBe(false);
   });
 });
 
 describe("the env override still wins in both directions", () => {
-  test("the orb can be forced on alongside the corner, to compare them", () => {
+  test("the companion can be forced on regardless of its stored flag", () => {
     setFlags({ "desktop-corner": true, "desktop-companion": false });
     process.env.VELLUM_FLAG_DESKTOP_COMPANION = "1";
     expect(isCompanionEnabled()).toBe(true);
@@ -78,7 +90,6 @@ describe("the env override still wins in both directions", () => {
     setFlags({ "desktop-corner": true, "desktop-companion": true });
     process.env.VELLUM_FLAG_DESKTOP_CORNER = "off";
     expect(isCornerEnabled()).toBe(false);
-    // …and the orb comes back, because nothing has replaced it.
     expect(isCompanionEnabled()).toBe(true);
   });
 
