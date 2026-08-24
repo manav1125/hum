@@ -128,6 +128,7 @@ function NotesPageDesktop() {
   const [liveCapture, setLiveCapture] = useState<{
     text: string;
     isLive: boolean;
+    cancel: () => void;
   } | null>(null);
   const [importing, setImporting] = useState(false);
 
@@ -491,9 +492,11 @@ function ArrivalProvenance(): React.ReactElement {
 function LiveNote({
   text,
   isLive,
+  cancel,
 }: {
   text: string;
   isLive: boolean;
+  cancel: () => void;
 }): React.ReactElement {
   return (
     <div
@@ -533,9 +536,21 @@ function LiveNote({
         </p>
       )}
 
-      <p className="mt-3 text-[11px]" style={{ color: C.t3 }}>
-        Let go to keep it. The mic stops the moment you do.
-      </p>
+      <div className="mt-3 flex items-center gap-3">
+        <p className="text-[11px]" style={{ color: C.t3 }}>
+          Let go to keep it. The mic stops the moment you do.
+        </p>
+        {/* There was no way out of a recording at all — you could only turn
+            one into a note. `esc` does the same thing. */}
+        <button
+          type="button"
+          onClick={cancel}
+          className="text-[11px] font-medium"
+          style={{ color: C.blueS }}
+        >
+          Cancel · esc
+        </button>
+      </div>
     </div>
   );
 }

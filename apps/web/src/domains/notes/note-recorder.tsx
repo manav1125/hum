@@ -73,7 +73,9 @@ export function NoteRecorder({
    * fill it as you speak, rather than leaving you holding a button with the
    * list still underneath. `null` means not recording.
    */
-  onLive?: (live: { text: string; isLive: boolean } | null) => void;
+  onLive?: (
+    live: { text: string; isLive: boolean; cancel: () => void } | null,
+  ) => void;
 }) {
   const invalidate = useInvalidateNotes();
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -81,6 +83,17 @@ export function NoteRecorder({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
+  /**
+   * Is the gesture still going?
+   *
+   * `getUserMedia` is async, so a quick press can finish BEFORE the mic
+   * opens: `finish` finds nothing to stop and returns, then `start` resolves
+   * and opens a mic nobody is holding. It then stays open for ever, because
+   * the only thing that stops it is a pointer-up that already happened. That
+   * is the "it auto holds and there is no way to cancel it" Manav hit.
+   * `use-hold-to-talk` has guarded this from the beginning; this file did not.
+   */
+  const heldRef = useRef(false);
 
   const send = useMutation(notesVoicePostMutation()) as unknown as {
     mutateAsync: (vars: {
@@ -108,14 +121,45 @@ export function NoteRecorder({
     recorderRef.current = null;
   }, [live]);
 
+  /**
+   * Throw the recording away. `esc` while it is running, and the Cancel the
+   * live surface offers.
+   *
+   * Distinct from `finish`, which keeps what you said: a recording you want
+   * rid of must not have to become a note first, and there was previously no
+   * way out of one at all.
+   */
+  const cancel = useCallback(() => {
+    heldRef.current = false;
+    stopTracks();
+    chunksRef.current = [];
+    setState({ kind: "idle" });
+  }, [stopTracks]);
+
+  useEffect(() => {
+    if (state.kind !== "listening") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state.kind, cancel]);
+
   // The mic cannot survive this component. If the panel closes, navigates or
   // crashes mid-press, the recording stops with it.
   useEffect(() => stopTracks, [stopTracks]);
 
   const start = useCallback(async () => {
     if (state.kind !== "idle" && state.kind !== "failed") return;
+    heldRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Let go while permission was resolving — do not open a mic nobody is
+      // holding, and above all do not leave one open.
+      if (!heldRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       startedAtRef.current = Date.now();
@@ -141,10 +185,13 @@ export function NoteRecorder({
   const listening = state.kind === "listening";
   useEffect(() => {
     if (!onLive) return;
-    onLive(listening ? { text: live.text, isLive: live.isLive } : null);
-  }, [onLive, listening, live.text, live.isLive]);
+    onLive(
+      listening ? { text: live.text, isLive: live.isLive, cancel } : null,
+    );
+  }, [onLive, listening, live.text, live.isLive, cancel]);
 
   const finish = useCallback(async () => {
+    heldRef.current = false;
     const recorder = recorderRef.current;
     if (!recorder || state.kind !== "listening") return;
 
