@@ -34874,10 +34874,36 @@ paths:
                         - timestampMs
                         - stale
                       additionalProperties: false
+                  commitments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title:
+                          type: string
+                        inHq:
+                          type: boolean
+                          description:
+                            Already an open work item. False means the owner still owes it and nothing is tracking it — which is the
+                            whole point of surfacing the list. Nothing is filed until they ask.
+                      required:
+                        - title
+                        - inHq
+                      additionalProperties: false
+                    description:
+                      "What the answer says the owner still owes. Offered, never acted on: filing these automatically would be
+                      the silent write the whole feature refuses."
+                  followUps:
+                    type: array
+                    items:
+                      type: string
+                    description: Up to three questions this answer makes worth asking next, answerable from the same stores.
                 required:
                   - status
                   - answer
                   - citations
+                  - commitments
+                  - followUps
                 additionalProperties: false
       requestBody:
         required: true
@@ -34890,6 +34916,46 @@ paths:
                   type: string
               required:
                 - question
+              additionalProperties: false
+  /v1/notes/ask/commitments:
+    post:
+      operationId: notes_ask_commitments_post
+      summary: File commitments an answer surfaced
+      description:
+        Creates a work item per title. **This is the acceptance step** — the ask route only ever reports what is
+        owed, and nothing reaches HQ until this is called with the owner's chosen titles. Same rule as a note's
+        proposals, for the same reason.
+      tags:
+        - notes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                required:
+                  - created
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                titles:
+                  minItems: 1
+                  type: array
+                  items:
+                    type: string
+              required:
+                - titles
               additionalProperties: false
   /v1/notes/extractions/waiting:
     get:

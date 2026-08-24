@@ -30,10 +30,11 @@ import type { ServerMessage } from "../../daemon/message-protocol.js";
 import {
   acceptExtraction,
   dismissExtraction,
+  fileCommitmentsAsWork,
   undoExtraction,
 } from "../../notes/note-accept.js";
 import { landArrivalAsNote } from "../../notes/note-arrivals.js";
-import { askNotes } from "../../notes/note-ask.js";
+import { askNotes, matchesOpenWorkItem } from "../../notes/note-ask.js";
 import { createOptionsFor } from "../../notes/note-create.js";
 import { readNote } from "../../notes/note-extraction.js";
 import { importNotes, MAX_IMPORT_NOTES } from "../../notes/note-import.js";
@@ -58,11 +59,19 @@ import {
 } from "../../notes/note-tidy.js";
 import { alignSummaryToTranscript } from "../../notes/note-voice.js";
 import { createVoiceNote } from "../../notes/note-voice.js";
+import { listWorkItems } from "../../work-items/work-item-store.js";
 import { buildAssistantEvent } from "../assistant-event.js";
 import { assistantEventHub } from "../assistant-event-hub.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { BadRequestError, NotFoundError } from "./errors.js";
 import type { RouteDefinition } from "./types.js";
+
+/** Still live, so a matching commitment is genuinely already tracked. */
+const OPEN_WORK_STATUSES: ReadonlySet<string> = new Set([
+  "queued",
+  "running",
+  "awaiting_review",
+]);
 
 const noteSchema = z.object({
   id: z.string(),
@@ -1043,6 +1052,30 @@ export const ROUTES: RouteDefinition[] = [
             ),
         }),
       ),
+      commitments: z
+        .array(
+          z.object({
+            title: z.string(),
+            inHq: z
+              .boolean()
+              .describe(
+                "Already an open work item. False means the owner still owes " +
+                  "it and nothing is tracking it — which is the whole point " +
+                  "of surfacing the list. Nothing is filed until they ask.",
+              ),
+          }),
+        )
+        .describe(
+          "What the answer says the owner still owes. Offered, never acted " +
+            "on: filing these automatically would be the silent write the " +
+            "whole feature refuses.",
+        ),
+      followUps: z
+        .array(z.string())
+        .describe(
+          "Up to three questions this answer makes worth asking next, " +
+            "answerable from the same stores.",
+        ),
     }),
     handler: async ({ body }) => {
       const question = (body as { question?: unknown } | undefined)?.question;
@@ -1050,11 +1083,79 @@ export const ROUTES: RouteDefinition[] = [
         throw new BadRequestError("`question` is required.");
       }
       const result = await askNotes(question);
+      if (result.status !== "answered") {
+        return {
+          status: result.status,
+          answer: null,
+          citations: [],
+          commitments: [],
+          followUps: [],
+        };
+      }
+
+      // The HQ comparison lives here rather than in `note-ask`, which may not
+      // import the work store at all — see `acceptance-boundary.test.ts`.
+      // "Already in HQ" means still LIVE: a commitment whose task was done or
+      // cancelled is one the owner may well want back.
+      let openTitles: string[] = [];
+      try {
+        openTitles = listWorkItems()
+          .filter((w) => OPEN_WORK_STATUSES.has(w.status))
+          .map((w) => w.title);
+      } catch {
+        // A failed work-item read must not take the answer down with it.
+        // Commitments then read as untracked, which is the safe direction:
+        // it offers something the owner may already have, rather than hiding
+        // something they do not.
+      }
+
       return {
         status: result.status,
-        answer: result.status === "answered" ? result.answer : null,
-        citations: result.status === "answered" ? result.citations : [],
+        answer: result.answer,
+        citations: result.citations,
+        commitments: result.commitments.map((title) => ({
+          title,
+          inHq: matchesOpenWorkItem(title, openTitles),
+        })),
+        followUps: result.followUps,
       };
+    },
+  },
+
+  {
+    operationId: "fileAskCommitments",
+    endpoint: "notes/ask/commitments",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "File commitments an answer surfaced",
+    description:
+      "Creates a work item per title. **This is the acceptance step** — the " +
+      "ask route only ever reports what is owed, and nothing reaches HQ " +
+      "until this is called with the owner's chosen titles. Same rule as a " +
+      "note's proposals, for the same reason.",
+    tags: ["notes"],
+    requestBody: z.object({ titles: z.array(z.string()).min(1) }),
+    responseBody: z.object({ created: z.number().int() }),
+    handler: async ({ body }) => {
+      const titles = (body as { titles?: unknown } | undefined)?.titles;
+      if (!Array.isArray(titles) || titles.length === 0) {
+        throw new BadRequestError("`titles` is required.");
+      }
+      const clean = titles
+        .filter(
+          (t): t is string => typeof t === "string" && t.trim().length > 0,
+        )
+        .map((t) => t.trim())
+        .slice(0, 20);
+      if (clean.length === 0) {
+        throw new BadRequestError("`titles` had nothing usable in it.");
+      }
+      const created = await fileCommitmentsAsWork(clean);
+      notesChanged();
+      return { created };
     },
   },
 

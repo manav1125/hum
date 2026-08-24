@@ -118,7 +118,15 @@ function NotesPageDesktop() {
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
+  /**
+   * N1 offers two orders, and they answer different questions. Newest-first
+   * is "what have I been thinking about"; by-work is "which of these actually
+   * turned into something", which is the one that makes a long pile useful.
+   */
+  const [sort, setSort] = useState<NoteSort>("recent");
   const list = useNotes(assistantId, filter);
+  // Above every early return — hook order cannot depend on the view state.
+  const notes = useMemo(() => sortNotes(list.notes, sort), [list.notes, sort]);
   /**
    * Names for the project chips. A card that says "▤ Renew Acme" tells you
    * where a thought lives; one that says "filed" tells you nothing. Failure
@@ -158,7 +166,7 @@ function NotesPageDesktop() {
     );
   }
 
-  const { counts, notes } = list;
+  const { counts } = list;
 
   return (
     <PageShell>
@@ -249,6 +257,25 @@ function NotesPageDesktop() {
               );
             },
           )}
+          {/* N1's two orders. A toggle rather than a menu: there are exactly
+              two, and a dropdown to choose between two is a click spent on
+              nothing. Hidden while offline, where `produced` is unknown and
+              "by work" would sort every note as if it had produced nothing. */}
+          {sync.online ? (
+            <button
+              type="button"
+              onClick={() => setSort((v) => (v === "recent" ? "work" : "recent"))}
+              className="rounded-full border px-2.5 py-1 text-[12px]"
+              style={{ borderColor: "transparent", color: C.t3 }}
+              aria-label={
+                sort === "recent"
+                  ? "Sorted newest first. Switch to sorting by what they produced."
+                  : "Sorted by what they produced. Switch to newest first."
+              }
+            >
+              {sort === "recent" ? "Newest first ▾" : "By work ▾"}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -327,6 +354,30 @@ function NotesPageDesktop() {
  * newest first without a second sort. Arrivals are filtered out before this
  * runs — they have their own lane above.
  */
+/** The two orders N1 offers. */
+type NoteSort = "recent" | "work";
+
+/**
+ * Order the list.
+ *
+ * `recent` is the resting state and the one the day-grouping assumes.
+ * `work` puts the notes that actually produced something first — the answer
+ * to "which of these was worth writing down" — and falls back to recency
+ * within a tie, so it never looks shuffled. Notes with undecided proposals
+ * outrank ones already dealt with: they are the ones still asking.
+ */
+function sortNotes(notes: Note[], sort: NoteSort): Note[] {
+  if (sort === "recent") return notes;
+  const weight = (n: Note): number => {
+    const p = n.produced;
+    if (!p) return 0;
+    return p.waiting * 100 + (p.tasks + p.memories + p.traits);
+  };
+  return [...notes].sort(
+    (a, b) => weight(b) - weight(a) || b.occurredAt - a.occurredAt,
+  );
+}
+
 function groupByDay(notes: Note[]): Array<[string, Note[]]> {
   const startOfDay = (ms: number): number => {
     const d = new Date(ms);

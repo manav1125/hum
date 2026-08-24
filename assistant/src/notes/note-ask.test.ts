@@ -16,7 +16,12 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { splitSentences, stripUnsourcedSentences } from "./note-ask.js";
+import {
+  matchesOpenWorkItem,
+  splitAskBlocks,
+  splitSentences,
+  stripUnsourcedSentences,
+} from "./note-ask.js";
 
 const valid = (...ns: number[]) => new Set(ns);
 
@@ -84,5 +89,89 @@ describe("stripUnsourcedSentences", () => {
 
   test("MUTATION CHECK: a citation to 0 is not treated as valid", () => {
     expect(stripUnsourcedSentences("Something [0].", valid(1))).toBe("");
+  });
+});
+
+/**
+ * R2's two additions ride on the same model call, which means the only thing
+ * standing between a good answer and a mangled one is this parser.
+ */
+describe("splitAskBlocks", () => {
+  const REPLY = [
+    "You owe Acme four things [1]. The SOC 2 report has been asked for twice [2].",
+    "",
+    "COMMITMENTS",
+    "· Send Dana the SOC 2 report",
+    "· Get the redlines back to Rachel",
+    "",
+    "FOLLOW-UPS",
+    "· What changed since March?",
+    "· Who else knows about the migration promise?",
+  ].join("\n");
+
+  test("the prose never carries its own scaffolding", () => {
+    const out = splitAskBlocks(REPLY);
+    expect(out.prose).toContain("You owe Acme four things [1].");
+    expect(out.prose).not.toContain("COMMITMENTS");
+    expect(out.prose).not.toContain("FOLLOW-UPS");
+    expect(out.prose).not.toContain("Send Dana");
+  });
+
+  test("bullets are read as lines, markers stripped", () => {
+    expect(splitAskBlocks(REPLY).commitments).toEqual([
+      "Send Dana the SOC 2 report",
+      "Get the redlines back to Rachel",
+    ]);
+  });
+
+  test("follow-ups are capped at three however many arrive", () => {
+    const many = "FOLLOW-UPS\n· a?\n· b?\n· c?\n· d?\n· e?";
+    expect(splitAskBlocks(many).followUps).toHaveLength(3);
+  });
+
+  test("an answer with no blocks is left exactly as it was", () => {
+    const plain = "Just the answer [1].";
+    expect(splitAskBlocks(plain)).toEqual({
+      prose: plain,
+      commitments: [],
+      followUps: [],
+    });
+  });
+
+  test("either block alone still parses", () => {
+    const only = "Answer [1].\n\nFOLLOW-UPS\n· what next?";
+    const out = splitAskBlocks(only);
+    expect(out.prose).toBe("Answer [1].");
+    expect(out.commitments).toEqual([]);
+    expect(out.followUps).toEqual(["what next?"]);
+  });
+});
+
+/**
+ * The match decides whether something reads as "already tracked". A false
+ * positive HIDES something the owner still owes, so the bias is toward
+ * saying no.
+ */
+describe("matchesOpenWorkItem", () => {
+  test("the same commitment worded differently still matches", () => {
+    expect(
+      matchesOpenWorkItem("Send the SOC 2 report", [
+        "Send Dana the SOC 2 report",
+      ]),
+    ).toBe(true);
+  });
+
+  test("a different errand with shared filler words does not", () => {
+    expect(
+      matchesOpenWorkItem("Send the SOC 2 report", ["Send the invoice"]),
+    ).toBe(false);
+  });
+
+  test("nothing open means nothing matches", () => {
+    expect(matchesOpenWorkItem("Send the report", [])).toBe(false);
+  });
+
+  test("a title of only filler words never claims a match", () => {
+    expect(matchesOpenWorkItem("the and for", ["Send the report"])).toBe(false);
   });
 });

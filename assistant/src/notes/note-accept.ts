@@ -463,3 +463,41 @@ function removeLineFromContact(contactId: string, line: string): void {
       .join("\n"),
   });
 }
+
+/**
+ * File commitments an answer surfaced, as work.
+ *
+ * **This is the acceptance step for the ask surface**, and it lives here for
+ * the same reason everything else that writes does: `note-ask.ts` sits on the
+ * proposal path and may not so much as import the work store
+ * (`acceptance-boundary.test.ts` enforces that on the import, not the call,
+ * "even if it never calls it, because the next edit will"). An answer reports
+ * what is owed; only this turns one into a row, and only when asked.
+ *
+ * The work items carry no `noteId`: an answer is drawn from several stores
+ * and is explicitly not saved as a note, so there is no single note for the
+ * task to point back at. Claiming one would be inventing provenance.
+ */
+export async function fileCommitmentsAsWork(titles: string[]): Promise<number> {
+  let created = 0;
+  for (const title of titles) {
+    try {
+      const task = createTask({ title, template: title });
+      const notes = `From an answer · ${new Date().toISOString().slice(0, 10)}`;
+      const requiredTools = conservativeRequiredToolsForCapture(title, notes);
+      const workItem = createWorkItemWithPermissions({
+        taskId: task.id,
+        title,
+        notes,
+        priorityTier: 1,
+        ...(requiredTools ? { requiredTools } : {}),
+      });
+      await triageAndMaybeAutoRunWorkItem(workItem.id);
+      created += 1;
+    } catch (err) {
+      // One bad title must not lose the rest of the owner's choices.
+      log.debug({ err: String(err), title }, "ask: filing commitment failed");
+    }
+  }
+  return created;
+}

@@ -75,8 +75,29 @@ export interface AskCitation {
   stale: boolean;
 }
 
+/**
+ * Something the owner still owes, lifted out of the answer.
+ *
+ * R2: "2 aren't in HQ as tasks → Add them ›". An answer that tells you what
+ * you promised and leaves you to retype it is a worse answer, but filing it
+ * for you would be the silent write this whole feature refuses — so it is
+ * offered, counted, and never acted on until asked.
+ */
 export type AskResult =
-  | { status: "answered"; answer: string; citations: AskCitation[] }
+  | {
+      status: "answered";
+      answer: string;
+      citations: AskCitation[];
+      /**
+       * Titles only. Whether HQ already holds one is decided by the caller —
+       * this module sits on the proposal path and may not import the work
+       * store at all (see `acceptance-boundary.test.ts`), which is the point:
+       * an answer reads, it never writes, and it never even holds the pen.
+       */
+      commitments: string[];
+      /** Up to three questions worth asking next. */
+      followUps: string[];
+    }
   /** Nothing relevant found. Not a failure, and not an empty answer. */
   | { status: "nothing_found" }
   /** The request failed. Distinct from finding nothing — always. */
@@ -152,6 +173,21 @@ function buildAskPrompt(question: string, evidence: RecallEvidence[]): string {
     "· If the evidence does not answer the question, reply with exactly: NOTHING_FOUND",
     "· Where a piece of evidence is old, say so in the sentence — its age is part of judging it.",
     "· Write in plain prose, at most 6 sentences. No preamble, no headings.",
+    "",
+    // Both blocks ride on the ONE call that was already being made. A second
+    // round trip for "what did you just tell me to do" would double the cost
+    // and the latency of the surface the whole note pile exists to feed.
+    "After the prose, and only if they apply, add these two blocks verbatim:",
+    "",
+    "COMMITMENTS",
+    "· One line per thing the OWNER still owes someone, drawn from the answer",
+    "  above. Imperative and short: 'Send Dana the SOC 2 report'. Skip anything",
+    "  already done, anything owed BY someone else, and anything you would have",
+    "  to guess at. No line is better than a padded list.",
+    "",
+    "FOLLOW-UPS",
+    "· Up to three questions this answer makes worth asking next, each",
+    "  answerable from the same stores. One short line each, no numbering.",
   ].join("\n");
 }
 
@@ -204,6 +240,103 @@ async function answerWithLlm(
  * Writes nothing, anywhere — asking a question must not quietly create a
  * note, and the answer itself is not persisted.
  */
+
+/**
+ * Pull the two trailing blocks off the model's reply.
+ *
+ * Returns the prose with both blocks removed, so an answer never renders its
+ * own scaffolding. A block the model omitted simply yields an empty list —
+ * absent is the normal case, not a parse failure.
+ */
+export function splitAskBlocks(raw: string): {
+  prose: string;
+  commitments: string[];
+  followUps: string[];
+} {
+  const take = (label: string): { body: string; at: number } => {
+    const re = new RegExp(`^\\s*${label}\\s*$`, "im");
+    const m = re.exec(raw);
+    if (!m) return { body: "", at: -1 };
+    const from = m.index + m[0].length;
+    // Runs to the next all-caps block heading, or the end.
+    const next = /^\s*(COMMITMENTS|FOLLOW-UPS)\s*$/im.exec(raw.slice(from));
+    const to = next ? from + next.index : raw.length;
+    return { body: raw.slice(from, to), at: m.index };
+  };
+
+  const lines = (body: string): string[] =>
+    body
+      .split("\n")
+      .map((l) => l.replace(/^\s*[·•\-*\d.)\s]+/, "").trim())
+      .filter((l) => l.length > 1)
+      // A model that ignored "up to three" must not become a wall.
+      .slice(0, 8);
+
+  const c = take("COMMITMENTS");
+  const f = take("FOLLOW-UPS");
+  const cut = [c.at, f.at].filter((n) => n >= 0);
+  const prose = cut.length ? raw.slice(0, Math.min(...cut)) : raw;
+
+  return {
+    prose: prose.trim(),
+    commitments: lines(c.body),
+    followUps: lines(f.body).slice(0, 3),
+  };
+}
+
+/**
+ * Is this commitment already an open work item?
+ *
+ * Deliberately conservative — a loose match hides something the owner still
+ * owes, which is the expensive direction. Compares normalised words and asks
+ * for a strong overlap rather than a substring, so "send the SOC 2 report"
+ * matches "Send Dana the SOC 2 report" but not "Send the invoice".
+ */
+export function matchesOpenWorkItem(
+  title: string,
+  openTitles: string[],
+): boolean {
+  const words = (t: string): Set<string> =>
+    new Set(
+      t
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !STOP_WORDS.has(w)),
+    );
+  const a = words(title);
+  if (a.size === 0) return false;
+  return openTitles.some((other) => {
+    const b = words(other);
+    if (b.size === 0) return false;
+    let shared = 0;
+    for (const w of a) if (b.has(w)) shared += 1;
+    return shared / Math.min(a.size, b.size) >= 0.6;
+  });
+}
+
+const STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "into",
+  "about",
+  "back",
+  "get",
+  "got",
+  "our",
+  "her",
+  "his",
+  "their",
+  "them",
+  "this",
+  "that",
+  "then",
+  "than",
+]);
+
 export async function askNotes(
   question: string,
   conversationId = "notes-ask",
@@ -237,8 +370,12 @@ export async function askNotes(
     return { status: "nothing_found" };
   }
 
+  // The blocks come off BEFORE the unsourced-sentence filter: they are lists,
+  // not prose, and running the citation rule over them would delete them all.
+  const blocks = splitAskBlocks(answer);
+
   const valid = new Set(evidence.map((_, index) => index + 1));
-  const sourced = stripUnsourcedSentences(answer, valid);
+  const sourced = stripUnsourcedSentences(blocks.prose, valid);
   // Everything the model wrote was unsourced. There is no honest way to show
   // that, so it is reported as nothing found rather than as an empty answer.
   if (!sourced) return { status: "nothing_found" };
@@ -262,5 +399,11 @@ export async function askNotes(
       stale: item.timestampMs ? now - item.timestampMs > STALE_AFTER_MS : false,
     }));
 
-  return { status: "answered", answer: sourced, citations };
+  return {
+    status: "answered",
+    answer: sourced,
+    citations,
+    commitments: blocks.commitments,
+    followUps: blocks.followUps,
+  };
 }

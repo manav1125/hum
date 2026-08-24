@@ -274,7 +274,15 @@ export function CornerPage() {
               placeholder={
                 selection
                   ? "…or say what you want done with it"
-                  : "What do you need?"
+                  : // F2·A. When the corner has actually READ the window and
+                    // has nothing to offer about it, it says so — that is the
+                    // normal case, and the state exists so the panel can admit
+                    // it instead of inventing three weak suggestions. With
+                    // nothing read there is nothing to have an opinion about,
+                    // so it just asks.
+                    context.screen
+                    ? "Nothing I’d suggest about this window — what do you need?"
+                    : "What do you need?"
               }
               className="w-full resize-none rounded-lg border px-2.5 py-2 text-[13px] outline-none"
               style={{

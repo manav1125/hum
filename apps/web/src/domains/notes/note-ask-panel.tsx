@@ -29,7 +29,10 @@ import { useCallback, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Loader2, Search } from "lucide-react";
 
-import { notesAskPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  notesAskCommitmentsPostMutation,
+  notesAskPostMutation,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 
 const C = {
   card: "var(--mv1-card)",
@@ -53,10 +56,18 @@ interface Citation {
   stale: boolean;
 }
 
+/** Something the answer says the owner still owes. R2's "Add them ›". */
+interface Commitment {
+  title: string;
+  inHq: boolean;
+}
+
 interface AskResponse {
   status: "answered" | "nothing_found" | "failed";
   answer: string | null;
   citations: Citation[];
+  commitments: Commitment[];
+  followUps: string[];
 }
 
 /** What each store is called on screen. The wire's names are not English. */
@@ -72,6 +83,8 @@ const SOURCE_LABEL: Record<string, string> = {
 export function NoteAskPanel({ assistantId }: { assistantId: string }) {
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AskResponse | null>(null);
+  /** Titles already filed from this answer, so the offer stops offering them. */
+  const [filed, setFiled] = useState<string[]>([]);
 
   const ask = useMutation(notesAskPostMutation()) as unknown as {
     mutateAsync: (vars: {
@@ -81,10 +94,22 @@ export function NoteAskPanel({ assistantId }: { assistantId: string }) {
     isPending: boolean;
   };
 
-  const submit = useCallback(async () => {
-    const trimmed = question.trim();
+  const fileCommitments = useMutation(
+    notesAskCommitmentsPostMutation(),
+  ) as unknown as {
+    mutateAsync: (vars: {
+      path: { assistant_id: string };
+      body: { titles: string[] };
+    }) => Promise<{ created: number }>;
+    isPending: boolean;
+  };
+
+  const submitQuestion = useCallback(
+    async (raw: string) => {
+    const trimmed = raw.trim();
     if (!trimmed) return;
     setResult(null);
+    setFiled([]);
     try {
       setResult(
         await ask.mutateAsync({
@@ -93,9 +118,22 @@ export function NoteAskPanel({ assistantId }: { assistantId: string }) {
         }),
       );
     } catch {
-      setResult({ status: "failed", answer: null, citations: [] });
+      setResult({
+        status: "failed",
+        answer: null,
+        citations: [],
+        commitments: [],
+        followUps: [],
+      });
     }
-  }, [ask, assistantId, question]);
+    },
+    [ask, assistantId],
+  );
+
+  const submit = useCallback(
+    () => submitQuestion(question),
+    [submitQuestion, question],
+  );
 
   return (
     <div className="mb-4">
@@ -123,12 +161,47 @@ export function NoteAskPanel({ assistantId }: { assistantId: string }) {
         ) : null}
       </div>
 
-      {result ? <AskResult result={result} /> : null}
+      {result ? (
+        <AskResult
+          result={result}
+          filed={filed}
+          busy={fileCommitments.isPending}
+          onFile={async (titles) => {
+            try {
+              await fileCommitments.mutateAsync({
+                path: { assistant_id: assistantId },
+                body: { titles },
+              });
+              setFiled((prev) => [...prev, ...titles]);
+            } catch {
+              // Left unfiled and still offered: a failed write must never
+              // look like a successful one, and the retry is one click.
+            }
+          }}
+          onAsk={(q) => {
+            setQuestion(q);
+            void submitQuestion(q);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
-function AskResult({ result }: { result: AskResponse }) {
+function AskResult({
+  result,
+  filed,
+  busy,
+  onFile,
+  onAsk,
+}: {
+  result: AskResponse;
+  /** Already filed from this answer, so the offer stops offering them. */
+  filed: string[];
+  busy: boolean;
+  onFile: (titles: string[]) => void | Promise<void>;
+  onAsk: (question: string) => void;
+}) {
   // The request failed. NOT the same as "I looked and found nothing", and
   // never shown as if it were.
   if (result.status === "failed") {
@@ -208,10 +281,97 @@ function AskResult({ result }: { result: AskResponse }) {
         ))}
       </ol>
 
+      {/* R2: "2 aren't in HQ as tasks → Add them ›". An answer that tells you
+          what you promised and leaves you to retype it is a worse answer —
+          but filing them for you would be the silent write this whole
+          feature refuses. So it counts them, and waits to be asked. */}
+      <Owed
+        commitments={result.commitments.filter((c) => !filed.includes(c.title))}
+        busy={busy}
+        onFile={onFile}
+      />
+
+      {result.followUps.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {result.followUps.map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => onAsk(q)}
+              className="rounded-full border px-2.5 py-1 text-[11.5px]"
+              style={{ borderColor: C.line2, color: C.t2 }}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <p className="mt-3 text-[11px]" style={{ color: C.t3 }}>
         An answer, not a note — nothing was saved.
       </p>
     </Frame>
+  );
+}
+
+/**
+ * What the answer says you still owe, and what HQ already has.
+ *
+ * The count leads because it is the fact: "2 of these aren't tracked anywhere"
+ * is the reason to look. Filing is one deliberate click and files only what is
+ * missing — the ones already in HQ are shown as such and never re-added,
+ * because a second copy of a task you already have is worse than no button.
+ */
+function Owed({
+  commitments,
+  busy,
+  onFile,
+}: {
+  commitments: Commitment[];
+  busy: boolean;
+  onFile: (titles: string[]) => void | Promise<void>;
+}): React.ReactElement | null {
+  if (commitments.length === 0) return null;
+  const missing = commitments.filter((c) => !c.inHq);
+
+  return (
+    <div
+      className="mt-3 rounded-lg border px-3 py-2.5"
+      style={{ borderColor: C.line2, background: C.sunken }}
+    >
+      <ul className="flex flex-col gap-1">
+        {commitments.map((c) => (
+          <li key={c.title} className="flex gap-2 text-[12.5px]">
+            <span aria-hidden style={{ color: c.inHq ? C.t3 : C.amberText }}>
+              {c.inHq ? "✓" : "○"}
+            </span>
+            <span style={{ color: C.t1 }}>
+              {c.title}
+              {c.inHq ? (
+                <span style={{ color: C.t3 }}> · already in HQ</span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {missing.length > 0 ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void onFile(missing.map((c) => c.title))}
+          className="mt-2 text-[11.5px] font-medium"
+          style={{ color: busy ? C.t3 : C.blueS }}
+        >
+          {busy
+            ? "Adding…"
+            : `${missing.length} ${
+                missing.length === 1 ? "isn’t" : "aren’t"
+              } in HQ as ${missing.length === 1 ? "a task" : "tasks"} · Add ${
+                missing.length === 1 ? "it" : "them"
+              } ›`}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
