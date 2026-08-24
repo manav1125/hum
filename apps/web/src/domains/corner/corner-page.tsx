@@ -238,7 +238,19 @@ export function CornerPage() {
       >
         <Header />
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3">
+        {/* `flex-1` only once there is something to hold. Empty, it reserved
+            ~40% of the panel as dead space between the header and the
+            composer, which is the opposite of the design: the corner is
+            "sized to the content", and a bare "what do you need?" should sit
+            tight under its own title rather than float in the middle of a
+            box. Scrolls when a quote or an outcome fills it. */}
+        <div
+          className={`min-h-0 overflow-y-auto px-3 ${
+            selection || context.screen || outcome.state !== "idle"
+              ? "flex-1"
+              : ""
+          }`}
+        >
           {context.offerScreenReading ? (
             <ScreenReadingInvite
               onAnswer={(granted) => {
@@ -254,6 +266,21 @@ export function CornerPage() {
           {selection ? <QuotedSelection selection={selection} /> : null}
           {!selection && context.screen ? (
             <ReadWindow screen={context.screen} />
+          ) : null}
+          {/* F2·A, where the design draws it: a line in the panel, not a
+              placeholder that vanishes the moment you type. The state exists
+              so the corner can ADMIT it has nothing useful about this window
+              rather than inventing three weak suggestions to fill the space —
+              which only means anything if you can still read it while you
+              answer. Absent when nothing was read: there is nothing to have
+              an opinion about. */}
+          {!selection && context.screen && outcome.state === "idle" ? (
+            <p
+              className="px-3 pb-1 text-[13px] leading-snug"
+              style={{ color: C.t2 }}
+            >
+              Nothing I&rsquo;d suggest about this window — what do you need?
+            </p>
           ) : null}
           <OutcomeView outcome={outcome} />
           {/* F2·E: the words land as you speak, so you can see it hearing you
@@ -274,15 +301,7 @@ export function CornerPage() {
               placeholder={
                 selection
                   ? "…or say what you want done with it"
-                  : // F2·A. When the corner has actually READ the window and
-                    // has nothing to offer about it, it says so — that is the
-                    // normal case, and the state exists so the panel can admit
-                    // it instead of inventing three weak suggestions. With
-                    // nothing read there is nothing to have an opinion about,
-                    // so it just asks.
-                    context.screen
-                    ? "Nothing I’d suggest about this window — what do you need?"
-                    : "What do you need?"
+                  : "What do you need?"
               }
               className="w-full resize-none rounded-lg border px-2.5 py-2 text-[13px] outline-none"
               style={{
@@ -326,7 +345,7 @@ export function CornerPage() {
           </div>
         ) : null}
 
-        <Footer consent={context.consent} />
+        <Footer consent={context.consent} hasSelection={Boolean(selection)} />
       </div>
     </div>
   );
@@ -512,10 +531,17 @@ function OutcomeView({ outcome }: { outcome: Outcome }) {
  * belongs here — the design is explicit that it appears every time, in the
  * product rather than only on a privacy page.
  */
-function Footer({ consent }: { consent: CornerContext["consent"] }) {
+function Footer({
+  consent,
+  hasSelection,
+}: {
+  consent: CornerContext["consent"];
+  /** Whether anything was actually highlighted — see the branch below. */
+  hasSelection: boolean;
+}) {
   return (
     <p
-      className="border-t px-3 py-1.5 text-[10.5px]"
+      className="mt-auto border-t px-3 py-1.5 text-[10.5px]"
       style={{ borderColor: C.line, color: C.t3 }}
     >
       {consent === "granted"
@@ -524,7 +550,13 @@ function Footer({ consent }: { consent: CornerContext["consent"] }) {
           // page. It is stated as fact because it is one: there is no code
           // path that reads anything while this panel is closed.
           "Only while this panel is open. Never in the background, never your passwords, never a private window."
-        : "Only the text you highlighted. Nothing else on this screen was read."}
+        : hasSelection
+          ? "Only the text you highlighted. Nothing else on this screen was read."
+          : // Nothing was highlighted, so the sentence above would be a claim
+            // about a selection that does not exist — a scope promise is only
+            // reassuring if it is true, and one that describes the wrong thing
+            // is worse than none. Say what actually happened: nothing was read.
+            "Nothing on this screen has been read."}
     </p>
   );
 }
