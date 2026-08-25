@@ -128,6 +128,17 @@ const createWindowMock = mock((opts: CreateWindowOptions): StubWindow => {
   return win;
 });
 
+/** One-way publishes from the app — `on`, not `handle`. */
+const onMock = mock(
+  (
+    channel: string,
+    _schema: unknown,
+    fn: (...args: unknown[]) => unknown,
+  ) => {
+    ipcHandlers.set(channel, fn);
+  },
+);
+
 const handleMock = mock(
   (
     channel: string,
@@ -209,7 +220,7 @@ mock.module("./windows", () => ({
 mock.module("./ipc", () => ({
   handle: handleMock,
   handleSync: mock(() => undefined),
-  on: mock(() => undefined),
+  on: onMock,
 }));
 
 mock.module("./main-window", () => ({
@@ -262,6 +273,7 @@ beforeEach(() => {
   settingChangeListeners.clear();
   createWindowMock.mockClear();
   handleMock.mockClear();
+  onMock.mockClear();
   ensureVisibleMock.mockClear();
   dispatchToMainMock.mockClear();
   writeSettingMock.mockClear();
@@ -312,7 +324,6 @@ describe("installCompanionWindow", () => {
       "vellum:companion:talk",
       "vellum:companion:openCue",
       "vellum:companion:hide",
-      "vellum:companion:getStatus",
     ]);
     expect(created).toHaveLength(0);
   });
@@ -598,49 +609,92 @@ describe("companion IPC", () => {
     installCompanionWindow();
 
     expect(ipcHandlers.get("vellum:companion:getState")?.([])).toEqual({
+      phase: "resting",
       avatarBox: 66,
       growth: "left",
       cardGrowth: "up",
-      hover: false,
     });
   });
 
-  test("getStatus returns the tray's current assistant status", () => {
+  test("a run in progress reaches the creature as a phase, not a status", () => {
+    // There is no companion status channel any more: main resolves whose turn
+    // it is against everything else it knows and publishes one phase.
     flagOn();
     installCompanionWindow();
 
-    expect(ipcHandlers.get("vellum:companion:getStatus")?.([])).toBe("idle");
     setStatus("thinking");
-    expect(ipcHandlers.get("vellum:companion:getStatus")?.([])).toBe(
-      "thinking",
-    );
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "working",
+    });
+
+    setStatus("idle");
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "resting",
+    });
   });
 });
 
-describe("companion status pushes", () => {
-  test("pushes the current status once the renderer loads, and on every transition", () => {
+describe("an approval raises the app, and the creature only badges (C6, C9)", () => {
+  const signal = async (patch: Record<string, unknown>): Promise<void> => {
+    await ipcHandlers.get("vellum:companion:signals")?.([patch]);
+  };
+
+  test("the first raise opens the app and names the protocol, once", async () => {
     flagOn();
     installCompanionWindow();
-    const win = companionWin()!;
 
-    setStatus("thinking");
-    win.webContents.emit("did-finish-load");
+    await signal({ awaitingApproval: true });
 
-    expect(win.webContents.send).toHaveBeenCalledWith(
-      "vellum:companion:status",
-      "thinking",
-    );
-
-    setStatus("idle");
-    expect(win.webContents.send).toHaveBeenLastCalledWith(
-      "vellum:companion:status",
-      "idle",
+    // Upstream's rule, adopted: an approval nobody can reach is the failure,
+    // and a window in front of you is the bluntest possible fix.
+    expect(ensureVisibleMock).toHaveBeenCalledTimes(1);
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "waiting",
+      line: "That needs your okay, so I've opened the app — I'll always bring you there for anything that acts.",
+      detail: "I never approve things from here.",
+    });
+    expect(writeSettingMock).toHaveBeenCalledWith(
+      "companionApprovalExplained",
+      true,
     );
   });
 
-  test("status transitions with no window are a no-op", () => {
+  test("REGRESSION: the long line is not swapped out from under the reader", async () => {
+    // The flag is persisted the moment the app is raised, but feeding it back
+    // into the store there would shorten the sentence while it is on screen.
+    flagOn();
     installCompanionWindow();
-    expect(() => setStatus("thinking")).not.toThrow();
+
+    await signal({ awaitingApproval: true });
+    await signal({ hover: true });
+
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      line: "That needs your okay, so I've opened the app — I'll always bring you there for anything that acts.",
+    });
+  });
+
+  test("every raise after it is the short line", async () => {
+    flagOn();
+    installCompanionWindow();
+
+    await signal({ awaitingApproval: true });
+    await signal({ awaitingApproval: false });
+    await signal({ awaitingApproval: true });
+
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      line: "That one needs your okay — I've raised the window.",
+    });
+  });
+
+  test("an approval that stays open does not re-raise the app on every signal", async () => {
+    flagOn();
+    installCompanionWindow();
+
+    await signal({ awaitingApproval: true });
+    await signal({ awaitingApproval: true });
+    await signal({ online: true });
+
+    expect(ensureVisibleMock).toHaveBeenCalledTimes(1);
   });
 });
 

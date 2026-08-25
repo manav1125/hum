@@ -672,22 +672,6 @@ const bridge: VellumBridge = {
       ipcRenderer.invoke("vellum:companion:openCue") as Promise<void>,
     hide: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:hide") as Promise<void>,
-    getStatus: (): Promise<AssistantStatus> =>
-      ipcRenderer.invoke(
-        "vellum:companion:getStatus",
-      ) as Promise<AssistantStatus>,
-    onStatus: (callback: (status: AssistantStatus) => void) => {
-      const handler = (
-        _event: IpcRendererEvent,
-        status: AssistantStatus,
-      ): void => {
-        callback(status);
-      };
-      ipcRenderer.on("vellum:companion:status", handler);
-      return () => {
-        ipcRenderer.off("vellum:companion:status", handler);
-      };
-    },
   },
   /**
    * The floating corner. Main reads the selection while the owner's own app

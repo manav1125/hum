@@ -87,27 +87,3 @@ export async function hideCompanion(): Promise<void> {
   if (!isElectron()) return;
   await window.vellum?.companion?.hide();
 }
-
-/**
- * One-shot pull of the assistant status main already tracks for the tray.
- * `null` when the bridge is absent so the page can keep its idle default.
- */
-export async function getCompanionStatus(): Promise<AssistantStatus | null> {
-  if (!isElectron()) return null;
-  const bridge = window.vellum?.companion;
-  if (!bridge) return null;
-  return bridge.getStatus();
-}
-
-/**
- * Subscribe to status pushes (`vellum:companion:status`). Returns an
- * unsubscribe function; a no-op unsubscribe off-Electron.
- */
-export function subscribeCompanionStatus(
-  callback: (status: AssistantStatus) => void,
-): () => void {
-  if (!isElectron()) return () => {};
-  const bridge = window.vellum?.companion;
-  if (!bridge) return () => {};
-  return bridge.onStatus(callback);
-}

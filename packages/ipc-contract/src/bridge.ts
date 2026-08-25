@@ -384,8 +384,11 @@ export interface VellumBridge {
    * thing that legitimately resizes the canvas. `talk` surfaces the main
    * window and starts the voice-room entry path; `openCue` surfaces it;
    * `hide` hides the companion (persisted until re-enabled from the tray).
-   * `getStatus`/`onStatus` mirror the assistant status main already tracks for
-   * the tray, so the creature is status-aware without its own polling.
+   *
+   * There is deliberately no status channel here: whose turn it is reaches
+   * the creature as a *phase*, resolved by main against everything else it
+   * knows. A renderer holding the raw status too would be one question with
+   * two answers, and the one that loses is whichever the user is looking at.
    */
   companion: {
     setPointerOver(over: boolean): void;
@@ -397,8 +400,6 @@ export interface VellumBridge {
     talk(): Promise<void>;
     openCue(): Promise<void>;
     hide(): Promise<void>;
-    getStatus(): Promise<AssistantStatus>;
-    onStatus(callback: (status: AssistantStatus) => void): () => void;
   };
   /**
    * The floating corner: one exchange, summoned with `⌥C`, then finished.

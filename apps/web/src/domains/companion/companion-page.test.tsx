@@ -43,6 +43,9 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   companionTalk: talkSpy,
   companionOpenCue: openCueSpy,
   hideCompanion: hideSpy,
+  // Deliberate traps: `companion-bridge` no longer exports these, so the
+  // only way they can fire is somebody re-introducing a second source of
+  // truth for whose turn it is. See the regression test at the bottom.
   getCompanionStatus: getStatusSpy,
   getCompanionState: getStateSpy,
   setCompanionPointerOver: pointerOverSpy,
@@ -82,12 +85,6 @@ beforeEach(() => {
     },
   });
 });
-
-const pushStatus = (status: AssistantStatus): void => {
-  act(() => {
-    for (const listener of [...statusListeners]) listener(status);
-  });
-};
 
 const pushState = (state: Record<string, unknown>): void => {
   act(() => {
@@ -172,7 +169,7 @@ describe("the page draws what main gives it", () => {
     render(<CompanionPage />);
     await flushMicrotasks();
 
-    pushState({ hover: true, growth: "left" });
+    pushState({ phase: "hover", growth: "left" });
     // Growing leftward needs the row reversed as well as the window anchored
     // by its right edge. Half the fix is upstream's `db9392ef`.
     const row = handle().firstElementChild as HTMLElement;
@@ -192,7 +189,7 @@ describe("hover is main's answer, not the page's guess", () => {
     // affordances, because whether this counts as hover is main's to say.
     expect(screen.queryByText("\u270e Type")).toBeNull();
 
-    pushState({ hover: true });
+    pushState({ phase: "hover" });
     expect(screen.getByText("\u270e Type")).toBeTruthy();
   });
 
@@ -226,13 +223,13 @@ describe("hover is main's answer, not the page's guess", () => {
     await flushMicrotasks();
 
     drawnArea(320, 60);
-    pushState({ hover: true }); // the pill is out; the pointer is on its far end
+    pushState({ phase: "hover" }); // the pill is out; the pointer is on its far end
     fireEvent.mouseMove(canvas(), { clientX: 280, clientY: 30 });
     expect(pointerOverSpy).toHaveBeenLastCalledWith(true);
 
     pointerOverSpy.mockClear();
     drawnArea(66, 66); // collapsed back to just the creature
-    pushState({ hover: false });
+    pushState({ phase: "resting" });
 
     expect(pointerOverSpy).toHaveBeenLastCalledWith(false);
   });
@@ -286,25 +283,27 @@ describe("a press is captured, and always released", () => {
   });
 });
 
-describe("status outranks a resting creature", () => {
-  test("a run in progress sends the dot travelling, pushed and pulled alike", async () => {
+describe("the creature draws whose turn it is, as main resolved it", () => {
+  test("working travels; rest pulses; never both", async () => {
     render(<CompanionPage />);
     await flushMicrotasks();
-
-    pushStatus("thinking");
-    // Working travels; rest pulses. Never both — one claim about whose turn
-    // it is.
+    pushState({ phase: "working" });
+    // One claim about whose turn it is. The rest-glow would be a second.
     expect(creature().style.animation).toBe("");
 
-    pushStatus("idle");
+    pushState({ phase: "resting" });
     expect(creature().style.animation).toContain("cueCreatureGlow");
   });
 
-  test("the one-shot pull backfills the initial status", async () => {
-    pulledStatus = "thinking";
+  test("REGRESSION: the page no longer holds its own copy of the status", async () => {
+    // It used to outrank a pushed phase against a separately-subscribed
+    // assistant status — two sources of truth for one question, and the one
+    // that loses is whichever the user is actually looking at.
+    pulledState = { phase: "resting" };
     render(<CompanionPage />);
     await flushMicrotasks();
 
-    expect(creature().style.animation).toBe("");
+    expect(getStatusSpy).not.toHaveBeenCalled();
+    expect(statusListeners).toHaveLength(0);
   });
 });

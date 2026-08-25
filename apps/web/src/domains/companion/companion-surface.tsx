@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 
+import type { CompanionPhase } from "@vellumai/ipc-contract";
+
 import { CompanionCreature, CompanionCreatureKeyframes } from "./companion-creature";
 import type { CreatureTone } from "./companion-creature";
 
@@ -41,48 +43,7 @@ const T1 = "#F4F4F6";
 const T2 = "#9A9AA8";
 const ACCENT = "#3D6EE8";
 
-export type CompanionPhase =
-  | "resting"
-  | "hover"
-  | "listening"
-  | "working"
-  | "typing"
-  | "watching"
-  | "summary"
-  /** Cue moved first (`C7`). The one entrance with a flourish. */
-  | "nudge"
-  /** Mirrors a real Notes / Halo / meeting session (`C11`). */
-  | "recording"
-  /** Waiting on an approval the app has been raised for (`C6`, `C9`). */
-  | "waiting"
-  | "couldnt"
-  | "offline";
-
-/**
- * Precedence, upstream's order kept.
- *
- * A half-typed sentence and a live call are both something you are in the
- * middle of, so they outrank a session that is merely reporting. `hover` is
- * bottom because it is a hint, and being outranked costs it nothing.
- */
-const RANK: Record<CompanionPhase, number> = {
-  typing: 100,
-  recording: 95,
-  listening: 90,
-  waiting: 85,
-  watching: 80,
-  summary: 70,
-  couldnt: 65,
-  nudge: 60,
-  working: 50,
-  offline: 40,
-  hover: 10,
-  resting: 0,
-};
-
-export function outrank(a: CompanionPhase, b: CompanionPhase): CompanionPhase {
-  return RANK[a] >= RANK[b] ? a : b;
-}
+export type { CompanionPhase };
 
 const TONE_FOR: Partial<Record<CompanionPhase, CreatureTone>> = {
   watching: "watching",

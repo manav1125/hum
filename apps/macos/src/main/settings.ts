@@ -60,6 +60,13 @@ export interface AppSettings {
    */
   companionSize: string;
   /**
+   * Whether `C9`'s long approval sentence has been said.
+   *
+   * The first window-raise reads as a glitch; said once it becomes protocol,
+   * said every time it becomes noise. One bit, and it only ever goes one way.
+   */
+  companionApprovalExplained: boolean;
+  /**
    * Where the creature was last settled, as the centre of the creature —
    * never the window's bounds.
    *
@@ -156,6 +163,10 @@ const schema: Schema<AppSettings> = {
   companionSize: {
     type: "string",
     enum: ["small", "medium", "large", "huge", "ridiculous"],
+  },
+  companionApprovalExplained: {
+    type: "boolean",
+    default: false,
   },
   companionCentre: {
     type: "object",

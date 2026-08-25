@@ -12,9 +12,13 @@ import {
   type CompanionSize,
 } from "./companion-geometry";
 import { CompanionHitTest } from "./companion-hit-test";
+import {
+  CompanionPhaseStore,
+  type CompanionSignals,
+} from "./companion-phase";
 import { CompanionPlacement, type PlacementHost } from "./companion-placement";
 import { createFloatingWindow, getFloatingWindow } from "./floating-window";
-import { handle } from "./ipc";
+import { handle, on } from "./ipc";
 import {
   dispatchToMain,
   ensureVisible as ensureMainWindowVisible,
@@ -89,21 +93,37 @@ export const companionSize = (): CompanionSize => {
 const companionWindow = (): BrowserWindow | null =>
   getFloatingWindow(COMPANION_KIND);
 
+/**
+ * The signals the app publishes. Strict: an unknown key here would be a
+ * signal nobody resolves, which is worse than a validation failure because it
+ * looks like it worked.
+ */
+const signalsSchema = z
+  .object({
+    online: z.boolean(),
+    watching: z.boolean(),
+    recording: z
+      .object({ label: z.string(), elapsed: z.string() })
+      .nullable(),
+    awaitingApproval: z.boolean(),
+    couldnt: z.boolean(),
+    typing: z.boolean(),
+    listening: z.boolean(),
+    quiet: z.boolean(),
+  })
+  .partial()
+  .strict();
+
 let placement: CompanionPlacement | null = null;
+let phases: CompanionPhaseStore | null = null;
 let hitTest: CompanionHitTest | null = null;
 let drag: CompanionDrag | null = null;
 let dragPoll: ReturnType<typeof setInterval> | null = null;
-let hovering = false;
 
 const send = (channel: string, payload: unknown): void => {
   const win = companionWindow();
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
   win.webContents.send(channel, payload);
-};
-
-const pushStatusTo = (win: BrowserWindow): void => {
-  if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-  win.webContents.send("vellum:companion:status", getStatus());
 };
 
 /**
@@ -116,11 +136,12 @@ const pushStatusTo = (win: BrowserWindow): void => {
 const companionState = (): Record<string, unknown> => {
   const current = placement?.current();
   const geometry = current?.geometry ?? geometryFor(companionSize());
+  const resolved = phases?.current() ?? { phase: "resting" as const };
   return {
+    ...resolved,
     avatarBox: geometry.avatarBox,
     growth: current?.growth ?? "right",
     cardGrowth: current?.cardGrowth ?? "up",
-    hover: hovering,
   };
 };
 
@@ -210,6 +231,11 @@ const openCompanionWindow = (): BrowserWindow => {
   });
 
   placement = new CompanionPlacement(placementHost, size);
+  phases = new CompanionPhaseStore(() => publishState());
+  phases.set({
+    busy: getStatus() === "thinking",
+    approvalExplained: readSetting("companionApprovalExplained") ?? false,
+  });
   hitTest = new CompanionHitTest({ window: companionWindow });
   drag = new CompanionDrag({
     moveTo: (centre) => placement?.moveTo(centre),
@@ -229,10 +255,9 @@ const openCompanionWindow = (): BrowserWindow => {
   hitTest.install();
   placement.moveTo(startingCentre(size));
 
-  // The route chunk loads lazily; push the current status and geometry once
-  // the renderer is ready so the creature doesn't wait for the next change.
+  // The route chunk loads lazily; publish once the renderer is ready so the
+  // creature doesn't wait for the next thing to change.
   win.webContents.on("did-finish-load", () => {
-    pushStatusTo(win);
     publishState();
   });
 
@@ -240,9 +265,9 @@ const openCompanionWindow = (): BrowserWindow => {
   win.on("closed", () => {
     abandonDrag();
     placement = null;
+    phases = null;
     hitTest = null;
     drag = null;
-    hovering = false;
   });
 
   return win;
@@ -262,9 +287,10 @@ const openCompanionWindow = (): BrowserWindow => {
 export const setCompanionPointerOver = (over: boolean): void => {
   if (drag?.isHeld()) return;
   hitTest?.set(over);
-  if (hovering === over) return;
-  hovering = over;
-  publishState();
+  // Hover is a phase, and the store decides whether it is the phase that
+  // wins — a pointer near a creature that is already recording changes
+  // nothing anyone can see, and republishing it would redraw on nothing.
+  phases?.set({ hover: over });
 };
 
 /**
@@ -301,6 +327,43 @@ export const endCompanionDrag = (): void => {
   stopDragPoll();
   if (!drag?.isHeld()) return;
   drag.end(screen.getCursorScreenPoint());
+};
+
+/**
+ * What the app knows and the companion cannot see for itself.
+ *
+ * One channel rather than one per signal: they arrive together, they are all
+ * fire-and-forget, and the phase is resolved from the whole set anyway — so a
+ * patch that changed two of them across two channels would resolve twice and
+ * publish a phase that was true for neither moment.
+ */
+export const applyCompanionSignals = async (
+  patch: Partial<CompanionSignals>,
+): Promise<void> => {
+  const before = phases?.read();
+  phases?.set(patch);
+
+  const raised =
+    patch.awaitingApproval === true && before?.awaitingApproval !== true;
+  if (raised) {
+    // **Upstream's rule, adopted (`C6`).** Approvals raise the app window; the
+    // companion badges until it is answered and never renders the approval
+    // itself. It is also the live candidate for our dropped-approval bug: an
+    // approval nobody can reach is the failure, and a window in front of you
+    // is the bluntest possible fix.
+    await ensureMainWindowVisible();
+    // `C9`'s long sentence is showing right now, so the flag is persisted but
+    // deliberately not fed back into the store yet — swapping the line out
+    // from under someone mid-read would be the one thing worse than repeating
+    // it.
+    writeSetting("companionApprovalExplained", true);
+  }
+
+  if (patch.awaitingApproval === false && before?.awaitingApproval === true) {
+    phases?.set({
+      approvalExplained: readSetting("companionApprovalExplained") ?? false,
+    });
+  }
 };
 
 /** A named size step (`C12`). The one thing that legitimately resizes. */
@@ -394,6 +457,10 @@ export const installCompanionWindow = (): void => {
 
   handle("vellum:companion:getState", z.tuple([]), () => companionState());
 
+  on("vellum:companion:signals", z.tuple([signalsSchema]), ([patch]) => {
+    void applyCompanionSignals(patch);
+  });
+
   handle("vellum:companion:talk", z.tuple([]), async () => {
     await talkToCue();
   });
@@ -407,13 +474,12 @@ export const installCompanionWindow = (): void => {
     syncCompanionWindow();
   });
 
-  handle("vellum:companion:getStatus", z.tuple([]), () => getStatus());
-
-  // Mirror tray-style status reactivity: push transitions to the companion
-  // renderer so the creature tracks idle/thinking without polling.
+  // The tray's assistant-status state machine is the source for whose turn
+  // it is. It reaches the creature as a *phase*, resolved here — the
+  // companion used to also receive the raw status on its own channel and
+  // outrank it in the renderer, which is one question with two answers.
   onStatusChange(() => {
-    const win = companionWindow();
-    if (win) pushStatusTo(win);
+    phases?.set({ busy: getStatus() === "thinking" });
   });
 
   // A display arriving or leaving, or the menu bar changing height, moves the
@@ -437,9 +503,9 @@ export const __resetForTesting = (): void => {
   installed = false;
   stopDragPoll();
   placement = null;
+  phases = null;
   hitTest = null;
   drag = null;
-  hovering = false;
 };
 
 /**

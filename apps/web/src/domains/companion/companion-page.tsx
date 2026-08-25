@@ -6,14 +6,11 @@ import {
   companionOpenCue,
   companionTalk,
   getCompanionState,
-  getCompanionStatus,
   setCompanionPointerOver,
   subscribeCompanionState,
-  subscribeCompanionStatus,
-  type AssistantStatus,
 } from "@/domains/companion/companion-bridge";
 
-import { CompanionSurface, outrank } from "./companion-surface";
+import { CompanionSurface } from "./companion-surface";
 import type { CompanionPhase } from "./companion-surface";
 
 /**
@@ -56,8 +53,6 @@ interface CompanionState {
   avatarBox: number;
   growth: "right" | "left";
   cardGrowth: "up" | "down";
-  /** Main's answer, never this page's guess. See the header. */
-  hover: boolean;
   line?: string;
   detail?: string;
   answer?: string;
@@ -70,12 +65,10 @@ const RESTING: CompanionState = {
   avatarBox: 66,
   growth: "right",
   cardGrowth: "up",
-  hover: false,
 };
 
 export function CompanionPage(): React.ReactElement {
   const [state, setState] = useState<CompanionState>(RESTING);
-  const [status, setStatus] = useState<AssistantStatus | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
 
   // Main publishes every change; the renderer never invents one. The one-shot
@@ -89,11 +82,6 @@ export function CompanionPage(): React.ReactElement {
     return subscribeCompanionState((next) => {
       setState((prev) => ({ ...prev, ...(next as Partial<CompanionState>) }));
     });
-  }, []);
-
-  useEffect(() => {
-    void getCompanionStatus().then((s) => s && setStatus(s));
-    return subscribeCompanionStatus((s) => setStatus(s));
   }, []);
 
   /**
@@ -161,9 +149,11 @@ export function CompanionPage(): React.ReactElement {
     companionDragEnd();
   }, []);
 
-  const busy = status === "thinking";
-  const base = state.hover ? outrank(state.phase, "hover") : state.phase;
-  const phase = busy ? outrank(base, "working") : base;
+  // Main resolves the phase, including hover and whether a run is in
+  // progress. The page used to outrank a pushed phase against its own copy of
+  // the status, which is two sources of truth for one question — and the one
+  // that loses is whichever the user is actually looking at.
+  const { phase } = state;
 
   // A phase change can take the drawn area out from under a stationary
   // pointer — the pill collapses, a card is dismissed — and no mouse-move

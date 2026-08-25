@@ -19,3 +19,4 @@ export {
   type VellumBridge,
 } from "./bridge";
 export * from "./channels";
+export * from "./companion";
