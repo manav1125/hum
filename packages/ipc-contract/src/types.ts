@@ -93,7 +93,21 @@ export type VellumCommand =
    * It stops the real session, not just the mirror — a Stop that only stopped
    * the picture of a recording would be the worst possible button.
    */
-  | { kind: "stopCapture"; capture: "recording" | "watching" };
+  | { kind: "stopCapture"; capture: "recording" | "watching" }
+  /**
+   * Something was dropped on the creature and answered (`C10`).
+   *
+   * Read it, file it, or keep it as a note — never anything that sends or
+   * spends. `payload` is what actually arrived and is passed through
+   * untouched, so the app is the only place that has to know what it means.
+   */
+  | {
+      kind: "handleDrop";
+      choice: "read" | "file" | "note";
+      dropKind: "file" | "image" | "url" | "text";
+      label: string;
+      payload: string;
+    };
 
 // ---------------------------------------------------------------------------
 // Hotkeys

@@ -659,6 +659,18 @@ const bridge: VellumBridge = {
       ) as Promise<void>,
     introDismiss: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:introDismiss") as Promise<void>,
+    /**
+     * A drag is passing over the creature (`C10`). The arc opens toward it.
+     */
+    dragOver: (over: boolean): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:dragOver", over) as Promise<void>,
+    /** Something landed. Held, not kept, until a choice is made. */
+    drop: (item: { kind: string; value: string }): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:drop", item) as Promise<void>,
+    dropChoose: (choice: string): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:dropChoose", choice) as Promise<void>,
+    dropRelease: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:dropRelease") as Promise<void>,
     /** The pill's `Stop`. Main decides what it stops — see the handler. */
     stop: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:stop") as Promise<void>,

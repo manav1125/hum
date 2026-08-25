@@ -347,6 +347,10 @@ describe("installCompanionWindow", () => {
       "vellum:companion:introDismiss",
       "vellum:companion:nudge",
       "vellum:companion:nudgeOpen",
+      "vellum:companion:dragOver",
+      "vellum:companion:drop",
+      "vellum:companion:dropChoose",
+      "vellum:companion:dropRelease",
       "vellum:companion:nudgeDismiss",
       "vellum:companion:talk",
       "vellum:companion:openCue",
@@ -906,6 +910,127 @@ describe("the nudge answers whether it took the interruption (C7)", () => {
       kind: "openNeedsYouItem",
       itemId: "i1",
     });
+  });
+});
+
+describe("drops, and the click-through window that has to receive them (C10)", () => {
+  test("REGRESSION: main claims the canvas for the creature's own box", async () => {
+    // The renderer learns where the pointer is from forwarded mouse-move, and
+    // a NATIVE drag does not forward one — the window is click-through, so the
+    // OS never offers it the drag and it can never become a drop target. Main
+    // can answer for the creature's box without any of that, because it knows
+    // the box and the cursor in the same coordinates.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    const win = companionWin()!;
+    win.setIgnoreMouseEvents.mockClear();
+
+    // The creature's first-run home, with no renderer report at all.
+    cursor = { x: 1531, y: 558 };
+    await Bun.sleep(200);
+
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  test("and hands it back when the cursor leaves", async () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    const win = companionWin()!;
+
+    cursor = { x: 1531, y: 558 };
+    await Bun.sleep(200);
+    cursor = { x: 200, y: 200 };
+    await Bun.sleep(200);
+
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, {
+      forward: true,
+    });
+  });
+
+  test("REGRESSION: the renderer saying no does not override main saying yes", async () => {
+    // Two authorities that could contradict each other would flap. They are
+    // OR-ed: either side saying the pointer is on something claims the canvas.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    const win = companionWin()!;
+
+    cursor = { x: 1531, y: 558 };
+    await Bun.sleep(200);
+    ipcHandlers.get("vellum:companion:setPointerOver")?.([false]);
+
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  test("a drag opens the arc without becoming a phase", () => {
+    // The arc opening is a thing the creature does, so it works in the middle
+    // of whatever else is true — including a recording, whose evidence
+    // nothing may cover.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    ipcHandlers.get("vellum:companion:dragOver")?.([true]);
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      opening: true,
+      phase: "resting",
+    });
+  });
+
+  test("a drop is held and named, and nothing is dispatched yet", () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    ipcHandlers.get("vellum:companion:drop")?.([
+      { kind: "file", value: "/Users/x/acme-msa-v4.pdf" },
+    ]);
+
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "caught",
+      caught: { kind: "file", label: "acme-msa-v4.pdf" },
+    });
+    // Nothing is stored until a choice is made.
+    expect(dispatchToMainMock).not.toHaveBeenCalled();
+  });
+
+  test("a choice hands it to the app, untouched", async () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    ipcHandlers.get("vellum:companion:drop")?.([
+      { kind: "file", value: "/Users/x/acme-msa-v4.pdf" },
+    ]);
+    ipcHandlers.get("vellum:companion:dropChoose")?.(["file"]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dispatchToMainMock).toHaveBeenLastCalledWith({
+      kind: "handleDrop",
+      choice: "file",
+      dropKind: "file",
+      label: "acme-msa-v4.pdf",
+      payload: "/Users/x/acme-msa-v4.pdf",
+    });
+  });
+
+  test("letting go stores nothing and leaves no phase behind", () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    ipcHandlers.get("vellum:companion:drop")?.([
+      { kind: "url", value: "https://example.com/x" },
+    ]);
+    ipcHandlers.get("vellum:companion:dropRelease")?.([]);
+
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "resting",
+    });
+    expect(dispatchToMainMock).not.toHaveBeenCalled();
   });
 });
 

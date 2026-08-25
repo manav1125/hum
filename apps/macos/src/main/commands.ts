@@ -26,6 +26,7 @@ export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
   nudgeDismissed: "",
   openNeedsYouItem: "",
   stopCapture: "",
+  handleDrop: "",
   currentConversation: "CmdOrCtrl+Shift+N",
   markCurrentUnread: "CmdOrCtrl+Shift+U",
   openSettings: "CmdOrCtrl+,",

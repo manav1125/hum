@@ -30,6 +30,16 @@ const VIEW = 512;
 const RING = { cx: 232, cy: 256, r: 150, width: 46 } as const;
 /** 707 drawn, 236 open — the arc's mouth, which is also the drop slot (C10). */
 const RING_DASH = "707 236";
+/**
+ * The mouth, widened.
+ *
+ * `C10`: the arc opens toward a dragged item, and the ring turns so the
+ * opening faces it. The character gesture and the affordance are the same
+ * thing — there is no separate drop zone to draw, because the creature
+ * already had one.
+ */
+const RING_DASH_OPEN = "580 363";
+const RING_OPEN_ROTATION = 80;
 const DOT_R = 34;
 
 /**
@@ -83,6 +93,10 @@ export interface CreatureProps {
   /** Quiet hours and Reduced Motion both still the creature. */
   still?: boolean;
   /**
+   * A drag is passing over: the arc widens its mouth toward it (`C10`).
+   */
+  opening?: boolean;
+  /**
    * An ignored nudge, held (`C7`).
    *
    * A glint on the shoulder of the disc rather than a second creature state:
@@ -102,6 +116,7 @@ export function CompanionCreature({
   blink = "calm",
   still = false,
   held = false,
+  opening = false,
 }: CreatureProps): React.ReactElement {
   const t = TONE[tone];
   const strokeWidth =
@@ -110,6 +125,9 @@ export function CompanionCreature({
   // out of the ring entirely, so a gaze during work would be two claims about
   // the same thing.
   const look = gazing && !working ? LOOK.gaze : LOOK.rest;
+  // Opening overrides the gaze: the creature is looking at what is being
+  // dragged, and it cannot be turned two ways at once.
+  const ringRotation = opening ? RING_OPEN_ROTATION : look.ring;
 
   // Blink is the arc closing — scaleY on the ring alone, about its own centre.
   const blinkSeconds = blink === "lively" ? 4 : 6.5;
@@ -119,7 +137,11 @@ export function CompanionCreature({
     height: box,
     borderRadius: "50%",
     background: "#101321",
-    border: "1px solid rgba(255,255,255,.13)",
+    // Dashed while a drag is over it — the same language every drop target on
+    // every desktop uses, said in the creature's own accent.
+    border: opening
+      ? "2px dashed rgba(61,110,232,.6)"
+      : "1px solid rgba(255,255,255,.13)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -164,8 +186,8 @@ export function CompanionCreature({
             stroke={t.ring}
             strokeWidth={strokeWidth}
             strokeLinecap="round"
-            strokeDasharray={RING_DASH}
-            transform={`rotate(${look.ring} ${RING.cx} ${RING.cy})`}
+            strokeDasharray={opening ? RING_DASH_OPEN : RING_DASH}
+            transform={`rotate(${ringRotation} ${RING.cx} ${RING.cy})`}
             style={{
               transformOrigin: `${RING.cx}px ${RING.cy}px`,
               // The turn is the gesture; the blink rides on top of it.

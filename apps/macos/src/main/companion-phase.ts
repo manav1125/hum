@@ -50,6 +50,13 @@ export interface CompanionSignals {
   listening: boolean;
   /** Quiet hours: the creature sits there, but it never moves first. */
   quiet: boolean;
+  /**
+   * Something was dropped and is being held, unstored (`C10`).
+   *
+   * High in the order because it expires on its own in ten seconds — anything
+   * that covered it would drop the item rather than defer it.
+   */
+  caught: boolean;
 }
 
 export const QUIET_SIGNALS: CompanionSignals = {
@@ -65,6 +72,7 @@ export const QUIET_SIGNALS: CompanionSignals = {
   typing: false,
   listening: false,
   quiet: false,
+  caught: false,
 };
 
 export interface ResolvedPhase {
@@ -116,6 +124,7 @@ export function resolveCompanionPhase(
   if (signals.couldnt) active.push("couldnt");
   if (signals.watching) active.push("watching");
   if (signals.awaitingApproval) active.push("waiting");
+  if (signals.caught) active.push("caught");
   if (signals.listening) active.push("listening");
   if (signals.recording) active.push("recording");
   if (signals.typing) active.push("typing");

@@ -105,6 +105,12 @@ export interface CompanionSurfaceProps {
    * skipping one.
    */
   intro?: CompanionIntroBeat;
+  /** A drag is passing over the creature (`C10`). */
+  opening?: boolean;
+  /** What was caught, named exactly (`C10`). */
+  caught?: { kind: string; label: string };
+  onDropChoose?: (choice: "read" | "file" | "note") => void;
+  onDropRelease?: () => void;
   onIntroNext?: (fromBeat: number) => void;
   onIntroDismiss?: () => void;
   /** The creature's box in points — the whole of the surface's scale. */
@@ -154,6 +160,7 @@ export function CompanionSurface(props: CompanionSurfaceProps): React.ReactEleme
       blink={props.blink ?? "calm"}
       still={quiet}
       held={props.heldNudge !== undefined && phase !== "nudge"}
+      opening={props.opening ?? false}
     />
   );
 
@@ -212,7 +219,14 @@ export function CompanionSurface(props: CompanionSurfaceProps): React.ReactEleme
       }}
     >
       <CompanionCreatureKeyframes />
-      {phase === "typing" ? (
+      {phase === "caught" && props.caught ? (
+        <CaughtChip
+          {...props}
+          caught={props.caught}
+          scale={scale}
+          creature={creature}
+        />
+      ) : phase === "typing" ? (
         <TypingCard {...props} scale={scale} creature={creature} />
       ) : (
         <Pill {...props} scale={scale} creature={creature} />
@@ -512,6 +526,99 @@ function IntroCard({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * What was caught — design `C10`.
+ *
+ * **The chip names exactly what arrived**, so a wrong drop is obvious before
+ * anything happens to it. And the three choices are read, file, note: nothing
+ * here sends or spends, because `C9`'s protocol holds even for something the
+ * owner put in Cue's hands themselves.
+ */
+function CaughtChip({
+  caught,
+  scale,
+  creature,
+  growth,
+  onDropChoose,
+  onDropRelease,
+}: CompanionSurfaceProps & {
+  caught: { kind: string; label: string };
+  scale: number;
+  creature: ReactNode;
+}): React.ReactElement {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        flexDirection: growth === "right" ? "row" : "row-reverse",
+        gap: 12 * scale,
+        background: INK,
+        border: HAIRLINE,
+        borderRadius: 99,
+        padding: `${SEAT}px ${8 * scale}px ${SEAT}px ${SEAT}px`,
+        boxShadow: PILL_SHADOW,
+        fontSize: Math.min(12.5 * scale, 12.5 * 2),
+      }}
+    >
+      {creature}
+      <span
+        style={{
+          fontSize: "0.96em",
+          color: T2,
+          background: "rgba(255,255,255,.06)",
+          border: "1px solid rgba(255,255,255,.11)",
+          borderRadius: 8,
+          padding: "5px 10px",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {caught.kind === "url" ? "🔗" : caught.kind === "text" ? "✎" : "📄"}{" "}
+        {caught.label}
+      </span>
+      <span style={{ color: T1, whiteSpace: "nowrap" }}>Got it —</span>
+      <ChoiceButton onClick={() => onDropChoose?.("read")}>Read it</ChoiceButton>
+      <ChoiceButton onClick={() => onDropChoose?.("file")}>
+        ▤ File it
+      </ChoiceButton>
+      <ChoiceButton onClick={() => onDropChoose?.("note")}>✎ Note</ChoiceButton>
+      {/* Nothing has been stored, so this is not a delete — it is letting go,
+          which is also what ten seconds of silence does. */}
+      <TextButton onClick={onDropRelease} muted aria-label="Let it go">
+        ✕
+      </TextButton>
+    </div>
+  );
+}
+
+function ChoiceButton({
+  children,
+  onClick,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        font: "inherit",
+        fontSize: "0.92em",
+        color: "#C9D2E2",
+        background: "none",
+        border: "1px solid rgba(255,255,255,.16)",
+        borderRadius: 99,
+        padding: "5px 11px",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

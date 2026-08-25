@@ -43,6 +43,10 @@ const introNextSpy = mock((_fromBeat: number) => undefined);
 const introDismissSpy = mock(() => undefined);
 const nudgeOpenSpy = mock(() => undefined);
 const stopSpy = mock(() => undefined);
+const dragOverSpy = mock((_over: boolean) => undefined);
+const dropSpy = mock((_item: { kind: string; value: string }) => undefined);
+const dropChooseSpy = mock((_choice: string) => undefined);
+const dropReleaseSpy = mock(() => undefined);
 const nudgeDismissSpy = mock(() => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
@@ -62,6 +66,10 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   companionIntroDismiss: introDismissSpy,
   companionNudgeOpen: nudgeOpenSpy,
   companionStop: stopSpy,
+  companionDragOver: dragOverSpy,
+  companionDrop: dropSpy,
+  companionDropChoose: dropChooseSpy,
+  companionDropRelease: dropReleaseSpy,
   companionNudgeDismiss: nudgeDismissSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
@@ -165,6 +173,10 @@ beforeEach(() => {
   introDismissSpy.mockClear();
   nudgeOpenSpy.mockClear();
   stopSpy.mockClear();
+  dragOverSpy.mockClear();
+  dropSpy.mockClear();
+  dropChooseSpy.mockClear();
+  dropReleaseSpy.mockClear();
   nudgeDismissSpy.mockClear();
 });
 
@@ -502,6 +514,119 @@ describe("what a screen reader hears (C12)", () => {
 
     pushState({ phase: "recording", line: "Recording · Board prep · 12:41" });
     expect(live()).toBe("Recording");
+  });
+});
+
+describe("drops — the arc's mouth is the slot (C10)", () => {
+  const transfer = (init: {
+    files?: Array<{ name: string; type: string; path?: string }>;
+    uri?: string;
+    text?: string;
+  }) =>
+    ({
+      files: init.files ?? [],
+      getData: (kind: string) =>
+        kind === "text/uri-list" ? (init.uri ?? "") : (init.text ?? ""),
+    }) as unknown as DataTransfer;
+
+  test("a drag approaching opens the arc", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    fireEvent.dragOver(canvas(), { dataTransfer: transfer({}) });
+    expect(dragOverSpy).toHaveBeenLastCalledWith(true);
+
+    fireEvent.dragLeave(canvas());
+    expect(dragOverSpy).toHaveBeenLastCalledWith(false);
+  });
+
+  test("REGRESSION: a dropped file is named by the file, not by its URL", async () => {
+    // A Finder drag also carries a `text/uri-list`, and describing a contract
+    // as a `file://` URL would name it wrongly on a surface whose whole
+    // promise is that the chip names exactly what arrived.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    fireEvent.drop(canvas(), {
+      dataTransfer: transfer({
+        files: [
+          { name: "acme-msa-v4.pdf", type: "application/pdf", path: "/x/acme-msa-v4.pdf" },
+        ],
+        uri: "file:///x/acme-msa-v4.pdf",
+      }),
+    });
+
+    expect(dropSpy).toHaveBeenLastCalledWith({
+      kind: "file",
+      value: "/x/acme-msa-v4.pdf",
+    });
+  });
+
+  test("an image is known to be an image", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    fireEvent.drop(canvas(), {
+      dataTransfer: transfer({
+        files: [{ name: "shot.png", type: "image/png", path: "/x/shot.png" }],
+      }),
+    });
+    expect(dropSpy.mock.calls.at(-1)?.[0]?.kind).toBe("image");
+  });
+
+  test("a link is a link, and plain words are words", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    fireEvent.drop(canvas(), {
+      dataTransfer: transfer({ text: "https://example.com/pricing" }),
+    });
+    expect(dropSpy.mock.calls.at(-1)?.[0]?.kind).toBe("url");
+
+    fireEvent.drop(canvas(), {
+      dataTransfer: transfer({ text: "Dana wants the 24-month term" }),
+    });
+    expect(dropSpy.mock.calls.at(-1)?.[0]?.kind).toBe("text");
+  });
+
+  test("an empty drop is not caught at all", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    fireEvent.drop(canvas(), { dataTransfer: transfer({}) });
+    expect(dropSpy).not.toHaveBeenCalled();
+  });
+
+  test("the chip names what arrived, and offers three choices that act on nothing", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "caught",
+      caught: { kind: "file", label: "acme-msa-v4.pdf" },
+    });
+
+    expect(handle().textContent).toContain("acme-msa-v4.pdf");
+    // Read / file / note. `C9`'s protocol holds even for something the owner
+    // put in Cue's hands themselves.
+    expect(screen.getByText("Read it")).toBeTruthy();
+    expect(screen.getByText("▤ File it")).toBeTruthy();
+    expect(screen.getByText("✎ Note")).toBeTruthy();
+    expect(screen.queryByText(/Send|Pay|Approve/)).toBeNull();
+
+    fireEvent.click(screen.getByText("▤ File it"));
+    expect(dropChooseSpy).toHaveBeenLastCalledWith("file");
+  });
+
+  test("✕ lets it go — not a delete, because nothing was stored", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "caught",
+      caught: { kind: "url", label: "example.com/x" },
+    });
+
+    fireEvent.click(screen.getByLabelText("Let it go"));
+    expect(dropReleaseSpy).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -12,6 +12,7 @@ import {
   type CompanionSize,
 } from "./companion-geometry";
 import { CompanionHitTest } from "./companion-hit-test";
+import { CompanionDrops, describeDrop, type DropChoice } from "./companion-drop";
 import { CompanionIntro } from "./companion-intro";
 import {
   CompanionNudges,
@@ -179,6 +180,9 @@ let placement: CompanionPlacement | null = null;
 let phases: CompanionPhaseStore | null = null;
 let intro: CompanionIntro | null = null;
 let nudges: CompanionNudges | null = null;
+let drops: CompanionDrops | null = null;
+let caught: import("@vellumai/ipc-contract").CompanionCaught | null = null;
+let opening = false;
 let heldNudge: HeldNudge | null = null;
 let hitTest: CompanionHitTest | null = null;
 let drag: CompanionDrag | null = null;
@@ -215,6 +219,11 @@ const companionState = (): Record<string, unknown> => {
     // The glint an ignored nudge retracts to. Never lost, never repeated out
     // loud — it waits for a hover rather than saying itself again.
     ...(heldNudge ? { heldNudge: heldNudge.line } : {}),
+    // The arc opening is a thing the creature does, not a phase — it has to
+    // work in the middle of whatever else is true, including a recording,
+    // whose evidence nothing may cover (`C10`, `C11`).
+    ...(opening ? { opening: true } : {}),
+    ...(caught ? { caught } : {}),
     avatarBox: geometry.avatarBox,
     growth: current?.growth ?? "right",
     cardGrowth: current?.cardGrowth ?? "up",
@@ -257,6 +266,62 @@ const placementHost: PlacementHost = {
     win.setResizable(false);
   },
   publish: () => publishState(),
+};
+
+/**
+ * Who says the pointer is over something.
+ *
+ * **Two sources, deliberately.** The renderer reports coverage from the drawn
+ * rectangle, which is the only side that knows how wide the pill currently
+ * is. But it learns where the pointer is from forwarded mouse-move, and a
+ * *native drag* — a file coming from Finder — does not forward one: the
+ * window is click-through, so the operating system does not offer it the drag
+ * at all, and it can never become a drop target.
+ *
+ * Main can answer for the creature's own box without any of that, because it
+ * knows the box and the cursor in the same screen coordinates. So it polls
+ * slowly for exactly that case, and the two answers are OR-ed: either side
+ * saying yes claims the canvas, which cannot flap the way two competing
+ * authorities would.
+ */
+let pointerOverDrawn = false;
+let cursorOnCreature = false;
+
+const applyHitTest = (): void => {
+  hitTest?.set(pointerOverDrawn || cursorOnCreature);
+};
+
+/**
+ * How often main checks whether the cursor is over the creature.
+ *
+ * Slow on purpose. This exists to catch a drag approaching, not to track a
+ * pointer — the renderer already does that far better, for free, whenever the
+ * window is not click-through to a drag.
+ */
+const PROXIMITY_POLL_MS = 120;
+
+let proximityPoll: ReturnType<typeof setInterval> | null = null;
+
+const startProximityPoll = (): void => {
+  stopProximityPoll();
+  proximityPoll = setInterval(() => {
+    const centre = placement?.centre();
+    const box = placement?.current().geometry.avatarBox;
+    if (!centre || !box) return;
+    const at = screen.getCursorScreenPoint();
+    const half = box / 2;
+    const over =
+      Math.abs(at.x - centre.x) <= half && Math.abs(at.y - centre.y) <= half;
+    if (over === cursorOnCreature) return;
+    cursorOnCreature = over;
+    applyHitTest();
+  }, PROXIMITY_POLL_MS);
+};
+
+const stopProximityPoll = (): void => {
+  if (!proximityPoll) return;
+  clearInterval(proximityPoll);
+  proximityPoll = null;
 };
 
 /**
@@ -311,6 +376,27 @@ const openCompanionWindow = (): BrowserWindow => {
 
   placement = new CompanionPlacement(placementHost, size);
   phases = new CompanionPhaseStore(() => publishState());
+  drops = new CompanionDrops({
+    present: (item) => {
+      caught = item;
+      phases?.set({ caught: item !== null });
+      // A caught chip appearing or vanishing changes the drawn area under a
+      // pointer that has no reason to move — the same leak the introduction
+      // has, for the same reason.
+      afterCardRemoved();
+    },
+    hand: (choice, item, payload) => {
+      void ensureMainWindowVisible().then(() =>
+        dispatchToMain({
+          kind: "handleDrop",
+          choice,
+          dropKind: item.kind,
+          label: item.label,
+          payload,
+        }),
+      );
+    },
+  });
   nudges = new CompanionNudges({
     present: (nudge) => {
       phases?.set({
@@ -346,7 +432,13 @@ const openCompanionWindow = (): BrowserWindow => {
       // when the growth direction — and so the origin's meaning — changes.
       if (landed) writeSetting("companionCentre", landed);
     },
-    setInteractive: (interactive) => hitTest?.set(interactive),
+    setInteractive: (interactive) => {
+      // A drag holds the canvas outright while it runs, then hands the
+      // decision back to the two ordinary sources rather than to `false` —
+      // the pointer is very often still on the creature it was just dragging.
+      if (interactive) hitTest?.set(true);
+      else applyHitTest();
+    },
   });
 
   // Transparent to clicks from the very first frame, while still receiving
@@ -354,6 +446,8 @@ const openCompanionWindow = (): BrowserWindow => {
   // before anything had even been drawn.
   hitTest.install();
   placement.moveTo(startingCentre(size));
+  // Main answers for the creature's own box so a native drag can reach it.
+  startProximityPoll();
 
   // The route chunk loads lazily; publish once the renderer is ready so the
   // creature doesn't wait for the next thing to change.
@@ -366,6 +460,13 @@ const openCompanionWindow = (): BrowserWindow => {
     abandonDrag();
     nudges?.stop();
     nudges = null;
+    drops?.stop();
+    drops = null;
+    caught = null;
+    opening = false;
+    stopProximityPoll();
+    pointerOverDrawn = false;
+    cursorOnCreature = false;
     heldNudge = null;
     placement = null;
     phases = null;
@@ -390,7 +491,8 @@ const openCompanionWindow = (): BrowserWindow => {
  */
 export const setCompanionPointerOver = (over: boolean): void => {
   if (drag?.isHeld()) return;
-  hitTest?.set(over);
+  pointerOverDrawn = over;
+  applyHitTest();
   // A held glint replays its line when you finally look at it — once, and
   // silently. This is the only thing that brings an ignored nudge back.
   if (over) nudges?.hover();
@@ -667,7 +769,15 @@ export const popCompanionMenu = (): void => {
  * next frame if the pointer really is still over something.
  */
 const afterCardRemoved = (): void => {
+  // The renderer's last report is stale the moment a card is removed — it
+  // described an area that no longer exists — so it is discarded rather than
+  // re-applied, which would instantly undo the release and leave the leak
+  // exactly where it was. What survives is main's own knowledge: if the
+  // cursor is on the creature, the creature is still drawn and the canvas
+  // stays claimed. The renderer reports again on its next frame.
+  pointerOverDrawn = false;
   hitTest?.releaseAfterRemoval();
+  applyHitTest();
   publishState();
 };
 
@@ -807,6 +917,45 @@ export const installCompanionWindow = (): void => {
     dispatchToMain({ kind: "openNeedsYouItem", itemId });
   });
 
+  /**
+   * A drag is passing over the creature (`C10`).
+   *
+   * The arc opens toward it — the character gesture and the affordance are
+   * the same thing, so this is published as a creature attribute rather than
+   * a phase and works in the middle of whatever else is true.
+   */
+  handle("vellum:companion:dragOver", z.tuple([z.boolean()]), ([over]) => {
+    if (opening === over) return;
+    opening = over;
+    publishState();
+  });
+
+  handle(
+    "vellum:companion:drop",
+    z.tuple([
+      z.object({
+        kind: z.enum(["file", "image", "url", "text"]),
+        value: z.string(),
+      }),
+    ]),
+    ([item]) => {
+      opening = false;
+      drops?.catch(describeDrop(item), item.value);
+    },
+  );
+
+  handle(
+    "vellum:companion:dropChoose",
+    z.tuple([z.enum(["read", "file", "note"])]),
+    ([choice]) => {
+      drops?.choose(choice as DropChoice);
+    },
+  );
+
+  handle("vellum:companion:dropRelease", z.tuple([]), () => {
+    drops?.release();
+  });
+
   handle("vellum:companion:nudgeDismiss", z.tuple([]), () => {
     nudges?.dismiss();
     afterCardRemoved();
@@ -870,8 +1019,15 @@ export const installCompanionWindow = (): void => {
 export const __resetForTesting = (): void => {
   installed = false;
   stopDragPoll();
+  stopProximityPoll();
   nudges?.stop();
   nudges = null;
+  drops?.stop();
+  drops = null;
+  caught = null;
+  opening = false;
+  pointerOverDrawn = false;
+  cursorOnCreature = false;
   heldNudge = null;
   placement = null;
   phases = null;

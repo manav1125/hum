@@ -6,6 +6,10 @@ import {
   companionOpenCue,
   companionIntroDismiss,
   companionIntroNext,
+  companionDragOver,
+  companionDrop,
+  companionDropChoose,
+  companionDropRelease,
   companionNudgeDismiss,
   companionNudgeOpen,
   companionStop,
@@ -61,6 +65,10 @@ interface CompanionState {
   avatarBox: number;
   growth: "right" | "left";
   cardGrowth: "up" | "down";
+  /** A drag is passing over the creature (`C10`). */
+  opening?: boolean;
+  /** What was caught, named exactly (`C10`). */
+  caught?: { kind: string; label: string };
   /** An ignored nudge, held on the dot until the next hover (`C7`). */
   heldNudge?: string;
   /** The introduction, while main is offering it (`C4`). */
@@ -81,6 +89,39 @@ const RESTING: CompanionState = {
   growth: "right",
   cardGrowth: "up",
 };
+
+/**
+ * What was actually dropped.
+ *
+ * Files first, then a URL, then plain text — the order matters because a file
+ * drag from Finder also carries a `text/uri-list`, and describing a contract
+ * as a `file://` URL would name it wrongly on a surface whose whole promise is
+ * that the chip names exactly what arrived.
+ */
+function describeDropped(
+  data: DataTransfer | null,
+): { kind: "file" | "image" | "url" | "text"; value: string } | null {
+  if (!data) return null;
+  const file = data.files?.[0];
+  if (file) {
+    // Electron exposes the real path; a browser does not, and there the name
+    // is still the honest thing to show.
+    const path = (file as File & { path?: string }).path ?? file.name;
+    return {
+      kind: file.type.startsWith("image/") ? "image" : "file",
+      value: path,
+    };
+  }
+  const uri = data.getData("text/uri-list").trim();
+  if (uri) return { kind: "url", value: uri.split("\n")[0] ?? uri };
+  const text = data.getData("text/plain").trim();
+  if (text) {
+    return /^https?:\/\//.test(text)
+      ? { kind: "url", value: text }
+      : { kind: "text", value: text };
+  }
+  return null;
+}
 
 export function CompanionPage(): React.ReactElement {
   const [state, setState] = useState<CompanionState>(RESTING);
@@ -232,6 +273,25 @@ export function CompanionPage(): React.ReactElement {
         pointer.current = null;
         setCompanionPointerOver(false);
       }}
+      /**
+       * Drops — `C10`.
+       *
+       * On the canvas rather than on the creature, because a drag has to be
+       * seen approaching before it can be aimed: the arc opens while the item
+       * is still in the air. `preventDefault` on drag-over is what makes this
+       * a drop target at all.
+       */
+      onDragOver={(e) => {
+        e.preventDefault();
+        companionDragOver(true);
+      }}
+      onDragLeave={() => companionDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        companionDragOver(false);
+        const dropped = describeDropped(e.dataTransfer);
+        if (dropped) companionDrop(dropped);
+      }}
     >
       <span
         // Polite: the creature never interrupts, and neither does its voice.
@@ -276,6 +336,10 @@ export function CompanionPage(): React.ReactElement {
           {...(state.heldNudge !== undefined
             ? { heldNudge: state.heldNudge }
             : {})}
+          {...(state.opening !== undefined ? { opening: state.opening } : {})}
+          {...(state.caught !== undefined ? { caught: state.caught } : {})}
+          onDropChoose={companionDropChoose}
+          onDropRelease={companionDropRelease}
           onIntroNext={companionIntroNext}
           onIntroDismiss={companionIntroDismiss}
           onOpen={() =>

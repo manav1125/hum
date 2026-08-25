@@ -416,6 +416,15 @@ export interface VellumBridge {
      * cancelled. The renderer may be one message behind on the phase.
      */
     stop(): Promise<void>;
+    /**
+     * Drops (`C10`). The arc's mouth is the slot, and nothing is stored until
+     * a choice is made — `dropRelease` and ten seconds of silence both let the
+     * item go, unkept.
+     */
+    dragOver(over: boolean): Promise<void>;
+    drop(item: { kind: string; value: string }): Promise<void>;
+    dropChoose(choice: string): Promise<void>;
+    dropRelease(): Promise<void>;
     nudgeOpen(): Promise<void>;
     nudgeDismiss(): Promise<void>;
     setSize(size: string): Promise<void>;

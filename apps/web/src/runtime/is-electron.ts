@@ -362,6 +362,11 @@ declare global {
         introDismiss?(): Promise<void>;
         /** The pill's `Stop`. Main decides what it stops. */
         stop?(): Promise<void>;
+        /** Drops (`C10`). Nothing is stored until a choice is made. */
+        dragOver?(over: boolean): Promise<void>;
+        drop?(item: { kind: string; value: string }): Promise<void>;
+        dropChoose?(choice: string): Promise<void>;
+        dropRelease?(): Promise<void>;
         /** Answering a nudge (`C7`). Neither of these acts on anything. */
         nudgeOpen?(): Promise<void>;
         nudgeDismiss?(): Promise<void>;

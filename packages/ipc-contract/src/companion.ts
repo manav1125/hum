@@ -34,7 +34,9 @@ export type CompanionPhase =
   /** A read that failed. The question is kept; the creature never shrugs. */
   | "couldnt"
   /** No signal. Notes still save (`C6`). */
-  | "offline";
+  | "offline"
+  /** Something was dropped on the creature and is being held, unstored (`C10`). */
+  | "caught";
 
 /**
  * Precedence, upstream's order kept.
@@ -51,6 +53,10 @@ export const COMPANION_PHASE_RANK: Record<CompanionPhase, number> = {
   typing: 100,
   recording: 95,
   listening: 90,
+  // Something of yours is being held and has not been stored. It expires on
+  // its own in ten seconds, so anything that covered it would drop the item
+  // rather than defer it.
+  caught: 88,
   waiting: 85,
   watching: 80,
   summary: 70,
@@ -103,6 +109,16 @@ export interface CompanionStatePayload {
    * Never lost, and never repeated out loud.
    */
   heldNudge?: string;
+  /**
+   * A drag is passing over the creature (`C10`).
+   *
+   * Not a phase: the arc opening is a thing the creature does, and it has to
+   * be able to do it in the middle of whatever else is true — including a
+   * recording, whose evidence nothing may cover.
+   */
+  opening?: boolean;
+  /** What was caught, named exactly (`C10`). */
+  caught?: CompanionCaught;
   /** Character, composed live (`C5`): three traits, one of them the accent. */
   blink?: "calm" | "lively";
   weight?: "fine" | "regular" | "bold";
@@ -113,6 +129,17 @@ export interface CompanionStatePayload {
    * renderer must replace this payload rather than merge it.
    */
   intro?: CompanionIntroBeat;
+}
+
+/**
+ * Something dropped on the creature, held and not yet stored (`C10`).
+ *
+ * `label` is what arrived, named exactly — a wrong drop has to be obvious
+ * before anything happens to it.
+ */
+export interface CompanionCaught {
+  kind: "file" | "image" | "url" | "text";
+  label: string;
 }
 
 /** One beat of the introduction (`C4`). */

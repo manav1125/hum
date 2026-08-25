@@ -106,6 +106,38 @@ export function companionNudgeOpen(): void {
  * progress. It used to be wired to "talk to Cue", which meant Stop on a
  * recording opened the voice surface and left the microphone running.
  */
+/**
+ * A drag is passing over the creature (`C10`).
+ *
+ * The arc opens toward it — there is no separate drop zone to draw, because
+ * the creature already had one.
+ */
+export function companionDragOver(over: boolean): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.dragOver?.(over);
+}
+
+/** Something landed. Held, not kept, until a choice is made. */
+export function companionDrop(item: {
+  kind: "file" | "image" | "url" | "text";
+  value: string;
+}): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.drop?.(item);
+}
+
+/** Read it · File it · Note. None of the three sends or spends. */
+export function companionDropChoose(choice: "read" | "file" | "note"): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.dropChoose?.(choice);
+}
+
+/** `✕`. Not a delete — nothing was stored. */
+export function companionDropRelease(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.dropRelease?.();
+}
+
 export function companionStop(): void {
   if (!isElectron()) return;
   void window.vellum?.companion?.stop?.();
