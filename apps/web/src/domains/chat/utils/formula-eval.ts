@@ -311,7 +311,7 @@ class Evaluator {
   }
 
   private parseComparison(): CellScalar {
-    let left = this.parseAddSub();
+    const left = this.parseAddSub();
     const t = this.peek();
     if (
       t &&
@@ -387,7 +387,7 @@ class Evaluator {
   }
 
   private parsePower(): CellScalar {
-    let left = this.parseUnary();
+    const left = this.parseUnary();
     const t = this.peek();
     if (t && t.type === "op" && t.value === "^") {
       this.next();
@@ -408,7 +408,7 @@ class Evaluator {
   }
 
   private parsePostfix(): CellScalar {
-    let v = this.parsePrimary();
+    const v = this.parsePrimary();
     const t = this.peek();
     if (t && t.type === "percent") {
       this.next();
