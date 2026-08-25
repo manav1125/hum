@@ -622,17 +622,50 @@ const bridge: VellumBridge = {
       ipcRenderer.invoke("vellum:popout:open", conversationId) as Promise<void>,
   },
   /**
-   * Floating desktop companion (slice 1). The companion BrowserWindow's
-   * renderer drives expand/collapse resizes and the Talk / Open Cue actions
-   * through main; status mirrors the tray's assistant-status state machine
-   * (pushed on change, pulled once at mount). See main/companion-window.ts.
+   * The always-on companion. Main owns the canvas, where the creature is,
+   * which way it has room to unfurl, and who owns the clicks; the renderer
+   * draws what it is given and reports back what the pointer is over. Status
+   * mirrors the tray's assistant-status state machine (pushed on change,
+   * pulled once at mount). See main/companion-window.ts.
    */
   companion: {
-    setExpanded: (expanded: boolean): Promise<void> =>
-      ipcRenderer.invoke(
-        "vellum:companion:setExpanded",
-        expanded,
-      ) as Promise<void>,
+    /**
+     * Whether the pointer is over anything actually drawn.
+     *
+     * Half of the technique that keeps an oversized, always-on-top canvas
+     * from swallowing clicks meant for other applications: main hands the
+     * canvas back the moment this says no. Fire-and-forget — a hover report
+     * nobody waits for must not be able to stall a pointer move.
+     */
+    setPointerOver: (over: boolean): void => {
+      void ipcRenderer.invoke("vellum:companion:setPointerOver", over);
+    },
+    /** A press landed on the creature. Main reads the cursor from here on. */
+    dragBegin: (): void => {
+      void ipcRenderer.invoke("vellum:companion:dragBegin");
+    },
+    /** The button came up — wherever it came up. */
+    dragEnd: (): void => {
+      void ipcRenderer.invoke("vellum:companion:dragEnd");
+    },
+    setSize: (size: string): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:setSize", size) as Promise<void>,
+    getState: (): Promise<Record<string, unknown>> =>
+      ipcRenderer.invoke("vellum:companion:getState") as Promise<
+        Record<string, unknown>
+      >,
+    onState: (callback: (state: Record<string, unknown>) => void) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        state: Record<string, unknown>,
+      ): void => {
+        callback(state);
+      };
+      ipcRenderer.on("vellum:companion:state", handler);
+      return () => {
+        ipcRenderer.off("vellum:companion:state", handler);
+      };
+    },
     talk: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:talk") as Promise<void>,
     openCue: (): Promise<void> =>

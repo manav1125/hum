@@ -1,6 +1,18 @@
 import { screen, type BrowserWindow } from "electron";
 import { z } from "zod";
 
+import {
+  CompanionDrag,
+  type DragPoint,
+} from "./companion-drag";
+import {
+  COMPANION_SIZES,
+  DEFAULT_COMPANION_SIZE,
+  geometryFor,
+  type CompanionSize,
+} from "./companion-geometry";
+import { CompanionHitTest } from "./companion-hit-test";
+import { CompanionPlacement, type PlacementHost } from "./companion-placement";
 import { createFloatingWindow, getFloatingWindow } from "./floating-window";
 import { handle } from "./ipc";
 import {
@@ -9,74 +21,53 @@ import {
 } from "./main-window";
 import { onSettingChange, readSetting, writeSetting } from "./settings";
 import { getStatus, onStatusChange } from "./status";
-import { restoreBounds, track as trackWindowState } from "./window-state";
 import { isCompanionEnabled } from "./desktop-surface-flags";
 
 /**
- * Floating desktop companion (slice 1) — an always-on-top, frameless,
- * non-activating corner orb, modeled on upstream's native macOS companion
- * program but built as an Electron panel window hosting the SPA's
- * `/assistant/floating/companion` route (the same shell-over-web shape as
- * the command palette and dictation overlay).
+ * The always-on companion — design `C1`–`C3`, and the window that hosts them.
  *
- * Behavior:
- *   - Gated by the `desktop-companion` client feature flag (registry:
- *     `meta/feature-flags/feature-flag-registry.json`, DEFAULT OFF). The
- *     renderer publishes flag values over `vellum:featureFlags:set`
- *     (persisted by `settings.ts`), and `VELLUM_FLAG_DESKTOP_COMPANION`
- *     force-overrides in either direction — mirroring the renderer's
- *     `VELLUM_FLAG_*` env activation pattern. Flag off ⇒ zero footprint:
- *     no window, no tray items (the tray gates on `isCompanionEnabled`).
- *   - Show/hide is a persisted user choice (`companionVisible`), toggled
- *     from the tray's "Show/Hide Cue Companion" item.
- *   - The window is a `type: "panel"` (non-activating) singleton pinned to
- *     the bottom-right corner by default, draggable via CSS drag regions in
- *     the renderer, visible on all workspaces, with its collapsed position
- *     persisted under the `companion` window-state key.
- *   - The renderer asks main to resize between the collapsed orb and the
- *     expanded mini card (`vellum:companion:setExpanded`); the resize keeps
- *     the orb's bottom-right corner anchored so a corner-pinned companion
- *     expands inward instead of off-screen.
- *   - Status: main already owns the tray's `AssistantStatus` state machine
- *     (renderer-published via `vellum:status:connection`), so the companion
- *     reuses it — pushed over `vellum:companion:status`, pulled once via
- *     `vellum:companion:getStatus` — rather than running its own polling.
+ * This file owns the parts only main can own, and deliberately nothing else:
+ *
+ *   · **The canvas, which never resizes on a phase.** One window, sized for
+ *     the widest state the surface can reach, with the creature anchored to
+ *     the near edge of it. The old companion grew its window from 72×72 to
+ *     260×148 to show a card — a window that resizes on every phase change is
+ *     a window resizing constantly, and it is also why real glass is
+ *     unavailable (a vibrancy material fills its window). See
+ *     `companion-geometry.ts`. The single legitimate resize is a *size* step
+ *     the user asked for.
+ *   · **Which way it has room to unfurl.** Growth and card-growth are facts
+ *     about the work area the creature is parked in, and the renderer has no
+ *     access to that. See `companion-placement.ts`.
+ *   · **Who owns the clicks.** The canvas is many times the size of anything
+ *     drawn in it, so it is transparent to clicks until the renderer says the
+ *     pointer is genuinely over something. See `companion-hit-test.ts` — three
+ *     of upstream's five bugs ended with this window eating clicks meant for
+ *     other applications.
+ *   · **The drag.** Moves come from main polling the cursor, never from
+ *     renderer events, so a fast drag cannot outrun a window moved one IPC
+ *     message at a time. See `companion-drag.ts`.
+ *
+ * Gating is unchanged: the `desktop-companion` flag (with the
+ * `VELLUM_FLAG_DESKTOP_COMPANION` env override) decides whether any of this
+ * exists at all, and `companionVisible` is the user's own show/hide choice.
  */
 
 const COMPANION_KIND = "companion";
 const COMPANION_PATH = "/floating/companion";
 
-export const COMPANION_COLLAPSED_SIZE = { width: 72, height: 72 } as const;
-export const COMPANION_EXPANDED_SIZE = { width: 260, height: 148 } as const;
-
-/** Margin from the work-area corner for the first-run default position. */
-const DEFAULT_CORNER_MARGIN = 24;
-
-const COMPANION_FLAG_KEY = "desktop-companion";
-const COMPANION_FLAG_ENV = "VELLUM_FLAG_DESKTOP_COMPANION";
-
-const ENV_TRUE = new Set(["true", "1", "yes", "on"]);
-const ENV_FALSE = new Set(["false", "0", "no", "off"]);
+/** How often main reads the cursor while a drag is held. ~60Hz. */
+const DRAG_POLL_MS = 16;
 
 /**
- * `VELLUM_FLAG_DESKTOP_COMPANION` override: `true`/`false` when the env var
- * parses as a boolean, `null` when unset or unparseable (fall through to the
- * renderer-published flag map). Same token set as the preload's
- * `__VELLUM_FLAG_OVERRIDES__` parser so one env var drives both processes.
+ * Where the creature stands on first run: the right edge, below the middle.
+ *
+ * Low enough to be out of the way of what people actually work in, and on an
+ * edge from the very first frame — `C8`'s rule is that the creature lives on
+ * an edge, so it should never have to be dragged to one to look right.
  */
-const envFlagOverride = (): boolean | null => {
-  const raw = process.env[COMPANION_FLAG_ENV]?.trim().toLowerCase();
-  if (!raw) return null;
-  if (ENV_TRUE.has(raw)) return true;
-  if (ENV_FALSE.has(raw)) return false;
-  return null;
-};
+const FIRST_RUN_HEIGHT_FRACTION = 0.62;
 
-/**
- * Whether the desktop-companion feature flag is currently enabled. Checked
- * at tray-menu-build time and on every sync so toggling the flag takes
- * effect without an app restart (matching the tray's other flag gates).
- */
 /**
  * The persisted show/hide choice. Defaults to visible so enabling the flag
  * is sufficient to see the companion; hiding from the tray (or the window's
@@ -85,25 +76,29 @@ const envFlagOverride = (): boolean | null => {
 export const isCompanionVisible = (): boolean =>
   readSetting("companionVisible") ?? true;
 
-// Whether the singleton window is currently showing the expanded mini card.
-// Presentation state only — deliberately not persisted; a fresh window always
-// opens collapsed.
-let expanded = false;
+/**
+ * The creature's size — a named step, never overridden once chosen (`C12`).
+ */
+export const companionSize = (): CompanionSize => {
+  const stored = readSetting("companionSize");
+  return (COMPANION_SIZES as readonly string[]).includes(stored ?? "")
+    ? (stored as CompanionSize)
+    : DEFAULT_COMPANION_SIZE;
+};
 
 const companionWindow = (): BrowserWindow | null =>
   getFloatingWindow(COMPANION_KIND);
 
-/**
- * First-run default: bottom-right corner of the primary display's work
- * area, inset by a margin. Once the user drags the orb, the persisted
- * `companion` window-state entry wins (see `openCompanionWindow`).
- */
-const defaultCornerPosition = (): { x: number; y: number } => {
-  const { x, y, width, height } = screen.getPrimaryDisplay().workArea;
-  return {
-    x: x + width - COMPANION_COLLAPSED_SIZE.width - DEFAULT_CORNER_MARGIN,
-    y: y + height - COMPANION_COLLAPSED_SIZE.height - DEFAULT_CORNER_MARGIN,
-  };
+let placement: CompanionPlacement | null = null;
+let hitTest: CompanionHitTest | null = null;
+let drag: CompanionDrag | null = null;
+let dragPoll: ReturnType<typeof setInterval> | null = null;
+let hovering = false;
+
+const send = (channel: string, payload: unknown): void => {
+  const win = companionWindow();
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  win.webContents.send(channel, payload);
 };
 
 const pushStatusTo = (win: BrowserWindow): void => {
@@ -111,89 +106,209 @@ const pushStatusTo = (win: BrowserWindow): void => {
   win.webContents.send("vellum:companion:status", getStatus());
 };
 
+/**
+ * Everything the renderer needs to draw, as one message.
+ *
+ * `hover` is here rather than decided in the page for the reason the whole
+ * forwarding trick exists: a renderer that decided its own hover would have to
+ * claim the entire canvas to find out it was being pointed at.
+ */
+const companionState = (): Record<string, unknown> => {
+  const current = placement?.current();
+  const geometry = current?.geometry ?? geometryFor(companionSize());
+  return {
+    avatarBox: geometry.avatarBox,
+    growth: current?.growth ?? "right",
+    cardGrowth: current?.cardGrowth ?? "up",
+    hover: hovering,
+  };
+};
+
+const publishState = (): void => {
+  send("vellum:companion:state", companionState());
+};
+
+/** First-run home, or the centre the user last settled the creature at. */
+const startingCentre = (size: CompanionSize): DragPoint => {
+  const stored = readSetting("companionCentre");
+  if (stored && typeof stored.x === "number" && typeof stored.y === "number") {
+    return { x: stored.x, y: stored.y };
+  }
+  const { x, y, width, height } = screen.getPrimaryDisplay().workArea;
+  return {
+    x: x + width - geometryFor(size).nearEdge,
+    y: Math.round(y + height * FIRST_RUN_HEIGHT_FRACTION),
+  };
+};
+
+const placementHost: PlacementHost = {
+  bounds: () => companionWindow()?.getBounds() ?? null,
+  workAreaNear: (point) => screen.getDisplayNearestPoint(point).workArea,
+  setPosition: (x, y) => {
+    companionWindow()?.setPosition(x, y);
+  },
+  setSize: (width, height) => {
+    const win = companionWindow();
+    if (!win) return;
+    // A fixed-size panel has to be unlocked for a programmatic resize; this is
+    // the documented dance, and the only resize the companion ever performs.
+    win.setResizable(true);
+    win.setBounds({ ...win.getBounds(), width, height });
+    win.setResizable(false);
+  },
+  publish: () => publishState(),
+};
+
+/**
+ * Stop following the cursor.
+ *
+ * Called from every path that can end a drag, including the ones that are not
+ * a mouse-up at all — the window going away mid-gesture has to end the press
+ * too, or the poll outlives the window it was moving.
+ */
+const stopDragPoll = (): void => {
+  if (!dragPoll) return;
+  clearInterval(dragPoll);
+  dragPoll = null;
+};
+
+/**
+ * End a drag from somewhere that is not the button coming up: the window lost
+ * focus, or went away. The press must never outlive the gesture.
+ */
+const abandonDrag = (): void => {
+  stopDragPoll();
+  if (drag?.isHeld()) drag.end();
+};
+
 const openCompanionWindow = (): BrowserWindow => {
   const existing = companionWindow();
   if (existing) return existing;
 
-  expanded = false;
-
-  // Saved collapsed position (clamped to a live display by `restoreBounds`);
-  // fall through to the corner default on first run. The restored size is
-  // ignored in favor of the collapsed constants — persistence is gated to
-  // the collapsed state, so they only disagree after a crash mid-expand.
-  const restored = restoreBounds(COMPANION_KIND, COMPANION_COLLAPSED_SIZE);
-  const position =
-    restored.x !== undefined && restored.y !== undefined
-      ? { x: restored.x, y: restored.y }
-      : defaultCornerPosition();
+  const size = companionSize();
+  const geometry = geometryFor(size);
 
   const win = createFloatingWindow({
     kind: COMPANION_KIND,
     route: COMPANION_PATH,
-    width: COMPANION_COLLAPSED_SIZE.width,
-    height: COMPANION_COLLAPSED_SIZE.height,
-    // Non-activating: the orb must never steal focus from the app the user
-    // is working in. Click actions surface the main window explicitly.
+    width: geometry.canvasWidth,
+    height: geometry.canvasHeight,
+    // Non-activating: the creature must never steal focus from the app the
+    // user is working in. Its actions surface the main window explicitly.
     focusOnShow: false,
     alwaysOnTopLevel: "floating",
     visibleOnAllWorkspaces: true,
-    position,
     browserWindow: {
       movable: true,
       minimizable: false,
       maximizable: false,
-      // The page paints the orb on a fully transparent canvas; a native
-      // shadow would draw a rectangular halo around it.
+      // The page paints on a fully transparent canvas; a native shadow would
+      // draw a rectangle around a window that is mostly empty.
       hasShadow: false,
       backgroundColor: "#00000000",
     },
   });
 
-  // Persist the collapsed position (debounced move + close) under its own
-  // window-state key. Gated on collapsed so the expanded card's transient
-  // geometry is never saved as the orb's home.
-  trackWindowState(COMPANION_KIND, win, () => !expanded);
-
-  // The route chunk loads lazily; push the current status once the renderer
-  // is ready so the orb doesn't wait for the next transition.
-  win.webContents.on("did-finish-load", () => {
-    pushStatusTo(win);
+  placement = new CompanionPlacement(placementHost, size);
+  hitTest = new CompanionHitTest({ window: companionWindow });
+  drag = new CompanionDrag({
+    moveTo: (centre) => placement?.moveTo(centre),
+    settle: (centre) => {
+      const landed = placement?.settle(centre);
+      // The creature stays where it was left, across restarts. Persisting the
+      // *centre* rather than the window's bounds is what keeps this stable
+      // when the growth direction — and so the origin's meaning — changes.
+      if (landed) writeSetting("companionCentre", landed);
+    },
+    setInteractive: (interactive) => hitTest?.set(interactive),
   });
 
+  // Transparent to clicks from the very first frame, while still receiving
+  // mouse-move. A new window that claimed its canvas would swallow presses
+  // before anything had even been drawn.
+  hitTest.install();
+  placement.moveTo(startingCentre(size));
+
+  // The route chunk loads lazily; push the current status and geometry once
+  // the renderer is ready so the creature doesn't wait for the next change.
+  win.webContents.on("did-finish-load", () => {
+    pushStatusTo(win);
+    publishState();
+  });
+
+  win.on("blur", abandonDrag);
   win.on("closed", () => {
-    expanded = false;
+    abandonDrag();
+    placement = null;
+    hitTest = null;
+    drag = null;
+    hovering = false;
   });
 
   return win;
 };
 
 /**
- * Resize the companion between the collapsed orb and the expanded mini
- * card, keeping the bottom-right corner anchored (the default home is the
- * bottom-right of the display, so growing up-left keeps the card on
- * screen) and clamping into the current display's work area. The window is
- * constructed non-user-resizable; the temporary `setResizable(true)` dance
- * is the documented workaround for programmatic resizes of fixed-size
- * windows.
+ * The pointer is, or is not, over something actually drawn.
+ *
+ * The other half of the forwarding trick: the canvas goes back to transparent
+ * the moment this says no, which is what keeps the empty region — most of the
+ * window — out of the way of clicks meant for the application behind.
+ *
+ * Ignored while a drag is held, because during a drag the answer is already
+ * yes and the renderer's own idea of where the pointer is is the thing a drag
+ * outruns.
  */
-export const setCompanionExpanded = (value: boolean): void => {
-  const win = companionWindow();
-  if (!win) return;
-  if (expanded === value) return;
-  expanded = value;
+export const setCompanionPointerOver = (over: boolean): void => {
+  if (drag?.isHeld()) return;
+  hitTest?.set(over);
+  if (hovering === over) return;
+  hovering = over;
+  publishState();
+};
 
-  const bounds = win.getBounds();
-  const target = value ? COMPANION_EXPANDED_SIZE : COMPANION_COLLAPSED_SIZE;
-  const workArea = screen.getDisplayMatching(bounds).workArea;
+/**
+ * A press landed on the creature.
+ *
+ * Main reads the cursor itself from here on: the renderer's coordinates are
+ * exactly what a fast drag outruns, and polling the cursor means the creature
+ * tracks the hand rather than a trail of IPC messages.
+ */
+export const beginCompanionDrag = (): void => {
+  const centre = placement?.centre();
+  if (!drag || !centre) return;
+  drag.begin(screen.getCursorScreenPoint(), centre);
+  stopDragPoll();
+  dragPoll = setInterval(() => {
+    if (!drag?.isHeld()) {
+      stopDragPoll();
+      return;
+    }
+    drag.move(screen.getCursorScreenPoint());
+  }, DRAG_POLL_MS);
+};
 
-  let x = bounds.x + bounds.width - target.width;
-  let y = bounds.y + bounds.height - target.height;
-  x = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - target.width));
-  y = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - target.height));
+/**
+ * The button came up — wherever it came up.
+ *
+ * The renderer captures the pointer for the duration of the press, so the
+ * `pointerup` is delivered to it even when the pointer is over another
+ * application by then. Losing the window ends the press too (`blur`,
+ * `closed`), so there is no path where a press outlives its gesture and
+ * leaves the window claiming the canvas.
+ */
+export const endCompanionDrag = (): void => {
+  stopDragPoll();
+  if (!drag?.isHeld()) return;
+  drag.end(screen.getCursorScreenPoint());
+};
 
-  win.setResizable(true);
-  win.setBounds({ x, y, width: target.width, height: target.height });
-  win.setResizable(false);
+/** A named size step (`C12`). The one thing that legitimately resizes. */
+export const setCompanionSize = (size: CompanionSize): void => {
+  writeSetting("companionSize", size);
+  placement?.setSize(size);
+  const centre = placement?.centre();
+  if (centre) writeSetting("companionCentre", centre);
 };
 
 /**
@@ -224,17 +339,13 @@ export const toggleCompanionWindow = (): void => {
 };
 
 /**
- * "Talk to Cue" (tray item and the companion card's Talk action): surface
- * the main window — recreating it if the user closed it — then dispatch the
+ * "Talk to Cue" (tray item and the companion's own Talk action): surface the
+ * main window — recreating it if the user closed it — then dispatch the
  * `openVoice` command, which the renderer routes to the voice surface.
  * Awaiting `ensureVisible` matters: it resolves only after the renderer has
- * finished loading, so the command isn't dropped by a freshly created
- * window.
+ * finished loading, so the command isn't dropped by a freshly created window.
  */
 export const talkToCue = async (): Promise<void> => {
-  // Collapse first so the mini card isn't left floating over the main
-  // window the user is being sent to.
-  setCompanionExpanded(false);
   await ensureMainWindowVisible();
   dispatchToMain({ kind: "openVoice" });
 };
@@ -243,7 +354,6 @@ export const talkToCue = async (): Promise<void> => {
  * "Open Cue": surface (or recreate) the main window.
  */
 export const openCueFromCompanion = async (): Promise<void> => {
-  setCompanionExpanded(false);
   await ensureMainWindowVisible();
 };
 
@@ -262,13 +372,27 @@ export const installCompanionWindow = (): void => {
   if (installed) return;
   installed = true;
 
+  handle("vellum:companion:setPointerOver", z.tuple([z.boolean()]), ([over]) => {
+    setCompanionPointerOver(over);
+  });
+
+  handle("vellum:companion:dragBegin", z.tuple([]), () => {
+    beginCompanionDrag();
+  });
+
+  handle("vellum:companion:dragEnd", z.tuple([]), () => {
+    endCompanionDrag();
+  });
+
   handle(
-    "vellum:companion:setExpanded",
-    z.tuple([z.boolean()]),
-    ([value]) => {
-      setCompanionExpanded(value);
+    "vellum:companion:setSize",
+    z.tuple([z.enum(COMPANION_SIZES)]),
+    ([size]) => {
+      setCompanionSize(size);
     },
   );
+
+  handle("vellum:companion:getState", z.tuple([]), () => companionState());
 
   handle("vellum:companion:talk", z.tuple([]), async () => {
     await talkToCue();
@@ -286,16 +410,21 @@ export const installCompanionWindow = (): void => {
   handle("vellum:companion:getStatus", z.tuple([]), () => getStatus());
 
   // Mirror tray-style status reactivity: push transitions to the companion
-  // renderer so the orb tracks idle/thinking without polling.
+  // renderer so the creature tracks idle/thinking without polling.
   onStatusChange(() => {
     const win = companionWindow();
     if (win) pushStatusTo(win);
   });
 
+  // A display arriving or leaving, or the menu bar changing height, moves the
+  // work area under a surface that never moved — which can flip which way
+  // there is room to unfurl. Re-place rather than only re-decide.
+  screen.on("display-metrics-changed", () => placement?.refresh());
+  screen.on("display-added", () => placement?.refresh());
+  screen.on("display-removed", () => placement?.refresh());
+
   // The renderer publishes flag values after sign-in / flag toggles; the
   // persisted map is also available at startup from the previous session.
-  // Reconcile now and on every change so flipping the flag (or the
-  // visibility choice being rewritten elsewhere) takes effect live.
   onSettingChange("featureFlags", () => {
     syncCompanionWindow();
   });
@@ -306,7 +435,11 @@ export const installCompanionWindow = (): void => {
 // `installCompanionWindow` instead.
 export const __resetForTesting = (): void => {
   installed = false;
-  expanded = false;
+  stopDragPoll();
+  placement = null;
+  hitTest = null;
+  drag = null;
+  hovering = false;
 };
 
 /**

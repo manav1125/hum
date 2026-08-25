@@ -21,6 +21,16 @@
  * never on a `mouseup` the page had to receive.
  */
 
+/**
+ * How far the hand has to travel before a press counts as a drag.
+ *
+ * Main reads the cursor on a timer rather than waiting for renderer events,
+ * which is what stops a fast drag outrunning the window — but it also means a
+ * perfectly still press produces a move every frame. Without a threshold,
+ * every click on the creature would count as a drag and settle it to an edge.
+ */
+const DRAG_SLOP = 3;
+
 export interface DragPoint {
   x: number;
   y: number;
@@ -59,11 +69,16 @@ export class CompanionDrag {
    */
   move(pointer: DragPoint): void {
     if (!this.from || !this.origin) return;
+    const dx = pointer.x - this.from.x;
+    const dy = pointer.y - this.from.y;
+    // Below the threshold this is still a press, not yet a drag — see
+    // `DRAG_SLOP`. Once it is a drag it stays one, so a hand that pauses
+    // mid-gesture does not turn back into a click.
+    if (!this.moved && Math.abs(dx) < DRAG_SLOP && Math.abs(dy) < DRAG_SLOP) {
+      return;
+    }
     this.moved = true;
-    this.host.moveTo({
-      x: this.origin.x + (pointer.x - this.from.x),
-      y: this.origin.y + (pointer.y - this.from.y),
-    });
+    this.host.moveTo({ x: this.origin.x + dx, y: this.origin.y + dy });
   }
 
   /**

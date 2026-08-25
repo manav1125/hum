@@ -53,6 +53,23 @@ export interface AppSettings {
    */
   companionVisible: boolean;
   /**
+   * The creature's size, as a named step (`small` … `ridiculous`).
+   *
+   * Absent means nobody has chosen, which is not the same as `medium`: a
+   * stored choice is never overridden, so the difference has to survive.
+   */
+  companionSize: string;
+  /**
+   * Where the creature was last settled, as the centre of the creature —
+   * never the window's bounds.
+   *
+   * The canvas reserves the card's height on one side only and unfurls
+   * whichever way the display allows, so the window's origin means different
+   * things in different corners. The creature's centre means the same thing
+   * everywhere, which is what makes it the thing worth persisting.
+   */
+  companionCentre: { x: number; y: number };
+  /**
    * Whether the floating corner may read the window in front of you (F1).
    *
    * Three states, and the third is the point: `true` granted, `false`
@@ -132,6 +149,22 @@ const schema: Schema<AppSettings> = {
   companionVisible: {
     type: "boolean",
     default: true,
+  },
+  // No defaults for either: an unchosen size must stay distinguishable from a
+  // chosen `medium`, and a creature that has never been placed must fall
+  // through to its first-run home rather than to somebody's guess at one.
+  companionSize: {
+    type: "string",
+    enum: ["small", "medium", "large", "huge", "ridiculous"],
+  },
+  companionCentre: {
+    type: "object",
+    properties: {
+      x: { type: "number" },
+      y: { type: "number" },
+    },
+    required: ["x", "y"],
+    additionalProperties: false,
   },
   // No default: "never asked" has to be distinguishable from "declined", and
   // a default of false would erase that difference on first launch.

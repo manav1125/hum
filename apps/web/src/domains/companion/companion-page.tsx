@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  companionDragBegin,
+  companionDragEnd,
   companionOpenCue,
   companionTalk,
+  getCompanionState,
   getCompanionStatus,
+  setCompanionPointerOver,
+  subscribeCompanionState,
   subscribeCompanionStatus,
   type AssistantStatus,
 } from "@/domains/companion/companion-bridge";
@@ -14,7 +19,7 @@ import type { CompanionPhase } from "./companion-surface";
 /**
  * The always-on companion, rendered inside its Electron canvas.
  *
- * Design `C1`–`C3`. The page's whole job is to draw the phase main gives it and
+ * Design `C1`–`C3`. The page's whole job is to draw what main gives it and
  * report back what the pointer is over; it decides almost nothing itself, and
  * that is deliberate:
  *
@@ -29,6 +34,11 @@ import type { CompanionPhase } from "./companion-surface";
  *   · **The size comes from main**, as one number: everything the surface draws
  *     derives from the creature's box, so the two processes never hold two
  *     copies of a scale.
+ *   · **The drag is main's too.** This page reports the press and the release;
+ *     every coordinate in between is read from the cursor by main, because a
+ *     window moved one IPC message at a time cannot keep up with a fast hand,
+ *     and a page that chases its own stale coordinates is upstream's
+ *     `56405459`.
  *
  * The canvas itself is transparent and the surface is anchored to the near
  * edge — the cross-process constant `COMPANION_NEAR_EDGE`. Main places the
@@ -46,6 +56,8 @@ interface CompanionState {
   avatarBox: number;
   growth: "right" | "left";
   cardGrowth: "up" | "down";
+  /** Main's answer, never this page's guess. See the header. */
+  hover: boolean;
   line?: string;
   detail?: string;
   answer?: string;
@@ -58,6 +70,7 @@ const RESTING: CompanionState = {
   avatarBox: 66,
   growth: "right",
   cardGrowth: "up",
+  hover: false,
 };
 
 export function CompanionPage(): React.ReactElement {
@@ -65,11 +78,15 @@ export function CompanionPage(): React.ReactElement {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
 
-  // Main publishes every phase change; the renderer never invents one.
+  // Main publishes every change; the renderer never invents one. The one-shot
+  // pull is for a cold window whose route chunk was still loading when main
+  // first published — without it the creature would draw at its default size
+  // until something happened to change.
   useEffect(() => {
-    const api = window.vellum?.companion;
-    if (!api?.onState) return;
-    return api.onState((next) => {
+    void getCompanionState().then((next) => {
+      if (next) setState((prev) => ({ ...prev, ...next }));
+    });
+    return subscribeCompanionState((next) => {
       setState((prev) => ({ ...prev, ...(next as Partial<CompanionState>) }));
     });
   }, []);
@@ -80,28 +97,84 @@ export function CompanionPage(): React.ReactElement {
   }, []);
 
   /**
+   * Where the pointer is, as of the last move the canvas received.
+   *
+   * The canvas gets mouse-move for free — that is the whole point of
+   * `{forward:true}` — so the page can answer "is the pointer over anything
+   * drawn?" from geometry rather than from the browser's own enter/leave
+   * bookkeeping. Which matters, because enter/leave is exactly what stops
+   * arriving when the drawn area changes under a hand that is not moving.
+   */
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+
+  /**
    * Tell main whether the pointer is over anything drawn.
    *
    * This is the other half of the forwarding trick: main hands the canvas back
    * whenever this says no, which is what keeps the empty region transparent to
    * clicks meant for the app behind.
    */
-  const report = useCallback((over: boolean) => {
-    window.vellum?.companion?.setPointerOver?.(over);
+  const reportCoverage = useCallback(() => {
+    const el = surfaceRef.current;
+    const at = pointer.current;
+    if (!el || !at) {
+      setCompanionPointerOver(false);
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    setCompanionPointerOver(
+      r.width > 0 &&
+        r.height > 0 &&
+        at.x >= r.left &&
+        at.x <= r.right &&
+        at.y >= r.top &&
+        at.y <= r.bottom,
+    );
   }, []);
 
-  // A phase change can take the drawn area out from under a stationary
-  // pointer — no mouse-move follows, so nothing recomputes on its own. Report
-  // again on every phase so main can re-decide. Upstream shipped this leak.
-  useEffect(() => {
-    const el = surfaceRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    report(r.width > 0 && r.height > 0 && state.phase !== "resting");
-  }, [state.phase, report]);
+  /**
+   * Hold the pointer for the whole press.
+   *
+   * Capture is what makes the release reportable no matter where the hand
+   * ends up: the button routinely comes up over another application, because
+   * a fast drag outruns a window moved one IPC message at a time, and without
+   * capture that `pointerup` is delivered to that application instead of here.
+   * The press would then never end — and an unended press leaves the window
+   * claiming a canvas many times the size of the creature.
+   */
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    companionDragBegin();
+  }, []);
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    companionDragEnd();
+  }, []);
+
+  // Losing the capture at all — the OS taking it back, the window going away
+  // under the hand — has to end the press too, for the same reason.
+  const onLostCapture = useCallback(() => {
+    companionDragEnd();
+  }, []);
 
   const busy = status === "thinking";
-  const phase = busy ? outrank(state.phase, "working") : state.phase;
+  const base = state.hover ? outrank(state.phase, "hover") : state.phase;
+  const phase = busy ? outrank(base, "working") : base;
+
+  // A phase change can take the drawn area out from under a stationary
+  // pointer — the pill collapses, a card is dismissed — and no mouse-move
+  // follows, so nothing recomputes on its own. The window would go on
+  // claiming a canvas many times the size of the creature, swallowing presses
+  // meant for whatever is behind it, until the user happened to move the
+  // mouse. Upstream shipped this leak (`64e3eead`); re-testing on every drawn
+  // phase is what closes it.
+  useEffect(() => {
+    reportCoverage();
+  }, [phase, state.avatarBox, state.growth, reportCoverage]);
 
   return (
     <div
@@ -120,14 +193,24 @@ export function CompanionPage(): React.ReactElement {
         padding: NEAR_EDGE - state.avatarBox / 2,
         overflow: "hidden",
       }}
+      // The canvas receives moves without having claimed anything; that is
+      // what `{forward:true}` buys, and it is the only reason the page can
+      // answer this question at all.
+      onMouseMove={(e) => {
+        pointer.current = { x: e.clientX, y: e.clientY };
+        reportCoverage();
+      }}
+      onMouseLeave={() => {
+        pointer.current = null;
+        setCompanionPointerOver(false);
+      }}
     >
       <div
         ref={surfaceRef}
-        onMouseEnter={() => report(true)}
-        onMouseLeave={() => report(false)}
-        // The creature is the drag handle; main ends the drag on a global
-        // mouse-up, never on one this page has to receive.
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onLostPointerCapture={onLostCapture}
+        data-companion-handle
       >
         <CompanionSurface
           phase={phase}

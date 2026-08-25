@@ -15,9 +15,62 @@ import { isElectron, type AssistantStatus } from "@/runtime/is-electron";
 
 export type { AssistantStatus };
 
-export async function setCompanionExpanded(expanded: boolean): Promise<void> {
+/**
+ * Report whether the pointer is over anything actually drawn.
+ *
+ * Main hands the canvas back the moment this says no, which is what keeps the
+ * empty region of an oversized always-on-top window transparent to clicks
+ * meant for the application behind it. Deliberately not awaited anywhere: a
+ * hover report is not something a pointer move may wait on.
+ */
+export function setCompanionPointerOver(over: boolean): void {
   if (!isElectron()) return;
-  await window.vellum?.companion?.setExpanded(expanded);
+  window.vellum?.companion?.setPointerOver?.(over);
+}
+
+/**
+ * A press landed on the creature.
+ *
+ * Main reads the cursor itself from here on — the renderer's own coordinates
+ * are exactly what a fast drag outruns, since the window is moved one IPC
+ * message at a time.
+ */
+export function companionDragBegin(): void {
+  if (!isElectron()) return;
+  window.vellum?.companion?.dragBegin?.();
+}
+
+/** The button came up. Safe to call twice; main ignores an idle release. */
+export function companionDragEnd(): void {
+  if (!isElectron()) return;
+  window.vellum?.companion?.dragEnd?.();
+}
+
+/**
+ * One-shot pull of the geometry main owns, for a cold window whose route
+ * chunk is still loading when main first publishes. `null` off-Electron.
+ */
+export async function getCompanionState(): Promise<Record<
+  string,
+  unknown
+> | null> {
+  if (!isElectron()) return null;
+  const bridge = window.vellum?.companion;
+  if (!bridge?.getState) return null;
+  return bridge.getState();
+}
+
+/**
+ * Subscribe to the geometry + hover pushes main publishes. Returns an
+ * unsubscribe function; a no-op unsubscribe off-Electron.
+ */
+export function subscribeCompanionState(
+  callback: (state: Record<string, unknown>) => void,
+): () => void {
+  if (!isElectron()) return () => {};
+  const bridge = window.vellum?.companion;
+  if (!bridge?.onState) return () => {};
+  return bridge.onState(callback);
 }
 
 export async function companionTalk(): Promise<void> {

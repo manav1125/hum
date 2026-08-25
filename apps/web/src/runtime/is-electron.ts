@@ -325,7 +325,6 @@ declare global {
        * See `apps/web/src/domains/companion/companion-bridge.ts`.
        */
       companion?: {
-        setExpanded(expanded: boolean): Promise<void>;
         talk(): Promise<void>;
         openCue(): Promise<void>;
         hide(): Promise<void>;
@@ -351,6 +350,14 @@ declare global {
          * clicks meant for the application behind.
          */
         setPointerOver?(over: boolean): void;
+        /** A press landed on the creature; main reads the cursor from here. */
+        dragBegin?(): void;
+        /** The button came up, wherever it came up. */
+        dragEnd?(): void;
+        /** A named size step (`C12`). The one legitimate canvas resize. */
+        setSize?(size: string): Promise<void>;
+        /** One-shot pull, for a cold window that missed the first publish. */
+        getState?(): Promise<Record<string, unknown>>;
       };
       /**
        * The floating corner — `⌥C`, one exchange, then finished. Optional

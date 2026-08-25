@@ -60,6 +60,24 @@ export class CompanionHitTest {
   }
 
   /**
+   * Put a freshly created window into the state this object already believes
+   * it is in.
+   *
+   * `set` is idempotent, which is what stops pointer moves and phase changes
+   * thrashing the host — and it is also why a new window needs this: the
+   * object starts out believing it is not interactive, so `set(false)` would
+   * correctly do nothing, and the window would sit there having never been
+   * told to hand its clicks back. A canvas many times the size of the pill,
+   * claiming presses, before anything has even been drawn.
+   */
+  install(): void {
+    const win = this.host.window();
+    if (!win || win.isDestroyed()) return;
+    this.interactive = false;
+    win.setIgnoreMouseEvents(true, { forward: true });
+  }
+
+  /**
    * Hand the clicks back after anything is removed from under the pointer.
    *
    * **The bug this closes.** Dismissing the introduction, answering a nudge, or

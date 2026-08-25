@@ -365,17 +365,35 @@ export interface VellumBridge {
     open(conversationId: string): Promise<void>;
   };
   /**
-   * Floating desktop companion (slice 1): the always-on-top corner orb
-   * window rendered by the SPA's `/assistant/floating/companion` route.
-   * `setExpanded` asks main to resize the panel between the collapsed orb
-   * and the expanded mini card; `talk` surfaces the main window and starts
-   * the voice-room entry path; `openCue` surfaces the main window; `hide`
-   * hides the companion (persisted until re-enabled from the tray).
-   * `getStatus`/`onStatus` mirror the assistant status main already tracks
-   * for the tray, so the orb can be status-aware without its own polling.
+   * The always-on companion: the always-on-top creature rendered by the SPA's
+   * `/assistant/floating/companion` route.
+   *
+   * The division of labour is the thing to understand here. Main owns the
+   * canvas (which never resizes on a phase), where the creature is, which way
+   * it has room to unfurl, and who owns the clicks; the renderer draws what
+   * it is given and reports back what the pointer is over. That is not
+   * fastidiousness — the window is many times the size of anything drawn in
+   * it, and a renderer that decided its own hover would have to claim the
+   * whole canvas to find out, which is how an always-on-top surface ends up
+   * swallowing clicks meant for other applications.
+   *
+   * `setPointerOver` is that report, and `onState`/`getState` carry main's
+   * answer back. `dragBegin`/`dragEnd` bracket a press: every coordinate in
+   * between is read from the cursor by main, because a window moved one IPC
+   * message at a time cannot keep up with a fast hand. `setSize` is the one
+   * thing that legitimately resizes the canvas. `talk` surfaces the main
+   * window and starts the voice-room entry path; `openCue` surfaces it;
+   * `hide` hides the companion (persisted until re-enabled from the tray).
+   * `getStatus`/`onStatus` mirror the assistant status main already tracks for
+   * the tray, so the creature is status-aware without its own polling.
    */
   companion: {
-    setExpanded(expanded: boolean): Promise<void>;
+    setPointerOver(over: boolean): void;
+    dragBegin(): void;
+    dragEnd(): void;
+    setSize(size: string): Promise<void>;
+    getState(): Promise<Record<string, unknown>>;
+    onState(callback: (state: Record<string, unknown>) => void): () => void;
     talk(): Promise<void>;
     openCue(): Promise<void>;
     hide(): Promise<void>;

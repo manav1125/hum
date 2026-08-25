@@ -127,6 +127,25 @@ describe("a drag ends wherever the button comes up", () => {
     expect(interactive.at(-1)).toBe(false);
   });
 
+  test("REGRESSION: a still hand is a click, however often the cursor is read", () => {
+    // Main polls the cursor rather than waiting for renderer events, so a
+    // press that never moves still produces a move every frame. Without a
+    // threshold every click on the creature would count as a drag and settle
+    // it to an edge.
+    drag.begin({ x: 200, y: 200 }, { x: 500, y: 400 });
+    for (let i = 0; i < 20; i++) drag.move({ x: 201, y: 199 });
+    expect(moves).toHaveLength(0);
+    expect(drag.end({ x: 201, y: 199 }).dragged).toBe(false);
+  });
+
+  test("once it is a drag it stays one, even if the hand comes to rest", () => {
+    drag.begin({ x: 200, y: 200 }, { x: 500, y: 400 });
+    drag.move({ x: 260, y: 200 });
+    drag.move({ x: 261, y: 200 });
+    expect(moves).toHaveLength(2);
+    expect(drag.hasMoved()).toBe(true);
+  });
+
   test("a press that never moved is a click, not a drag", () => {
     drag.begin({ x: 10, y: 10 }, { x: 500, y: 400 });
     const { dragged } = drag.end({ x: 10, y: 10 });
