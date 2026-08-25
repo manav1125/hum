@@ -35,6 +35,8 @@ const {
   compositeStatusDot,
   statusColor,
   statusFrames,
+  companionDot,
+  COMPANION_CAPTURE_DOT,
   __resetForTesting,
 } = await import("./status-icon");
 const { PULSE_FRAME_COUNT } = await import("./status");
@@ -130,5 +132,57 @@ describe("statusFrames", () => {
     const first = statusFrames("thinking");
     const second = statusFrames("thinking");
     expect(second).toBe(first);
+  });
+
+  test("REGRESSION: the cache is keyed by companion state too", () => {
+    // Keyed on status alone, a recording would keep whatever icon the status
+    // had already rendered — and the menu bar would go on saying nothing is
+    // being captured while the microphone was on.
+    const idle = statusFrames("idle");
+    const recording = statusFrames("idle", {
+      kind: "capture",
+      capture: "recording",
+    });
+    expect(recording).not.toBe(idle);
+  });
+
+  test("a live capture never pulses", () => {
+    // The pulse means "working". A capture is a standing fact, and two
+    // meanings on one dot is one meaning nobody can read.
+    expect(
+      statusFrames("thinking", { kind: "capture", capture: "watching" }),
+    ).toHaveLength(1);
+  });
+});
+
+describe("the menu bar carries the companion's four states (C11)", () => {
+  test("idle wears the status colour, as it always did", () => {
+    expect(companionDot("idle", { kind: "idle" })).toEqual(statusColor("idle"));
+  });
+
+  test("a capture takes the dot, in the creature's own reserved values", () => {
+    // One fact, two surfaces: the ring and the menu bar agree.
+    expect(companionDot("idle", { kind: "capture", capture: "watching" })).toEqual(
+      COMPANION_CAPTURE_DOT.watching,
+    );
+    expect(
+      companionDot("idle", { kind: "capture", capture: "recording" }),
+    ).toEqual(COMPANION_CAPTURE_DOT.recording);
+  });
+
+  test("a capture outranks the status, because it is the fact that matters", () => {
+    expect(
+      companionDot("thinking", { kind: "capture", capture: "recording" }),
+    ).toEqual(COMPANION_CAPTURE_DOT.recording);
+  });
+
+  test("a hidden creature is drawn dotless — there is nothing running to say", () => {
+    expect(companionDot("thinking", { kind: "hidden" })).toBeNull();
+  });
+
+  test("watching is deliberately not our accent", () => {
+    // It agrees with the host's capture tint instead, so the two do not argue
+    // about what is happening.
+    expect(COMPANION_CAPTURE_DOT.watching).toEqual({ r: 255, g: 159, b: 69 });
   });
 });

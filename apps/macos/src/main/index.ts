@@ -67,9 +67,11 @@ import { installAvatarIpc } from "./avatar";
 import { installCommandPaletteWindow } from "./command-palette-window";
 import {
   captureLive,
+  companionHeldCount,
   installCompanionWindow,
   isCompanionEnabled,
   isCompanionVisible,
+  replayCompanionNudge,
   stopCompanionCapture,
   talkToCue,
   toggleCompanionWindow,
@@ -615,6 +617,8 @@ app
         talk: talkToCue,
         capture: captureLive,
         stopCapture: stopCompanionCapture,
+        heldCount: companionHeldCount,
+        replayHeld: replayCompanionNudge,
       },
     });
     installNativeAuth();

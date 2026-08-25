@@ -221,12 +221,54 @@ const baseBitmap = (): Buffer => {
  * brand-glyph fallback) with the status dot and tags the result as a 2x
  * non-template image.
  */
+/**
+ * What the companion is doing, as the menu bar shows it — design `C11`.
+ *
+ * The icon is now load-bearing: the creature can be hidden, or yielded to a
+ * fullscreen app, and this is the surface that is always reachable. So it
+ * carries the one fact that must never be invisible — whether a capture is
+ * running — and says when there is no creature to go back to.
+ *
+ * `watching` and `recording` reuse the creature's own reserved values, so the
+ * ring and the menu bar agree: one fact, two surfaces.
+ */
+export type CompanionIconState =
+  | { kind: "idle" }
+  | { kind: "capture"; capture: "watching" | "recording" }
+  | { kind: "hidden" };
+
+export const COMPANION_CAPTURE_DOT: Record<"watching" | "recording", Rgb> = {
+  /** Deliberately not our accent — it agrees with the host's capture tint. */
+  watching: { r: 255, g: 159, b: 69 },
+  /** Reserved for recording alone. */
+  recording: { r: 229, g: 103, b: 91 },
+};
+
+/**
+ * The dot the icon should carry, or `null` for none.
+ *
+ * A hidden creature is drawn dotless — "the arc open and dotless" — because
+ * the dot is what says something is running, and nothing is.
+ */
+export const companionDot = (
+  status: AssistantStatus,
+  companion: CompanionIconState,
+): Rgb | null => {
+  if (companion.kind === "capture") {
+    return COMPANION_CAPTURE_DOT[companion.capture];
+  }
+  if (companion.kind === "hidden") return null;
+  return statusColor(status);
+};
+
 export const buildStatusIcon = (
   status: AssistantStatus,
   opacity = 1,
+  companion: CompanionIconState = { kind: "idle" },
 ): NativeImage => {
   const bitmap = baseBitmap();
-  compositeStatusDot(bitmap, CANVAS_PX, statusColor(status), opacity);
+  const dot = companionDot(status, companion);
+  if (dot) compositeStatusDot(bitmap, CANVAS_PX, dot, opacity);
   const image = nativeImage.createFromBitmap(bitmap, {
     width: CANVAS_PX,
     height: CANVAS_PX,
@@ -242,17 +284,33 @@ export const buildStatusIcon = (
  * Cached per status so the pulse timer swaps among ready `NativeImage`s with
  * no per-tick allocation.
  */
-const frameCache = new Map<AssistantStatus, NativeImage[]>();
+const frameCache = new Map<string, NativeImage[]>();
 
-export const statusFrames = (status: AssistantStatus): NativeImage[] => {
-  const cached = frameCache.get(status);
+const cacheKey = (
+  status: AssistantStatus,
+  companion: CompanionIconState,
+): string =>
+  companion.kind === "capture"
+    ? `${status}:capture:${companion.capture}`
+    : `${status}:${companion.kind}`;
+
+export const statusFrames = (
+  status: AssistantStatus,
+  companion: CompanionIconState = { kind: "idle" },
+): NativeImage[] => {
+  const key = cacheKey(status, companion);
+  const cached = frameCache.get(key);
   if (cached) return cached;
-  const frames = shouldPulse(status)
-    ? pulseOpacityFrames(PULSE_FRAME_COUNT).map((opacity) =>
-        buildStatusIcon(status, opacity),
-      )
-    : [buildStatusIcon(status, 1)];
-  frameCache.set(status, frames);
+  // A live capture never pulses: the pulse means "working", and a capture is
+  // a standing fact rather than something in progress. Two meanings on one
+  // dot is one meaning nobody can read.
+  const frames =
+    shouldPulse(status) && companion.kind === "idle"
+      ? pulseOpacityFrames(PULSE_FRAME_COUNT).map((opacity) =>
+          buildStatusIcon(status, opacity, companion),
+        )
+      : [buildStatusIcon(status, 1, companion)];
+  frameCache.set(key, frames);
   return frames;
 };
 

@@ -630,6 +630,28 @@ export const offerCompanionNudge = (request: {
   });
 };
 
+/** Nudges the menu bar is holding because nothing could show them (`C11`). */
+export const companionHeldCount = (): number => nudges?.heldCount() ?? 0;
+
+/**
+ * Show one of them, now that there is somewhere to show it.
+ *
+ * Brings the creature back first if it was hidden — being asked to replay is
+ * as clear a request to see it as pressing "Show Cue".
+ */
+export const replayCompanionNudge = (): void => {
+  if (!isCompanionVisible()) {
+    clearSetting("companionHiddenUntil");
+    writeSetting("companionVisible", true);
+    syncCompanionWindow();
+  }
+  nudges?.replayWithheld({
+    sinceInputMs: powerMonitor.getSystemIdleTime() * 1_000,
+    quiet: inQuietHours(companionQuietHours(), new Date()),
+    visible: true,
+  });
+};
+
 /** The right-click menu's current state, read from what is persisted. */
 const menuState = () => ({
   size: companionSize(),

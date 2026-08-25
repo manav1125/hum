@@ -5,6 +5,7 @@ type TrayCall = { event: string; handler: (...args: unknown[]) => void };
 type StubTray = {
   setIgnoreDoubleClickEvents: ReturnType<typeof mock>;
   setToolTip: ReturnType<typeof mock>;
+  setTitle: ReturnType<typeof mock>;
   setImage: ReturnType<typeof mock>;
   on: (event: string, handler: (...args: unknown[]) => void) => StubTray;
   popUpContextMenu: ReturnType<typeof mock>;
@@ -19,6 +20,7 @@ const makeTray = (): StubTray => {
   const stub: StubTray = {
     setIgnoreDoubleClickEvents: mock(() => undefined),
     setToolTip: mock(() => undefined),
+    setTitle: mock(() => undefined),
     setImage: mock(() => undefined),
     on: (event, handler) => {
       events.push({ event, handler });
@@ -387,7 +389,9 @@ describe("status-driven updates", () => {
 
     setStatus("disconnected");
 
-    expect(statusFramesMock).toHaveBeenLastCalledWith("disconnected");
+    expect(statusFramesMock).toHaveBeenLastCalledWith("disconnected", {
+      kind: "idle",
+    });
     expect(tray?.setImage).toHaveBeenLastCalledWith({ id: "disconnected" });
     expect(tray?.setToolTip).toHaveBeenLastCalledWith("title:disconnected");
   });
@@ -479,10 +483,12 @@ describe("desktop companion items", () => {
     enabled = true,
     visible = true,
     capture = null,
+    held = 0,
   }: {
     enabled?: boolean;
     visible?: boolean;
     capture?: "recording" | "watching" | null;
+    held?: number;
   } = {}) => ({
     isEnabled: mock(() => enabled),
     isVisible: mock(() => visible),
@@ -490,6 +496,8 @@ describe("desktop companion items", () => {
     talk: mock(() => Promise.resolve()),
     capture: mock(() => capture),
     stopCapture: mock(() => Promise.resolve()),
+    heldCount: mock(() => held),
+    replayHeld: mock(() => undefined),
   });
 
   const popMenu = () => {
@@ -585,6 +593,28 @@ describe("desktop companion items", () => {
     ) as { enabled?: boolean } | undefined;
     // Said out loud, rather than an item that silently does nothing.
     expect(hide?.enabled).toBe(false);
+  });
+
+  test("REGRESSION: nudges caught with nowhere to show them reach the menu bar (C11)", () => {
+    // Refused only because there was no creature on screen. They spent
+    // nothing, so they are not lost — this is the way back to them.
+    const companion = makeCompanion({ held: 2 });
+    installTray({ ...handlers, companion });
+    const template = popMenu();
+
+    const item = template.find((i) => i.label === "Holding 2 nudges");
+    expect(item).toBeTruthy();
+    item?.click?.();
+    expect(companion.replayHeld).toHaveBeenCalledTimes(1);
+  });
+
+  test("one is one, not 1 nudges", () => {
+    installTray({ ...handlers, companion: makeCompanion({ held: 1 }) });
+    expect(
+      popMenu()
+        .map((i) => i.label)
+        .filter(Boolean),
+    ).toContain("Holding 1 nudge");
   });
 
   test("with nothing running, no Stop is offered", () => {

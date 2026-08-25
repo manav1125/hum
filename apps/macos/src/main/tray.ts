@@ -27,7 +27,11 @@ import {
   statusMenuTitle,
   type AssistantStatus,
 } from "./status";
-import { invalidateIconCache, statusFrames } from "./status-icon";
+import {
+  invalidateIconCache,
+  statusFrames,
+  type CompanionIconState,
+} from "./status-icon";
 import { readOnboardingActive } from "./window-state";
 
 /**
@@ -109,6 +113,15 @@ export interface TrayHandlers {
     capture?(): "recording" | "watching" | null;
     /** Stop the live capture. The real one, not the mirror. */
     stopCapture?(): Promise<void>;
+    /**
+     * Nudges caught while the creature could not show them (`C11`).
+     *
+     * Counted in the menu bar rather than lost — an ignored nudge is never
+     * lost, and one that could not be shown at all least of all.
+     */
+    heldCount?(): number;
+    /** Show one of them. Brings the creature back if it was hidden. */
+    replayHeld?(): void;
   };
 }
 
@@ -305,6 +318,16 @@ const buildTrayMenu = (
     // that is always reachable, so while audio is being kept or a window is
     // being read it carries the same Stop the creature does — and carries it
     // first, above everything else here.
+    const held = companion.heldCount?.() ?? 0;
+    if (held > 0) {
+      items.push({
+        label: `Holding ${held} ${held === 1 ? "nudge" : "nudges"}`,
+        // Caught while there was nothing on screen to say them on. Never
+        // lost — this is the way back to them.
+        click: () => companion.replayHeld?.(),
+      });
+      items.push({ type: "separator" });
+    }
     const capture = companion.capture?.();
     if (capture) {
       items.push({
@@ -461,6 +484,13 @@ const buildTrayMenu = (
 
 let installed = false;
 let trayInstance: Tray | null = null;
+/**
+ * The companion handlers, kept for the icon.
+ *
+ * `applyStatus` runs on every status transition and has no argument to carry
+ * them, and the icon now depends on companion state as much as on status.
+ */
+let companionHandlers: TrayHandlers["companion"] | null = null;
 let pulseTimer: ReturnType<typeof setInterval> | null = null;
 
 const stopPulse = (): void => {
@@ -486,7 +516,22 @@ const applyStatus = (status: AssistantStatus): void => {
   stopPulse();
   tray.setToolTip(statusMenuTitle(status));
 
-  const frames = statusFrames(status);
+  // `C11`: the icon is load-bearing now. A live capture takes the dot, a
+  // hidden creature takes it away, and nudges caught while the creature could
+  // not show them are counted beside it.
+  const companion = companionHandlers;
+  const capture = companion?.isEnabled() ? (companion.capture?.() ?? null) : null;
+  const iconState: CompanionIconState = capture
+    ? { kind: "capture", capture }
+    : companion?.isEnabled() && !companion.isVisible()
+      ? { kind: "hidden" }
+      : { kind: "idle" };
+  // A number, not a badge glyph: it is the only thing here that has to be
+  // read rather than recognised, and the menu bar has text for exactly that.
+  const held = companion?.heldCount?.() ?? 0;
+  tray.setTitle(held > 0 ? String(held) : "");
+
+  const frames = statusFrames(status, iconState);
   tray.setImage(frames[0]!);
 
   if (shouldPulse(status) && frames.length > 1) {
@@ -515,6 +560,7 @@ const applyStatus = (status: AssistantStatus): void => {
  * accessibility changes — all without `index.ts` having to relay transitions.
  */
 export const installTray = (handlers: TrayHandlers): void => {
+  companionHandlers = handlers.companion ?? null;
   if (installed) return;
   installed = true;
 

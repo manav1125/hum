@@ -166,6 +166,79 @@ describe("an ignored nudge is never lost, and never repeats itself out loud", ()
   });
 });
 
+describe("nudges with nowhere to be shown are held, not lost (C11)", () => {
+  let clock: number;
+  let presented: Array<HeldNudge | null>;
+  let nudges: CompanionNudges;
+  const rest = { sinceInputMs: 60_000, quiet: false, visible: true };
+  const noSurface = { ...rest, visible: false };
+
+  beforeEach(() => {
+    clock = Date.parse("2026-08-25T10:00:00Z");
+    presented = [];
+    nudges = new CompanionNudges(
+      {
+        present: (n) => presented.push(n),
+        hold: () => undefined,
+        taught: () => undefined,
+        now: () => clock,
+      },
+      RETRACT_MS,
+    );
+  });
+
+  test("refused for want of a surface, it waits", () => {
+    expect(nudges.offer(request, noSurface).allowed).toBe(false);
+    expect(nudges.heldCount()).toBe(1);
+  });
+
+  test("REGRESSION: a decision about the nudge is not a held nudge", () => {
+    // Quiet hours and the budget are decisions; having nowhere to draw it is
+    // an accident. Holding the first kind would replay things the rules had
+    // already said no to.
+    nudges.offer(request, { ...rest, quiet: true });
+    nudges.offer({ ...request, itemId: "i2" }, { ...rest, quiet: true });
+    expect(nudges.heldCount()).toBe(0);
+  });
+
+  test("it spent nothing, so replaying it is not a second interruption", () => {
+    nudges.offer(request, noSurface);
+    expect(nudges.conditions(rest).spentToday).toBe(0);
+  });
+
+  test("the same item twice is held once", () => {
+    nudges.offer(request, noSurface);
+    nudges.offer(request, noSurface);
+    expect(nudges.heldCount()).toBe(1);
+  });
+
+  test("replaying shows one, not all of them at once", () => {
+    // They were withheld because nothing could speak. Answering that by
+    // saying three things at once is worse than having said nothing.
+    nudges.offer(request, noSurface);
+    nudges.offer({ ...request, itemId: "i2", line: "Second" }, noSurface);
+
+    expect(nudges.replayWithheld(rest)).toBe(true);
+    expect(nudges.current()?.itemId).toBe("i1");
+    expect(nudges.heldCount()).toBe(1);
+    nudges.stop();
+  });
+
+  test("replaying with nothing held does nothing", () => {
+    expect(nudges.replayWithheld(rest)).toBe(false);
+    expect(presented).toHaveLength(0);
+  });
+
+  test("REGRESSION: yesterday's withheld nudges are not replayed today", () => {
+    // Replaying a day-old nudge is the thing that makes people hide the
+    // creature.
+    nudges.offer(request, noSurface);
+    clock = Date.parse("2026-08-26T10:00:00Z");
+    nudges.conditions(rest);
+    expect(nudges.heldCount()).toBe(0);
+  });
+});
+
 describe("the budget, and the day it belongs to", () => {
   let clock: number;
   let nudges: CompanionNudges;

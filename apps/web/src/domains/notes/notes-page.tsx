@@ -813,6 +813,47 @@ const SOURCE_BADGE: Partial<Record<Note["source"], string>> = {
  * a filename. Unfiled notes carry `File it ›` rather than being nagged: filing
  * is optional forever, so it is an offer, not a chore badge.
  */
+/**
+ * Where reading became visible — the `N2` ruling, decided in code.
+ *
+ * Design's `N2` draws "Reading what you wrote…" appearing after ~2s of not
+ * typing. This build reads **on close** instead, for a reason recorded in
+ * this file's header: at a long meeting write-up, an idle timer is a model
+ * call every couple of seconds against text that is not finished, which is
+ * expensive to run and unnerving to watch. That decision stands.
+ *
+ * But it quietly orphaned two of `N2`'s four states. If reading starts as you
+ * leave, then "Reading…" and "I couldn't read this one" both happen when you
+ * are no longer looking at the note — so the reassuring state was invisible,
+ * and **a failed read was invisible too**, which is the actual defect: the
+ * note was fine and nobody was ever told the reading was not.
+ *
+ * So they moved to where the person actually is. `done` says nothing at all,
+ * because a note is allowed to just be a note.
+ */
+export function ReadState({
+  state,
+}: {
+  state: Note["extractionState"];
+}): React.ReactElement | null {
+  if (state === "reading") {
+    return (
+      <p className="mt-1 text-[11.5px]" style={{ color: C.t3 }}>
+        Reading what you wrote…
+      </p>
+    );
+  }
+  if (state === "failed") {
+    // Reassures on the part that matters: the writing survived.
+    return (
+      <p className="mt-1 text-[11.5px]" style={{ color: C.amberText }}>
+        I couldn&rsquo;t read this one just now — your note is saved.
+      </p>
+    );
+  }
+  return null;
+}
+
 function NoteCard({
   note,
   projectName,
@@ -860,6 +901,7 @@ function NoteCard({
           </p>
         ) : null}
         {note.produced ? <Produced produced={note.produced} /> : null}
+        <ReadState state={note.extractionState} />
       </button>
       {!note.projectId && onFile ? (
         <button

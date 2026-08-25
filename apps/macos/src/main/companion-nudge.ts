@@ -149,6 +149,16 @@ export class CompanionNudges {
   private live: HeldNudge | null = null;
   private held: HeldNudge | null = null;
   private nudged = new Set<string>();
+  /**
+   * Nudges that never got the chance to be shown (`C11`).
+   *
+   * Refused only because there was no creature on screen — hidden, or yielded
+   * to a fullscreen app. They spent nothing, so they are not lost; the menu
+   * bar counts them and they can be replayed. Anything refused for a reason
+   * about the nudge itself (budget, quiet hours, a repeat) is not held: those
+   * are decisions, not accidents.
+   */
+  private withheld: HeldNudge[] = [];
   private spent = 0;
   private day: string;
   private retract: ReturnType<typeof setTimeout> | null = null;
@@ -176,6 +186,9 @@ export class CompanionNudges {
     this.day = today;
     this.spent = 0;
     this.nudged.clear();
+    // Yesterday's withheld nudges are yesterday's news. Replaying them a day
+    // later is the thing that makes people hide the creature.
+    this.withheld = [];
   }
 
   conditions(rest: {
@@ -200,7 +213,10 @@ export class CompanionNudges {
     rest: { sinceInputMs: number; quiet: boolean; visible: boolean },
   ): NudgeVerdict {
     const verdict = mayNudge(request, this.conditions(rest));
-    if (!verdict.allowed) return verdict;
+    if (!verdict.allowed) {
+      if (verdict.reason === "hidden") this.withhold(request);
+      return verdict;
+    }
 
     this.spent += 1;
     this.nudged.add(request.itemId);
@@ -277,6 +293,45 @@ export class CompanionNudges {
 
   holding(): HeldNudge | null {
     return this.held;
+  }
+
+  private withhold(request: NudgeRequest): void {
+    if (this.withheld.some((n) => n.itemId === request.itemId)) return;
+    this.withheld.push({
+      itemId: request.itemId,
+      line: request.line,
+      ...(request.subject ? { subject: request.subject } : {}),
+    });
+  }
+
+  /** How many are waiting for a surface to show them on. */
+  heldCount(): number {
+    return this.withheld.length;
+  }
+
+  /**
+   * Show the oldest withheld nudge, now that there is somewhere to show it.
+   *
+   * One at a time: they were withheld because nothing could speak, and
+   * answering that by saying three things at once is worse than having said
+   * nothing.
+   */
+  replayWithheld(rest: {
+    sinceInputMs: number;
+    quiet: boolean;
+    visible: boolean;
+  }): boolean {
+    const next = this.withheld[0];
+    if (!next) return false;
+    this.withheld.shift();
+    this.disarm();
+    this.live = next;
+    this.held = null;
+    this.host.hold(null);
+    this.host.present(this.live);
+    this.arm();
+    void rest;
+    return true;
   }
 
   /** Teardown. */
