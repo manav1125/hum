@@ -425,6 +425,14 @@ export interface VellumBridge {
     drop(item: { kind: string; value: string }): Promise<void>;
     dropChoose(choice: string): Promise<void>;
     dropRelease(): Promise<void>;
+    /**
+     * The typing card's two verbs (`C2`, `Q1`). Both hand off rather than
+     * acting here: the card is one exchange and never grows a thread.
+     */
+    ask(message: string): Promise<void>;
+    keepAsNote(note: string): Promise<void>;
+    /** `esc`. Closes the card and cancels nothing in flight. */
+    closeCard(): Promise<void>;
     nudgeOpen(): Promise<void>;
     nudgeDismiss(): Promise<void>;
     setSize(size: string): Promise<void>;

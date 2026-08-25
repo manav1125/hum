@@ -268,6 +268,7 @@ const {
   isCompanionVisible,
   nextLocalMidnight,
   runCompanionMenuAction,
+  summonCompanionCard,
   installCompanionWindow,
   isCompanionEnabled,
   syncCompanionWindow,
@@ -351,6 +352,9 @@ describe("installCompanionWindow", () => {
       "vellum:companion:drop",
       "vellum:companion:dropChoose",
       "vellum:companion:dropRelease",
+      "vellum:companion:ask",
+      "vellum:companion:keepAsNote",
+      "vellum:companion:closeCard",
       "vellum:companion:nudgeDismiss",
       "vellum:companion:talk",
       "vellum:companion:openCue",
@@ -1026,6 +1030,91 @@ describe("drops, and the click-through window that has to receive them (C10)", (
       { kind: "url", value: "https://example.com/x" },
     ]);
     ipcHandlers.get("vellum:companion:dropRelease")?.([]);
+
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "resting",
+    });
+    expect(dispatchToMainMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("the summon, and the card's two verbs (C12, C2)", () => {
+  test("REGRESSION: pressing it twice closes what it opened", async () => {
+    // A summon that only opens is a summon you have to reach for the mouse to
+    // undo, which is the opposite of a pointer-free path.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    summonCompanionCard();
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "typing",
+    });
+
+    summonCompanionCard();
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "resting",
+    });
+  });
+
+  test("it does nothing at all when the companion is off", () => {
+    installCompanionWindow();
+    expect(() => summonCompanionCard()).not.toThrow();
+    expect(created).toHaveLength(0);
+  });
+
+  test("↵ hands the question to the app and closes the card", async () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    summonCompanionCard();
+
+    await ipcHandlers.get("vellum:companion:ask")?.(["when does Acme renew?"]);
+
+    expect(dispatchToMainMock).toHaveBeenLastCalledWith({
+      kind: "quickInputSubmit",
+      message: "when does Acme renew?",
+    });
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "resting",
+    });
+  });
+
+  test("⌘↵ sends what was typed to Notes, with the text", async () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    await ipcHandlers.get("vellum:companion:keepAsNote")?.([
+      "  Dana is out Thursday  ",
+    ]);
+
+    // Trimmed here so the app never has to wonder whether whitespace was
+    // meant.
+    expect(dispatchToMainMock).toHaveBeenLastCalledWith({
+      kind: "newNote",
+      text: "Dana is out Thursday",
+    });
+  });
+
+  test("REGRESSION: an empty ask opens nothing", async () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    await ipcHandlers.get("vellum:companion:ask")?.(["   "]);
+
+    expect(ensureVisibleMock).not.toHaveBeenCalled();
+    expect(dispatchToMainMock).not.toHaveBeenCalled();
+  });
+
+  test("esc closes the card and cancels nothing", () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    summonCompanionCard();
+
+    ipcHandlers.get("vellum:companion:closeCard")?.([]);
 
     expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
       phase: "resting",

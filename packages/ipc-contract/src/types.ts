@@ -68,7 +68,14 @@ export type VellumCommand =
    * this hands off to the Notes surface rather than opening anything of its
    * own.
    */
-  | { kind: "newNote" }
+  | {
+      kind: "newNote";
+      /**
+       * Text to start the note with, when the companion's `⌘↵` sent it
+       * (`C2`, `Q4`). Absent means an empty note to write into.
+       */
+      text?: string;
+    }
   /**
    * A nudge was dismissed with `✕` (`C7`).
    *

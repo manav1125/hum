@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
 import type { CompanionPhase } from "@vellumai/ipc-contract";
 
@@ -110,6 +110,12 @@ export interface CompanionSurfaceProps {
   /** What was caught, named exactly (`C10`). */
   caught?: { kind: string; label: string };
   onDropChoose?: (choice: "read" | "file" | "note") => void;
+  /** `↵` — ask Cue. Handed to the app; never answered into a thread. */
+  onAsk?: (message: string) => void;
+  /** `⌘↵` — keep what you typed as a note instead (`Q4`). */
+  onKeepAsNote?: (note: string) => void;
+  /** `esc`. Closes the card and cancels nothing. */
+  onCloseCard?: () => void;
   onDropRelease?: () => void;
   onIntroNext?: (fromBeat: number) => void;
   onIntroDismiss?: () => void;
@@ -392,38 +398,11 @@ function TypingCard(
         </p>
       ) : null}
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          background: "rgba(255,255,255,.05)",
-          border: HAIRLINE,
-          borderRadius: 12,
-          padding: "9px 10px",
-        }}
-      >
-        <span style={{ color: T2, fontSize: 13, flex: 1 }}>
-          Reply, or ⌘↵ to keep as a note…
-        </span>
-        <span
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: "50%",
-            background: ACCENT,
-            color: "#fff",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 12,
-            flex: "0 0 auto",
-          }}
-          aria-hidden
-        >
-          ↑
-        </span>
-      </div>
+      <Composer
+        onAsk={props.onAsk}
+        onKeepAsNote={props.onKeepAsNote}
+        onClose={props.onCloseCard}
+      />
 
       <p style={{ margin: 0, color: T2, fontSize: 11 }}>
         One exchange, then done ·{" "}
@@ -590,6 +569,99 @@ function CaughtChip({
       <TextButton onClick={onDropRelease} muted aria-label="Let it go">
         ✕
       </TextButton>
+    </div>
+  );
+}
+
+/**
+ * The card's composer — `C2`, and the corner's two verbs kept intact (`Q1`).
+ *
+ * `↵` asks and `⌘↵` keeps it as a note; `esc` closes and cancels nothing,
+ * because dismissing a surface must never be a way to lose work that is
+ * already running. Both verbs hand off to the app rather than acting here —
+ * a card that acted would need somewhere to report, and somewhere to report
+ * is a thread.
+ */
+function Composer({
+  onAsk,
+  onKeepAsNote,
+  onClose,
+}: {
+  onAsk?: (message: string) => void;
+  onKeepAsNote?: (note: string) => void;
+  onClose?: () => void;
+}): React.ReactElement {
+  const [text, setText] = useState("");
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        background: "rgba(255,255,255,.05)",
+        border: HAIRLINE,
+        borderRadius: 12,
+        padding: "9px 10px",
+      }}
+    >
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onClose?.();
+            return;
+          }
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          const body = text.trim();
+          if (!body) return;
+          if (e.metaKey || e.ctrlKey) onKeepAsNote?.(body);
+          else onAsk?.(body);
+          setText("");
+        }}
+        placeholder="Reply, or ⌘↵ to keep as a note…"
+        aria-label="Ask Cue"
+        autoFocus
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: "transparent",
+          border: 0,
+          outline: "none",
+          color: T1,
+          font: "inherit",
+          fontSize: 13,
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => {
+          const body = text.trim();
+          if (!body) return;
+          onAsk?.(body);
+          setText("");
+        }}
+        aria-label="Send"
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: "50%",
+          background: ACCENT,
+          color: "#fff",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 12,
+          flex: "0 0 auto",
+          border: 0,
+          cursor: "pointer",
+        }}
+      >
+        ↑
+      </button>
     </div>
   );
 }

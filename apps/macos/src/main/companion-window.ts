@@ -781,6 +781,29 @@ const afterCardRemoved = (): void => {
   publishState();
 };
 
+/**
+ * `⌥Space` — open the typing card where the creature already is (`C12`).
+ *
+ * A pointer-free path to the thing the companion is for. It does not move the
+ * creature, raise anything or take focus: the card unfurls from where the
+ * creature is parked, which is the whole reason the canvas is already big
+ * enough to hold it.
+ *
+ * Pressing it again closes the card, because a summon that only opens is a
+ * summon you have to reach for the mouse to undo.
+ */
+export const summonCompanionCard = (): void => {
+  if (!isCompanionEnabled() || !isCompanionVisible()) return;
+  // A hidden companion is summoned back into view rather than refused: the
+  // key is the way in for somebody who cannot reach the menu bar either.
+  if (!companionWindow()) syncCompanionWindow();
+  const typing = phases?.read().typing ?? false;
+  phases?.set({ typing: !typing });
+  // Opening a card, and closing one, both change the drawn area under a
+  // pointer that has no reason to move.
+  afterCardRemoved();
+};
+
 /** A named size step (`C12`). The one thing that legitimately resizes. */
 export const setCompanionSize = (size: CompanionSize): void => {
   writeSetting("companionSize", size);
@@ -954,6 +977,42 @@ export const installCompanionWindow = (): void => {
 
   handle("vellum:companion:dropRelease", z.tuple([]), () => {
     drops?.release();
+  });
+
+  /**
+   * The typing card's two verbs (`C2`, `Q1`).
+   *
+   * Both hand off rather than acting here, which is the same rule the whole
+   * surface obeys: the companion talks, and the app acts. The card is one
+   * exchange and never grows a thread, so there is nothing here that needs
+   * somewhere to put a conversation.
+   */
+  handle("vellum:companion:ask", z.tuple([z.string()]), async ([message]) => {
+    const text = message.trim();
+    if (!text) return;
+    phases?.set({ typing: false });
+    afterCardRemoved();
+    await ensureMainWindowVisible();
+    dispatchToMain({ kind: "quickInputSubmit", message: text });
+  });
+
+  handle(
+    "vellum:companion:keepAsNote",
+    z.tuple([z.string()]),
+    async ([note]) => {
+      const text = note.trim();
+      if (!text) return;
+      phases?.set({ typing: false });
+      afterCardRemoved();
+      await ensureMainWindowVisible();
+      dispatchToMain({ kind: "newNote", text });
+    },
+  );
+
+  /** `esc`, and the summon pressed a second time. Cancels nothing. */
+  handle("vellum:companion:closeCard", z.tuple([]), () => {
+    phases?.set({ typing: false });
+    afterCardRemoved();
   });
 
   handle("vellum:companion:nudgeDismiss", z.tuple([]), () => {

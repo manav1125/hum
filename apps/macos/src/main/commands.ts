@@ -94,6 +94,25 @@ export const GLOBAL_SHORTCUT_DEFAULTS: Record<string, string> = {
   // `⌥C` types `ç` when it is not registered, which is why this binding is
   // rebindable from day one (`HOTKEY_CATALOG` in `hotkeys.ts`).
   cornerSummon: "Alt+C",
+  /**
+   * The always-on companion's summon — `⌥Space`, design `C12`.
+   *
+   * **This supersedes the 2026-08-20 decision above** (owner, 2026-08-25:
+   * "C12 you decide and let this take precedent; Cue Live still needs work
+   * anyway"). Two things make it safe now that were not true then:
+   *
+   *   · The corner retires as a surface, so this is not a third summon added
+   *     beside two others — it replaces `⌥C`, which retires with it.
+   *   · `⌃⌥Space` is not registered anywhere in this codebase. Cue Live is
+   *     summoned over IPC (`vellum:cueLive:summon`), so the adjacency that
+   *     decision was protecting against is not currently live. **If Cue Live
+   *     ever registers `⌃⌥Space` as a global shortcut, it has to move** — a
+   *     slipped finger must not start a continuous watching session.
+   *
+   * Rebindable like the corner's, and for a better reason: `⌥Space` is a
+   * non-breaking space in several apps.
+   */
+  companionSummon: "Alt+Space",
 };
 
 /**

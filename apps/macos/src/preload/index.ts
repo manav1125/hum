@@ -671,6 +671,17 @@ const bridge: VellumBridge = {
       ipcRenderer.invoke("vellum:companion:dropChoose", choice) as Promise<void>,
     dropRelease: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:dropRelease") as Promise<void>,
+    /**
+     * The typing card's two verbs (`C2`). Both hand off to the app — the
+     * companion talks, and only the app acts.
+     */
+    ask: (message: string): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:ask", message) as Promise<void>,
+    keepAsNote: (note: string): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:keepAsNote", note) as Promise<void>,
+    /** `esc`. Closes the card and cancels nothing. */
+    closeCard: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:closeCard") as Promise<void>,
     /** The pill's `Stop`. Main decides what it stops — see the handler. */
     stop: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:stop") as Promise<void>,

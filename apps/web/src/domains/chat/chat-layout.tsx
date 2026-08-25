@@ -18,6 +18,8 @@ import { useMutation } from "@tanstack/react-query";
 
 import { hqValveFeedbackPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 
+import { useCreateNote } from "@/hooks/use-note-capture";
+
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { useAssistantIdentityInit } from "@/hooks/use-assistant-identity-init";
@@ -162,6 +164,7 @@ export function ChatLayout() {
   // `✕` on a companion nudge (C7) records the same correction the rest of the
   // product does, through the same door.
   const teachValve = useMutation(hqValveFeedbackPostMutation());
+  const createNote = useCreateNote();
   const assistantStateKind = useAssistantLifecycleStore(
     (s) => s.assistantState.kind,
   );
@@ -562,8 +565,25 @@ export function ChatLayout() {
     // The companion's "New note here" (C5, Q4). The companion carries capture
     // and never becomes the editor, so it hands off to Notes with the intent
     // to start one rather than opening anything of its own.
-    newNote: () => {
-      void navigate(`${routes.notes}?new=1`);
+    newNote: (command) => {
+      // `⌘↵` from the companion's card arrives with what was typed. The
+      // companion carries capture and never becomes the editor, so the note
+      // is made here and the person lands in it — not in an empty one they
+      // then have to retype into.
+      const text = command.kind === "newNote" ? command.text?.trim() : "";
+      if (!text || !assistantId) {
+        void navigate(`${routes.notes}?new=1`);
+        return;
+      }
+      void createNote
+        .mutateAsync({
+          path: { assistant_id: assistantId },
+          body: { body: text, source: "typed" },
+        })
+        .then(() => navigate(routes.notes))
+        // A note that could not be written must not send someone to an empty
+        // Notes page as if it had worked.
+        .catch(() => navigate(`${routes.notes}?new=1`));
     },
     // `Open ›` on a nudge (C7). The companion talks and only the app acts, so
     // the nudge hands the item over rather than doing anything with it.

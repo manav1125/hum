@@ -138,6 +138,30 @@ export function companionDropRelease(): void {
   void window.vellum?.companion?.dropRelease?.();
 }
 
+/**
+ * `↵` — ask Cue.
+ *
+ * Handed to the app rather than answered here. A card that answered in place
+ * would need somewhere to put the answer, and somewhere to put the answer is
+ * a thread — which is the one thing this surface must never become.
+ */
+export function companionAsk(message: string): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.ask?.(message);
+}
+
+/** `⌘↵` — keep what you typed as a note instead (`Q4`). */
+export function companionKeepAsNote(note: string): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.keepAsNote?.(note);
+}
+
+/** `esc`. Closes the card; cancels nothing in flight. */
+export function companionCloseCard(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.closeCard?.();
+}
+
 export function companionStop(): void {
   if (!isElectron()) return;
   void window.vellum?.companion?.stop?.();

@@ -47,6 +47,9 @@ const dragOverSpy = mock((_over: boolean) => undefined);
 const dropSpy = mock((_item: { kind: string; value: string }) => undefined);
 const dropChooseSpy = mock((_choice: string) => undefined);
 const dropReleaseSpy = mock(() => undefined);
+const askSpy = mock((_m: string) => undefined);
+const keepSpy = mock((_m: string) => undefined);
+const closeCardSpy = mock(() => undefined);
 const nudgeDismissSpy = mock(() => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
@@ -70,6 +73,9 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   companionDrop: dropSpy,
   companionDropChoose: dropChooseSpy,
   companionDropRelease: dropReleaseSpy,
+  companionAsk: askSpy,
+  companionKeepAsNote: keepSpy,
+  companionCloseCard: closeCardSpy,
   companionNudgeDismiss: nudgeDismissSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
@@ -177,6 +183,9 @@ beforeEach(() => {
   dropSpy.mockClear();
   dropChooseSpy.mockClear();
   dropReleaseSpy.mockClear();
+  askSpy.mockClear();
+  keepSpy.mockClear();
+  closeCardSpy.mockClear();
   nudgeDismissSpy.mockClear();
 });
 
@@ -627,6 +636,64 @@ describe("drops — the arc's mouth is the slot (C10)", () => {
 
     fireEvent.click(screen.getByLabelText("Let it go"));
     expect(dropReleaseSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the typing card's two verbs (C2, Q1)", () => {
+  const open = async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "typing" });
+    return screen.getByLabelText("Ask Cue") as HTMLInputElement;
+  };
+
+  test("↵ asks, and the card does not answer into a thread", async () => {
+    const input = await open();
+    fireEvent.change(input, { target: { value: "when does Acme renew?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(askSpy).toHaveBeenLastCalledWith("when does Acme renew?");
+    expect(keepSpy).not.toHaveBeenCalled();
+  });
+
+  test("⌘↵ keeps it as a note instead", async () => {
+    const input = await open();
+    fireEvent.change(input, { target: { value: "Dana is out Thursday" } });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+
+    expect(keepSpy).toHaveBeenLastCalledWith("Dana is out Thursday");
+    expect(askSpy).not.toHaveBeenCalled();
+  });
+
+  test("REGRESSION: an empty press does nothing at all", async () => {
+    // A blank ask would open the app for no reason, and a blank ⌘↵ would
+    // manufacture an empty note.
+    const input = await open();
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.change(input, { target: { value: "   " } });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+
+    expect(askSpy).not.toHaveBeenCalled();
+    expect(keepSpy).not.toHaveBeenCalled();
+  });
+
+  test("esc closes, and cancels nothing", async () => {
+    // Dismissing a surface must never be a way to lose work already running —
+    // the corner's rule, kept.
+    const input = await open();
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(closeCardSpy).toHaveBeenCalledTimes(1);
+    expect(askSpy).not.toHaveBeenCalled();
+  });
+
+  test("what was sent is cleared, so a second press cannot resend it", async () => {
+    const input = await open();
+    fireEvent.change(input, { target: { value: "ask once" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(askSpy).toHaveBeenCalledTimes(1);
   });
 });
 

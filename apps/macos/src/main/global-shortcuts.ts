@@ -2,6 +2,10 @@ import { app, globalShortcut } from "electron";
 
 import { GLOBAL_SHORTCUT_DEFAULTS } from "./commands";
 import log from "./logger";
+import {
+  isCompanionEnabled,
+  summonCompanionCard,
+} from "./companion-window";
 import { isCornerEnabled, summonCorner } from "./corner-window";
 import { ensureVisible } from "./main-window";
 import { toggleQuickInput } from "./quick-input-window";
@@ -54,6 +58,14 @@ const registerAll = (): void => {
       continue;
     }
 
+    // The companion's summon follows its own flag for the same reason: it
+    // claims `⌥Space` system-wide, which is a non-breaking space in several
+    // apps, and taking that from someone who has not switched the companion
+    // on would be taking a character away for nothing.
+    if (key === "companionSummon" && !isCompanionEnabled()) {
+      continue;
+    }
+
     const handler = HANDLERS[key];
     if (!handler) {
       continue;
@@ -83,6 +95,11 @@ const HANDLERS: Record<string, () => void> = {
   // has nobody to report to.
   cornerSummon: () => {
     void summonCorner();
+  },
+  // `C12`: every creature action has a key, so the pointer is never the only
+  // path to it. The card opens where the creature already is.
+  companionSummon: () => {
+    summonCompanionCard();
   },
 };
 

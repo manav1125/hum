@@ -41,6 +41,9 @@ const HOTKEY_CATALOG: readonly HotkeyCommand[] = [
   // app that does not have it registered, so someone who writes in French
   // needs a way out on the first day rather than a bug report.
   { key: "cornerSummon", label: "Summon the corner", scope: "global" },
+  // `⌥Space` types a non-breaking space in several apps, so this needs a way
+  // out on the first day for the same reason the corner's did.
+  { key: "companionSummon", label: "Summon Cue", scope: "global" },
   { key: "newConversation", label: "New chat", scope: "menu" },
   { key: "currentConversation", label: "Current conversation", scope: "menu" },
   {

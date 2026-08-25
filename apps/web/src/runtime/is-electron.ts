@@ -367,6 +367,10 @@ declare global {
         drop?(item: { kind: string; value: string }): Promise<void>;
         dropChoose?(choice: string): Promise<void>;
         dropRelease?(): Promise<void>;
+        /** The typing card's two verbs (`C2`). Both hand off to the app. */
+        ask?(message: string): Promise<void>;
+        keepAsNote?(note: string): Promise<void>;
+        closeCard?(): Promise<void>;
         /** Answering a nudge (`C7`). Neither of these acts on anything. */
         nudgeOpen?(): Promise<void>;
         nudgeDismiss?(): Promise<void>;

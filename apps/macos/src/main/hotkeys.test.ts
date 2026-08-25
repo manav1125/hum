@@ -74,6 +74,7 @@ describe("resolveHotkeyCatalog", () => {
       "globalHotkey",
       "quickInput",
       "cornerSummon",
+      "companionSummon",
       "newConversation",
       "currentConversation",
       "markCurrentUnread",

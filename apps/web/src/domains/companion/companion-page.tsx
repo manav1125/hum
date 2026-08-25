@@ -6,10 +6,13 @@ import {
   companionOpenCue,
   companionIntroDismiss,
   companionIntroNext,
+  companionAsk,
+  companionCloseCard,
   companionDragOver,
   companionDrop,
   companionDropChoose,
   companionDropRelease,
+  companionKeepAsNote,
   companionNudgeDismiss,
   companionNudgeOpen,
   companionStop,
@@ -340,6 +343,9 @@ export function CompanionPage(): React.ReactElement {
           {...(state.caught !== undefined ? { caught: state.caught } : {})}
           onDropChoose={companionDropChoose}
           onDropRelease={companionDropRelease}
+          onAsk={companionAsk}
+          onKeepAsNote={companionKeepAsNote}
+          onCloseCard={companionCloseCard}
           onIntroNext={companionIntroNext}
           onIntroDismiss={companionIntroDismiss}
           onOpen={() =>
