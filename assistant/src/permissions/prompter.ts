@@ -95,9 +95,28 @@ export class PermissionPrompter {
         // (whose conversation is not a live work-item run) are a no-op inside,
         // and the permissions layer keeps no static work-items dependency.
         void import("../work-items/work-item-approval-timeouts.js")
-          .then((m) =>
-            m.recordApprovalTimeoutForConversation(conversationId, toolName),
-          )
+          .then(async (m) => {
+            const claimed = m.recordApprovalTimeoutForConversation(
+              conversationId,
+              toolName,
+            );
+            // Ordinary chat, not a headless run: the module above only claims
+            // conversations that ARE a live work-item run. Everything else
+            // used to end here — the interaction removes its own card from the
+            // awaiting-you lane on the way out, so an approval nobody saw left
+            // nothing behind to find. 76 of this instance's 162 requests
+            // expired that way.
+            if (claimed) return;
+            const block =
+              await import("../work-items/unattended-permission-block.js");
+            block.recordApprovalTimeoutBlock({
+              toolName,
+              input,
+              conversationId,
+              riskLevel,
+              riskReason,
+            });
+          })
           .catch(() => {});
         (interaction?.rpcResolve as ((v: ConfirmResult) => void) | undefined)?.(
           {

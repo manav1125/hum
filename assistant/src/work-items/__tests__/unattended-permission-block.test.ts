@@ -18,7 +18,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { initializeDb } from "../../memory/db-init.js";
-import { recordUnattendedPermissionBlock } from "../unattended-permission-block.js";
+import {
+  recordApprovalTimeoutBlock,
+  recordUnattendedPermissionBlock,
+} from "../unattended-permission-block.js";
 import { listWorkItems } from "../work-item-store.js";
 
 initializeDb();
@@ -95,6 +98,30 @@ describe("unattended permission block", () => {
     const item = listWorkItems().find((i) => i.id === id);
 
     expect(item?.autoRunEligibility).toBe("parked");
+  });
+
+  // An expired request is a different thing to answer than a blocked one: one
+  // says nobody could be asked, the other says you were asked and it lapsed.
+  test("an expired approval reads as expired, not as blocked", () => {
+    const id = recordApprovalTimeoutBlock(
+      block("/workspace/bin/expired.sh go"),
+    );
+    const item = listWorkItems().find((i) => i.id === id);
+
+    expect(item?.title).toContain("expired");
+    expect(item?.notes).toContain("not a refusal");
+  });
+
+  test("the two causes do not collapse into one item", () => {
+    const cmd = "/workspace/bin/both-causes.sh go";
+    const blocked = recordUnattendedPermissionBlock(block(cmd));
+    const expired = recordApprovalTimeoutBlock(block(cmd));
+
+    expect(expired).not.toBe(blocked);
+    const matching = listWorkItems().filter((i) =>
+      i.title.includes("/workspace/bin/both-causes.sh"),
+    );
+    expect(matching).toHaveLength(2);
   });
 
   // The deny already happened; nothing here may change it or throw into it.
