@@ -10,7 +10,9 @@ import {
   loadSkillBySelector,
   loadSkillCatalog,
 } from "../../config/skills.js";
+import { findConversation } from "../../daemon/conversation-registry.js";
 import { RiskLevel } from "../../permissions/types.js";
+import { deriveActiveSkills } from "../../skills/active-skill-tools.js";
 import {
   autoInstallFromCatalog,
   resolveCatalog,
@@ -193,6 +195,45 @@ export const skillLoadTool = {
     }
 
     const skill = loaded.skill;
+
+    // Already in context? Then say so instead of sending the body again.
+    //
+    // The body of a large skill runs to tens of thousands of characters. One
+    // real conversation loaded App Builder nine times for 206 KB of identical
+    // text, on top of an already oversized history — and re-sending what the
+    // model can already read buys nothing while crowding out the thing it is
+    // supposed to be working on.
+    //
+    // The version hash is part of the check on purpose: an edited skill is a
+    // different skill, and the model must receive the new body rather than a
+    // pointer to the stale one it read earlier.
+    const alreadyLoaded = findLoadedSkillVersion(context, skill.id);
+    if (alreadyLoaded !== undefined) {
+      let currentHash: string | undefined;
+      try {
+        currentHash = computeSkillVersionHash(skill.directoryPath);
+      } catch {
+        currentHash = undefined;
+      }
+      // Unknown-on-either-side falls through to a full load. Guessing wrong in
+      // this direction only costs tokens; guessing wrong the other way serves
+      // the model a skill it is no longer running.
+      if (currentHash && alreadyLoaded === currentHash) {
+        return {
+          content: [
+            `Skill: ${skill.displayName}`,
+            `ID: ${skill.id}`,
+            "",
+            "Already loaded earlier in this conversation and unchanged since —",
+            "its instructions are already in your context above. Scroll back to",
+            "them rather than reloading; the body is not repeated here.",
+            "",
+            `<loaded_skill id="${skill.id}" version="${currentHash}" />`,
+          ].join("\n"),
+          isError: false,
+        };
+      }
+    }
 
     // Assistant feature flag gate: reject loading if the skill's flag is OFF
     const config = getConfig();
@@ -531,4 +572,34 @@ export const skillLoadTool = {
     };
   },
 } satisfies ToolDefinition;
+
+/**
+ * The version of `skillId` already loaded in this conversation, or `undefined`
+ * when it has not been loaded.
+ *
+ * Reuses `deriveActiveSkills`, which only trusts `<loaded_skill />` markers
+ * found in `tool_result` blocks belonging to an actual `skill_load` call — so a
+ * user message or another tool's output cannot fake an activation and suppress
+ * a real load.
+ *
+ * Returns `undefined` rather than throwing when the conversation cannot be
+ * resolved (evicted, or a caller with no conversation behind it). The effect is
+ * a full load, which is always safe.
+ */
+function findLoadedSkillVersion(
+  context: ToolContext,
+  skillId: string,
+): string | undefined {
+  try {
+    const conversation = findConversation(context.conversationId);
+    if (!conversation) return undefined;
+    const entry = deriveActiveSkills([...conversation.messages]).find(
+      (e) => e.id === skillId,
+    );
+    return entry ? (entry.version ?? "") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 registerTool(skillLoadTool);
