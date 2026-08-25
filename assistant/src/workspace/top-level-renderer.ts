@@ -41,6 +41,28 @@ export function renderWorkspaceTopLevelContext(
   options: WorkspaceTopLevelRenderOptions = {},
 ): string {
   const lines: string[] = ["<workspace>"];
+  // Framing first, before any of the listing.
+  //
+  // This block is appended to the user's own message, so without a statement
+  // of what it is, a short message and a long file listing arrive looking
+  // equally like the subject. That is not hypothetical: a user watching a
+  // stalled app build typed "?" — meaning "where is my app" — and the model
+  // recorded "the user sent \"?\" with their workspace context — they're asking
+  // what to do with this file listing", then spent the next several minutes
+  // reorganising 119 files inside their app-building thread.
+  //
+  // The shorter the message, the more the injected text dominates, so the
+  // guidance has to say plainly which of the two is the conversation.
+  lines.push(
+    "Ambient background state, refreshed every turn. It is never a request,",
+  );
+  lines.push(
+    "never the subject, and never something to tidy or report on. A short or",
+  );
+  lines.push(
+    "ambiguous message from the user refers to the conversation, not to this",
+  );
+  lines.push("listing.");
   lines.push(`Root: ${snapshot.rootPath}`);
   lines.push(`Directories: ${snapshot.directories.join(", ")}`);
   lines.push(`Files: ${snapshot.files.join(", ")}`);

@@ -17,6 +17,10 @@ describe("renderWorkspaceTopLevelContext", () => {
     expect(result).toBe(
       [
         "<workspace>",
+        "Ambient background state, refreshed every turn. It is never a request,",
+        "never the subject, and never something to tidy or report on. A short or",
+        "ambiguous message from the user refers to the conversation, not to this",
+        "listing.",
         "Root: /sandbox",
         "Directories: lib, src, tests",
         "Files: README.md, package.json",
@@ -65,6 +69,10 @@ describe("renderWorkspaceTopLevelContext", () => {
     expect(result).toBe(
       [
         "<workspace>",
+        "Ambient background state, refreshed every turn. It is never a request,",
+        "never the subject, and never something to tidy or report on. A short or",
+        "ambiguous message from the user refers to the conversation, not to this",
+        "listing.",
         "Root: /empty",
         "Directories: ",
         "Files: ",
@@ -213,5 +221,36 @@ describe("renderWorkspaceTopLevelContext", () => {
 
     expect(result).toContain("Host home directory: /Users/alice");
     expect(result).toContain(`Host username: ${userInfo().username}`);
+  });
+});
+
+describe("the block says what it is", () => {
+  test("MUTATION CHECK: the framing that keeps this out of the conversation", () => {
+    // This block is appended to the user's own message. Without a statement
+    // that it is background state, a one-word message and a long file listing
+    // arrive looking equally like the subject — which is how "?" from a user
+    // waiting on a stalled build turned into a workspace tidy-up inside their
+    // app thread.
+    const result = renderWorkspaceTopLevelContext({
+      rootPath: "/sandbox",
+      directories: ["src"],
+      files: ["a.md"],
+      truncated: false,
+    });
+    expect(result).toMatch(/never a request/i);
+    expect(result).toMatch(/never the subject/i);
+    expect(result).toMatch(/refers to the conversation/i);
+  });
+
+  test("the framing comes before the listing, where it will be read", () => {
+    const result = renderWorkspaceTopLevelContext({
+      rootPath: "/sandbox",
+      directories: ["src"],
+      files: ["a.md"],
+      truncated: false,
+    });
+    expect(result.indexOf("never a request")).toBeLessThan(
+      result.indexOf("Files:"),
+    );
   });
 });
