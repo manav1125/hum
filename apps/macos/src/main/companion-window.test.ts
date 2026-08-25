@@ -187,8 +187,16 @@ mock.module("./logger", () => ({
   },
 }));
 
+const menuPopups: Array<Electron.MenuItemConstructorOptions[]> = [];
+
 mock.module("electron", () => ({
   app: appState,
+  Menu: {
+    buildFromTemplate: (template: Electron.MenuItemConstructorOptions[]) => {
+      menuPopups.push(template);
+      return { popup: mock(() => undefined) };
+    },
+  },
   BrowserWindow: class {
     static getFocusedWindow() {
       return null;
@@ -233,6 +241,9 @@ mock.module("./settings", () => ({
   readSetting: (key: string) => settingsState[key] ?? null,
   readHotkeyOverride: () => null,
   writeSetting: writeSettingMock,
+  clearSetting: (key: string) => {
+    delete settingsState[key];
+  },
   onSettingChange: (key: string, listener: Listener) => {
     const listeners = settingChangeListeners.get(key) ?? [];
     listeners.push(listener);
@@ -249,6 +260,10 @@ mock.module("./window-state", () => ({
 
 const {
   __resetForTesting,
+  inQuietHours,
+  isCompanionVisible,
+  nextLocalMidnight,
+  runCompanionMenuAction,
   installCompanionWindow,
   isCompanionEnabled,
   syncCompanionWindow,
@@ -280,6 +295,7 @@ beforeEach(() => {
   restoreBoundsMock.mockClear();
   trackMock.mockClear();
   cursor = { x: 0, y: 0 };
+  menuPopups.length = 0;
   appState.isPackaged = false;
   process.env.VELLUM_DEV_URL = "http://localhost:4242/assistant/";
   delete process.env.VELLUM_FLAG_DESKTOP_COMPANION;
@@ -321,6 +337,7 @@ describe("installCompanionWindow", () => {
       "vellum:companion:dragEnd",
       "vellum:companion:setSize",
       "vellum:companion:getState",
+      "vellum:companion:menu",
       "vellum:companion:talk",
       "vellum:companion:openCue",
       "vellum:companion:hide",
@@ -613,6 +630,12 @@ describe("companion IPC", () => {
       avatarBox: 66,
       growth: "left",
       cardGrowth: "up",
+      // Character travels with the geometry: they change for the same reasons,
+      // and a renderer holding half an update draws a creature main does not
+      // believe in.
+      blink: "calm",
+      weight: "regular",
+      quiet: false,
     });
   });
 
@@ -695,6 +718,92 @@ describe("an approval raises the app, and the creature only badges (C6, C9)", ()
     await signal({ online: true });
 
     expect(ensureVisibleMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the right-click menu is native, and main's (C5)", () => {
+  test("popping it builds the template from what is actually persisted", () => {
+    flagOn();
+    settingsState["companionSize"] = "large";
+    installCompanionWindow();
+
+    ipcHandlers.get("vellum:companion:menu")?.([]);
+
+    const template = menuPopups.at(-1)!;
+    const labels = template.map((i) => i.label).filter(Boolean);
+    // Native rather than drawn: the menu is routinely taller than the
+    // creature, and a drawn one would have to grow the canvas to hold it.
+    expect(labels).toContain("Hide Cue");
+    expect(template.find((i) => i.label === "Size")?.sublabel).toBe("large");
+  });
+});
+
+describe("quiet hours, and the window that crosses midnight (C5)", () => {
+  const hours = { start: "22:00", end: "07:30" };
+
+  test("inside the evening half", () => {
+    expect(inQuietHours(hours, new Date(2026, 7, 25, 23, 15))).toBe(true);
+  });
+
+  test("REGRESSION: inside the morning half, on the other side of midnight", () => {
+    // The default range wraps, and the naive `start <= now && now < end`
+    // comparison is false for every single minute of it.
+    expect(inQuietHours(hours, new Date(2026, 7, 25, 6, 0))).toBe(true);
+  });
+
+  test("outside it, in the middle of the working day", () => {
+    expect(inQuietHours(hours, new Date(2026, 7, 25, 14, 0))).toBe(false);
+  });
+
+  test("a range that does not wrap still behaves", () => {
+    const lunch = { start: "12:00", end: "13:00" };
+    expect(inQuietHours(lunch, new Date(2026, 7, 25, 12, 30))).toBe(true);
+    expect(inQuietHours(lunch, new Date(2026, 7, 25, 13, 30))).toBe(false);
+  });
+
+  test("off is off — never a guessed range", () => {
+    expect(inQuietHours(null, new Date(2026, 7, 25, 23, 59))).toBe(false);
+  });
+});
+
+describe("asking an uninvited guest to leave (C5)", () => {
+  test("hide until tomorrow is stored as when it comes back, not as a flag", async () => {
+    // A flag needs something to clear it, and that something is exactly what
+    // does not run when the app was closed all evening.
+    flagOn();
+    installCompanionWindow();
+
+    await runCompanionMenuAction({ kind: "hideUntilTomorrow" });
+
+    const stored = settingsState["companionHiddenUntil"] as string;
+    expect(Date.parse(stored)).toBe(nextLocalMidnight().getTime());
+    expect(companionWin()?.isDestroyed()).toBe(true);
+  });
+
+  test("it comes back on its own once the moment has passed", () => {
+    settingsState["companionHiddenUntil"] = new Date(
+      Date.now() - 1000,
+    ).toISOString();
+    expect(isCompanionVisible()).toBe(true);
+  });
+
+  test("an explicit hide outlives tomorrow", () => {
+    settingsState["companionVisible"] = false;
+    settingsState["companionHiddenUntil"] = new Date(
+      Date.now() - 1000,
+    ).toISOString();
+    expect(isCompanionVisible()).toBe(false);
+  });
+
+  test("hiding needs no confirmation and closes at once", async () => {
+    flagOn();
+    installCompanionWindow();
+    const win = companionWin()!;
+
+    await runCompanionMenuAction({ kind: "hide" });
+
+    expect(writeSettingMock).toHaveBeenCalledWith("companionVisible", false);
+    expect(win.isDestroyed()).toBe(true);
   });
 });
 

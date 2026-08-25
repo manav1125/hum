@@ -38,6 +38,7 @@ const getStateSpy = mock(() => Promise.resolve(pulledState));
 const pointerOverSpy = mock((_over: boolean) => undefined);
 const dragBeginSpy = mock(() => undefined);
 const dragEndSpy = mock(() => undefined);
+const menuSpy = mock(() => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
   companionTalk: talkSpy,
@@ -51,6 +52,7 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   setCompanionPointerOver: pointerOverSpy,
   companionDragBegin: dragBeginSpy,
   companionDragEnd: dragEndSpy,
+  openCompanionMenu: menuSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
     return () => {
@@ -136,6 +138,7 @@ beforeEach(() => {
   pointerOverSpy.mockClear();
   dragBeginSpy.mockClear();
   dragEndSpy.mockClear();
+  menuSpy.mockClear();
 });
 
 afterEach(() => {
@@ -280,6 +283,25 @@ describe("a press is captured, and always released", () => {
     fireEvent.pointerDown(handle(), { button: 2, pointerId: 7 });
 
     expect(dragBeginSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("the whole settings surface is one right-click away (C5)", () => {
+  test("a right-click pops main's menu instead of the platform's", async () => {
+    // Native, and main's: the menu is routinely taller than the creature, and
+    // a drawn one would have to grow the canvas to hold it — the one thing the
+    // fixed canvas exists to prevent.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    handle().dispatchEvent(event);
+
+    expect(menuSpy).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
   });
 });
 

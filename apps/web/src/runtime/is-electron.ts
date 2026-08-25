@@ -354,6 +354,8 @@ declare global {
         dragBegin?(): void;
         /** The button came up, wherever it came up. */
         dragEnd?(): void;
+        /** The right-click menu (`C5`) — native, so it may outgrow the canvas. */
+        menu?(): Promise<void>;
         /** A named size step (`C12`). The one legitimate canvas resize. */
         setSize?(size: string): Promise<void>;
         /** One-shot pull, for a cold window that missed the first publish. */

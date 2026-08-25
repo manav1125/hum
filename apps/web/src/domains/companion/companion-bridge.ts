@@ -61,6 +61,17 @@ export async function getCompanionState(): Promise<Record<
 }
 
 /**
+ * Pop the right-click menu (`C5`).
+ *
+ * Native, and main's to build: the menu is routinely taller than the creature,
+ * and a drawn one would have to grow the canvas to hold it.
+ */
+export function openCompanionMenu(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.menu?.();
+}
+
+/**
  * Subscribe to the geometry + hover pushes main publishes. Returns an
  * unsubscribe function; a no-op unsubscribe off-Electron.
  */

@@ -394,6 +394,7 @@ export interface VellumBridge {
     setPointerOver(over: boolean): void;
     dragBegin(): void;
     dragEnd(): void;
+    menu(): Promise<void>;
     setSize(size: string): Promise<void>;
     getState(): Promise<Record<string, unknown>>;
     onState(callback: (state: Record<string, unknown>) => void): () => void;

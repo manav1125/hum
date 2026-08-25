@@ -31,6 +31,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useSearchParams } from "react-router";
+
 import { useQuery } from "@tanstack/react-query";
 
 import { projectsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -168,6 +170,25 @@ function NotesPageDesktop() {
     });
     setOpenNoteId(created.note.id);
   }, [assistantId, createNote]);
+
+  /**
+   * Arriving with the intent to write one — the companion's "New note here"
+   * (`C5`), and anything else that wants to hand a thought over.
+   *
+   * The parameter is cleared before the note is created, not after: creation
+   * is a round trip, and a reload or a second render in the meantime would
+   * otherwise make a second empty note. Empty notes are the one thing a
+   * capture surface must not manufacture.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const startedFromUrl = useRef(false);
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    if (startedFromUrl.current) return;
+    startedFromUrl.current = true;
+    setSearchParams({}, { replace: true });
+    void startNote();
+  }, [searchParams, setSearchParams, startNote]);
 
   if (openNoteId) {
     return (

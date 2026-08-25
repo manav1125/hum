@@ -60,7 +60,15 @@ export type VellumCommand =
   | { kind: "previewPrechat" }
   | { kind: "replayHatchFailure" }
   | { kind: "openComponentGallery" }
-  | { kind: "openVoice" };
+  | { kind: "openVoice" }
+  /**
+   * The companion's "New note here" (`C5`, `Q4`).
+   *
+   * The companion carries Notes *capture* and never becomes the editor, so
+   * this hands off to the Notes surface rather than opening anything of its
+   * own.
+   */
+  | { kind: "newNote" };
 
 // ---------------------------------------------------------------------------
 // Hotkeys

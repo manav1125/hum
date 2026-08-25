@@ -6,6 +6,7 @@ import {
   companionOpenCue,
   companionTalk,
   getCompanionState,
+  openCompanionMenu,
   setCompanionPointerOver,
   subscribeCompanionState,
 } from "@/domains/companion/companion-bridge";
@@ -53,6 +54,9 @@ interface CompanionState {
   avatarBox: number;
   growth: "right" | "left";
   cardGrowth: "up" | "down";
+  /** Character, composed live (`C5`). */
+  blink?: "calm" | "lively";
+  weight?: "fine" | "regular" | "bold";
   line?: string;
   detail?: string;
   answer?: string;
@@ -200,6 +204,12 @@ export function CompanionPage(): React.ReactElement {
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onLostPointerCapture={onLostCapture}
+        // The whole settings surface is one right-click away (`C5`) — which
+        // is also the rule that keeps "Hide" easy to find.
+        onContextMenu={(e) => {
+          e.preventDefault();
+          openCompanionMenu();
+        }}
         data-companion-handle
       >
         <CompanionSurface
@@ -212,6 +222,8 @@ export function CompanionPage(): React.ReactElement {
           {...(state.answer !== undefined ? { answer: state.answer } : {})}
           {...(state.source !== undefined ? { source: state.source } : {})}
           {...(state.quiet !== undefined ? { quiet: state.quiet } : {})}
+          {...(state.blink !== undefined ? { blink: state.blink } : {})}
+          {...(state.weight !== undefined ? { weight: state.weight } : {})}
           onOpen={() => void companionOpenCue()}
           onStop={() => void companionTalk()}
         />

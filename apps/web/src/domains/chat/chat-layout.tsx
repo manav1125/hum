@@ -552,6 +552,12 @@ export function ChatLayout() {
     openVoice: () => {
       void navigate(routes.voice);
     },
+    // The companion's "New note here" (C5, Q4). The companion carries capture
+    // and never becomes the editor, so it hands off to Notes with the intent
+    // to start one rather than opening anything of its own.
+    newNote: () => {
+      void navigate(`${routes.notes}?new=1`);
+    },
     navigateBack: () => {
       navigate(-1);
     },

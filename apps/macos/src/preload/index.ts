@@ -648,6 +648,9 @@ const bridge: VellumBridge = {
     dragEnd: (): void => {
       void ipcRenderer.invoke("vellum:companion:dragEnd");
     },
+    /** Pop the right-click menu (`C5`). Native: it outgrows the canvas. */
+    menu: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:menu") as Promise<void>,
     setSize: (size: string): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:setSize", size) as Promise<void>,
     getState: (): Promise<Record<string, unknown>> =>

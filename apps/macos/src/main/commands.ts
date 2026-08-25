@@ -19,6 +19,9 @@ export type VellumCommandKind = VellumCommand["kind"];
  */
 export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
   newConversation: "CmdOrCtrl+N",
+  // The companion's menu item, not a keyboard command: `⌥␣` is the creature's
+  // own key family (`C12`) and is registered as a global shortcut, not here.
+  newNote: "",
   currentConversation: "CmdOrCtrl+Shift+N",
   markCurrentUnread: "CmdOrCtrl+Shift+U",
   openSettings: "CmdOrCtrl+,",

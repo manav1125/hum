@@ -1,4 +1,4 @@
-import { screen, type BrowserWindow } from "electron";
+import { Menu, screen, type BrowserWindow } from "electron";
 import { z } from "zod";
 
 import {
@@ -13,6 +13,13 @@ import {
 } from "./companion-geometry";
 import { CompanionHitTest } from "./companion-hit-test";
 import {
+  buildCompanionMenu,
+  type CompanionBlink,
+  type CompanionMenuAction,
+  type CompanionMenuItem,
+  type CompanionWeight,
+} from "./companion-menu";
+import {
   CompanionPhaseStore,
   type CompanionSignals,
 } from "./companion-phase";
@@ -23,7 +30,12 @@ import {
   dispatchToMain,
   ensureVisible as ensureMainWindowVisible,
 } from "./main-window";
-import { onSettingChange, readSetting, writeSetting } from "./settings";
+import {
+  clearSetting,
+  onSettingChange,
+  readSetting,
+  writeSetting,
+} from "./settings";
 import { getStatus, onStatusChange } from "./status";
 import { isCompanionEnabled } from "./desktop-surface-flags";
 
@@ -77,8 +89,51 @@ const FIRST_RUN_HEIGHT_FRACTION = 0.62;
  * is sufficient to see the companion; hiding from the tray (or the window's
  * own hide action) persists until the user shows it again.
  */
-export const isCompanionVisible = (): boolean =>
-  readSetting("companionVisible") ?? true;
+export const isCompanionVisible = (): boolean => {
+  if ((readSetting("companionVisible") ?? true) === false) return false;
+  const until = readSetting("companionHiddenUntil");
+  // Stored as an instant rather than a flag, so it cannot get stuck: a flag
+  // needs something to clear it, and that something is exactly what does not
+  // run when the app was closed all evening.
+  return !until || Date.now() >= Date.parse(until);
+};
+
+/** The creature's character (`C5`), with the quiet defaults. */
+export const companionCharacter = (): {
+  blink: CompanionBlink;
+  weight: CompanionWeight;
+} => {
+  const stored = readSetting("companionCharacter") ?? {};
+  return {
+    blink: stored.blink ?? "calm",
+    weight: stored.weight ?? "regular",
+  };
+};
+
+/** Quiet hours, or `null` when they are off. */
+export const companionQuietHours = (): { start: string; end: string } | null =>
+  readSetting("companionQuietHours") ?? null;
+
+/**
+ * Whether the clock is currently inside quiet hours.
+ *
+ * Written to survive a window that crosses midnight, which the default range
+ * (22:00–07:30) does — the naive comparison is false for every minute of it.
+ */
+export const inQuietHours = (
+  hours: { start: string; end: string } | null,
+  now: Date,
+): boolean => {
+  if (!hours) return false;
+  const minutes = (hhmm: string): number => {
+    const [h = "0", m = "0"] = hhmm.split(":");
+    return Number(h) * 60 + Number(m);
+  };
+  const start = minutes(hours.start);
+  const end = minutes(hours.end);
+  const at = now.getHours() * 60 + now.getMinutes();
+  return start <= end ? at >= start && at < end : at >= start || at < end;
+};
 
 /**
  * The creature's size — a named step, never overridden once chosen (`C12`).
@@ -137,11 +192,15 @@ const companionState = (): Record<string, unknown> => {
   const current = placement?.current();
   const geometry = current?.geometry ?? geometryFor(companionSize());
   const resolved = phases?.current() ?? { phase: "resting" as const };
+  const character = companionCharacter();
   return {
     ...resolved,
     avatarBox: geometry.avatarBox,
     growth: current?.growth ?? "right",
     cardGrowth: current?.cardGrowth ?? "up",
+    blink: character.blink,
+    weight: character.weight,
+    quiet: inQuietHours(companionQuietHours(), new Date()),
   };
 };
 
@@ -366,6 +425,122 @@ export const applyCompanionSignals = async (
   }
 };
 
+/** The right-click menu's current state, read from what is persisted. */
+const menuState = () => ({
+  size: companionSize(),
+  ...companionCharacter(),
+  quietHours: companionQuietHours(),
+  watching: phases?.read().watching ?? false,
+});
+
+/**
+ * Act on a menu choice.
+ *
+ * Exported so the rules can be checked without popping a native menu — the
+ * interesting ones are not "does it call the right function" but what a
+ * choice is allowed to do at all: nothing here sends or spends, because the
+ * companion talks and only the app acts (`C9`).
+ */
+export const runCompanionMenuAction = async (
+  action: CompanionMenuAction,
+): Promise<void> => {
+  switch (action.kind) {
+    case "newNote":
+      // Capture only. The companion hands off to Notes and never becomes the
+      // editor (`Q4`).
+      await ensureMainWindowVisible();
+      dispatchToMain({ kind: "newNote" });
+      return;
+    case "readWindow":
+      phases?.set({ watching: true });
+      return;
+    case "stopReading":
+      phases?.set({ watching: false });
+      return;
+    case "openCue":
+      await ensureMainWindowVisible();
+      return;
+    case "setSize":
+      setCompanionSize(action.size);
+      return;
+    case "setBlink":
+      writeSetting("companionCharacter", {
+        ...(readSetting("companionCharacter") ?? {}),
+        blink: action.blink,
+      });
+      publishState();
+      return;
+    case "setWeight":
+      writeSetting("companionCharacter", {
+        ...(readSetting("companionCharacter") ?? {}),
+        weight: action.weight,
+      });
+      publishState();
+      return;
+    case "setQuietHours":
+      if (action.enabled) {
+        writeSetting("companionQuietHours", { start: "22:00", end: "07:30" });
+      } else {
+        clearSetting("companionQuietHours");
+      }
+      phases?.set({
+        quiet: inQuietHours(companionQuietHours(), new Date()),
+      });
+      publishState();
+      return;
+    case "hideUntilTomorrow":
+      writeSetting("companionHiddenUntil", nextLocalMidnight().toISOString());
+      syncCompanionWindow();
+      return;
+    case "hide":
+      writeSetting("companionVisible", false);
+      syncCompanionWindow();
+      return;
+  }
+};
+
+/** When "tomorrow" starts, in the owner's own timezone. */
+export const nextLocalMidnight = (from: Date = new Date()): Date => {
+  const next = new Date(from);
+  next.setHours(24, 0, 0, 0);
+  return next;
+};
+
+/** Translate the template into Electron's shape, keeping the actions. */
+const toElectronMenu = (
+  items: CompanionMenuItem[],
+): Electron.MenuItemConstructorOptions[] =>
+  items.map((item) => ({
+    ...(item.type === "separator"
+      ? { type: "separator" as const }
+      : {
+          label: item.label,
+          ...(item.sublabel ? { sublabel: item.sublabel } : {}),
+          ...(item.type === "radio"
+            ? { type: "radio" as const, checked: item.checked }
+            : {}),
+          ...(item.submenu ? { submenu: toElectronMenu(item.submenu) } : {}),
+          ...(item.action
+            ? { click: () => void runCompanionMenuAction(item.action!) }
+            : {}),
+        }),
+  }));
+
+/**
+ * Pop the right-click menu.
+ *
+ * A native menu rather than a drawn one, because the menu is routinely taller
+ * than the creature and a drawn one would have to grow the canvas to hold it —
+ * the one thing the fixed canvas exists to prevent.
+ */
+export const popCompanionMenu = (): void => {
+  const win = companionWindow();
+  if (!win) return;
+  Menu.buildFromTemplate(toElectronMenu(buildCompanionMenu(menuState()))).popup({
+    window: win,
+  });
+};
+
 /** A named size step (`C12`). The one thing that legitimately resizes. */
 export const setCompanionSize = (size: CompanionSize): void => {
   writeSetting("companionSize", size);
@@ -459,6 +634,10 @@ export const installCompanionWindow = (): void => {
 
   on("vellum:companion:signals", z.tuple([signalsSchema]), ([patch]) => {
     void applyCompanionSignals(patch);
+  });
+
+  handle("vellum:companion:menu", z.tuple([]), () => {
+    popCompanionMenu();
   });
 
   handle("vellum:companion:talk", z.tuple([]), async () => {

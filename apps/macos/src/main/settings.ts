@@ -67,6 +67,28 @@ export interface AppSettings {
    */
   companionApprovalExplained: boolean;
   /**
+   * The creature's character (`C5`): three traits, composed live. `accent` is
+   * a token name so a brand-kit colour can land here later.
+   */
+  companionCharacter: {
+    blink?: "calm" | "lively";
+    weight?: "fine" | "regular" | "bold";
+    accent?: string;
+  };
+  /**
+   * Quiet hours. Absent means off — and off has to be distinguishable from a
+   * range nobody chose, or the creature goes silent on a guess.
+   */
+  companionQuietHours: { start: string; end: string };
+  /**
+   * "Hide until tomorrow" (`C5`), as the moment it comes back.
+   *
+   * Stored as an instant rather than a flag so it cannot get stuck: a flag
+   * needs something to clear it, and the thing that clears it is exactly what
+   * fails to run when the app was closed all evening.
+   */
+  companionHiddenUntil: string;
+  /**
    * Where the creature was last settled, as the centre of the creature —
    * never the window's bounds.
    *
@@ -168,6 +190,29 @@ const schema: Schema<AppSettings> = {
     type: "boolean",
     default: false,
   },
+  companionCharacter: {
+    type: "object",
+    properties: {
+      blink: { type: "string", enum: ["calm", "lively"] },
+      weight: { type: "string", enum: ["fine", "regular", "bold"] },
+      accent: { type: "string" },
+    },
+    additionalProperties: false,
+    default: {},
+  },
+  // No default: off must stay distinguishable from a range nobody chose.
+  companionQuietHours: {
+    type: "object",
+    properties: {
+      start: { type: "string" },
+      end: { type: "string" },
+    },
+    required: ["start", "end"],
+    additionalProperties: false,
+  },
+  companionHiddenUntil: {
+    type: "string",
+  },
   companionCentre: {
     type: "object",
     properties: {
@@ -238,6 +283,22 @@ export const writeSetting = <K extends keyof AppSettings>(
     // losing one preference save is survivable, taking down the whole app
     // is not.
     console.error(`[settings] failed to persist "${String(key)}"`, err);
+  }
+};
+
+/**
+ * Remove a setting entirely.
+ *
+ * Not the same as writing a falsy value: several settings distinguish "never
+ * chosen" from "chosen and off", and a key that is absent is the only way to
+ * say the first. Fails the same way `writeSetting` does — losing one
+ * preference is survivable, taking down the main process is not.
+ */
+export const clearSetting = (key: keyof AppSettings): void => {
+  try {
+    store().delete(key);
+  } catch (err) {
+    console.error(`[settings] failed to clear "${String(key)}"`, err);
   }
 };
 
