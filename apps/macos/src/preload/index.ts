@@ -5,6 +5,7 @@ import type {
   AppVersionInfo,
   AssistantStatus,
   BundleScanData,
+  CompanionStatePayload,
   ConnectivityState,
   ConnectorStatus,
   ConnectorTool,
@@ -651,16 +652,23 @@ const bridge: VellumBridge = {
     /** Pop the right-click menu (`C5`). Native: it outgrows the canvas. */
     menu: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:menu") as Promise<void>,
+    introNext: (fromBeat: number): Promise<void> =>
+      ipcRenderer.invoke(
+        "vellum:companion:introNext",
+        fromBeat,
+      ) as Promise<void>,
+    introDismiss: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:introDismiss") as Promise<void>,
     setSize: (size: string): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:setSize", size) as Promise<void>,
-    getState: (): Promise<Record<string, unknown>> =>
-      ipcRenderer.invoke("vellum:companion:getState") as Promise<
-        Record<string, unknown>
-      >,
-    onState: (callback: (state: Record<string, unknown>) => void) => {
+    getState: (): Promise<CompanionStatePayload> =>
+      ipcRenderer.invoke(
+        "vellum:companion:getState",
+      ) as Promise<CompanionStatePayload>,
+    onState: (callback: (state: CompanionStatePayload) => void) => {
       const handler = (
         _event: IpcRendererEvent,
-        state: Record<string, unknown>,
+        state: CompanionStatePayload,
       ): void => {
         callback(state);
       };

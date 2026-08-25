@@ -13,6 +13,8 @@
  * interface; the renderer references the payload types (from `./types.ts`)
  * in its ambient declaration.
  */
+import type { CompanionStatePayload } from "./companion";
+
 import type {
   AppVersionInfo,
   AssistantStatus,
@@ -395,9 +397,16 @@ export interface VellumBridge {
     dragBegin(): void;
     dragEnd(): void;
     menu(): Promise<void>;
+    /**
+     * Advance the introduction, naming the beat the press was made against
+     * (`C4`). Main owns the position, so a press describing a beat that has
+     * moved on is discarded rather than skipping one.
+     */
+    introNext(fromBeat: number): Promise<void>;
+    introDismiss(): Promise<void>;
     setSize(size: string): Promise<void>;
-    getState(): Promise<Record<string, unknown>>;
-    onState(callback: (state: Record<string, unknown>) => void): () => void;
+    getState(): Promise<CompanionStatePayload>;
+    onState(callback: (state: CompanionStatePayload) => void): () => void;
     talk(): Promise<void>;
     openCue(): Promise<void>;
     hide(): Promise<void>;

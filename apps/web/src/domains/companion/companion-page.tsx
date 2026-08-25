@@ -5,6 +5,8 @@ import {
   companionDragEnd,
   companionOpenCue,
   companionTalk,
+  companionIntroDismiss,
+  companionIntroNext,
   getCompanionState,
   openCompanionMenu,
   setCompanionPointerOver,
@@ -12,7 +14,10 @@ import {
 } from "@/domains/companion/companion-bridge";
 
 import { CompanionSurface } from "./companion-surface";
-import type { CompanionPhase } from "./companion-surface";
+import type {
+  CompanionIntroBeat,
+  CompanionPhase,
+} from "./companion-surface";
 
 /**
  * The always-on companion, rendered inside its Electron canvas.
@@ -54,6 +59,8 @@ interface CompanionState {
   avatarBox: number;
   growth: "right" | "left";
   cardGrowth: "up" | "down";
+  /** The introduction, while main is offering it (`C4`). */
+  intro?: CompanionIntroBeat;
   /** Character, composed live (`C5`). */
   blink?: "calm" | "lively";
   weight?: "fine" | "regular" | "bold";
@@ -80,11 +87,16 @@ export function CompanionPage(): React.ReactElement {
   // first published — without it the creature would draw at its default size
   // until something happened to change.
   useEffect(() => {
+    // **Replace, never merge.** Main builds the whole payload every time, and
+    // most of it is optional: `line`, `detail`, `intro`, `answer` are absent
+    // from every publish that does not need them. Merging would keep the last
+    // value of each forever — an answer that outlives its question, an
+    // introduction that never goes away.
     void getCompanionState().then((next) => {
-      if (next) setState((prev) => ({ ...prev, ...next }));
+      if (next) setState(next as CompanionState);
     });
     return subscribeCompanionState((next) => {
-      setState((prev) => ({ ...prev, ...(next as Partial<CompanionState>) }));
+      setState(next as CompanionState);
     });
   }, []);
 
@@ -224,6 +236,9 @@ export function CompanionPage(): React.ReactElement {
           {...(state.quiet !== undefined ? { quiet: state.quiet } : {})}
           {...(state.blink !== undefined ? { blink: state.blink } : {})}
           {...(state.weight !== undefined ? { weight: state.weight } : {})}
+          {...(state.intro !== undefined ? { intro: state.intro } : {})}
+          onIntroNext={companionIntroNext}
+          onIntroDismiss={companionIntroDismiss}
           onOpen={() => void companionOpenCue()}
           onStop={() => void companionTalk()}
         />

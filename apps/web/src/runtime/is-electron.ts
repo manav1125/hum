@@ -58,6 +58,7 @@ import type {
   CornerContext,
   CornerSelection,
   NeedsYouItem,
+  CompanionStatePayload,
 } from "@vellumai/ipc-contract";
 
 export type {
@@ -340,7 +341,7 @@ declare global {
          * `apps/macos/src/main/companion-hit-test.ts`.
          */
         onState?(
-          callback: (state: Record<string, unknown>) => void,
+          callback: (state: CompanionStatePayload) => void,
         ): () => void;
         /**
          * Whether the pointer is over anything actually drawn.
@@ -356,10 +357,13 @@ declare global {
         dragEnd?(): void;
         /** The right-click menu (`C5`) — native, so it may outgrow the canvas. */
         menu?(): Promise<void>;
+        /** Advance the introduction, naming the beat pressed (`C4`). */
+        introNext?(fromBeat: number): Promise<void>;
+        introDismiss?(): Promise<void>;
         /** A named size step (`C12`). The one legitimate canvas resize. */
         setSize?(size: string): Promise<void>;
         /** One-shot pull, for a cold window that missed the first publish. */
-        getState?(): Promise<Record<string, unknown>>;
+        getState?(): Promise<CompanionStatePayload>;
       };
       /**
        * The floating corner — `⌥C`, one exchange, then finished. Optional

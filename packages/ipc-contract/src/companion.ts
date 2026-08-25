@@ -103,4 +103,26 @@ export interface CompanionStatePayload {
    * Never lost, and never repeated out loud.
    */
   heldNudge?: string;
+  /** Character, composed live (`C5`): three traits, one of them the accent. */
+  blink?: "calm" | "lively";
+  weight?: "fine" | "regular" | "bold";
+  /**
+   * The four-beat introduction, while main is offering it (`C4`).
+   *
+   * Absent from every publish that is not offering it — which is why the
+   * renderer must replace this payload rather than merge it.
+   */
+  intro?: CompanionIntroBeat;
+}
+
+/** One beat of the introduction (`C4`). */
+export interface CompanionIntroBeat {
+  /** Which beat this is. Presses name it, so a stale one can be discarded. */
+  beat: number;
+  total: number;
+  step: string;
+  title: string;
+  body: string;
+  /** The last beat offers no `Next` — there is nothing after it. */
+  last: boolean;
 }

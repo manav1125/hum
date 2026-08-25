@@ -39,6 +39,8 @@ const pointerOverSpy = mock((_over: boolean) => undefined);
 const dragBeginSpy = mock(() => undefined);
 const dragEndSpy = mock(() => undefined);
 const menuSpy = mock(() => undefined);
+const introNextSpy = mock((_fromBeat: number) => undefined);
+const introDismissSpy = mock(() => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
   companionTalk: talkSpy,
@@ -53,6 +55,8 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   companionDragBegin: dragBeginSpy,
   companionDragEnd: dragEndSpy,
   openCompanionMenu: menuSpy,
+  companionIntroNext: introNextSpy,
+  companionIntroDismiss: introDismissSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
     return () => {
@@ -88,9 +92,21 @@ beforeEach(() => {
   });
 });
 
+/**
+ * Main publishes the whole payload every time, and the page replaces rather
+ * than merges — so these helpers do too. Merging is the bug being guarded
+ * against, not a convenience worth keeping in the test.
+ */
+const BASE = {
+  phase: "resting",
+  avatarBox: 66,
+  growth: "right",
+  cardGrowth: "up",
+} as const;
+
 const pushState = (state: Record<string, unknown>): void => {
   act(() => {
-    for (const listener of [...stateListeners]) listener(state);
+    for (const listener of [...stateListeners]) listener({ ...BASE, ...state });
   });
 };
 
@@ -139,6 +155,8 @@ beforeEach(() => {
   dragBeginSpy.mockClear();
   dragEndSpy.mockClear();
   menuSpy.mockClear();
+  introNextSpy.mockClear();
+  introDismissSpy.mockClear();
 });
 
 afterEach(() => {
@@ -161,7 +179,7 @@ describe("the page draws what main gives it", () => {
     // The route chunk loads lazily, so main's first publish can land before
     // this page exists. Without the pull the creature would draw at its
     // default size until something else happened to change.
-    pulledState = { avatarBox: 88, growth: "left", cardGrowth: "down" };
+    pulledState = { ...BASE, avatarBox: 88, growth: "left", cardGrowth: "down" };
     render(<CompanionPage />);
     await flushMicrotasks();
 
@@ -286,6 +304,72 @@ describe("a press is captured, and always released", () => {
   });
 });
 
+describe("the introduction (C4)", () => {
+  const beat = (patch: Record<string, unknown> = {}) => ({
+    intro: {
+      beat: 0,
+      total: 4,
+      step: "1 · MEET",
+      title: "I'm Cue.",
+      body: "I stay on your desktop, even when the app is closed.",
+      last: false,
+      ...patch,
+    },
+  });
+
+  test("it draws the beat main is on", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState(beat());
+
+    expect(screen.getByText("I'm Cue.")).toBeTruthy();
+    expect(screen.getByText("1 · MEET")).toBeTruthy();
+  });
+
+  test("Next names the beat it was pressed against", async () => {
+    // Main discards a press describing a beat that has moved on, which only
+    // works if the press carries one.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState(beat({ beat: 2 }));
+
+    fireEvent.click(screen.getByText("Next"));
+    expect(introNextSpy).toHaveBeenLastCalledWith(2);
+  });
+
+  test("the last beat offers nothing after it", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState(beat({ beat: 3, last: true }));
+
+    expect(screen.queryByText("Next")).toBeNull();
+    expect(screen.getByText("Dismiss")).toBeTruthy();
+  });
+
+  test("REGRESSION: a publish that stops offering it takes the card away", async () => {
+    // Optional fields are absent from every publish that does not need them.
+    // Merged rather than replaced, the last one would stay forever — an
+    // introduction that cannot be dismissed.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState(beat());
+    expect(screen.getByText("I'm Cue.")).toBeTruthy();
+
+    pushState({ phase: "resting" });
+    expect(screen.queryByText("I'm Cue.")).toBeNull();
+  });
+
+  test("REGRESSION: a line from an earlier phase does not outlive it", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "couldnt", line: "I couldn't read that just now." });
+    expect(screen.getByText("I couldn't read that just now.")).toBeTruthy();
+
+    pushState({ phase: "hover" });
+    expect(screen.queryByText("I couldn't read that just now.")).toBeNull();
+  });
+});
+
 describe("the whole settings surface is one right-click away (C5)", () => {
   test("a right-click pops main's menu instead of the platform's", async () => {
     // Native, and main's: the menu is routinely taller than the creature, and
@@ -321,7 +405,7 @@ describe("the creature draws whose turn it is, as main resolved it", () => {
     // It used to outrank a pushed phase against a separately-subscribed
     // assistant status — two sources of truth for one question, and the one
     // that loses is whichever the user is actually looking at.
-    pulledState = { phase: "resting" };
+    pulledState = { ...BASE };
     render(<CompanionPage />);
     await flushMicrotasks();
 

@@ -53,8 +53,29 @@ const TONE_FOR: Partial<Record<CompanionPhase, CreatureTone>> = {
   waiting: "amber",
 };
 
+/** The four-beat introduction (`C4`), one beat at a time. */
+export interface CompanionIntroBeat {
+  beat: number;
+  total: number;
+  step: string;
+  title: string;
+  body: string;
+  last: boolean;
+}
+
 export interface CompanionSurfaceProps {
   phase: CompanionPhase;
+  /**
+   * The introduction, while it is running.
+   *
+   * Main decides whether to offer it at all — it never covers something the
+   * user is in the middle of — and owns which beat this is, so a press that
+   * arrives describing a beat that has moved on is discarded rather than
+   * skipping one.
+   */
+  intro?: CompanionIntroBeat;
+  onIntroNext?: (fromBeat: number) => void;
+  onIntroDismiss?: () => void;
   /** The creature's box in points — the whole of the surface's scale. */
   avatarBox: number;
   /** Which way the pill unfurls. Main decides; only main knows the display. */
@@ -103,6 +124,22 @@ export function CompanionSurface(props: CompanionSurfaceProps): React.ReactEleme
   // The pill's own padding (6px at the creature's end) is why its edge sits
   // that far outside — see `SEAT`.
   const seat = SEAT * scale;
+
+  if (props.intro) {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          flexDirection: growth === "right" ? "row" : "row-reverse",
+          alignItems: cardGrowth === "up" ? "flex-end" : "flex-start",
+        }}
+      >
+        <CompanionCreatureKeyframes />
+        <div style={{ flex: "0 0 auto", padding: seat }}>{creature}</div>
+        <IntroCard {...props} intro={props.intro} scale={scale} />
+      </div>
+    );
+  }
 
   if (phase === "resting") {
     return (
@@ -340,6 +377,101 @@ function TypingCard(
         <TextButton onClick={props.onOpen}>Open in Cue ›</TextButton>
       </p>
     </div>
+    </div>
+  );
+}
+
+/**
+ * The introduction's card — `C4`.
+ *
+ * One beat at a time, and only two actions. Every action that is not `Next`
+ * or `Dismiss` is one more thing a press arriving against a stale beat could
+ * do wrongly, which is the whole reason main owns the position.
+ */
+function IntroCard({
+  intro,
+  scale,
+  onIntroNext,
+  onIntroDismiss,
+}: CompanionSurfaceProps & {
+  intro: CompanionIntroBeat;
+  scale: number;
+}): React.ReactElement {
+  return (
+    <div
+      style={{
+        width: 268 * Math.min(scale, 2),
+        background: INK,
+        border: HAIRLINE,
+        borderRadius: 18,
+        padding: "16px 17px",
+        boxShadow: CARD_SHADOW,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "'DM Mono', ui-monospace, monospace",
+          fontSize: 8,
+          letterSpacing: ".12em",
+          color: T2,
+        }}
+      >
+        {intro.step}
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 600, marginTop: 11, color: T1 }}>
+        {intro.title}
+      </div>
+      <div
+        style={{ fontSize: 12, color: T2, lineHeight: 1.55, marginTop: 9 }}
+      >
+        {intro.body}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginTop: 16,
+          justifyContent: "flex-end",
+        }}
+      >
+        <button
+          type="button"
+          onClick={onIntroDismiss}
+          style={{
+            font: "inherit",
+            fontSize: 12,
+            color: "#C9D2E2",
+            background: "none",
+            border: "1px solid rgba(255,255,255,.18)",
+            borderRadius: 99,
+            padding: "6px 16px",
+            cursor: "pointer",
+          }}
+        >
+          Dismiss
+        </button>
+        {/* The last beat has nothing after it, so it offers no Next. */}
+        {intro.last ? null : (
+          <button
+            type="button"
+            // The press names the beat it was made against.
+            onClick={() => onIntroNext?.(intro.beat)}
+            style={{
+              font: "inherit",
+              fontSize: 12,
+              color: "#fff",
+              background: ACCENT,
+              border: 0,
+              borderRadius: 99,
+              padding: "7px 17px",
+              cursor: "pointer",
+            }}
+          >
+            Next
+          </button>
+        )}
+      </div>
     </div>
   );
 }

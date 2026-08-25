@@ -66,6 +66,8 @@ export interface AppSettings {
    * said every time it becomes noise. One bit, and it only ever goes one way.
    */
   companionApprovalExplained: boolean;
+  /** Whether the four-beat introduction has been shown (`C4`). Shown once. */
+  companionIntroSeen: boolean;
   /**
    * The creature's character (`C5`): three traits, composed live. `accent` is
    * a token name so a brand-kit colour can land here later.
@@ -187,6 +189,10 @@ const schema: Schema<AppSettings> = {
     enum: ["small", "medium", "large", "huge", "ridiculous"],
   },
   companionApprovalExplained: {
+    type: "boolean",
+    default: false,
+  },
+  companionIntroSeen: {
     type: "boolean",
     default: false,
   },

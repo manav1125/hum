@@ -338,6 +338,8 @@ describe("installCompanionWindow", () => {
       "vellum:companion:setSize",
       "vellum:companion:getState",
       "vellum:companion:menu",
+      "vellum:companion:introNext",
+      "vellum:companion:introDismiss",
       "vellum:companion:talk",
       "vellum:companion:openCue",
       "vellum:companion:hide",
@@ -623,6 +625,9 @@ describe("companion IPC", () => {
 
   test("getState answers with the geometry main owns", () => {
     flagOn();
+    // Seen already, so the introduction is not part of what is being asserted
+    // here — it has its own tests.
+    settingsState["companionIntroSeen"] = true;
     installCompanionWindow();
 
     expect(ipcHandlers.get("vellum:companion:getState")?.([])).toEqual({
@@ -718,6 +723,92 @@ describe("an approval raises the app, and the creature only badges (C6, C9)", ()
     await signal({ online: true });
 
     expect(ensureVisibleMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the introduction, and the canvas it has to hand back (C4)", () => {
+  test("it is offered to somebody who has not seen it", () => {
+    flagOn();
+    installCompanionWindow();
+
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      intro: { beat: 0, title: "I'm Cue." },
+    });
+  });
+
+  test("it is never offered again once it has been seen", () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    expect(
+      (ipcHandlers.get("vellum:companion:getState")?.([]) as Record<
+        string,
+        unknown
+      >).intro,
+    ).toBeUndefined();
+  });
+
+  test("REGRESSION: it never covers something that is happening", async () => {
+    // The one card Cue shows without being asked, so it yields to whatever
+    // the user is actually in the middle of.
+    flagOn();
+    installCompanionWindow();
+    await ipcHandlers.get("vellum:companion:signals")?.([
+      { recording: { label: "Standup", elapsed: "00:12" } },
+    ]);
+
+    expect(
+      (ipcHandlers.get("vellum:companion:getState")?.([]) as Record<
+        string,
+        unknown
+      >).intro,
+    ).toBeUndefined();
+  });
+
+  test("REGRESSION: dismissing hands the canvas back", () => {
+    // Removing a card from under a stationary pointer is followed by no
+    // mouse-move, so nothing recomputes the hit-test on its own and the
+    // window keeps claiming a canvas many times the size of the creature.
+    // Upstream shipped this leak in exactly this card (`64e3eead`).
+    flagOn();
+    installCompanionWindow();
+    const win = companionWin()!;
+
+    ipcHandlers.get("vellum:companion:setPointerOver")?.([true]);
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+
+    ipcHandlers.get("vellum:companion:introDismiss")?.([]);
+
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, {
+      forward: true,
+    });
+    expect(writeSettingMock).toHaveBeenCalledWith("companionIntroSeen", true);
+  });
+
+  test("advancing hands it back too — the card shrinks under the pointer", () => {
+    flagOn();
+    installCompanionWindow();
+    const win = companionWin()!;
+
+    ipcHandlers.get("vellum:companion:setPointerOver")?.([true]);
+    ipcHandlers.get("vellum:companion:introNext")?.([0]);
+
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, {
+      forward: true,
+    });
+  });
+
+  test("a stale press changes nothing, and republishes nothing", () => {
+    flagOn();
+    installCompanionWindow();
+    const win = companionWin()!;
+
+    ipcHandlers.get("vellum:companion:introNext")?.([0]);
+    win.webContents.send.mockClear();
+    ipcHandlers.get("vellum:companion:introNext")?.([0]);
+
+    expect(win.webContents.send).not.toHaveBeenCalled();
   });
 });
 

@@ -11,6 +11,8 @@
  * if another domain ever needs it.
  */
 
+import type { CompanionStatePayload } from "@vellumai/ipc-contract";
+
 import { isElectron, type AssistantStatus } from "@/runtime/is-electron";
 
 export type { AssistantStatus };
@@ -50,10 +52,7 @@ export function companionDragEnd(): void {
  * One-shot pull of the geometry main owns, for a cold window whose route
  * chunk is still loading when main first publishes. `null` off-Electron.
  */
-export async function getCompanionState(): Promise<Record<
-  string,
-  unknown
-> | null> {
+export async function getCompanionState(): Promise<CompanionStatePayload | null> {
   if (!isElectron()) return null;
   const bridge = window.vellum?.companion;
   if (!bridge?.getState) return null;
@@ -72,11 +71,28 @@ export function openCompanionMenu(): void {
 }
 
 /**
+ * Advance the introduction (`C4`).
+ *
+ * The beat the press was made against travels with it: the card is drawn by a
+ * renderer one IPC message behind, so a press can describe a beat that is no
+ * longer on screen, and main discards it rather than skipping one.
+ */
+export function companionIntroNext(fromBeat: number): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.introNext?.(fromBeat);
+}
+
+export function companionIntroDismiss(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.introDismiss?.();
+}
+
+/**
  * Subscribe to the geometry + hover pushes main publishes. Returns an
  * unsubscribe function; a no-op unsubscribe off-Electron.
  */
 export function subscribeCompanionState(
-  callback: (state: Record<string, unknown>) => void,
+  callback: (state: CompanionStatePayload) => void,
 ): () => void {
   if (!isElectron()) return () => {};
   const bridge = window.vellum?.companion;

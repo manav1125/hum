@@ -12,6 +12,7 @@ import {
   type CompanionSize,
 } from "./companion-geometry";
 import { CompanionHitTest } from "./companion-hit-test";
+import { CompanionIntro } from "./companion-intro";
 import {
   buildCompanionMenu,
   type CompanionBlink,
@@ -171,6 +172,7 @@ const signalsSchema = z
 
 let placement: CompanionPlacement | null = null;
 let phases: CompanionPhaseStore | null = null;
+let intro: CompanionIntro | null = null;
 let hitTest: CompanionHitTest | null = null;
 let drag: CompanionDrag | null = null;
 let dragPoll: ReturnType<typeof setInterval> | null = null;
@@ -193,8 +195,16 @@ const companionState = (): Record<string, unknown> => {
   const geometry = current?.geometry ?? geometryFor(companionSize());
   const resolved = phases?.current() ?? { phase: "resting" as const };
   const character = companionCharacter();
+  // The introduction never covers something that is happening. It is the one
+  // card Cue shows without being asked, so it yields to everything the user
+  // is actually in the middle of and comes back when they are not.
+  const introducing =
+    resolved.phase === "resting" || resolved.phase === "hover"
+      ? intro?.current()
+      : null;
   return {
     ...resolved,
+    ...(introducing ? { intro: introducing } : {}),
     avatarBox: geometry.avatarBox,
     growth: current?.growth ?? "right",
     cardGrowth: current?.cardGrowth ?? "up",
@@ -291,6 +301,9 @@ const openCompanionWindow = (): BrowserWindow => {
 
   placement = new CompanionPlacement(placementHost, size);
   phases = new CompanionPhaseStore(() => publishState());
+  intro = new CompanionIntro(readSetting("companionIntroSeen") ?? false, () => {
+    writeSetting("companionIntroSeen", true);
+  });
   phases.set({
     busy: getStatus() === "thinking",
     approvalExplained: readSetting("companionApprovalExplained") ?? false,
@@ -325,6 +338,7 @@ const openCompanionWindow = (): BrowserWindow => {
     abandonDrag();
     placement = null;
     phases = null;
+    intro = null;
     hitTest = null;
     drag = null;
   });
@@ -541,6 +555,25 @@ export const popCompanionMenu = (): void => {
   });
 };
 
+/**
+ * The introduction moved, or ended.
+ *
+ * **The card has to hand the canvas back itself.** Advancing a beat shrinks
+ * the card and dismissing removes it entirely, both under a pointer that has
+ * no reason to move afterwards — and with no mouse-move to follow, nothing
+ * recomputes the hit-test. The window would go on claiming a canvas many
+ * times the size of the creature, swallowing clicks meant for whatever is
+ * behind it, until the user happened to move the mouse. This is the leak
+ * upstream shipped in exactly this card (`64e3eead`).
+ *
+ * Releasing first is always safe: the renderer reports coverage again on its
+ * next frame if the pointer really is still over something.
+ */
+const afterIntroChanged = (): void => {
+  hitTest?.releaseAfterRemoval();
+  publishState();
+};
+
 /** A named size step (`C12`). The one thing that legitimately resizes. */
 export const setCompanionSize = (size: CompanionSize): void => {
   writeSetting("companionSize", size);
@@ -640,6 +673,15 @@ export const installCompanionWindow = (): void => {
     popCompanionMenu();
   });
 
+  // The press names the beat it was made against — see `companion-intro.ts`.
+  handle("vellum:companion:introNext", z.tuple([z.number()]), ([fromBeat]) => {
+    if (intro?.next(fromBeat)) afterIntroChanged();
+  });
+
+  handle("vellum:companion:introDismiss", z.tuple([]), () => {
+    if (intro?.dismiss()) afterIntroChanged();
+  });
+
   handle("vellum:companion:talk", z.tuple([]), async () => {
     await talkToCue();
   });
@@ -683,6 +725,7 @@ export const __resetForTesting = (): void => {
   stopDragPoll();
   placement = null;
   phases = null;
+  intro = null;
   hitTest = null;
   drag = null;
 };
