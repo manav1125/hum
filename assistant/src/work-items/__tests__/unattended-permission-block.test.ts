@@ -46,8 +46,12 @@ describe("unattended permission block", () => {
     expect(item?.title).toContain(
       "/workspace/bin/heartbeat-circuit-breaker.sh",
     );
-    expect(item?.notes).toContain("no");
-    expect(item?.notes).toContain("trust rule");
+    // The note must name something the owner can actually do. It used to say
+    // "add a trust rule via permission settings", which has no surface for an
+    // unattended denial — the rule editor only opens from an approval card,
+    // and an unattended run never raises one.
+    expect(item?.notes).toContain("Run this item to retry it");
+    expect(item?.notes).not.toContain("permission settings");
   });
 
   // The heartbeat fires hourly. One blocked script must stay one item.
