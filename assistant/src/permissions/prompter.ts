@@ -4,6 +4,7 @@ import { getConfig } from "../config/loader.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
 import * as pendingInteractions from "../runtime/pending-interactions.js";
 import { redactSensitiveFields } from "../security/redaction.js";
+import { requiresHumanApprovalForAction } from "../tools/outbound-send.js";
 import type { ExecutionTarget } from "../tools/types.js";
 import { AssistantError, ErrorCode } from "../util/errors.js";
 import { getLogger } from "../util/logger.js";
@@ -140,6 +141,12 @@ export class PermissionPrompter {
           toolName,
           input: redactSensitiveFields(input),
           riskLevel,
+          // The rule, not a judgement — same predicate the outbound-send gate
+          // enforces, so the card and the gate cannot disagree about what
+          // cannot be taken back.
+          reversibility: requiresHumanApprovalForAction(toolName, input)
+            ? ("irreversible" as const)
+            : ("reversible" as const),
           executionTarget,
           allowlistOptions: allowlistOptions.map((o) => ({
             label: o.label,

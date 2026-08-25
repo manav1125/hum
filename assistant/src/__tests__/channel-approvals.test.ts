@@ -64,6 +64,7 @@ function registerPendingConfirmation(
       toolName,
       input: opts?.input ?? { command: "rm -rf /tmp/test" },
       riskLevel: opts?.riskLevel ?? "high",
+      reversibility: "reversible" as const,
       allowlistOptions: opts?.allowlistOptions ?? [
         {
           label: "rm -rf /tmp/test",

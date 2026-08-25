@@ -318,6 +318,7 @@ function makeConfirmationDetails(patterns: string[]): ConfirmationDetails {
     toolName: "bash",
     input: { command: "echo hello" },
     riskLevel: "medium",
+    reversibility: "reversible" as const,
     allowlistOptions: patterns.map((p) => ({
       label: p,
       description: `Allow ${p}`,

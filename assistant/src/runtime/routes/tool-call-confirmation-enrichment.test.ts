@@ -40,6 +40,7 @@ describe("collectPendingConfirmations", () => {
         toolName: "file_read",
         input: { path: "/home/user/project/a.txt" },
         riskLevel: "low",
+        reversibility: "reversible" as const,
         allowlistOptions: [],
         scopeOptions: [],
       },
@@ -63,6 +64,7 @@ describe("collectPendingConfirmations", () => {
         toolName: "file_read",
         input: {},
         riskLevel: "low",
+        reversibility: "reversible" as const,
         allowlistOptions: [],
         scopeOptions: [],
       },
@@ -150,6 +152,7 @@ function collectPendingConfirmationsFixture() {
       toolName: "file_read",
       input: { path: "/home/user/project/a.txt" },
       riskLevel: "high",
+      reversibility: "reversible" as const,
       allowlistOptions: [],
       scopeOptions: [],
       directoryScopeOptions: [

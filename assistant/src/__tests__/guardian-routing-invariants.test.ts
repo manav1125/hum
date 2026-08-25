@@ -123,6 +123,7 @@ function registerPendingToolApprovalInteraction(
       toolName,
       input: { command: "echo hello" },
       riskLevel: "medium",
+      reversibility: "reversible" as const,
       allowlistOptions: [
         {
           label: "echo hello",
@@ -1366,6 +1367,7 @@ describe("routing invariant: directResolve interactions resolve via guardian dec
         toolName: "acp_spawn",
         input: { agent: "claude", task: "t", cwd: "/work" },
         riskLevel: "high",
+        reversibility: "reversible" as const,
         executionTarget: "host",
         allowlistOptions: [],
         scopeOptions: [],

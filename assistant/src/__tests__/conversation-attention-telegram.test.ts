@@ -262,6 +262,7 @@ describe("Telegram callback seen signals", () => {
         toolName: "shell",
         input: { command: "echo hello" },
         riskLevel: "high",
+        reversibility: "reversible" as const,
         allowlistOptions: [
           {
             label: "echo hello",

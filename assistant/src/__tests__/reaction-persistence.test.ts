@@ -450,6 +450,7 @@ function seedPendingGuardianApprovalForReaction(
       toolName: GUARDIAN_REACTION_TOOL,
       input: GUARDIAN_REACTION_INPUT,
       riskLevel: "high",
+      reversibility: "reversible" as const,
       allowlistOptions: [
         { label: "test", description: "test", pattern: "test" },
       ],

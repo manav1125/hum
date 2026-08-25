@@ -31,6 +31,23 @@ export interface ConfirmationDetails {
   toolName: string;
   input: Record<string, unknown>;
   riskLevel: string;
+  /**
+   * Whether this action can be taken back, decided by a rule rather than by a
+   * model's judgement.
+   *
+   * It is a different question from `riskLevel`, and the surface needs both: a
+   * high-risk file write is still undoable, while a perfectly routine email is
+   * not. The two answers drive different affordances — a reversible call can be
+   * a compact row that Enter approves, an irreversible one has to name the act
+   * on its button and cannot be standing-approved at all.
+   *
+   * Derived from `requiresHumanApprovalForAction`, so it carries the same class
+   * set the outbound-send gate enforces (send, contact, money, publish, delete,
+   * purchase, plus the shell-egress and browser-submit backstops). Deriving it
+   * anywhere else would let the surface and the gate drift apart about what
+   * "irreversible" means.
+   */
+  reversibility: "reversible" | "irreversible";
   executionTarget?: "sandbox" | "host";
   allowlistOptions: Array<{
     label: string;

@@ -111,6 +111,7 @@ function registerPendingInteraction(
       toolName,
       input,
       riskLevel: "high",
+      reversibility: "reversible" as const,
       allowlistOptions: [
         { label: "test", description: "test", pattern: "test" },
       ],

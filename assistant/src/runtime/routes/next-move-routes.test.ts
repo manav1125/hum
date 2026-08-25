@@ -114,6 +114,7 @@ describe("next-move endpoint", () => {
         toolName: "send_email",
         input: {},
         riskLevel: "high",
+        reversibility: "reversible" as const,
         allowlistOptions: [],
         scopeOptions: [],
       },

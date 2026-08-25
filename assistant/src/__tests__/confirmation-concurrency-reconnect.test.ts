@@ -82,6 +82,7 @@ function registerConfirmation(requestId: string, conversationId: string): void {
       toolName: "bash",
       input: {},
       riskLevel: "medium",
+      reversibility: "reversible" as const,
       allowlistOptions: [],
       scopeOptions: [],
     },

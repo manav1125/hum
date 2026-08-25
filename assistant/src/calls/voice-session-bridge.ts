@@ -34,6 +34,7 @@ import { DAEMON_INTERNAL_ASSISTANT_ID } from "../runtime/assistant-scope.js";
 import * as pendingInteractions from "../runtime/pending-interactions.js";
 import { publishConversationMessagesChanged } from "../runtime/sync/resource-sync-events.js";
 import { computeToolApprovalDigest } from "../security/tool-approval-digest.js";
+import { requiresHumanApprovalForAction } from "../tools/outbound-send.js";
 import { getAllTools } from "../tools/registry.js";
 import { summarizeToolInput } from "../tools/tool-input-summary.js";
 import { createAbortReason } from "../util/abort-reasons.js";
@@ -930,6 +931,12 @@ export async function startVoiceTurn(
               toolName: msg.toolName,
               input: msg.input,
               riskLevel: msg.riskLevel,
+              reversibility: requiresHumanApprovalForAction(
+                msg.toolName,
+                msg.input,
+              )
+                ? ("irreversible" as const)
+                : ("reversible" as const),
               executionTarget: msg.executionTarget,
               allowlistOptions: msg.allowlistOptions,
               scopeOptions: msg.scopeOptions,

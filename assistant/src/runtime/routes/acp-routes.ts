@@ -21,6 +21,7 @@ import { rawChanges } from "../../memory/raw-query.js";
 import { acpSessionHistory } from "../../memory/schema.js";
 import type { UserDecision } from "../../permissions/types.js";
 import { broadcastMessage } from "../../runtime/assistant-event-hub.js";
+import { requiresHumanApprovalForAction } from "../../tools/outbound-send.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import * as pendingInteractions from "../pending-interactions.js";
@@ -134,6 +135,12 @@ function awaitRouteApproval(args: {
         toolName,
         input,
         riskLevel: "high",
+        // ACP requests come from an external agent. Grade them by the same
+        // rule as our own, so an outside agent's send is never softer than
+        // one of ours.
+        reversibility: requiresHumanApprovalForAction(toolName, input)
+          ? ("irreversible" as const)
+          : ("reversible" as const),
         executionTarget: "host",
         allowlistOptions: [],
         scopeOptions: [],

@@ -11,6 +11,7 @@ import { getDb, getSqliteFrom } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { createMission } from "../../missions/mission-store.js";
 import { createTask } from "../../tasks/task-store.js";
+import { requiresHumanApprovalForAction } from "../../tools/outbound-send.js";
 import { recordAgentAct } from "../../work-items/agent-act-store.js";
 import { createProject } from "../../work-items/project-store.js";
 import {
@@ -289,6 +290,11 @@ describe("GET guardrails (composed read)", () => {
       toolName,
       input,
       riskLevel: "medium",
+      // Graded by the real rule rather than hardcoded: this fixture holds a
+      // bash call and a send_email, which are opposite sides of it.
+      reversibility: requiresHumanApprovalForAction(toolName, input)
+        ? ("irreversible" as const)
+        : ("reversible" as const),
       allowlistOptions: [],
       scopeOptions: [],
     });

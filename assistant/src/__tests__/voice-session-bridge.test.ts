@@ -1256,6 +1256,7 @@ describe("voice-session-bridge", () => {
             toolName: "bash",
             input: { command: "rm -rf build" },
             riskLevel: "medium",
+            reversibility: "reversible" as const,
             allowlistOptions: [],
             scopeOptions: [],
           },
