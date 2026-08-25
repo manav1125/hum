@@ -176,27 +176,72 @@ export function NoteRail({
 
   return (
     <RailFrame>
-      <p
-        className="mb-3 text-[11px] font-semibold tracking-wide uppercase"
-        style={{ color: C.t3 }}
-      >
-        Found {proposals.length} {proposals.length === 1 ? "thing" : "things"}
-      </p>
-      <div className="flex flex-col gap-2">
-        {proposals.map((extraction) => (
-          <ProposalCard
-            key={extraction.id}
-            assistantId={assistantId}
-            noteId={noteId}
-            extraction={extraction}
-          />
+      <div className="flex flex-col gap-5">
+        {groupProposals(proposals).map(({ label, items }) => (
+          <div key={label}>
+            <p
+              className="mb-2 text-[11px] font-semibold tracking-wider uppercase"
+              style={{ color: C.t3 }}
+            >
+              {items.length} {label}
+            </p>
+            <div className="flex flex-col gap-2">
+              {items.map((extraction) => (
+                <ProposalCard
+                  key={extraction.id}
+                  assistantId={assistantId}
+                  noteId={noteId}
+                  extraction={extraction}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
-      <p className="mt-3 text-[11px]" style={{ color: C.t3 }}>
+      <p className="mt-4 text-[11px]" style={{ color: C.t3 }}>
         Nothing is filed until you say so.
       </p>
     </RailFrame>
   );
+}
+
+/**
+ * The three kinds, grouped and in a fixed order — design `1a`.
+ *
+ * **Grouped because they are answered differently.** A task is something you
+ * will do, a fact is something Cue will remember, and a person note changes
+ * how it talks about somebody. Read as one undifferentiated list they all
+ * look like the same small decision, and the person notes — the ones with the
+ * longest reach — are the easiest to wave through.
+ *
+ * The order is fixed rather than by count, so the rail does not rearrange
+ * itself between two readings of the same note.
+ */
+const PROPOSAL_GROUPS = [
+  { kind: "task", one: "thing", many: "things" },
+  { kind: "memory", one: "fact", many: "facts" },
+  { kind: "person_trait", one: "person", many: "people" },
+] as const;
+
+export function groupProposals(
+  proposals: NoteExtraction[],
+): Array<{ label: string; items: NoteExtraction[] }> {
+  const groups: Array<{ label: string; items: NoteExtraction[] }> = [];
+  const placed = new Set<string>();
+  for (const { kind, one, many } of PROPOSAL_GROUPS) {
+    const items = proposals.filter((p) => p.kind === kind);
+    for (const item of items) placed.add(item.id);
+    if (items.length === 0) continue;
+    groups.push({ label: items.length === 1 ? one : many, items });
+  }
+  // A kind nobody has taught this list about still has to reach the owner: an
+  // extraction that renders nowhere is a proposal that files itself by never
+  // being refused.
+  const rest = proposals.filter((p) => !placed.has(p.id));
+  if (rest.length > 0) {
+    groups.push({ label: rest.length === 1 ? "thing" : "things", items: rest });
+  }
+  return groups;
 }
 
 /**

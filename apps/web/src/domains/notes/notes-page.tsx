@@ -66,6 +66,7 @@ import { NoteAskPanel } from "./note-ask-panel";
 import { NoteCreateOptions } from "./note-create-options";
 import { NoteImportPanel } from "./note-import-panel";
 import { NoteRail } from "./note-rail";
+import { NoteEditor } from "./note-editor";
 import { NoteRecordingSession } from "./note-recording-session";
 import { NoteRecordingPanel } from "./note-recording-panel";
 import { NoteTidySheet } from "./note-tidy-sheet";
@@ -161,6 +162,7 @@ function NotesPageDesktop() {
     return map;
   }, [projects.data]);
   const createNote = useCreateNote();
+  const deleteNote = useDeleteNote();
   const sync = useNoteSync(assistantId);
 
   const startNote = useCallback(async () => {
@@ -196,7 +198,20 @@ function NotesPageDesktop() {
         <NoteView
           assistantId={assistantId}
           noteId={openNoteId}
+          projectNames={projectNames}
           onClose={() => setOpenNoteId(null)}
+          onRecordInstead={({ id, empty }) => {
+            setOpenNoteId(null);
+            // "I would rather speak" must not leave an empty note behind — a
+            // capture surface that manufactures blanks is one people stop
+            // trusting to hold anything.
+            if (empty) {
+              void deleteNote.mutateAsync({
+                path: { assistant_id: assistantId, id },
+              });
+            }
+            setRecording(true);
+          }}
         />
       </PageShell>
     );
@@ -873,10 +888,14 @@ function NoteView({
   assistantId,
   noteId,
   onClose,
+  onRecordInstead,
+  projectNames,
 }: {
   assistantId: string;
   noteId: string;
   onClose: () => void;
+  onRecordInstead: (leaving: { id: string; empty: boolean }) => void;
+  projectNames: Map<string, string>;
 }) {
   const detail = useNote(assistantId, noteId);
   const updateNote = useUpdateNote();
@@ -884,25 +903,36 @@ function NoteView({
   const readNote = useReadNote();
 
   const [body, setBody] = useState<string | null>(null);
+  const [title, setTitle] = useState<string | null>(null);
   const [tidying, setTidying] = useState(false);
   const bodyRef = useRef<string | null>(null);
+  const titleRef = useRef<string | null>(null);
   const loaded = detail.data?.note;
 
   useEffect(() => {
     if (loaded && body === null) {
       setBody(loaded.body);
       bodyRef.current = loaded.body;
+      setTitle(loaded.title);
+      titleRef.current = loaded.title;
     }
   }, [loaded, body]);
 
   const close = useCallback(async () => {
     const current = bodyRef.current;
+    const currentTitle = titleRef.current;
     // Save first, then read. The note existing is not conditional on anything
     // — reading is a separate, later, cancellable concern.
-    if (current !== null && current !== loaded?.body) {
+    const bodyChanged = current !== null && current !== loaded?.body;
+    const titleChanged =
+      currentTitle !== null && currentTitle !== loaded?.title;
+    if (bodyChanged || titleChanged) {
       await updateNote.mutateAsync({
         path: { assistant_id: assistantId, id: noteId },
-        body: { body: current },
+        body: {
+          ...(bodyChanged ? { body: current } : {}),
+          ...(titleChanged ? { title: currentTitle } : {}),
+        },
       });
     }
     // Read on close. Unchanged text returns `skipped` and costs nothing, so
@@ -912,7 +942,15 @@ function NoteView({
       body: {},
     });
     onClose();
-  }, [assistantId, noteId, loaded?.body, onClose, readNote, updateNote]);
+  }, [
+    assistantId,
+    noteId,
+    loaded?.body,
+    loaded?.title,
+    onClose,
+    readNote,
+    updateNote,
+  ]);
 
   if (!loaded) {
     // The same rule the list obeys, which this view was quietly breaking: a
@@ -1023,22 +1061,36 @@ function NoteView({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[1fr_280px]">
-        <textarea
-          value={body ?? ""}
-          onChange={(e) => {
-            setBody(e.target.value);
-            bodyRef.current = e.target.value;
-          }}
-          placeholder="Write it however it comes out."
-          className="min-h-0 w-full resize-none rounded-lg border p-3 text-[14px] leading-relaxed outline-none"
-          style={{
-            borderColor: C.line,
-            background: C.card,
-            color: C.t1,
-          }}
-          autoFocus
-        />
+      <div className="grid min-h-0 flex-1 gap-8 md:grid-cols-[1fr_300px]">
+        <div className="min-h-0 overflow-y-auto pr-2">
+          <NoteEditor
+            title={title ?? ""}
+            body={body ?? ""}
+            occurredAt={loaded.occurredAt}
+            projectName={
+              loaded.projectId ? (projectNames.get(loaded.projectId) ?? null) : null
+            }
+            saved={!updateNote.isPending}
+            onTitleChange={(next) => {
+              setTitle(next);
+              titleRef.current = next;
+            }}
+            onBodyChange={(next) => {
+              setBody(next);
+              bodyRef.current = next;
+            }}
+            onRecordInstead={() => {
+              void close().then(() =>
+                onRecordInstead({
+                  id: noteId,
+                  // An untouched, empty note must not be left behind by a
+                  // gesture that means "I would rather speak".
+                  empty: (bodyRef.current ?? "").trim().length === 0,
+                }),
+              );
+            }}
+          />
+        </div>
 
         <div className="min-h-0 overflow-y-auto">
           <NoteRail
