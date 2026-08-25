@@ -396,6 +396,12 @@ export interface VellumBridge {
     setPointerOver(over: boolean): void;
     dragBegin(): void;
     dragEnd(): void;
+    /**
+     * "I am the companion." Sent by the page on mount; main creates the
+     * window hidden and shows it only on this, because it cannot tell what
+     * the SPA will render for a route.
+     */
+    ready(): Promise<void>;
     menu(): Promise<void>;
     /**
      * Advance the introduction, naming the beat the press was made against

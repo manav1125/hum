@@ -31,7 +31,11 @@ import {
   type CompanionSignals,
 } from "./companion-phase";
 import { CompanionPlacement, type PlacementHost } from "./companion-placement";
-import { createFloatingWindow, getFloatingWindow } from "./floating-window";
+import {
+  createFloatingWindow,
+  getFloatingWindow,
+  revealFloatingWindow,
+} from "./floating-window";
 import { handle, on } from "./ipc";
 import {
   dispatchToMain,
@@ -184,6 +188,26 @@ let nudges: CompanionNudges | null = null;
 let drops: CompanionDrops | null = null;
 let caught: import("@vellumai/ipc-contract").CompanionCaught | null = null;
 let opening = false;
+/**
+ * How long the page has to say it is the companion before the window closes.
+ *
+ * Generous: this is a cold route chunk over a network the app may still be
+ * connecting on. Being late costs a retry; being early puts a wrong window on
+ * screen.
+ */
+const READY_TIMEOUT_MS = 12_000;
+let readyTimer: ReturnType<typeof setTimeout> | null = null;
+let readyAttempt = 0;
+/**
+ * How many times the hidden window is reloaded before giving up.
+ *
+ * The window may have loaded while the app was still on its connect screen.
+ * Nothing navigates it on its own afterwards, and the signals main *could*
+ * wait on are unreliable — `featureFlags` and the signed-in flag both only
+ * fire when their VALUE changes, and connecting to an instance changes
+ * neither. So it reloads, on a backoff, and the page reports when it can.
+ */
+const READY_MAX_ATTEMPTS = 5;
 let heldNudge: HeldNudge | null = null;
 let hitTest: CompanionHitTest | null = null;
 let drag: CompanionDrag | null = null;
@@ -347,18 +371,50 @@ const abandonDrag = (): void => {
   if (drag?.isHeld()) drag.end();
 };
 
+/**
+ * Wait for the page to say what it is — and try again if it does not.
+ *
+ * Reloading rather than closing, because the likeliest reason for silence is
+ * that this window loaded while the app was still on its connect screen. A
+ * hidden window costs nothing while it waits; a creature that never comes
+ * back after sign-in costs the whole feature.
+ */
+const armReadyTimeout = (win: BrowserWindow): void => {
+  if (readyTimer) clearTimeout(readyTimer);
+  readyTimer = setTimeout(() => {
+    readyTimer = null;
+    if (win.isDestroyed() || win.isVisible()) return;
+    readyAttempt += 1;
+    if (readyAttempt >= READY_MAX_ATTEMPTS) {
+      win.close();
+      return;
+    }
+    win.webContents.reload();
+    armReadyTimeout(win);
+  }, READY_TIMEOUT_MS);
+};
+
 const openCompanionWindow = (): BrowserWindow => {
   const existing = companionWindow();
   if (existing) return existing;
 
   const size = companionSize();
   const geometry = geometryFor(size);
+  readyAttempt = 0;
 
   const win = createFloatingWindow({
     kind: COMPANION_KIND,
     route: COMPANION_PATH,
     width: geometry.canvasWidth,
     height: geometry.canvasHeight,
+    // **Nothing is shown until the page says it is the companion.** Main
+    // cannot tell from here what the SPA will render: any route becomes a
+    // sign-in or connect screen while the app is not ready, and 1.3.0 and
+    // 1.3.1 both put that screen on screen in a canvas shaped for a creature.
+    // Auth state was the wrong signal — the connect screen renders *inside*
+    // the signed-in shell, so "signed in" is true the whole time it shows.
+    // The only reliable answer comes from the page.
+    deferShow: true,
     // Non-activating: the creature must never steal focus from the app the
     // user is working in. Its actions surface the main window explicitly.
     focusOnShow: false,
@@ -456,9 +512,17 @@ const openCompanionWindow = (): BrowserWindow => {
     publishState();
   });
 
+  // If it never says so, it rendered something else. Close it and wait for the
+  // next signal rather than leaving a hidden window holding a session.
+  armReadyTimeout(win);
+
   win.on("blur", abandonDrag);
   win.on("closed", () => {
     abandonDrag();
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = null;
+    }
     nudges?.stop();
     nudges = null;
     drops?.stop();
@@ -926,6 +990,24 @@ export const installCompanionWindow = (): void => {
   );
 
   handle("vellum:companion:getState", z.tuple([]), () => companionState());
+
+  /**
+   * The page saying it is, in fact, the companion.
+   *
+   * Only `CompanionPage` sends this. If the SPA redirected the route to a
+   * sign-in or connect screen, nothing sends it and the window closes unseen —
+   * which is the point: main cannot tell what a route will render, and the
+   * page can.
+   */
+  handle("vellum:companion:ready", z.tuple([]), () => {
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = null;
+    }
+    readyAttempt = 0;
+    revealFloatingWindow(COMPANION_KIND);
+    publishState();
+  });
 
   on("vellum:companion:signals", z.tuple([signalsSchema]), ([patch]) => {
     void applyCompanionSignals(patch);

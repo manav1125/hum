@@ -65,6 +65,19 @@ export async function getCompanionState(): Promise<CompanionStatePayload | null>
  * Native, and main's to build: the menu is routinely taller than the creature,
  * and a drawn one would have to grow the canvas to hold it.
  */
+/**
+ * Tell main this page actually rendered.
+ *
+ * Main creates the companion window hidden and shows it only on this. It
+ * cannot tell from the main process what the SPA will draw for a route: while
+ * the app is not connected, every route becomes a sign-in screen — and a
+ * sign-in screen in a canvas shaped for a creature is what shipped twice.
+ */
+export function companionReady(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.ready?.();
+}
+
 export function openCompanionMenu(): void {
   if (!isElectron()) return;
   void window.vellum?.companion?.menu?.();

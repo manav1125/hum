@@ -355,6 +355,8 @@ declare global {
         dragBegin?(): void;
         /** The button came up, wherever it came up. */
         dragEnd?(): void;
+        /** "I am the companion." Main shows the window only on this. */
+        ready?(): Promise<void>;
         /** The right-click menu (`C5`) — native, so it may outgrow the canvas. */
         menu?(): Promise<void>;
         /** Advance the introduction, naming the beat pressed (`C4`). */

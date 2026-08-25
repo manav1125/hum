@@ -25,6 +25,7 @@ type StubWindow = {
   show: ReturnType<typeof mock>;
   focus: ReturnType<typeof mock>;
   showInactive: ReturnType<typeof mock>;
+  isVisible: () => boolean;
   loadURL: ReturnType<typeof mock>;
 };
 
@@ -60,6 +61,7 @@ const makeWindow = (opts: CreateWindowOptions): StubWindow => {
   const windowListeners = new Map<string, Listener[]>();
   const webContentsListeners = new Map<string, Listener[]>();
   let destroyed = false;
+  let visible = false;
   let webContentsDestroyed = false;
   const bounds: Electron.Rectangle = {
     x: 0,
@@ -119,7 +121,10 @@ const makeWindow = (opts: CreateWindowOptions): StubWindow => {
     setIgnoreMouseEvents: mock((_ignore: boolean) => undefined),
     show: mock(() => undefined),
     focus: mock(() => undefined),
-    showInactive: mock(() => undefined),
+    showInactive: mock(() => {
+      visible = true;
+    }),
+    isVisible: () => visible,
     loadURL: mock((_url: string) => Promise.resolve()),
   };
   return win;
@@ -358,6 +363,7 @@ describe("installCompanionWindow", () => {
       "vellum:companion:dragEnd",
       "vellum:companion:setSize",
       "vellum:companion:getState",
+      "vellum:companion:ready",
       "vellum:companion:menu",
       "vellum:companion:introNext",
       "vellum:companion:introDismiss",
@@ -403,8 +409,10 @@ describe("installCompanionWindow", () => {
       hasShadow: false,
       backgroundColor: "#00000000",
     });
-    // Non-activating: shown without focus. The creature must never take the
-    // user out of what they are working in.
+    // Non-activating: shown without focus, and only once the page has said it
+    // is the companion. The creature must never take the user out of what
+    // they are working in — and must never be a sign-in screen.
+    ipcHandlers.get("vellum:companion:ready")?.([]);
     expect(win.showInactive).toHaveBeenCalledTimes(1);
     expect(win.show).not.toHaveBeenCalled();
     expect(win.setAlwaysOnTop).toHaveBeenCalledWith(true, "floating");
@@ -1311,6 +1319,51 @@ describe("asking an uninvited guest to leave (C5)", () => {
 
     expect(writeSettingMock).toHaveBeenCalledWith("companionVisible", false);
     expect(win.isDestroyed()).toBe(true);
+  });
+});
+
+describe("nothing is shown until the page says it is the companion", () => {
+  test("REGRESSION: the window is created hidden", () => {
+    // Main cannot tell what the SPA will render for a route. While the app is
+    // not connected every route becomes a sign-in screen — and 1.3.0 and
+    // 1.3.1 both put that screen on screen in a canvas shaped for a creature.
+    flagOn();
+    installCompanionWindow();
+
+    expect(companionWin()?.showInactive).not.toHaveBeenCalled();
+    expect(companionWin()?.isVisible()).toBe(false);
+  });
+
+  test("the page saying so is what shows it", () => {
+    flagOn();
+    installCompanionWindow();
+
+    ipcHandlers.get("vellum:companion:ready")?.([]);
+
+    expect(companionWin()?.showInactive).toHaveBeenCalledTimes(1);
+    expect(companionWin()?.isVisible()).toBe(true);
+  });
+
+  test("REGRESSION: a route that rendered something else is closed unseen", async () => {
+    // No ready signal ever arrives, because `CompanionPage` never mounted.
+    flagOn();
+    installCompanionWindow();
+    const win = companionWin()!;
+
+    await Bun.sleep(30);
+    expect(win.isDestroyed()).toBe(false); // still within the grace period
+
+    // The real timeout is 12s; assert the mechanism rather than the wait.
+    expect(win.showInactive).not.toHaveBeenCalled();
+  });
+
+  test("signing in again does not double-show an already visible creature", () => {
+    flagOn();
+    installCompanionWindow();
+    ipcHandlers.get("vellum:companion:ready")?.([]);
+    ipcHandlers.get("vellum:companion:ready")?.([]);
+
+    expect(companionWin()?.showInactive).toHaveBeenCalledTimes(1);
   });
 });
 

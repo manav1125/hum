@@ -24,6 +24,16 @@ export interface CreateFloatingWindowOptions {
   alwaysOnTopLevel?: AlwaysOnTopLevel;
   visibleOnAllWorkspaces?: boolean;
   ignoreMouseEvents?: boolean;
+  /**
+   * Create the window without showing it.
+   *
+   * For surfaces that cannot know, from main, whether the page they load will
+   * render *itself* or something else — the SPA redirects any route to a
+   * sign-in or connect screen when it is not ready, and a window shown before
+   * that is settled is a sign-in form in a canvas shaped for something else.
+   * The caller shows it once the page has said what it is.
+   */
+  deferShow?: boolean;
   browserWindow?: Omit<
     BrowserWindowConstructorOptions,
     | "webPreferences"
@@ -50,6 +60,16 @@ const floatingWindowUrl = (route: string): string => {
 
 const isAlive = (win: BrowserWindow): boolean =>
   !win.isDestroyed() && !win.webContents.isDestroyed();
+
+/** Show a window that was created with `deferShow`. */
+export const revealFloatingWindow = (
+  kind: string,
+  focusOnShow = false,
+): void => {
+  const win = getFloatingWindow(kind);
+  if (!win || win.isVisible()) return;
+  showFloatingWindow(win, focusOnShow);
+};
 
 export const getFloatingWindow = (kind: string): BrowserWindow | null => {
   const win = floatingWindows.get(kind);
@@ -89,13 +109,14 @@ export const createFloatingWindow = ({
   alwaysOnTopLevel = "floating",
   visibleOnAllWorkspaces = true,
   ignoreMouseEvents = false,
+  deferShow = false,
   browserWindow,
   position,
 }: CreateFloatingWindowOptions): BrowserWindow => {
   const existing = getFloatingWindow(kind);
   if (existing) {
     applyPosition(existing, position);
-    showFloatingWindow(existing, focusOnShow);
+    if (!deferShow) showFloatingWindow(existing, focusOnShow);
     return existing;
   }
 
@@ -137,6 +158,6 @@ export const createFloatingWindow = ({
   floatingWindows.set(kind, win);
   applyPosition(win, position);
   void win.loadURL(floatingWindowUrl(route));
-  showFloatingWindow(win, focusOnShow);
+  if (!deferShow) showFloatingWindow(win, focusOnShow);
   return win;
 };

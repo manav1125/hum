@@ -13,6 +13,7 @@ import {
   companionDropChoose,
   companionDropRelease,
   companionKeepAsNote,
+  companionReady,
   companionNudgeDismiss,
   companionNudgeOpen,
   companionStop,
@@ -134,6 +135,13 @@ export function CompanionPage(): React.ReactElement {
   // pull is for a cold window whose route chunk was still loading when main
   // first published — without it the creature would draw at its default size
   // until something happened to change.
+  // Only this page sends it, which is exactly what makes it a useful answer:
+  // a redirected route never mounts this component, so main never shows the
+  // window.
+  useEffect(() => {
+    companionReady();
+  }, []);
+
   useEffect(() => {
     // **Replace, never merge.** Main builds the whole payload every time, and
     // most of it is optional: `line`, `detail`, `intro`, `answer` are absent

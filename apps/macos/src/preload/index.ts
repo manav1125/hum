@@ -649,6 +649,15 @@ const bridge: VellumBridge = {
     dragEnd: (): void => {
       void ipcRenderer.invoke("vellum:companion:dragEnd");
     },
+    /**
+     * "I am the companion." Sent by `CompanionPage` on mount.
+     *
+     * Main creates the window hidden and shows it only on this, because it
+     * cannot tell what the SPA will render for a route — an unready app turns
+     * any route into a sign-in screen.
+     */
+    ready: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:ready") as Promise<void>,
     /** Pop the right-click menu (`C5`). Native: it outgrows the canvas. */
     menu: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:menu") as Promise<void>,
