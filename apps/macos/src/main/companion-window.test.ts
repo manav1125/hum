@@ -363,6 +363,7 @@ describe("installCompanionWindow", () => {
       "vellum:companion:dragEnd",
       "vellum:companion:setSize",
       "vellum:companion:getState",
+      "vellum:companion:setDrawnRect",
       "vellum:companion:ready",
       "vellum:companion:menu",
       "vellum:companion:introNext",
@@ -607,7 +608,12 @@ describe("the drag", () => {
       x: 1531,
       y: 69,
     });
-    // And the canvas goes back the moment the gesture does.
+    // The gesture is over — the press is not outstanding any more. The canvas
+    // stays claimed only because the pointer is still on the creature it just
+    // dropped; handing it back there would make the creature unclickable the
+    // instant you let go. Move away and it goes back.
+    cursor = { x: 200, y: 800 };
+    await Bun.sleep(160);
     expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, {
       forward: true,
     });
@@ -937,6 +943,80 @@ describe("the nudge answers whether it took the interruption (C7)", () => {
       kind: "openNeedsYouItem",
       itemId: "i1",
     });
+  });
+});
+
+describe("main hit-tests the cursor against what was actually drawn", () => {
+  const rect = (r: Record<string, number>) =>
+    ipcHandlers.get("vellum:companion:setDrawnRect")?.([r]);
+
+  test("REGRESSION: the pill becomes clickable, not just the creature's box", async () => {
+    // The renderer used to answer this from its own `mousemove`, which a
+    // click-through non-activating panel may never receive — leaving the
+    // introduction drawn, visible, and dead to every click. Main can always
+    // read the cursor, so main does the test.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    const win = companionWin()!;
+    ipcHandlers.get("vellum:companion:ready")?.([]);
+    win.setIgnoreMouseEvents.mockClear();
+
+    // The window sits at (988, 195); a card drawn across its left half.
+    rect({ x: 10, y: 10, width: 300, height: 120 });
+    cursor = { x: 988 + 150, y: 195 + 60 };
+    await Bun.sleep(160);
+
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  test("and hands the canvas back outside it", async () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    const win = companionWin()!;
+    ipcHandlers.get("vellum:companion:ready")?.([]);
+
+    rect({ x: 10, y: 10, width: 300, height: 120 });
+    cursor = { x: 988 + 150, y: 195 + 60 };
+    await Bun.sleep(160);
+    cursor = { x: 988 + 500, y: 195 + 400 };
+    await Bun.sleep(160);
+
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, {
+      forward: true,
+    });
+  });
+
+  test("hover is published from the same test, so the surface can react", async () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    ipcHandlers.get("vellum:companion:ready")?.([]);
+
+    rect({ x: 10, y: 10, width: 300, height: 120 });
+    cursor = { x: 988 + 150, y: 195 + 60 };
+    await Bun.sleep(160);
+
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "hover",
+    });
+  });
+
+  test("before any rectangle is reported, the creature's own box still works", async () => {
+    // Otherwise a window that is click-through everywhere cannot even be
+    // picked up and moved.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    const win = companionWin()!;
+    ipcHandlers.get("vellum:companion:ready")?.([]);
+    win.setIgnoreMouseEvents.mockClear();
+
+    cursor = { x: 1531, y: 558 };
+    await Bun.sleep(160);
+
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
   });
 });
 

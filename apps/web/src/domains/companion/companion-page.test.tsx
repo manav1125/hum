@@ -36,6 +36,10 @@ const hideSpy = mock(() => Promise.resolve());
 const getStatusSpy = mock(() => Promise.resolve(pulledStatus));
 const getStateSpy = mock(() => Promise.resolve(pulledState));
 const pointerOverSpy = mock((_over: boolean) => undefined);
+const readySpy = mock(() => undefined);
+const drawnRectSpy = mock(
+  (_r: { x: number; y: number; width: number; height: number }) => undefined,
+);
 const dragBeginSpy = mock(() => undefined);
 const dragEndSpy = mock(() => undefined);
 const menuSpy = mock(() => undefined);
@@ -62,6 +66,8 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   getCompanionStatus: getStatusSpy,
   getCompanionState: getStateSpy,
   setCompanionPointerOver: pointerOverSpy,
+  setCompanionDrawnRect: drawnRectSpy,
+  companionReady: readySpy,
   companionDragBegin: dragBeginSpy,
   companionDragEnd: dragEndSpy,
   openCompanionMenu: menuSpy,
@@ -172,6 +178,8 @@ beforeEach(() => {
   getStatusSpy.mockClear();
   getStateSpy.mockClear();
   pointerOverSpy.mockClear();
+  drawnRectSpy.mockClear();
+  readySpy.mockClear();
   dragBeginSpy.mockClear();
   dragEndSpy.mockClear();
   menuSpy.mockClear();
@@ -228,109 +236,55 @@ describe("the page draws what main gives it", () => {
   });
 });
 
-describe("hover is main's answer, not the page's guess", () => {
-  test("being pointed at is reported, and changes nothing on its own", async () => {
+describe("main does the hit-testing; this page reports what it drew", () => {
+  test("REGRESSION: the drawn rectangle is published, not a hover guess", async () => {
+    // The page's own hover answer depended on `mousemove` reaching a
+    // click-through, non-activating panel. When those did not arrive the
+    // window never became interactive — the introduction rendered with a Next
+    // button that did nothing. Main can always read the cursor; this page
+    // always knows its rectangle.
     render(<CompanionPage />);
     await flushMicrotasks();
     drawnArea(200, 60);
-
-    fireEvent.mouseMove(canvas(), { clientX: 40, clientY: 30 });
-    expect(pointerOverSpy).toHaveBeenLastCalledWith(true);
-    // Reported, but not acted on: the page has not drawn the hover
-    // affordances, because whether this counts as hover is main's to say.
-    expect(screen.queryByText("\u270e Type")).toBeNull();
+    drawnRectSpy.mockClear();
 
     pushState({ phase: "hover" });
-    expect(screen.getByText("\u270e Type")).toBeTruthy();
+
+    expect(drawnRectSpy).toHaveBeenCalled();
+    expect(drawnRectSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      width: 200,
+      height: 60,
+    });
   });
 
-  test("a move over the empty canvas is not coverage", async () => {
-    // Most of the window is empty. Claiming it because the pointer crossed it
-    // is how an always-on-top surface swallows other applications' clicks.
+  test("every change to what is drawn republishes the rectangle", async () => {
+    // A card opening, a beat advancing, a nudge retracting: each moves the
+    // rectangle main is testing against.
     render(<CompanionPage />);
     await flushMicrotasks();
-    drawnArea(200, 60);
-
-    fireEvent.mouseMove(canvas(), { clientX: 900, clientY: 400 });
-    expect(pointerOverSpy).toHaveBeenLastCalledWith(false);
-  });
-
-  test("the canvas is handed back when the pointer leaves", async () => {
-    render(<CompanionPage />);
-    await flushMicrotasks();
-    drawnArea(200, 60);
-
-    fireEvent.mouseMove(canvas(), { clientX: 40, clientY: 30 });
-    fireEvent.mouseLeave(canvas());
-    expect(pointerOverSpy).toHaveBeenLastCalledWith(false);
-  });
-
-  test("REGRESSION: the drawn area shrinking under a still pointer hands the canvas back", async () => {
-    // The pill collapses, or a card is dismissed, and no mouse-move follows —
-    // so nothing recomputes on its own and the window goes on claiming a
-    // canvas many times the size of the creature. Upstream shipped exactly
-    // this in the intro (`64e3eead`).
-    render(<CompanionPage />);
-    await flushMicrotasks();
-
     drawnArea(320, 60);
-    pushState({ phase: "hover" }); // the pill is out; the pointer is on its far end
-    fireEvent.mouseMove(canvas(), { clientX: 280, clientY: 30 });
-    expect(pointerOverSpy).toHaveBeenLastCalledWith(true);
+    pushState({ phase: "hover" });
+    drawnRectSpy.mockClear();
 
-    pointerOverSpy.mockClear();
-    drawnArea(66, 66); // collapsed back to just the creature
+    drawnArea(66, 66);
     pushState({ phase: "resting" });
 
-    expect(pointerOverSpy).toHaveBeenLastCalledWith(false);
-  });
-});
-
-describe("a press is captured, and always released", () => {
-  test("a press asks for capture and tells main to start reading the cursor", async () => {
-    render(<CompanionPage />);
-    await flushMicrotasks();
-
-    fireEvent.pointerDown(handle(), { button: 0, pointerId: 7 });
-
-    expect(dragBeginSpy).toHaveBeenCalledTimes(1);
-    // Capture is what makes the release reportable when the button comes up
-    // over another application — which it routinely does, because a fast drag
-    // outruns a window moved one IPC message at a time.
-    expect(captured.has(7)).toBe(true);
+    expect(drawnRectSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      width: 66,
+      height: 66,
+    });
   });
 
-  test("the release ends the press and gives the capture back", async () => {
+  test("an unmeasurable surface publishes nothing rather than a zero rect", async () => {
+    // A zero rectangle would tell main the pointer is never over anything,
+    // which is the same inert window by another route.
     render(<CompanionPage />);
     await flushMicrotasks();
+    drawnArea(0, 0);
+    drawnRectSpy.mockClear();
 
-    fireEvent.pointerDown(handle(), { button: 0, pointerId: 7 });
-    fireEvent.pointerUp(handle(), { button: 0, pointerId: 7 });
-
-    expect(dragEndSpy).toHaveBeenCalledTimes(1);
-    expect(captured.has(7)).toBe(false);
-  });
-
-  test("REGRESSION: losing the capture ends the press too", async () => {
-    // The OS taking the capture back, or the window going away under the
-    // hand, both leave a press outstanding otherwise — and an unended press
-    // is a window that never stops claiming its canvas.
-    render(<CompanionPage />);
-    await flushMicrotasks();
-
-    fireEvent.pointerDown(handle(), { button: 0, pointerId: 7 });
-    fireEvent.lostPointerCapture(handle(), { pointerId: 7 });
-
-    expect(dragEndSpy).toHaveBeenCalledTimes(1);
-  });
-
-  test("a right-click is not a drag", async () => {
-    render(<CompanionPage />);
-    await flushMicrotasks();
-
-    fireEvent.pointerDown(handle(), { button: 2, pointerId: 7 });
-
-    expect(dragBeginSpy).not.toHaveBeenCalled();
+    pushState({ phase: "hover" });
+    expect(drawnRectSpy).not.toHaveBeenCalled();
   });
 });
 

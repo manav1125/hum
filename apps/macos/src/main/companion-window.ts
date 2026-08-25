@@ -312,6 +312,23 @@ const placementHost: PlacementHost = {
 let pointerOverDrawn = false;
 let cursorOnCreature = false;
 
+/**
+ * What the renderer actually drew, in window coordinates.
+ *
+ * **This is what makes the surface usable at all.** The window is
+ * click-through until something says the pointer is over something drawn, and
+ * the renderer's own answer depends on `mousemove` being forwarded to a
+ * non-activating panel — which is exactly the delivery that cannot be relied
+ * on. When it does not arrive, the canvas never becomes interactive and every
+ * button on it is dead: the introduction rendered and could not be dismissed.
+ *
+ * Main can always read the cursor. The renderer always knows its own
+ * rectangle. So the renderer reports the rectangle and main does the
+ * hit-testing, and nothing depends on an event that may never come.
+ */
+let drawnRect: { x: number; y: number; width: number; height: number } | null =
+  null;
+
 const applyHitTest = (): void => {
   hitTest?.set(pointerOverDrawn || cursorOnCreature);
 };
@@ -323,24 +340,49 @@ const applyHitTest = (): void => {
  * pointer — the renderer already does that far better, for free, whenever the
  * window is not click-through to a drag.
  */
-const PROXIMITY_POLL_MS = 120;
+const PROXIMITY_POLL_MS = 60;
 
 let proximityPoll: ReturnType<typeof setInterval> | null = null;
 
 const startProximityPoll = (): void => {
   stopProximityPoll();
   proximityPoll = setInterval(() => {
-    const centre = placement?.centre();
-    const box = placement?.current().geometry.avatarBox;
-    if (!centre || !box) return;
     const at = screen.getCursorScreenPoint();
-    const half = box / 2;
-    const over =
-      Math.abs(at.x - centre.x) <= half && Math.abs(at.y - centre.y) <= half;
+    const over = cursorIsOverDrawnArea(at);
     if (over === cursorOnCreature) return;
     cursorOnCreature = over;
     applyHitTest();
+    // Hover is a phase main publishes — and this is the only source that
+    // works, so it is the one that publishes it.
+    phases?.set({ hover: over });
   }, PROXIMITY_POLL_MS);
+};
+
+/**
+ * Is the cursor over anything the renderer drew?
+ *
+ * Prefers the reported rectangle; falls back to the creature's own box, which
+ * main can derive on its own, for the moments before the first report — a
+ * window that is click-through everywhere cannot even be picked up and moved.
+ */
+const cursorIsOverDrawnArea = (at: { x: number; y: number }): boolean => {
+  const bounds = companionWindow()?.getBounds();
+  if (!bounds) return false;
+  if (drawnRect) {
+    const left = bounds.x + drawnRect.x;
+    const top = bounds.y + drawnRect.y;
+    return (
+      at.x >= left &&
+      at.x <= left + drawnRect.width &&
+      at.y >= top &&
+      at.y <= top + drawnRect.height
+    );
+  }
+  const centre = placement?.centre();
+  const box = placement?.current().geometry.avatarBox;
+  if (!centre || !box) return false;
+  const half = box / 2;
+  return Math.abs(at.x - centre.x) <= half && Math.abs(at.y - centre.y) <= half;
 };
 
 const stopProximityPoll = (): void => {
@@ -529,6 +571,7 @@ const openCompanionWindow = (): BrowserWindow => {
     drops = null;
     caught = null;
     opening = false;
+    drawnRect = null;
     stopProximityPoll();
     pointerOverDrawn = false;
     cursorOnCreature = false;
@@ -999,6 +1042,27 @@ export const installCompanionWindow = (): void => {
    * which is the point: main cannot tell what a route will render, and the
    * page can.
    */
+  /**
+   * The rectangle the renderer drew, in window coordinates.
+   *
+   * Main hit-tests the cursor against this rather than waiting for a
+   * `mousemove` that a click-through panel may never receive.
+   */
+  handle(
+    "vellum:companion:setDrawnRect",
+    z.tuple([
+      z.object({
+        x: z.number(),
+        y: z.number(),
+        width: z.number(),
+        height: z.number(),
+      }),
+    ]),
+    ([rect]) => {
+      drawnRect = rect;
+    },
+  );
+
   handle("vellum:companion:ready", z.tuple([]), () => {
     if (readyTimer) {
       clearTimeout(readyTimer);
@@ -1205,6 +1269,7 @@ export const __resetForTesting = (): void => {
   drops = null;
   caught = null;
   opening = false;
+  drawnRect = null;
   pointerOverDrawn = false;
   cursorOnCreature = false;
   heldNudge = null;

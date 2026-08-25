@@ -401,6 +401,16 @@ export interface VellumBridge {
      * window hidden and shows it only on this, because it cannot tell what
      * the SPA will render for a route.
      */
+    /**
+     * The rectangle the page drew, in window coordinates. Main hit-tests the
+     * cursor against it instead of relying on forwarded mouse events.
+     */
+    setDrawnRect(rect: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }): void;
     ready(): Promise<void>;
     menu(): Promise<void>;
     /**

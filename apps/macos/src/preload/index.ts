@@ -656,6 +656,21 @@ const bridge: VellumBridge = {
      * cannot tell what the SPA will render for a route — an unready app turns
      * any route into a sign-in screen.
      */
+    /**
+     * The rectangle this page drew, in window coordinates.
+     *
+     * Main hit-tests the cursor against it rather than waiting for a
+     * `mousemove` that a click-through panel may never receive — which is
+     * what left the introduction on screen and unclickable.
+     */
+    setDrawnRect: (rect: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }): void => {
+      void ipcRenderer.invoke("vellum:companion:setDrawnRect", rect);
+    },
     ready: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:ready") as Promise<void>,
     /** Pop the right-click menu (`C5`). Native: it outgrows the canvas. */

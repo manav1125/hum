@@ -73,6 +73,24 @@ export async function getCompanionState(): Promise<CompanionStatePayload | null>
  * the app is not connected, every route becomes a sign-in screen — and a
  * sign-in screen in a canvas shaped for a creature is what shipped twice.
  */
+/**
+ * Tell main exactly what was drawn, in window coordinates.
+ *
+ * Main hit-tests the cursor against this. It has to, because the alternative —
+ * the page reporting hover from its own `mousemove` — depends on those events
+ * being forwarded to a click-through, non-activating panel, and when they are
+ * not the whole surface is inert: drawn, visible, and dead to every click.
+ */
+export function setCompanionDrawnRect(rect: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): void {
+  if (!isElectron()) return;
+  window.vellum?.companion?.setDrawnRect?.(rect);
+}
+
 export function companionReady(): void {
   if (!isElectron()) return;
   void window.vellum?.companion?.ready?.();

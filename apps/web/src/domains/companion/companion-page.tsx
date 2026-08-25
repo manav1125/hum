@@ -14,12 +14,12 @@ import {
   companionDropRelease,
   companionKeepAsNote,
   companionReady,
+  setCompanionDrawnRect,
   companionNudgeDismiss,
   companionNudgeOpen,
   companionStop,
   getCompanionState,
   openCompanionMenu,
-  setCompanionPointerOver,
   subscribeCompanionState,
 } from "@/domains/companion/companion-bridge";
 
@@ -157,39 +157,34 @@ export function CompanionPage(): React.ReactElement {
   }, []);
 
   /**
-   * Where the pointer is, as of the last move the canvas received.
-   *
-   * The canvas gets mouse-move for free — that is the whole point of
-   * `{forward:true}` — so the page can answer "is the pointer over anything
-   * drawn?" from geometry rather than from the browser's own enter/leave
-   * bookkeeping. Which matters, because enter/leave is exactly what stops
-   * arriving when the drawn area changes under a hand that is not moving.
-   */
-  const pointer = useRef<{ x: number; y: number } | null>(null);
-
-  /**
    * Tell main whether the pointer is over anything drawn.
    *
    * This is the other half of the forwarding trick: main hands the canvas back
    * whenever this says no, which is what keeps the empty region transparent to
    * clicks meant for the app behind.
    */
+  /**
+   * Publish exactly what was drawn, in window coordinates.
+   *
+   * **Main does the hit-testing, not this page.** The page's own answer would
+   * depend on `mousemove` reaching a click-through, non-activating panel, and
+   * when those do not arrive the window never becomes interactive — drawn,
+   * visible, and dead to every click. That is what left the introduction on
+   * screen with a Next button that did nothing. Main can always read the
+   * cursor; this page always knows its rectangle. So it reports the
+   * rectangle.
+   */
   const reportCoverage = useCallback(() => {
     const el = surfaceRef.current;
-    const at = pointer.current;
-    if (!el || !at) {
-      setCompanionPointerOver(false);
-      return;
-    }
+    if (!el) return;
     const r = el.getBoundingClientRect();
-    setCompanionPointerOver(
-      r.width > 0 &&
-        r.height > 0 &&
-        at.x >= r.left &&
-        at.x <= r.right &&
-        at.y >= r.top &&
-        at.y <= r.bottom,
-    );
+    if (r.width <= 0 || r.height <= 0) return;
+    setCompanionDrawnRect({
+      x: Math.round(r.left),
+      y: Math.round(r.top),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    });
   }, []);
 
   /**
@@ -252,9 +247,20 @@ export function CompanionPage(): React.ReactElement {
   // meant for whatever is behind it, until the user happened to move the
   // mouse. Upstream shipped this leak (`64e3eead`); re-testing on every drawn
   // phase is what closes it.
+  // Every change to what is drawn moves the rectangle main is testing
+  // against — a card opening, a beat advancing, a nudge retracting.
   useEffect(() => {
     reportCoverage();
-  }, [phase, state.avatarBox, state.growth, reportCoverage]);
+  }, [
+    phase,
+    state.avatarBox,
+    state.growth,
+    state.cardGrowth,
+    state.intro,
+    state.caught,
+    state.line,
+    reportCoverage,
+  ]);
 
   return (
     <div
@@ -272,17 +278,6 @@ export function CompanionPage(): React.ReactElement {
         justifyContent: state.growth === "right" ? "flex-start" : "flex-end",
         padding: NEAR_EDGE - state.avatarBox / 2,
         overflow: "hidden",
-      }}
-      // The canvas receives moves without having claimed anything; that is
-      // what `{forward:true}` buys, and it is the only reason the page can
-      // answer this question at all.
-      onMouseMove={(e) => {
-        pointer.current = { x: e.clientX, y: e.clientY };
-        reportCoverage();
-      }}
-      onMouseLeave={() => {
-        pointer.current = null;
-        setCompanionPointerOver(false);
       }}
       /**
        * Drops — `C10`.
