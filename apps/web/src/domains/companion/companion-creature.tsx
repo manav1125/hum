@@ -47,7 +47,14 @@ const LOOK = {
   gaze: { dot: { x: 332, y: 130 }, ring: -38 },
 } as const;
 
-export type CreatureTone = "normal" | "watching" | "recording" | "offline" | "amber";
+export type CreatureTone =
+  | "normal"
+  | "watching"
+  | "recording"
+  | "offline"
+  | "amber"
+  /** Cue moving first (`C7`), and the tint a held glint keeps. */
+  | "nudge";
 
 /** Reserved values. Red belongs to recording alone; amber agrees with the host. */
 const TONE = {
@@ -56,6 +63,7 @@ const TONE = {
   recording: { ring: "#E5675B", dot: "#E5675B", glow: "229,103,91" },
   offline: { ring: "#9A9AA8", dot: "#9A9AA8", glow: "154,154,168" },
   amber: { ring: "#F4F4F6", dot: "#FF9F45", glow: "255,159,69" },
+  nudge: { ring: "#F4F4F6", dot: "#6FD69A", glow: "111,214,154" },
 } as const satisfies Record<CreatureTone, { ring: string; dot: string; glow: string }>;
 
 export interface CreatureProps {
@@ -74,6 +82,14 @@ export interface CreatureProps {
   blink?: "calm" | "lively";
   /** Quiet hours and Reduced Motion both still the creature. */
   still?: boolean;
+  /**
+   * An ignored nudge, held (`C7`).
+   *
+   * A glint on the shoulder of the disc rather than a second creature state:
+   * the dot already carries the tint, and this is the mark that says there is
+   * something to come back to. Never lost, and never repeated out loud.
+   */
+  held?: boolean;
 }
 
 export function CompanionCreature({
@@ -85,6 +101,7 @@ export function CompanionCreature({
   weight = "regular",
   blink = "calm",
   still = false,
+  held = false,
 }: CreatureProps): React.ReactElement {
   const t = TONE[tone];
   const strokeWidth =
@@ -111,6 +128,7 @@ export function CompanionCreature({
       ? { boxShadow: "0 14px 34px -14px rgba(0,0,0,.55)" }
       : { animation: "cueCreatureGlow 3.2s ease-in-out infinite" }),
     ["--cue-glow" as string]: t.glow,
+    position: "relative",
   };
 
   return (
@@ -186,6 +204,20 @@ export function CompanionCreature({
           )}
         </svg>
       </div>
+      {held ? (
+        <span
+          style={{
+            position: "absolute",
+            top: box * 0.09,
+            right: box * 0.09,
+            width: Math.max(6, box * 0.12),
+            height: Math.max(6, box * 0.12),
+            borderRadius: "50%",
+            background: TONE.nudge.dot,
+            boxShadow: `0 0 ${box * 0.12}px rgba(${TONE.nudge.glow},.8)`,
+          }}
+        />
+      ) : null}
     </div>
   );
 }

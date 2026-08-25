@@ -22,6 +22,9 @@ export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
   // The companion's menu item, not a keyboard command: `⌥␣` is the creature's
   // own key family (`C12`) and is registered as a global shortcut, not here.
   newNote: "",
+  // Companion-originated, never keyboard commands.
+  nudgeDismissed: "",
+  openNeedsYouItem: "",
   currentConversation: "CmdOrCtrl+Shift+N",
   markCurrentUnread: "CmdOrCtrl+Shift+U",
   openSettings: "CmdOrCtrl+,",

@@ -68,7 +68,25 @@ export type VellumCommand =
    * this hands off to the Notes surface rather than opening anything of its
    * own.
    */
-  | { kind: "newNote" };
+  | { kind: "newNote" }
+  /**
+   * A nudge was dismissed with `✕` (`C7`).
+   *
+   * Teaches the valve, like every other dismissal — the companion is where it
+   * happened, but the valve is not the companion's to hold.
+   */
+  | {
+      kind: "nudgeDismissed";
+      itemId: string;
+      /**
+       * What the valve learns on — the sender, channel or rule the item came
+       * through, never the item itself. Absent when there is nothing the
+       * valve could generalise from.
+       */
+      subject?: { kind: "sender" | "channel" | "rule"; key: string };
+    }
+  /** `Open ›` on a nudge: the app takes it from here. Nothing acts here. */
+  | { kind: "openNeedsYouItem"; itemId: string };
 
 // ---------------------------------------------------------------------------
 // Hotkeys

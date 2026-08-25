@@ -659,6 +659,10 @@ const bridge: VellumBridge = {
       ) as Promise<void>,
     introDismiss: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:introDismiss") as Promise<void>,
+    nudgeOpen: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:nudgeOpen") as Promise<void>,
+    nudgeDismiss: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:nudgeDismiss") as Promise<void>,
     setSize: (size: string): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:setSize", size) as Promise<void>,
     getState: (): Promise<CompanionStatePayload> =>

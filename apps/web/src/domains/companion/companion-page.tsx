@@ -7,6 +7,8 @@ import {
   companionTalk,
   companionIntroDismiss,
   companionIntroNext,
+  companionNudgeDismiss,
+  companionNudgeOpen,
   getCompanionState,
   openCompanionMenu,
   setCompanionPointerOver,
@@ -59,6 +61,8 @@ interface CompanionState {
   avatarBox: number;
   growth: "right" | "left";
   cardGrowth: "up" | "down";
+  /** An ignored nudge, held on the dot until the next hover (`C7`). */
+  heldNudge?: string;
   /** The introduction, while main is offering it (`C4`). */
   intro?: CompanionIntroBeat;
   /** Character, composed live (`C5`). */
@@ -237,9 +241,15 @@ export function CompanionPage(): React.ReactElement {
           {...(state.blink !== undefined ? { blink: state.blink } : {})}
           {...(state.weight !== undefined ? { weight: state.weight } : {})}
           {...(state.intro !== undefined ? { intro: state.intro } : {})}
+          {...(state.heldNudge !== undefined
+            ? { heldNudge: state.heldNudge }
+            : {})}
           onIntroNext={companionIntroNext}
           onIntroDismiss={companionIntroDismiss}
-          onOpen={() => void companionOpenCue()}
+          onOpen={() =>
+            phase === "nudge" ? companionNudgeOpen() : void companionOpenCue()
+          }
+          onDismiss={companionNudgeDismiss}
           onStop={() => void companionTalk()}
         />
       </div>

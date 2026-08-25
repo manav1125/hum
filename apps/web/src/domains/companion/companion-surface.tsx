@@ -51,6 +51,7 @@ const TONE_FOR: Partial<Record<CompanionPhase, CreatureTone>> = {
   offline: "offline",
   couldnt: "amber",
   waiting: "amber",
+  nudge: "nudge",
 };
 
 /** The four-beat introduction (`C4`), one beat at a time. */
@@ -95,6 +96,13 @@ export interface CompanionSurfaceProps {
   blink?: "calm" | "lively";
   /** Quiet hours: the creature still sits there, but it never moves first. */
   quiet?: boolean;
+  /**
+   * The line an ignored nudge retracted to (`C7`).
+   *
+   * Held on the dot until the next hover — never lost, never repeated out
+   * loud.
+   */
+  heldNudge?: string;
   onStop?: () => void;
   onOpen?: () => void;
   onDismiss?: () => void;
@@ -115,6 +123,7 @@ export function CompanionSurface(props: CompanionSurfaceProps): React.ReactEleme
       weight={props.weight ?? "regular"}
       blink={props.blink ?? "calm"}
       still={quiet}
+      held={props.heldNudge !== undefined && phase !== "nudge"}
     />
   );
 

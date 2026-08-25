@@ -360,6 +360,9 @@ declare global {
         /** Advance the introduction, naming the beat pressed (`C4`). */
         introNext?(fromBeat: number): Promise<void>;
         introDismiss?(): Promise<void>;
+        /** Answering a nudge (`C7`). Neither of these acts on anything. */
+        nudgeOpen?(): Promise<void>;
+        nudgeDismiss?(): Promise<void>;
         /** A named size step (`C12`). The one legitimate canvas resize. */
         setSize?(size: string): Promise<void>;
         /** One-shot pull, for a cold window that missed the first publish. */

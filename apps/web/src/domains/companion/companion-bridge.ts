@@ -88,6 +88,24 @@ export function companionIntroDismiss(): void {
 }
 
 /**
+ * `Open ›` on a nudge — the app takes it from here.
+ *
+ * Neither this nor the dismissal acts on anything: a nudge carries one line,
+ * one Open and one ✕, so a stray click cannot approve, send or spend (`C7`,
+ * and `C9`'s protocol).
+ */
+export function companionNudgeOpen(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.nudgeOpen?.();
+}
+
+/** `✕` on a nudge. Teaches the valve, like every other dismissal. */
+export function companionNudgeDismiss(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.nudgeDismiss?.();
+}
+
+/**
  * Subscribe to the geometry + hover pushes main publishes. Returns an
  * unsubscribe function; a no-op unsubscribe off-Electron.
  */

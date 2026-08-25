@@ -404,6 +404,12 @@ export interface VellumBridge {
      */
     introNext(fromBeat: number): Promise<void>;
     introDismiss(): Promise<void>;
+    /**
+     * Answering a nudge (`C7`). One line, one Open, one ✕ — a nudge never
+     * carries buttons that act, so a stray click cannot approve anything.
+     */
+    nudgeOpen(): Promise<void>;
+    nudgeDismiss(): Promise<void>;
     setSize(size: string): Promise<void>;
     getState(): Promise<CompanionStatePayload>;
     onState(callback: (state: CompanionStatePayload) => void): () => void;

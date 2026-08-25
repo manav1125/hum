@@ -53,6 +53,9 @@ const primaryWorkArea: Electron.Rectangle = {
  */
 let cursor = { x: 0, y: 0 };
 
+/** Seconds since the user last touched anything — the nudge gate reads it. */
+let idleSeconds = 600;
+
 const makeWindow = (opts: CreateWindowOptions): StubWindow => {
   const windowListeners = new Map<string, Listener[]>();
   const webContentsListeners = new Map<string, Listener[]>();
@@ -191,6 +194,7 @@ const menuPopups: Array<Electron.MenuItemConstructorOptions[]> = [];
 
 mock.module("electron", () => ({
   app: appState,
+  powerMonitor: { getSystemIdleTime: () => idleSeconds },
   Menu: {
     buildFromTemplate: (template: Electron.MenuItemConstructorOptions[]) => {
       menuPopups.push(template);
@@ -295,6 +299,7 @@ beforeEach(() => {
   restoreBoundsMock.mockClear();
   trackMock.mockClear();
   cursor = { x: 0, y: 0 };
+  idleSeconds = 600;
   menuPopups.length = 0;
   appState.isPackaged = false;
   process.env.VELLUM_DEV_URL = "http://localhost:4242/assistant/";
@@ -340,6 +345,9 @@ describe("installCompanionWindow", () => {
       "vellum:companion:menu",
       "vellum:companion:introNext",
       "vellum:companion:introDismiss",
+      "vellum:companion:nudge",
+      "vellum:companion:nudgeOpen",
+      "vellum:companion:nudgeDismiss",
       "vellum:companion:talk",
       "vellum:companion:openCue",
       "vellum:companion:hide",
@@ -809,6 +817,94 @@ describe("the introduction, and the canvas it has to hand back (C4)", () => {
     ipcHandlers.get("vellum:companion:introNext")?.([0]);
 
     expect(win.webContents.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("the nudge answers whether it took the interruption (C7)", () => {
+  const offer = (patch: Record<string, unknown> = {}) =>
+    ipcHandlers.get("vellum:companion:nudge")?.([
+      {
+        itemId: "i1",
+        line: "Dana replied on pricing",
+        source: "needs-you",
+        ...patch,
+      },
+    ]);
+
+  test("a taken nudge says so, so the caller does not also push", () => {
+    // The budget is shared: a nudge replaces the notification rather than
+    // doubling it, which only works if one side decides.
+    flagOn();
+    installCompanionWindow();
+
+    expect(offer()).toEqual({ allowed: true });
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "nudge",
+      line: "Dana replied on pricing",
+    });
+  });
+
+  test("a refusal names its reason, so the caller can push instead", () => {
+    flagOn();
+    installCompanionWindow();
+
+    expect(offer({ source: "run-finished" })).toEqual({
+      allowed: false,
+      reason: "source",
+    });
+  });
+
+  test("REGRESSION: it does not interrupt somebody who is mid-something", () => {
+    flagOn();
+    installCompanionWindow();
+    idleSeconds = 0;
+
+    expect(offer()).toEqual({ allowed: false, reason: "typing" });
+  });
+
+  test("never during quiet hours", () => {
+    flagOn();
+    settingsState["companionQuietHours"] = { start: "00:00", end: "23:59" };
+    installCompanionWindow();
+
+    expect(offer()).toEqual({ allowed: false, reason: "quiet" });
+  });
+
+  test("with no creature on screen there is nothing to nudge from", () => {
+    installCompanionWindow();
+    expect(offer()).toEqual({ allowed: false, reason: "hidden" });
+  });
+
+  test("✕ teaches the valve and hands the canvas back", () => {
+    flagOn();
+    installCompanionWindow();
+    const win = companionWin()!;
+    offer();
+
+    ipcHandlers.get("vellum:companion:setPointerOver")?.([true]);
+    ipcHandlers.get("vellum:companion:nudgeDismiss")?.([]);
+
+    expect(dispatchToMainMock).toHaveBeenCalledWith({
+      kind: "nudgeDismissed",
+      itemId: "i1",
+    });
+    expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, {
+      forward: true,
+    });
+  });
+
+  test("Open hands the item to the app, and acts on nothing itself", async () => {
+    flagOn();
+    installCompanionWindow();
+    offer();
+
+    await ipcHandlers.get("vellum:companion:nudgeOpen")?.([]);
+
+    expect(ensureVisibleMock).toHaveBeenCalledTimes(1);
+    expect(dispatchToMainMock).toHaveBeenLastCalledWith({
+      kind: "openNeedsYouItem",
+      itemId: "i1",
+    });
   });
 });
 

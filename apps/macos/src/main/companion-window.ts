@@ -1,4 +1,4 @@
-import { Menu, screen, type BrowserWindow } from "electron";
+import { Menu, powerMonitor, screen, type BrowserWindow } from "electron";
 import { z } from "zod";
 
 import {
@@ -13,6 +13,11 @@ import {
 } from "./companion-geometry";
 import { CompanionHitTest } from "./companion-hit-test";
 import { CompanionIntro } from "./companion-intro";
+import {
+  CompanionNudges,
+  type HeldNudge,
+  type NudgeVerdict,
+} from "./companion-nudge";
 import {
   buildCompanionMenu,
   type CompanionBlink,
@@ -173,6 +178,8 @@ const signalsSchema = z
 let placement: CompanionPlacement | null = null;
 let phases: CompanionPhaseStore | null = null;
 let intro: CompanionIntro | null = null;
+let nudges: CompanionNudges | null = null;
+let heldNudge: HeldNudge | null = null;
 let hitTest: CompanionHitTest | null = null;
 let drag: CompanionDrag | null = null;
 let dragPoll: ReturnType<typeof setInterval> | null = null;
@@ -205,6 +212,9 @@ const companionState = (): Record<string, unknown> => {
   return {
     ...resolved,
     ...(introducing ? { intro: introducing } : {}),
+    // The glint an ignored nudge retracts to. Never lost, never repeated out
+    // loud — it waits for a hover rather than saying itself again.
+    ...(heldNudge ? { heldNudge: heldNudge.line } : {}),
     avatarBox: geometry.avatarBox,
     growth: current?.growth ?? "right",
     cardGrowth: current?.cardGrowth ?? "up",
@@ -301,6 +311,24 @@ const openCompanionWindow = (): BrowserWindow => {
 
   placement = new CompanionPlacement(placementHost, size);
   phases = new CompanionPhaseStore(() => publishState());
+  nudges = new CompanionNudges({
+    present: (nudge) => {
+      phases?.set({
+        nudge: nudge ? { line: nudge.line, itemId: nudge.itemId } : null,
+      });
+    },
+    hold: (nudge) => {
+      heldNudge = nudge;
+      publishState();
+    },
+    taught: (nudge) =>
+      dispatchToMain({
+        kind: "nudgeDismissed",
+        itemId: nudge.itemId,
+        ...(nudge.subject ? { subject: nudge.subject } : {}),
+      }),
+    now: () => Date.now(),
+  });
   intro = new CompanionIntro(readSetting("companionIntroSeen") ?? false, () => {
     writeSetting("companionIntroSeen", true);
   });
@@ -336,6 +364,9 @@ const openCompanionWindow = (): BrowserWindow => {
   win.on("blur", abandonDrag);
   win.on("closed", () => {
     abandonDrag();
+    nudges?.stop();
+    nudges = null;
+    heldNudge = null;
     placement = null;
     phases = null;
     intro = null;
@@ -360,6 +391,9 @@ const openCompanionWindow = (): BrowserWindow => {
 export const setCompanionPointerOver = (over: boolean): void => {
   if (drag?.isHeld()) return;
   hitTest?.set(over);
+  // A held glint replays its line when you finally look at it — once, and
+  // silently. This is the only thing that brings an ignored nudge back.
+  if (over) nudges?.hover();
   // Hover is a phase, and the store decides whether it is the phase that
   // wins — a pointer near a creature that is already recording changes
   // nothing anyone can see, and republishing it would redraw on nothing.
@@ -437,6 +471,30 @@ export const applyCompanionSignals = async (
       approvalExplained: readSetting("companionApprovalExplained") ?? false,
     });
   }
+};
+
+/**
+ * Offer a nudge, and answer whether it was taken.
+ *
+ * The answer is the whole point: the interruption budget is shared with push,
+ * and a nudge **replaces** the notification rather than doubling it — which
+ * only works if one side decides and the other believes it. A refusal leaves
+ * the budget untouched, so the caller can push instead.
+ */
+export const offerCompanionNudge = (request: {
+  itemId: string;
+  line: string;
+  source: string;
+}): NudgeVerdict => {
+  if (!nudges) return { allowed: false, reason: "hidden" };
+  return nudges.offer(request, {
+    // Not keystrokes specifically: what is available without a system-wide
+    // keyboard hook is any input at all, and interrupting somebody mid-drag
+    // is no better than interrupting them mid-sentence.
+    sinceInputMs: powerMonitor.getSystemIdleTime() * 1_000,
+    quiet: inQuietHours(companionQuietHours(), new Date()),
+    visible: isCompanionEnabled() && isCompanionVisible(),
+  });
 };
 
 /** The right-click menu's current state, read from what is persisted. */
@@ -556,11 +614,12 @@ export const popCompanionMenu = (): void => {
 };
 
 /**
- * The introduction moved, or ended.
+ * A card moved, shrank, or went away.
  *
- * **The card has to hand the canvas back itself.** Advancing a beat shrinks
- * the card and dismissing removes it entirely, both under a pointer that has
- * no reason to move afterwards — and with no mouse-move to follow, nothing
+ * **Whatever removed it has to hand the canvas back itself.** Advancing an
+ * introduction beat shrinks the card, dismissing removes it, answering a
+ * nudge retracts it — all under a pointer that has no reason to move
+ * afterwards — and with no mouse-move to follow, nothing
  * recomputes the hit-test. The window would go on claiming a canvas many
  * times the size of the creature, swallowing clicks meant for whatever is
  * behind it, until the user happened to move the mouse. This is the leak
@@ -569,7 +628,7 @@ export const popCompanionMenu = (): void => {
  * Releasing first is always safe: the renderer reports coverage again on its
  * next frame if the pointer really is still over something.
  */
-const afterIntroChanged = (): void => {
+const afterCardRemoved = (): void => {
   hitTest?.releaseAfterRemoval();
   publishState();
 };
@@ -675,11 +734,44 @@ export const installCompanionWindow = (): void => {
 
   // The press names the beat it was made against — see `companion-intro.ts`.
   handle("vellum:companion:introNext", z.tuple([z.number()]), ([fromBeat]) => {
-    if (intro?.next(fromBeat)) afterIntroChanged();
+    if (intro?.next(fromBeat)) afterCardRemoved();
   });
 
   handle("vellum:companion:introDismiss", z.tuple([]), () => {
-    if (intro?.dismiss()) afterIntroChanged();
+    if (intro?.dismiss()) afterCardRemoved();
+  });
+
+  handle(
+    "vellum:companion:nudge",
+    z.tuple([
+      z.object({
+        itemId: z.string(),
+        line: z.string(),
+        source: z.string(),
+        subject: z
+          .object({
+            kind: z.enum(["sender", "channel", "rule"]),
+            key: z.string(),
+          })
+          .optional(),
+      }),
+    ]),
+    ([request]) => offerCompanionNudge(request),
+  );
+
+  // One line, one Open, one ✕ — a nudge never carries buttons that act, so a
+  // stray click cannot approve anything (`C7`, and `C9`'s protocol).
+  handle("vellum:companion:nudgeOpen", z.tuple([]), async () => {
+    const itemId = nudges?.open() ?? null;
+    afterCardRemoved();
+    if (!itemId) return;
+    await ensureMainWindowVisible();
+    dispatchToMain({ kind: "openNeedsYouItem", itemId });
+  });
+
+  handle("vellum:companion:nudgeDismiss", z.tuple([]), () => {
+    nudges?.dismiss();
+    afterCardRemoved();
   });
 
   handle("vellum:companion:talk", z.tuple([]), async () => {
@@ -723,6 +815,9 @@ export const installCompanionWindow = (): void => {
 export const __resetForTesting = (): void => {
   installed = false;
   stopDragPoll();
+  nudges?.stop();
+  nudges = null;
+  heldNudge = null;
   placement = null;
   phases = null;
   intro = null;

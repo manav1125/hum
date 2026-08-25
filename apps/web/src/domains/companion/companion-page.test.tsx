@@ -41,6 +41,8 @@ const dragEndSpy = mock(() => undefined);
 const menuSpy = mock(() => undefined);
 const introNextSpy = mock((_fromBeat: number) => undefined);
 const introDismissSpy = mock(() => undefined);
+const nudgeOpenSpy = mock(() => undefined);
+const nudgeDismissSpy = mock(() => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
   companionTalk: talkSpy,
@@ -57,6 +59,8 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   openCompanionMenu: menuSpy,
   companionIntroNext: introNextSpy,
   companionIntroDismiss: introDismissSpy,
+  companionNudgeOpen: nudgeOpenSpy,
+  companionNudgeDismiss: nudgeDismissSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
     return () => {
@@ -157,6 +161,8 @@ beforeEach(() => {
   menuSpy.mockClear();
   introNextSpy.mockClear();
   introDismissSpy.mockClear();
+  nudgeOpenSpy.mockClear();
+  nudgeDismissSpy.mockClear();
 });
 
 afterEach(() => {
@@ -367,6 +373,62 @@ describe("the introduction (C4)", () => {
 
     pushState({ phase: "hover" });
     expect(screen.queryByText("I couldn't read that just now.")).toBeNull();
+  });
+});
+
+describe("the nudge (C7)", () => {
+  test("one line, one Open, one ✕ — and nothing that acts", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "nudge", line: "Dana replied on pricing" });
+
+    expect(screen.getByText("Dana replied on pricing")).toBeTruthy();
+    // Acting needs the card or the app, so a stray click cannot approve
+    // anything (`C9`'s protocol).
+    expect(screen.queryByText("Approve")).toBeNull();
+    expect(screen.getByText("Open ›")).toBeTruthy();
+  });
+
+  test("Open hands it to the app rather than opening Cue generally", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "nudge", line: "Dana replied on pricing" });
+
+    fireEvent.click(screen.getByText("Open ›"));
+    expect(nudgeOpenSpy).toHaveBeenCalledTimes(1);
+    expect(openCueSpy).not.toHaveBeenCalled();
+  });
+
+  test("✕ teaches the valve", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "nudge", line: "Dana replied on pricing" });
+
+    fireEvent.click(screen.getByLabelText("Dismiss"));
+    expect(nudgeDismissSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("ignored, it becomes a glint the creature keeps", async () => {
+    // Never lost, and never repeated out loud.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "resting", heldNudge: "Dana replied on pricing" });
+
+    const glint = creature().querySelector("span");
+    expect(glint).toBeTruthy();
+    expect((glint as HTMLElement).style.background).toBe("#6FD69A");
+  });
+
+  test("a nudge on screen does not also wear the glint", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "nudge",
+      line: "Dana replied on pricing",
+      heldNudge: "Dana replied on pricing",
+    });
+
+    expect(creature().querySelector("span")).toBeNull();
   });
 });
 

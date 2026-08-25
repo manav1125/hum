@@ -14,6 +14,10 @@ import {
   useNavigationType,
 } from "react-router";
 
+import { useMutation } from "@tanstack/react-query";
+
+import { hqValveFeedbackPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
+
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { useAssistantIdentityInit } from "@/hooks/use-assistant-identity-init";
@@ -155,6 +159,9 @@ export function ChatLayout() {
   const [isPopout] = useState(() => location.search.includes("popout=1"));
 
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  // `✕` on a companion nudge (C7) records the same correction the rest of the
+  // product does, through the same door.
+  const teachValve = useMutation(hqValveFeedbackPostMutation());
   const assistantStateKind = useAssistantLifecycleStore(
     (s) => s.assistantState.kind,
   );
@@ -557,6 +564,28 @@ export function ChatLayout() {
     // to start one rather than opening anything of its own.
     newNote: () => {
       void navigate(`${routes.notes}?new=1`);
+    },
+    // `Open ›` on a nudge (C7). The companion talks and only the app acts, so
+    // the nudge hands the item over rather than doing anything with it.
+    openNeedsYouItem: (command) => {
+      if (command.kind !== "openNeedsYouItem") return;
+      void navigate(`${routes.hq}?item=${encodeURIComponent(command.itemId)}`);
+    },
+    // `✕` on a nudge teaches the valve, like every other dismissal — and the
+    // valve learns on the sender, channel or rule the item arrived through,
+    // never on the item. A nudge with no such subject records nothing rather
+    // than recording something meaningless.
+    nudgeDismissed: (command) => {
+      if (command.kind !== "nudgeDismissed" || !command.subject) return;
+      if (!assistantId) return;
+      void teachValve.mutateAsync({
+        path: { assistant_id: assistantId },
+        body: {
+          subjectKind: command.subject.kind,
+          subjectKey: command.subject.key,
+          signal: "dismissed",
+        },
+      });
     },
     navigateBack: () => {
       navigate(-1);
