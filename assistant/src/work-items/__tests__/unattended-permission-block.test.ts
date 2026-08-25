@@ -18,6 +18,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { initializeDb } from "../../memory/db-init.js";
+import { listTasks } from "../../tasks/task-store.js";
 import {
   recordApprovalTimeoutBlock,
   recordUnattendedPermissionBlock,
@@ -122,6 +123,34 @@ describe("unattended permission block", () => {
       i.title.includes("/workspace/bin/both-causes.sh"),
     );
     expect(matching).toHaveLength(2);
+  });
+
+  // Running a work item starts a fresh agent turn — which is the re-ask path.
+  // For that to mean anything, the task the item carries has to instruct a
+  // retry, not restate the problem.
+  test("the item carries an instruction to retry, not a description", () => {
+    const cmd = "/workspace/bin/retry-me.sh check --verbose";
+    const id = recordUnattendedPermissionBlock(block(cmd));
+    const item = listWorkItems().find((i) => i.id === id);
+    const task = listTasks().find((t) => t.id === item?.taskId);
+
+    expect(task?.template).toContain("Re-run this exact command");
+    // The full command, not the two-word label the card shows.
+    expect(task?.template).toContain(cmd);
+    // And it must not tell the agent to route around the gate it hit.
+    expect(task?.template).toContain("let the");
+    expect(task?.template).toContain("do not work around them");
+  });
+
+  // The card a person reads carries the label; only the agent's instruction
+  // carries the whole command line.
+  test("the human-facing card does not carry the full command", () => {
+    const cmd = "/workspace/bin/secretish.sh --token abc123 --more args";
+    const id = recordUnattendedPermissionBlock(block(cmd));
+    const item = listWorkItems().find((i) => i.id === id);
+
+    expect(item?.title).not.toContain("abc123");
+    expect(item?.notes).not.toContain("abc123");
   });
 
   // The deny already happened; nothing here may change it or throw into it.
