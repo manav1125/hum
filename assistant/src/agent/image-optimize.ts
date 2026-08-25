@@ -167,6 +167,89 @@ function evictIfNeeded(dir: string): void {
   }
 }
 
+/**
+ * Downscale + re-encode with ffmpeg. This is the path that runs everywhere
+ * that is not macOS — which, critically, includes the daemon's own Linux
+ * container.
+ *
+ * Before this existed the only encoder was `sips`, an Apple binary. In the
+ * deployed container there is no `sips`, so `runSips` failed on every call and
+ * the optimizer returned the original bytes: image optimization had never once
+ * run in production. One conversation opened with three phone screenshots and
+ * carried a 7.3 MB message on every subsequent turn, which is how a thread ends
+ * up re-sending megabytes per turn and losing track of its own subject.
+ *
+ * The scale filter clamps the box to `min(MAX, iw) x min(MAX, ih)` rather than
+ * a fixed `MAX x MAX`, so an image already smaller than the cap passes through
+ * at its own size. A plain `MAX:MAX` box would UPSCALE small images — more
+ * bytes for no pixels.
+ *
+ * Exported solely so tests can exercise it on any platform. On macOS this is
+ * the fallback and would otherwise never run in a test, which is precisely how
+ * the reverse case — a container with no `sips` — went unnoticed in production
+ * for as long as it did. The deployed path must be provable from a laptop.
+ */
+export async function runFfmpeg(inputBytes: Buffer): Promise<Buffer | null> {
+  const srcPath = join(tmpdir(), `vellum-img-opt-${Date.now()}-src`);
+  const outPath = join(tmpdir(), `vellum-img-opt-${Date.now()}-out.jpg`);
+  try {
+    writeFileSync(srcPath, inputBytes);
+    const proc = Bun.spawn(
+      [
+        "ffmpeg",
+        "-y",
+        "-i",
+        srcPath,
+        "-vf",
+        `scale=w='min(${MAX_DIMENSION},iw)':h='min(${MAX_DIMENSION},ih)':force_original_aspect_ratio=decrease`,
+        // ffmpeg's mjpeg scale is 2 (best) to 31 (worst), inverted from the
+        // 0-100 quality `sips` takes. Map so both encoders mean the same thing.
+        "-q:v",
+        String(Math.max(2, Math.round(31 - (JPEG_QUALITY / 100) * 29))),
+        "-f",
+        "mjpeg",
+        outPath,
+      ],
+      { stdout: "ignore", stderr: "ignore", timeout: 15_000 },
+    );
+    await proc.exited;
+    if (proc.exitCode !== 0) return null;
+    return readFileSync(outPath) as Buffer;
+  } catch {
+    return null;
+  } finally {
+    try {
+      unlinkSync(srcPath);
+    } catch {
+      /* ignore */
+    }
+    try {
+      unlinkSync(outPath);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Re-encode using whichever encoder this machine has.
+ *
+ * macOS gets `sips` because it is always present there and needs no extra
+ * dependency; everything else gets ffmpeg, which the container ships. If the
+ * platform's first choice fails the other is still tried — a Mac without a
+ * working `sips` should degrade to ffmpeg rather than to no optimization at
+ * all, which is the state this whole function exists to end.
+ */
+async function encodeSmaller(inputBytes: Buffer): Promise<Buffer | null> {
+  const order =
+    process.platform === "darwin" ? [runSips, runFfmpeg] : [runFfmpeg, runSips];
+  for (const encode of order) {
+    const out = await encode(inputBytes);
+    if (out) return out;
+  }
+  return null;
+}
+
 async function runSips(inputBytes: Buffer): Promise<Buffer | null> {
   const srcPath = join(tmpdir(), `vellum-img-opt-${Date.now()}-src`);
   const outPath = join(tmpdir(), `vellum-img-opt-${Date.now()}-out.jpg`);
@@ -266,12 +349,19 @@ export async function optimizeImageForTransport(
   const cached = readFromCache(cacheKey);
   if (cached) return cached;
 
-  // Run sips (macOS). On other platforms this gracefully returns null.
-  const optimized = await runSips(rawBytes);
+  // sips on macOS, ffmpeg everywhere else — see `encodeSmaller`.
+  const optimized = await encodeSmaller(rawBytes);
   if (!optimized || !isCompleteJpeg(optimized)) {
-    // A sips run that exits 0 having written a truncated file (killed
+    // An encoder that exits 0 having written a truncated file (killed
     // mid-write, disk full) must not be cached or sent. The original bytes
     // are known-good; returning them costs size, not correctness.
+    return { data: base64Data, mediaType };
+  }
+
+  // A re-encode that came out BIGGER is not an optimization. This happens on
+  // already-compressed screenshots below the dimension cap, and shipping the
+  // larger file would make the very problem this function exists to fix worse.
+  if (optimized.length >= rawBytes.length) {
     return { data: base64Data, mediaType };
   }
 
