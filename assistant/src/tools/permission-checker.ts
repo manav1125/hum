@@ -401,6 +401,24 @@ export class PermissionChecker {
             { toolName: name, riskLevel },
             "Auto-denying prompt for non-interactive session",
           );
+          // Tell the owner. The deny stands either way — a background run must
+          // not hang — but the message below names a trust rule only they can
+          // add, and until this existed they never learned it had been asked
+          // for. A blocked heartbeat script ran degraded for twenty-four days
+          // on exactly that silence. Deduplicated inside, fire-and-forget, and
+          // lazily imported so the permissions layer keeps no static
+          // dependency on the work-items graph.
+          void import("../work-items/unattended-permission-block.js")
+            .then((m) =>
+              m.recordUnattendedPermissionBlock({
+                toolName: name,
+                input,
+                conversationId: context.conversationId,
+                riskLevel,
+                riskReason,
+              }),
+            )
+            .catch(() => {});
           emitLifecycleEvent({
             type: "permission_denied",
             toolName: name,
