@@ -39,6 +39,7 @@ export function capabilityForMessageType(
   const stem = type.replace(/_(request|cancel)$/, "");
   return HOST_PREFIX_TO_CAPABILITY[stem];
 }
+import { getConfig } from "../config/loader.js";
 import { appendEventToStream } from "../signals/event-stream.js";
 import { getLogger } from "../util/logger.js";
 import type { AssistantEvent } from "./assistant-event.js";
@@ -867,7 +868,13 @@ async function createCanonicalRequestForConfirmation(
       executionTarget: msg.executionTarget,
       status: "pending",
       requestCode: generateCanonicalRequestCode(),
-      expiresAt: Date.now() + 5 * 60 * 1000,
+      // The lane's deadline must be the prompter's deadline. This was a
+      // hardcoded five minutes while `permissionTimeoutSec` let the prompter
+      // wait 30 (this instance) or 60 (default) — so the card vanished from
+      // the awaiting-you lane six times sooner than the request stopped being
+      // answerable, and every one of the owner's 76 expired approvals died on
+      // this clock rather than the one anyone had configured.
+      expiresAt: Date.now() + getConfig().timeouts.permissionTimeoutSec * 1000,
     });
 
     if (trustContext && conversation) {
