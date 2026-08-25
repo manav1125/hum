@@ -6,6 +6,11 @@ import {
   AUDIO_EXTENSIONS,
   readAudioFile,
 } from "../shared/filesystem/audio-read.js";
+import {
+  describeBinaryContent,
+  DOCUMENT_EXTENSIONS,
+  readDocumentFile,
+} from "../shared/filesystem/document-read.js";
 import { FileSystemOps } from "../shared/filesystem/file-ops-service.js";
 import {
   IMAGE_EXTENSIONS,
@@ -26,7 +31,7 @@ import type {
 export const fileReadTool = {
   name: "file_read",
   description:
-    "Read the contents of a file on your own machine. For image files (JPEG, PNG, GIF, WebP), returns the image for visual analysis. For audio files (MP3, WAV, OGG, FLAC, AAC, M4A), returns the audio for listening. Use host_file_read for files on your guardian's device instead.",
+    "Read the contents of a file on your own machine. Documents (PDF, DOCX, XLSX) are extracted to text automatically — read them directly, do not shell out to convert them. For image files (JPEG, PNG, GIF, WebP), returns the image for visual analysis. For audio files (MP3, WAV, OGG, FLAC, AAC, M4A), returns the audio for listening. Use host_file_read for files on your guardian's device instead.",
   category: "filesystem",
   executionTarget: "sandbox",
   defaultRiskLevel: RiskLevel.Low,
@@ -58,6 +63,21 @@ export const fileReadTool = {
         };
       }
       return readImageFile(pathCheck.resolved);
+    }
+
+    // Documents are extracted to text. Without this they fall through to the
+    // UTF-8 reader below and come back as raw bytes — `%PDF-1.7`, object
+    // dictionaries, line numbers — which reads like content and sends the
+    // model hunting for another way to open a file it could already read.
+    if (DOCUMENT_EXTENSIONS.has(ext)) {
+      const pathCheck = sandboxPolicy(rawPath, context.workingDir);
+      if (!pathCheck.ok) {
+        return {
+          content: `Error: ${pathCheck.error}. To read files outside the workspace, use the host_file_read tool instead.`,
+          isError: true,
+        };
+      }
+      return readDocumentFile(pathCheck.resolved);
     }
 
     // For audio files, delegate to the shared audio reader.
@@ -102,6 +122,17 @@ export const fileReadTool = {
           };
         }
       }
+    }
+
+    // Last guard: a binary file with an extension we do not recognise still
+    // must not be emitted as text. Returning bytes is what made a PDF look
+    // like readable content; the same is true of any binary.
+    const binary = describeBinaryContent(result.value.content);
+    if (binary) {
+      return {
+        content: `Error: "${rawPath}" appears to be a binary file (${binary}), not text. It was not read. If it is a document, a supported format is PDF, DOCX or XLSX; if it is an image, read it directly so it can be viewed.`,
+        isError: true,
+      };
     }
 
     return { content: result.value.content, isError: false };
