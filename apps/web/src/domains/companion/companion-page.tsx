@@ -15,7 +15,7 @@ import {
   subscribeCompanionState,
 } from "@/domains/companion/companion-bridge";
 
-import { CompanionSurface } from "./companion-surface";
+import { CompanionSurface, turnAnnouncement } from "./companion-surface";
 import type {
   CompanionIntroBeat,
   CompanionPhase,
@@ -175,6 +175,24 @@ export function CompanionPage(): React.ReactElement {
   // that loses is whichever the user is actually looking at.
   const { phase } = state;
 
+  /**
+   * What a screen reader hears — `C12`.
+   *
+   * Turn changes only, and a nudge's one line once. Held in state rather than
+   * derived inline so an unchanged turn re-rendering does not re-announce: an
+   * aria-live region repeats whatever it is given, including the same
+   * sentence twice.
+   */
+  const [announced, setAnnounced] = useState("");
+  const lastSaid = useRef<string | null>(null);
+  useEffect(() => {
+    const say =
+      phase === "nudge" ? (state.line ?? null) : turnAnnouncement(phase);
+    if (say === null || say === lastSaid.current) return;
+    lastSaid.current = say;
+    setAnnounced(say);
+  }, [phase, state.line]);
+
   // A phase change can take the drawn area out from under a stationary
   // pointer — the pill collapses, a card is dismissed — and no mouse-move
   // follows, so nothing recomputes on its own. The window would go on
@@ -215,6 +233,20 @@ export function CompanionPage(): React.ReactElement {
         setCompanionPointerOver(false);
       }}
     >
+      <span
+        // Polite: the creature never interrupts, and neither does its voice.
+        aria-live="polite"
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+          clip: "rect(0 0 0 0)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {announced}
+      </span>
       <div
         ref={surfaceRef}
         onPointerDown={onPointerDown}

@@ -45,6 +45,36 @@ const ACCENT = "#3D6EE8";
 
 export type { CompanionPhase };
 
+/**
+ * What VoiceOver says — design `C12`.
+ *
+ * **Turn changes only.** The creature expresses whose turn it is and leaves
+ * the finer phase to the words beside it; the announcements mirror exactly
+ * that, because a screen reader narrating every phase would say more about
+ * Cue in one minute than the creature says all day. Phases that mean the same
+ * turn announce nothing when they succeed each other.
+ */
+export function turnAnnouncement(phase: CompanionPhase): string | null {
+  switch (phase) {
+    case "working":
+    case "summary":
+      return "Cue is working";
+    case "waiting":
+    case "couldnt":
+      return "Cue is waiting on you";
+    case "watching":
+      return "Cue is reading this window";
+    case "recording":
+      return "Recording";
+    case "offline":
+      return "Cue is offline";
+    default:
+      // Resting, hover, typing and listening all mean it is your turn, which
+      // is what the surface already looks like. Saying so would be narration.
+      return null;
+  }
+}
+
 const TONE_FOR: Partial<Record<CompanionPhase, CreatureTone>> = {
   watching: "watching",
   recording: "recording",

@@ -385,7 +385,9 @@ describe("the nudge (C7)", () => {
     await flushMicrotasks();
     pushState({ phase: "nudge", line: "Dana replied on pricing" });
 
-    expect(screen.getByText("Dana replied on pricing")).toBeTruthy();
+    expect(
+      handle().textContent?.includes("Dana replied on pricing"),
+    ).toBe(true);
     // Acting needs the card or the app, so a stray click cannot approve
     // anything (`C9`'s protocol).
     expect(screen.queryByText("Approve")).toBeNull();
@@ -447,6 +449,59 @@ describe("Stop stops what is running (C11)", () => {
 
     expect(stopSpy).toHaveBeenCalledTimes(1);
     expect(talkSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("what a screen reader hears (C12)", () => {
+  const live = (): string =>
+    (document.querySelector("[aria-live]") as HTMLElement)?.textContent ?? "";
+
+  test("turn changes, not every phase", async () => {
+    // Narrating each fine phase would say more about Cue in one minute than
+    // the creature says all day.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    pushState({ phase: "working" });
+    expect(live()).toBe("Cue is working");
+
+    pushState({ phase: "waiting" });
+    expect(live()).toBe("Cue is waiting on you");
+  });
+
+  test("REGRESSION: two phases meaning the same turn do not announce twice", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    pushState({ phase: "waiting" });
+    pushState({ phase: "couldnt" });
+    // Both are "waiting on you". An aria-live region repeats whatever it is
+    // given, including the same sentence.
+    expect(live()).toBe("Cue is waiting on you");
+  });
+
+  test("your turn is not announced at all — it is what the surface looks like", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    pushState({ phase: "hover" });
+    expect(live()).toBe("");
+  });
+
+  test("a nudge announces its one line", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    pushState({ phase: "nudge", line: "Dana replied on pricing" });
+    expect(live()).toBe("Dana replied on pricing");
+  });
+
+  test("a capture says so, because it is the one thing worth interrupting for", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+
+    pushState({ phase: "recording", line: "Recording · Board prep · 12:41" });
+    expect(live()).toBe("Recording");
   });
 });
 
