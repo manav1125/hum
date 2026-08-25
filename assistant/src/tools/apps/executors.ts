@@ -418,6 +418,17 @@ export async function executeAppRefresh(
         appId: updated.id,
         name: updated.name,
         auto_opened: autoOpened,
+        // `auto_opened: true` alone was not enough. A model that also called
+        // `app_open` produced a SECOND identical card, and users saw the same
+        // app rendered twice in a row. Auto-open exists because weaker models
+        // forget to open at all (see above), so the answer is not to remove it
+        // but to close the other side explicitly.
+        ...(autoOpened
+          ? {
+              next_steps:
+                "The app is already open on screen — this refresh surfaced its card. Do NOT call app_open for this app; a second call renders a duplicate card of the same app.",
+            }
+          : {}),
         ...compileResultPayload(compileResult),
       }),
       isError: false,

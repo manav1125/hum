@@ -250,7 +250,9 @@ app_refresh(app_id)
 
 Call it ONCE, after ALL file writes — batching is required. If it fails, the response has error details; fix with `file_edit`, then `app_refresh` again.
 
-On a clean compile, `app_refresh` **also surfaces the inline Open card automatically** (response has `auto_opened: true`). So the card appears the moment the build compiles — you do not need a separate `app_open` for a fresh build. Step 5 is a no-op belt when `auto_opened` is already true.
+On a clean compile, `app_refresh` **also surfaces the inline Open card automatically** (response has `auto_opened: true`). So the card appears the moment the build compiles.
+
+**When `auto_opened` is `true`, SKIP step 5 entirely.** `app_open` is not a no-op belt — calling it renders a SECOND, identical card, and the user sees the same app twice in a row. Step 5 is only for the case where `auto_opened` is `false` (no client attached, or the compile failed), where without it the app is never shown at all.
 
 ### 5 — Show the preview card
 

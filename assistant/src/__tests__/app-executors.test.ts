@@ -448,6 +448,38 @@ describe("executeAppRefresh", () => {
     const parsed = JSON.parse(result.content);
     expect(parsed.error).toContain("not found");
   });
+
+  test("MUTATION CHECK: an auto-opened refresh tells the model not to reopen", async () => {
+    // `auto_opened: true` on its own was not enough. A model that also called
+    // `app_open` rendered a SECOND identical card, and users saw the same app
+    // twice in a row. Auto-open cannot simply be removed — it exists because
+    // weaker models never open the app at all — so the instruction has to be
+    // explicit on the other side.
+    const app = makeMultifileApp();
+    const store = mockStore(app);
+    const result = await executeAppRefresh(
+      { app_id: app.id },
+      store,
+      async () => ({ content: "opened", isError: false }),
+    );
+
+    const parsed = JSON.parse(result.content);
+    expect(parsed.auto_opened).toBe(true);
+    expect(parsed.next_steps).toMatch(/do not call app_open/i);
+    expect(parsed.next_steps).toMatch(/duplicate/i);
+  });
+
+  test("a refresh that did NOT open says nothing about reopening", async () => {
+    // With no client attached the card never appeared, so the model must stay
+    // free to open it — suppressing that would strand the app unopened.
+    const app = makeMultifileApp();
+    const store = mockStore(app);
+    const result = await executeAppRefresh({ app_id: app.id }, store);
+
+    const parsed = JSON.parse(result.content);
+    expect(parsed.auto_opened).toBe(false);
+    expect(parsed.next_steps).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
