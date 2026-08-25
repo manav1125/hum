@@ -1,4 +1,5 @@
 import path from "node:path";
+import { setSignedIn as setSessionSignedIn } from "./session-state";
 
 import { app, nativeImage, type NativeImage } from "electron";
 import { z } from "zod";
@@ -287,6 +288,9 @@ export const installDock = (): void => {
     }
     state.signedIn = signedIn;
     scheduleRefresh();
+    // Shared with every other surface that cannot load the SPA before there
+    // is a session — see `session-state.ts`.
+    setSessionSignedIn(signedIn);
   });
 
   // Subscribe to main-window visibility transitions (created, shown,

@@ -43,6 +43,7 @@ import {
   readSetting,
   writeSetting,
 } from "./settings";
+import { isSignedIn, onSignedInChange } from "./session-state";
 import { getStatus, onStatusChange } from "./status";
 import { isCompanionEnabled } from "./desktop-surface-flags";
 
@@ -840,7 +841,16 @@ export const setCompanionSize = (size: CompanionSize): void => {
  * call repeatedly; the underlying window is a singleton.
  */
 export const syncCompanionWindow = (): void => {
-  const shouldShow = isCompanionEnabled() && isCompanionVisible();
+  // **Not before there is a session.** The companion is a window onto the same
+  // SPA, so opening it signed-out renders the *sign-in screen* inside a canvas
+  // sized for a creature — a second Welcome window nobody asked for, sitting
+  // beside the real one. And because it loaded signed-out it stays that way:
+  // nothing reloads it when the session finally arrives.
+  //
+  // Gating on the session fixes both. The creature appears once Cue is signed
+  // in, which is also the first moment it has anything to be about.
+  const shouldShow =
+    isCompanionEnabled() && isCompanionVisible() && isSignedIn();
   const existing = companionWindow();
   if (shouldShow && !existing) {
     openCompanionWindow();
@@ -1090,6 +1100,12 @@ export const installCompanionWindow = (): void => {
   // The renderer publishes flag values after sign-in / flag toggles; the
   // persisted map is also available at startup from the previous session.
   onSettingChange("featureFlags", () => {
+    syncCompanionWindow();
+  });
+
+  // Signing in is what brings the creature out; signing out takes it away
+  // again rather than leaving a signed-out surface floating over the desktop.
+  onSignedInChange(() => {
     syncCompanionWindow();
   });
   syncCompanionWindow();

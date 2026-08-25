@@ -277,8 +277,22 @@ const {
 const { geometryFor } = await import("./companion-geometry");
 const { setStatus, __resetForTesting: resetStatus } = await import("./status");
 
+const { setSignedIn, __resetForTesting: resetSession } = await import(
+  "./session-state"
+);
+
+/**
+ * The two preconditions the companion has, together.
+ *
+ * The session is one of them: the companion is a window onto the same SPA, so
+ * opening it signed-out draws the sign-in screen inside a creature-sized
+ * canvas. Almost every test here is about what the companion does once it is
+ * up, so both are set together — the gate itself has its own tests, which
+ * drive the session separately.
+ */
 const flagOn = (): void => {
   settingsState["featureFlags"] = { "desktop-companion": true };
+  setSignedIn(true);
 };
 
 const companionWin = (): StubWindow | undefined => created.at(-1)?.win;
@@ -307,6 +321,7 @@ beforeEach(() => {
   delete process.env.VELLUM_FLAG_DESKTOP_COMPANION;
   __resetForTesting();
   resetStatus();
+  resetSession();
 });
 
 afterEach(() => {
@@ -1296,6 +1311,49 @@ describe("asking an uninvited guest to leave (C5)", () => {
 
     expect(writeSettingMock).toHaveBeenCalledWith("companionVisible", false);
     expect(win.isDestroyed()).toBe(true);
+  });
+});
+
+describe("it does not appear before there is a session", () => {
+  test("REGRESSION: signed out, the flag alone opens nothing", () => {
+    // Shipped in 1.3.0: the companion is a window onto the same SPA, so
+    // opening it signed-out rendered the WELCOME screen inside a canvas sized
+    // for a creature — a second sign-in window beside the real one. And
+    // because it loaded signed-out it stayed that way; nothing reloaded it
+    // when the session arrived.
+    settingsState["featureFlags"] = { "desktop-companion": true };
+    installCompanionWindow();
+
+    expect(created).toHaveLength(0);
+  });
+
+  test("signing in is what brings the creature out", () => {
+    settingsState["featureFlags"] = { "desktop-companion": true };
+    installCompanionWindow();
+    expect(created).toHaveLength(0);
+
+    setSignedIn(true);
+    expect(created).toHaveLength(1);
+  });
+
+  test("signing out takes it away rather than leaving it floating", () => {
+    flagOn();
+    installCompanionWindow();
+    expect(created).toHaveLength(1);
+
+    setSignedIn(false);
+    expect(companionWin()?.isDestroyed()).toBe(true);
+  });
+
+  test("REGRESSION: republishing the same session does not reopen it", () => {
+    // The renderer publishes on every mount. A surface that reopened on each
+    // of those would flicker.
+    flagOn();
+    installCompanionWindow();
+    setSignedIn(true);
+    setSignedIn(true);
+
+    expect(created).toHaveLength(1);
   });
 });
 
