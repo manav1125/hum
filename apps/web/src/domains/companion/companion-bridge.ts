@@ -99,6 +99,18 @@ export function companionNudgeOpen(): void {
   void window.vellum?.companion?.nudgeOpen?.();
 }
 
+/**
+ * The pill's `Stop`.
+ *
+ * Main decides what it stops: a live capture at its source, or a run in
+ * progress. It used to be wired to "talk to Cue", which meant Stop on a
+ * recording opened the voice surface and left the microphone running.
+ */
+export function companionStop(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.stop?.();
+}
+
 /** `✕` on a nudge. Teaches the valve, like every other dismissal. */
 export function companionNudgeDismiss(): void {
   if (!isElectron()) return;

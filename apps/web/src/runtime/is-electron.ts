@@ -360,6 +360,8 @@ declare global {
         /** Advance the introduction, naming the beat pressed (`C4`). */
         introNext?(fromBeat: number): Promise<void>;
         introDismiss?(): Promise<void>;
+        /** The pill's `Stop`. Main decides what it stops. */
+        stop?(): Promise<void>;
         /** Answering a nudge (`C7`). Neither of these acts on anything. */
         nudgeOpen?(): Promise<void>;
         nudgeDismiss?(): Promise<void>;

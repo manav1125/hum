@@ -478,11 +478,18 @@ describe("desktop companion items", () => {
   const makeCompanion = ({
     enabled = true,
     visible = true,
-  }: { enabled?: boolean; visible?: boolean } = {}) => ({
+    capture = null,
+  }: {
+    enabled?: boolean;
+    visible?: boolean;
+    capture?: "recording" | "watching" | null;
+  } = {}) => ({
     isEnabled: mock(() => enabled),
     isVisible: mock(() => visible),
     toggle: mock(() => undefined),
     talk: mock(() => Promise.resolve()),
+    capture: mock(() => capture),
+    stopCapture: mock(() => Promise.resolve()),
   });
 
   const popMenu = () => {
@@ -543,5 +550,49 @@ describe("desktop companion items", () => {
     await template.find((i) => i.label === "Talk to Cue")?.click?.();
 
     expect(companion.talk).toHaveBeenCalledTimes(1);
+  });
+
+  test("REGRESSION: a live capture is stoppable from the menu bar (C11)", async () => {
+    // The creature can be hidden, or yielded to a fullscreen app. The menu bar
+    // is the one surface that is always reachable, so it is where a running
+    // capture has to remain stoppable — otherwise the microphone outlives
+    // every surface that could turn it off.
+    const companion = makeCompanion({ capture: "recording" });
+    installTray({ ...handlers, companion });
+    const template = popMenu();
+
+    await template.find((i) => i.label === "Stop recording")?.click?.();
+    expect(companion.stopCapture).toHaveBeenCalledTimes(1);
+  });
+
+  test("reading a window is stoppable by its own name", () => {
+    const companion = makeCompanion({ capture: "watching" });
+    installTray({ ...handlers, companion });
+
+    expect(
+      popMenu()
+        .map((i) => i.label)
+        .filter(Boolean),
+    ).toContain("Stop reading this window");
+  });
+
+  test("hiding the creature is refused while it is the evidence", () => {
+    const companion = makeCompanion({ capture: "recording", visible: true });
+    installTray({ ...handlers, companion });
+
+    const hide = popMenu().find(
+      (i) => i.label === "Hide Cue Companion",
+    ) as { enabled?: boolean } | undefined;
+    // Said out loud, rather than an item that silently does nothing.
+    expect(hide?.enabled).toBe(false);
+  });
+
+  test("with nothing running, no Stop is offered", () => {
+    installTray({ ...handlers, companion: makeCompanion() });
+
+    const labels = popMenu()
+      .map((i) => i.label)
+      .filter(Boolean);
+    expect(labels.some((l) => l?.startsWith("Stop"))).toBe(false);
   });
 });

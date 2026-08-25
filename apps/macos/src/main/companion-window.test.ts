@@ -351,6 +351,7 @@ describe("installCompanionWindow", () => {
       "vellum:companion:talk",
       "vellum:companion:openCue",
       "vellum:companion:hide",
+      "vellum:companion:stop",
     ]);
     expect(created).toHaveLength(0);
   });
@@ -922,6 +923,96 @@ describe("the right-click menu is native, and main's (C5)", () => {
     // creature, and a drawn one would have to grow the canvas to hold it.
     expect(labels).toContain("Hide Cue");
     expect(template.find((i) => i.label === "Size")?.sublabel).toBe("large");
+  });
+});
+
+describe("a live capture cannot be hidden, and Stop stops the real one (C11)", () => {
+  const record = async (): Promise<void> => {
+    await ipcHandlers.get("vellum:companion:signals")?.([
+      { recording: { label: "Board prep", elapsed: "12:41" } },
+    ]);
+  };
+
+  test("REGRESSION: hiding is refused while audio is being kept", async () => {
+    // The creature is the only always-visible evidence that a recording is
+    // running. Hiding it would leave the capture live with nothing on screen
+    // to admit it.
+    flagOn();
+    installCompanionWindow();
+    await record();
+
+    await runCompanionMenuAction({ kind: "hide" });
+    ipcHandlers.get("vellum:companion:hide")?.([]);
+
+    expect(companionWin()?.isDestroyed()).toBe(false);
+    expect(writeSettingMock).not.toHaveBeenCalledWith(
+      "companionVisible",
+      false,
+    );
+  });
+
+  test("nor tucked away until tomorrow", async () => {
+    flagOn();
+    installCompanionWindow();
+    await record();
+
+    await runCompanionMenuAction({ kind: "hideUntilTomorrow" });
+
+    expect(settingsState["companionHiddenUntil"]).toBeUndefined();
+    expect(companionWin()?.isDestroyed()).toBe(false);
+  });
+
+  test("the same rule holds while a window is being read", async () => {
+    flagOn();
+    installCompanionWindow();
+    await ipcHandlers.get("vellum:companion:signals")?.([{ watching: true }]);
+
+    await runCompanionMenuAction({ kind: "hide" });
+    expect(companionWin()?.isDestroyed()).toBe(false);
+  });
+
+  test("stopped, it can be hidden again", async () => {
+    flagOn();
+    installCompanionWindow();
+    await record();
+    await ipcHandlers.get("vellum:companion:signals")?.([{ recording: null }]);
+
+    await runCompanionMenuAction({ kind: "hide" });
+    expect(companionWin()?.isDestroyed()).toBe(true);
+  });
+
+  test("REGRESSION: Stop stops the session, not the picture of it", async () => {
+    // A Stop that only cleared the mirror would be the worst button in the
+    // product: it looks like it worked, and the microphone is still on. So it
+    // asks the app, and the creature keeps saying "recording" until the app
+    // says otherwise.
+    flagOn();
+    installCompanionWindow();
+    await record();
+
+    await ipcHandlers.get("vellum:companion:stop")?.([]);
+
+    expect(dispatchToMainMock).toHaveBeenLastCalledWith({
+      kind: "stopCapture",
+      capture: "recording",
+    });
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      phase: "recording",
+    });
+  });
+
+  test("REGRESSION: Stop with no capture cancels the run, and never opens voice", async () => {
+    // It used to be wired to "talk to Cue", so Stop on a recording opened the
+    // voice surface and left the microphone running.
+    flagOn();
+    installCompanionWindow();
+
+    await ipcHandlers.get("vellum:companion:stop")?.([]);
+
+    expect(dispatchToMainMock).toHaveBeenLastCalledWith({
+      kind: "cancelActiveAction",
+    });
+    expect(dispatchToMainMock).not.toHaveBeenCalledWith({ kind: "openVoice" });
   });
 });
 

@@ -25,6 +25,7 @@ export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
   // Companion-originated, never keyboard commands.
   nudgeDismissed: "",
   openNeedsYouItem: "",
+  stopCapture: "",
   currentConversation: "CmdOrCtrl+Shift+N",
   markCurrentUnread: "CmdOrCtrl+Shift+U",
   openSettings: "CmdOrCtrl+,",

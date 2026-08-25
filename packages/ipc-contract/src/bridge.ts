@@ -408,6 +408,14 @@ export interface VellumBridge {
      * Answering a nudge (`C7`). One line, one Open, one ✕ — a nudge never
      * carries buttons that act, so a stray click cannot approve anything.
      */
+    /**
+     * The pill's `Stop`.
+     *
+     * What it stops depends on what is running, and main is the only side that
+     * knows — a capture is stopped at its source, a run in progress is
+     * cancelled. The renderer may be one message behind on the phase.
+     */
+    stop(): Promise<void>;
     nudgeOpen(): Promise<void>;
     nudgeDismiss(): Promise<void>;
     setSize(size: string): Promise<void>;

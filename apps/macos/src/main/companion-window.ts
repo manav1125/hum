@@ -474,6 +474,37 @@ export const applyCompanionSignals = async (
 };
 
 /**
+ * Whether a capture is running right now (`C11`).
+ *
+ * Recording and watching are the only two states that are *evidence* — the
+ * creature is the always-visible proof that audio is being kept or a window is
+ * being read. Everything else about the companion is presentation.
+ */
+export const captureLive = (): "recording" | "watching" | null => {
+  const signals = phases?.read();
+  if (signals?.recording) return "recording";
+  if (signals?.watching) return "watching";
+  return null;
+};
+
+/**
+ * Stop the capture — the real one.
+ *
+ * The mirror's `Stop` stops the session it is mirroring, not the mirror. A
+ * Stop that only stopped the picture of a recording would be the worst button
+ * in the product: it looks like it worked, and the microphone is still on.
+ */
+export const stopCompanionCapture = async (): Promise<void> => {
+  const capture = captureLive();
+  if (!capture) return;
+  dispatchToMain({ kind: "stopCapture", capture });
+  // The app owns the session and will publish the signal back when it has
+  // actually stopped. Clearing it here would be the creature claiming
+  // something it does not know.
+  await Promise.resolve();
+};
+
+/**
  * Offer a nudge, and answer whether it was taken.
  *
  * The answer is the whole point: the interruption budget is shared with push,
@@ -527,7 +558,7 @@ export const runCompanionMenuAction = async (
       phases?.set({ watching: true });
       return;
     case "stopReading":
-      phases?.set({ watching: false });
+      await stopCompanionCapture();
       return;
     case "openCue":
       await ensureMainWindowVisible();
@@ -561,11 +592,18 @@ export const runCompanionMenuAction = async (
       publishState();
       return;
     case "hideUntilTomorrow":
-      writeSetting("companionHiddenUntil", nextLocalMidnight().toISOString());
-      syncCompanionWindow();
-      return;
     case "hide":
-      writeSetting("companionVisible", false);
+      // **A live capture cannot be hidden** (`C11`). The creature is the only
+      // always-visible evidence that audio is being kept or a window is being
+      // read, so hiding it while either runs would remove the one thing that
+      // says so — leaving a capture running with nothing on screen to admit
+      // it. Stop it first; the menu offers exactly that, in this same menu.
+      if (captureLive()) return;
+      if (action.kind === "hideUntilTomorrow") {
+        writeSetting("companionHiddenUntil", nextLocalMidnight().toISOString());
+      } else {
+        writeSetting("companionVisible", false);
+      }
       syncCompanionWindow();
       return;
   }
@@ -783,8 +821,25 @@ export const installCompanionWindow = (): void => {
   });
 
   handle("vellum:companion:hide", z.tuple([]), () => {
+    if (captureLive()) return;
     writeSetting("companionVisible", false);
     syncCompanionWindow();
+  });
+
+  /**
+   * The pill's `Stop`, in every phase that has one.
+   *
+   * What it stops depends on what is running, and main is the only side that
+   * knows: a capture is stopped at its source, and a run in progress is
+   * cancelled. Deciding this in the renderer would mean the button's meaning
+   * came from a phase the renderer might be one message behind on.
+   */
+  handle("vellum:companion:stop", z.tuple([]), async () => {
+    if (captureLive()) {
+      await stopCompanionCapture();
+      return;
+    }
+    dispatchToMain({ kind: "cancelActiveAction" });
   });
 
   // The tray's assistant-status state machine is the source for whose turn

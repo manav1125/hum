@@ -4,11 +4,11 @@ import {
   companionDragBegin,
   companionDragEnd,
   companionOpenCue,
-  companionTalk,
   companionIntroDismiss,
   companionIntroNext,
   companionNudgeDismiss,
   companionNudgeOpen,
+  companionStop,
   getCompanionState,
   openCompanionMenu,
   setCompanionPointerOver,
@@ -250,7 +250,7 @@ export function CompanionPage(): React.ReactElement {
             phase === "nudge" ? companionNudgeOpen() : void companionOpenCue()
           }
           onDismiss={companionNudgeDismiss}
-          onStop={() => void companionTalk()}
+          onStop={companionStop}
         />
       </div>
     </div>

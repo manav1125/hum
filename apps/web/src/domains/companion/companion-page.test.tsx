@@ -42,6 +42,7 @@ const menuSpy = mock(() => undefined);
 const introNextSpy = mock((_fromBeat: number) => undefined);
 const introDismissSpy = mock(() => undefined);
 const nudgeOpenSpy = mock(() => undefined);
+const stopSpy = mock(() => undefined);
 const nudgeDismissSpy = mock(() => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
@@ -60,6 +61,7 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   companionIntroNext: introNextSpy,
   companionIntroDismiss: introDismissSpy,
   companionNudgeOpen: nudgeOpenSpy,
+  companionStop: stopSpy,
   companionNudgeDismiss: nudgeDismissSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
@@ -162,6 +164,7 @@ beforeEach(() => {
   introNextSpy.mockClear();
   introDismissSpy.mockClear();
   nudgeOpenSpy.mockClear();
+  stopSpy.mockClear();
   nudgeDismissSpy.mockClear();
 });
 
@@ -429,6 +432,21 @@ describe("the nudge (C7)", () => {
     });
 
     expect(creature().querySelector("span")).toBeNull();
+  });
+});
+
+describe("Stop stops what is running (C11)", () => {
+  test("REGRESSION: it does not open the voice surface", async () => {
+    // It was wired to "talk to Cue", so Stop on a live recording opened voice
+    // and left the microphone running — the worst possible button.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "recording", line: "Recording · Board prep · 12:41" });
+
+    fireEvent.click(screen.getByText("Stop"));
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    expect(talkSpy).not.toHaveBeenCalled();
   });
 });
 

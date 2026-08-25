@@ -66,9 +66,11 @@ import { handleFileOpen, installFileOpen, onFileOpen } from "./file-open";
 import { installAvatarIpc } from "./avatar";
 import { installCommandPaletteWindow } from "./command-palette-window";
 import {
+  captureLive,
   installCompanionWindow,
   isCompanionEnabled,
   isCompanionVisible,
+  stopCompanionCapture,
   talkToCue,
   toggleCompanionWindow,
 } from "./companion-window";
@@ -611,6 +613,8 @@ app
         isVisible: isCompanionVisible,
         toggle: toggleCompanionWindow,
         talk: talkToCue,
+        capture: captureLive,
+        stopCapture: stopCompanionCapture,
       },
     });
     installNativeAuth();

@@ -86,7 +86,14 @@ export type VellumCommand =
       subject?: { kind: "sender" | "channel" | "rule"; key: string };
     }
   /** `Open ›` on a nudge: the app takes it from here. Nothing acts here. */
-  | { kind: "openNeedsYouItem"; itemId: string };
+  | { kind: "openNeedsYouItem"; itemId: string }
+  /**
+   * `Stop` on the companion's capture mirror (`C11`).
+   *
+   * It stops the real session, not just the mirror — a Stop that only stopped
+   * the picture of a recording would be the worst possible button.
+   */
+  | { kind: "stopCapture"; capture: "recording" | "watching" };
 
 // ---------------------------------------------------------------------------
 // Hotkeys

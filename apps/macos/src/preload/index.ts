@@ -659,6 +659,9 @@ const bridge: VellumBridge = {
       ) as Promise<void>,
     introDismiss: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:introDismiss") as Promise<void>,
+    /** The pill's `Stop`. Main decides what it stops — see the handler. */
+    stop: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:stop") as Promise<void>,
     nudgeOpen: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:nudgeOpen") as Promise<void>,
     nudgeDismiss: (): Promise<void> =>

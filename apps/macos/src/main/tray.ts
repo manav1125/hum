@@ -99,6 +99,16 @@ export interface TrayHandlers {
     toggle(): void;
     /** Surface the main window and start the voice-room entry path. */
     talk(): Promise<void>;
+    /**
+     * Which capture is live, if any (`C11`).
+     *
+     * The menu bar is the one surface that is always reachable — the creature
+     * can be hidden or yielded to a fullscreen app — so it is where a capture
+     * has to remain stoppable.
+     */
+    capture?(): "recording" | "watching" | null;
+    /** Stop the live capture. The real one, not the mirror. */
+    stopCapture?(): Promise<void>;
   };
 }
 
@@ -290,10 +300,32 @@ const buildTrayMenu = (
   const companion = handlers.companion;
   if (companion?.isEnabled()) {
     items.push({ type: "separator" });
+    // **A capture must be stoppable even when the creature is hidden or has
+    // yielded to a fullscreen app** (`C11`). The menu bar is the one surface
+    // that is always reachable, so while audio is being kept or a window is
+    // being read it carries the same Stop the creature does — and carries it
+    // first, above everything else here.
+    const capture = companion.capture?.();
+    if (capture) {
+      items.push({
+        label:
+          capture === "recording"
+            ? "Stop recording"
+            : "Stop reading this window",
+        click: () => {
+          void companion.stopCapture?.();
+        },
+      });
+      items.push({ type: "separator" });
+    }
     items.push({
       label: companion.isVisible()
         ? "Hide Cue Companion"
         : "Show Cue Companion",
+      // Hiding is refused while a capture is live, for the reason above — the
+      // creature is the evidence. The item says so rather than silently doing
+      // nothing.
+      enabled: !(capture && companion.isVisible()),
       click: () => {
         companion.toggle();
       },
