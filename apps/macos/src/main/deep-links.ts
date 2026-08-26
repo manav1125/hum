@@ -1,4 +1,5 @@
 import { BrowserWindow, app, type WebContents } from "electron";
+import log from "./logger";
 import { z } from "zod";
 
 import type { DeepLink } from "@vellumai/ipc-contract";
@@ -257,8 +258,29 @@ export const installDeepLinks = (): void => {
   // Non-production builds register only their env-specific scheme
   // (e.g. `vellum-assistant-dev`) to avoid hijacking production
   // callbacks when both apps coexist.
-  for (const scheme of REGISTERED_SCHEMES) {
-    app.setAsDefaultProtocolClient(scheme);
+  //
+  // **An unpackaged build does not register unless asked.** In dev the
+  // executable is `node_modules/electron/dist/Electron.app`, which is shared
+  // by every Electron project on the machine and is never uninstalled — so a
+  // single `bun run dev` leaves a permanent Launch Services handler named
+  // "Electron" pointing into `node_modules`. That is what turned a sign-in
+  // into "Open Electron?" for the owner, months after the dev run that caused
+  // it, on a machine where the real app was installed and correct.
+  //
+  // Deep-link work in dev still needs it, so it stays one env var away:
+  // `VELLUM_REGISTER_DEEP_LINKS=1`. The default is not to leave a landmine in
+  // the system database for a binary that lives in a build directory.
+  const mayRegister =
+    app.isPackaged || process.env.VELLUM_REGISTER_DEEP_LINKS === "1";
+  if (mayRegister) {
+    for (const scheme of REGISTERED_SCHEMES) {
+      app.setAsDefaultProtocolClient(scheme);
+    }
+  } else {
+    log.info(
+      "[deep-links] unpackaged build: not claiming URL schemes " +
+        "(set VELLUM_REGISTER_DEEP_LINKS=1 to test deep links in dev)",
+    );
   }
 
   app.on("will-finish-launching", () => {

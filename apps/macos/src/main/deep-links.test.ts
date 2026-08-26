@@ -34,6 +34,9 @@ const appListeners = new Map<string, Listener>();
 const appOnMock = mock((event: string, listener: Listener) => {
   appListeners.set(event, listener);
 });
+/** A packaged build claims its schemes; an unpackaged one must not. */
+let appIsPackaged = true;
+
 const setAsDefaultProtocolClientMock = mock((_scheme: string) => true);
 const ipcHandleMock = mock(
   (_channel: string, _handler: (...args: unknown[]) => unknown) => undefined,
@@ -53,6 +56,9 @@ mock.module("electron", () => ({
     on: appOnMock,
     setAsDefaultProtocolClient: setAsDefaultProtocolClientMock,
     isReady: () => appIsReady,
+    get isPackaged() {
+      return appIsPackaged;
+    },
   },
   ipcMain: { handle: ipcHandleMock, on: ipcOnMock },
   BrowserWindow: { getAllWindows: () => windows },
@@ -99,6 +105,7 @@ const makeWindow = (destroyed = false) => ({
 });
 
 beforeEach(() => {
+  appIsPackaged = true;
   __resetForTesting();
   appListeners.clear();
   ipcOnListeners.clear();
@@ -245,6 +252,7 @@ describe("extractDeepLinkFromArgv", () => {
 
 describe("installDeepLinks", () => {
   test("registers only the env-appropriate schemes and is idempotent across repeated calls", () => {
+    appIsPackaged = true;
     installDeepLinks();
     const firstCallCount = setAsDefaultProtocolClientMock.mock.calls.length;
 
@@ -256,6 +264,28 @@ describe("installDeepLinks", () => {
     expect(schemes).toEqual(expected);
     // Idempotent — repeated calls don't register again.
     expect(setAsDefaultProtocolClientMock).toHaveBeenCalledTimes(firstCallCount);
+  });
+
+  test("REGRESSION: an unpackaged build claims no schemes at all", () => {
+    // In dev the executable is `node_modules/electron/dist/Electron.app` —
+    // shared by every Electron project on the machine, never uninstalled. One
+    // `bun run dev` left a permanent Launch Services handler named "Electron"
+    // pointing into a build directory, which turned the owner's sign-in into
+    // "Open Electron?" months later, on a machine where the real app was
+    // installed and correct.
+    appIsPackaged = false;
+    installDeepLinks();
+
+    expect(setAsDefaultProtocolClientMock).not.toHaveBeenCalled();
+  });
+
+  test("dev can still opt in, because deep-link work needs it", () => {
+    appIsPackaged = false;
+    process.env.VELLUM_REGISTER_DEEP_LINKS = "1";
+    installDeepLinks();
+    delete process.env.VELLUM_REGISTER_DEEP_LINKS;
+
+    expect(setAsDefaultProtocolClientMock).toHaveBeenCalled();
   });
 
   test("subscribes to will-finish-launching and registers an open-url listener under it", () => {
