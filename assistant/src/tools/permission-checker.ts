@@ -176,10 +176,20 @@ export class PermissionChecker {
         context.signal,
       );
 
-      // Extract the matched rule ID for propagation. Returned as a top-level
-      // field on PermissionDecision so it reaches the executor even when
-      // riskMeta is absent (non-classifier tools like MCP don't populate it).
-      const matchedTrustRuleId = result.matchedRule?.id;
+      // Which saved rule decided this, for the audit row and any surface that
+      // wants to say when a rule was last used.
+      //
+      // It comes from the classifier's assessment, not from
+      // `result.matchedRule`: nothing ever populates that field — the approval
+      // policy's `ApprovalContext` is built without it — so reading it alone
+      // left `tool_invocations.matched_trust_rule_id` null on every row ever
+      // written, across ~10,000 invocations and 828 saved rules. The gateway
+      // knows which rule fired; this is the first thing that asks it.
+      //
+      // `matchedRule` is still preferred when present, so wiring that path
+      // later needs no change here.
+      const matchedTrustRuleId =
+        result.matchedRule?.id ?? cachedAssessment?.matchedRuleId;
 
       // Resolved threshold snapshot for provenance. getAutoApproveThreshold
       // returns from cache (populated by check() above), so this is free.

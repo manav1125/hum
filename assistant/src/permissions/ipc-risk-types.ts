@@ -29,6 +29,8 @@ export interface ClassificationResult {
   risk: "low" | "medium" | "high" | "unknown";
   reason: string;
   matchType: "user_rule" | "registry" | "unknown";
+  /** Id of the trust rule that decided this, when `matchType` is `user_rule`. */
+  matchedRuleId?: string;
   scopeOptions: ScopeOption[];
   allowlistOptions?: AllowlistOption[];
   directoryScopeOptions?: DirectoryScopeOption[];

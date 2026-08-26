@@ -473,6 +473,7 @@ export class FileRiskClassifier implements RiskClassifier<
           reason: override.description,
           scopeOptions: [],
           matchType: "user_rule",
+          matchedRuleId: override.id,
           allowlistOptions,
         };
       }

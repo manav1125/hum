@@ -513,6 +513,7 @@ export async function classifyRisk(
     reason: gatewayResult.reason,
     scopeOptions: gatewayResult.scopeOptions ?? [],
     matchType: gatewayResult.matchType ?? "unknown",
+    matchedRuleId: gatewayResult.matchedRuleId,
     allowlistOptions: gatewayResult.allowlistOptions,
     directoryScopeOptions: gatewayResult.directoryScopeOptions,
     resolvedPaths: gatewayResult.resolvedPaths,

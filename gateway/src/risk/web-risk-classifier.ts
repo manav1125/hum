@@ -110,6 +110,7 @@ export class WebRiskClassifier implements RiskClassifier<WebClassifierInput> {
           reason: override.description,
           scopeOptions: [],
           matchType: "user_rule",
+          matchedRuleId: override.id,
         };
       }
     } catch {

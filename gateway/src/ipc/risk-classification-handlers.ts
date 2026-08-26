@@ -126,6 +126,8 @@ interface ClassificationResult {
   directoryScopeOptions?: DirectoryScopeOption[];
   resolvedPaths?: string[];
   matchType: string;
+  /** Id of the trust rule that decided this, when `matchType` is `user_rule`. */
+  matchedRuleId?: string;
 }
 
 // ── Registry spec lookup ────────────────────────────────────────────────────
@@ -426,6 +428,7 @@ export async function handleClassifyRisk(
         directoryScopeOptions,
         resolvedPaths,
         matchType: assessment.matchType,
+        matchedRuleId: assessment.matchedRuleId,
       };
     }
 
@@ -487,6 +490,7 @@ export async function handleClassifyRisk(
             ]
           : undefined,
         matchType: assessment.matchType,
+        matchedRuleId: assessment.matchedRuleId,
       };
     }
 
@@ -506,6 +510,7 @@ export async function handleClassifyRisk(
         scopeOptions: assessment.scopeOptions,
         allowlistOptions: assessment.allowlistOptions,
         matchType: assessment.matchType,
+        matchedRuleId: assessment.matchedRuleId,
       };
     }
 
@@ -534,6 +539,7 @@ export async function handleClassifyRisk(
         scopeOptions: assessment.scopeOptions,
         allowlistOptions: assessment.allowlistOptions,
         matchType: assessment.matchType,
+        matchedRuleId: assessment.matchedRuleId,
       };
     }
 
@@ -552,6 +558,7 @@ export async function handleClassifyRisk(
         scopeOptions: assessment.scopeOptions,
         allowlistOptions: assessment.allowlistOptions,
         matchType: assessment.matchType,
+        matchedRuleId: assessment.matchedRuleId,
       };
     }
 
@@ -605,6 +612,7 @@ export async function handleClassifyRisk(
           reason: assessment.reason,
           scopeOptions: assessment.scopeOptions,
           matchType: assessment.matchType,
+          matchedRuleId: assessment.matchedRuleId,
         };
       }
 

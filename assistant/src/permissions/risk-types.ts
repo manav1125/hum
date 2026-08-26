@@ -54,6 +54,16 @@ export interface RiskAssessment {
   /** How the risk was determined. */
   matchType: "user_rule" | "registry" | "unknown";
   /**
+   * Id of the trust rule that decided this, when `matchType` is `user_rule`.
+   *
+   * Carried so the audit can name which saved rule allowed a call, and a rules
+   * surface can say when one was last used. Before this existed the daemon
+   * knew a rule had fired but not which, and
+   * `tool_invocations.matched_trust_rule_id` was null on every row ever
+   * written.
+   */
+  matchedRuleId?: string;
+  /**
    * Allowlist options for the permission prompt "always allow" scope ladder.
    * Populated by classifiers that unify risk classification and scope option
    * generation. When present, `generateAllowlistOptions()` returns these

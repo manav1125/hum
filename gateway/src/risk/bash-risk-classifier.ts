@@ -282,14 +282,24 @@ export function classifySegment(
   userRules: UserRule[],
   registry: Record<string, CommandRiskSpec>,
   toolName: "bash" | "host_bash" = "bash",
-): { risk: Risk; reason: string; matchType: RiskAssessment["matchType"] } {
+): {
+  risk: Risk;
+  reason: string;
+  matchType: RiskAssessment["matchType"];
+  matchedRuleId?: string;
+} {
   // 1. Check user rules first (highest priority)
   // TODO: implement user rule matching with specificity ordering.
   // For now, userRules is always empty so this is a no-op.
   for (const rule of userRules) {
     const re = getCompiledPattern(rule.pattern);
     if (re.test(segment.command)) {
-      return { risk: rule.risk, reason: rule.label, matchType: "user_rule" };
+      return {
+        risk: rule.risk,
+        reason: rule.label,
+        matchType: "user_rule",
+        matchedRuleId: rule.id,
+      };
     }
   }
 
@@ -392,6 +402,9 @@ export function classifySegment(
   // isWrapper, sandboxAutoApprove, argSchema) still comes from the registry.
   let effectiveBaseRisk: Risk = resolvedSpec.baseRisk;
   let effectiveMatchType: RiskAssessment["matchType"] = "registry";
+  // Which saved rule decided it, when one did. Cleared alongside
+  // `effectiveMatchType` wherever a later step takes the decision back.
+  let effectiveMatchedRuleId: string | undefined;
 
   try {
     // Build the full subcommand pattern (e.g., "git stash drop") to look up in
@@ -453,6 +466,7 @@ export function classifySegment(
       effectiveBaseRisk = cachedRule.risk;
       if (cachedRule.userModified || cachedRule.origin === "user_defined") {
         effectiveMatchType = "user_rule";
+        effectiveMatchedRuleId = cachedRule.id;
       }
     }
   } catch {
@@ -664,6 +678,7 @@ export function classifySegment(
         // The registry's arg rules determined the final risk, not the user's
         // cached base risk override. Reset matchType to "registry".
         effectiveMatchType = "registry";
+        effectiveMatchedRuleId = undefined;
       } else if (!hasUnmatchedNonFlagArg) {
         // De-escalation: only safe when ALL non-flag args matched rules.
         // Every arg is accounted for, so the lower risk is justified.
@@ -672,6 +687,7 @@ export function classifySegment(
         // Arg rules de-escalated — the registry's arg rules determined the
         // final risk, so matchType should reflect the registry, not the cache.
         effectiveMatchType = "registry";
+        effectiveMatchedRuleId = undefined;
       }
       // Otherwise: some args matched low rules but other args went unmatched.
       // Keep baseRisk as the floor — can't safely de-escalate.
@@ -710,11 +726,17 @@ export function classifySegment(
     ) {
       risk = "medium";
       effectiveMatchType = "registry";
+      effectiveMatchedRuleId = undefined;
       reason = `rm of known safe file: ${positionalArgs[0]}`;
     }
   }
 
-  return { risk, reason, matchType: effectiveMatchType };
+  return {
+    risk,
+    reason,
+    matchType: effectiveMatchType,
+    matchedRuleId: effectiveMatchedRuleId,
+  };
 }
 
 // ── Scope option generation ──────────────────────────────────────────────────
@@ -990,6 +1012,10 @@ export class BashRiskClassifier implements RiskClassifier<BashClassifierInput> {
     let maxRiskLevel: Risk = "low";
     let maxReason = "";
     let matchType: RiskAssessment["matchType"] = "registry";
+    // Tracks `matchType`: whichever segment supplied the winning verdict also
+    // supplies the rule that produced it, so the audit credits the right one
+    // in a multi-segment command.
+    let matchedRuleId: string | undefined;
 
     // Classify each segment
     for (const segment of parsed.segments) {
@@ -1003,11 +1029,13 @@ export class BashRiskClassifier implements RiskClassifier<BashClassifierInput> {
         maxRiskLevel = result.risk;
         maxReason = result.reason;
         matchType = result.matchType;
+        matchedRuleId = result.matchedRuleId;
       } else if (!maxReason && result.reason) {
         // Capture reason from first segment even if it doesn't escalate
         // (avoids empty reason for all-low commands like `ls`)
         maxReason = result.reason;
         matchType = result.matchType;
+        matchedRuleId = result.matchedRuleId;
       }
     }
 
@@ -1016,6 +1044,7 @@ export class BashRiskClassifier implements RiskClassifier<BashClassifierInput> {
       maxRiskLevel = "high";
       maxReason = "No parseable command segments";
       matchType = "unknown";
+      matchedRuleId = undefined;
     }
 
     // Dangerous patterns escalate to at least high
@@ -1051,6 +1080,7 @@ export class BashRiskClassifier implements RiskClassifier<BashClassifierInput> {
       reason: maxReason,
       scopeOptions,
       matchType,
+      matchedRuleId,
       allowlistOptions,
     };
 

@@ -260,6 +260,7 @@ export class SkillLoadRiskClassifier implements RiskClassifier<SkillClassifierIn
             reason: override.description,
             scopeOptions: [],
             matchType: "user_rule",
+            matchedRuleId: override.id,
           };
         }
       }

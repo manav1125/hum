@@ -101,6 +101,7 @@ export class ScheduleRiskClassifier implements RiskClassifier<ScheduleClassifier
           reason: override.description,
           scopeOptions: [],
           matchType: "user_rule",
+          matchedRuleId: override.id,
         };
       }
     } catch {

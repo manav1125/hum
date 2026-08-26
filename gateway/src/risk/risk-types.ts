@@ -79,6 +79,16 @@ export interface RiskAssessment {
   /** How the risk was determined. */
   matchType: "user_rule" | "registry" | "unknown";
   /**
+   * Id of the trust rule that decided this, when `matchType` is `user_rule`.
+   *
+   * Without it the daemon knows a rule fired but not which one, so
+   * `tool_invocations.matched_trust_rule_id` — a column added for exactly this
+   * audit — has never held a value on any instance, and a rules surface cannot
+   * say when a rule was last used or how often. The risk level alone answers
+   * neither question.
+   */
+  matchedRuleId?: string;
+  /**
    * Allowlist options for the permission prompt "always allow" scope ladder.
    * Populated by classifiers that unify risk classification and scope option
    * generation. When present, `generateAllowlistOptions()` returns these
