@@ -288,6 +288,42 @@ describe("main does the hit-testing; this page reports what it drew", () => {
   });
 });
 
+describe("the rectangle stays current after the window is revealed", () => {
+  test("REGRESSION: a layout that arrives late is still reported", async () => {
+    // Main creates the window HIDDEN and reveals it only once this page says
+    // it is the companion. At mount nothing has been shown, everything lays
+    // out at 0x0, and the reporter correctly declines to publish an empty
+    // rectangle — so without an observer the rect stayed null forever and main
+    // fell back to the creature's own box. The creature was clickable; the
+    // card beside it was dead.
+    const observers: Array<() => void> = [];
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(cb: () => void) {
+        observers.push(cb);
+      }
+      observe() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    drawnArea(0, 0); // hidden window: nothing to measure yet
+    drawnRectSpy.mockClear();
+
+    // The window is revealed and the surface finally has a size.
+    drawnArea(320, 60);
+    observers.forEach((cb) => cb());
+
+    expect(drawnRectSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      width: 320,
+      height: 60,
+    });
+
+    globalThis.ResizeObserver = original;
+  });
+});
+
 describe("the introduction (C4)", () => {
   const beat = (patch: Record<string, unknown> = {}) => ({
     intro: {

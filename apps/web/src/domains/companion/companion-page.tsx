@@ -247,6 +247,29 @@ export function CompanionPage(): React.ReactElement {
   // meant for whatever is behind it, until the user happened to move the
   // mouse. Upstream shipped this leak (`64e3eead`); re-testing on every drawn
   // phase is what closes it.
+  /**
+   * Keep the reported rectangle current, whatever moved it.
+   *
+   * **The mount-time report is not enough, and that is what left the
+   * introduction unclickable.** Main creates this window hidden and reveals it
+   * only once this page says it is the companion — so at mount the window has
+   * never been shown, everything lays out at 0x0, and `reportCoverage`
+   * correctly declines to publish an empty rectangle. Nothing re-reported
+   * afterwards, so main kept falling back to the creature's own box: the
+   * creature was clickable and the card beside it was dead.
+   *
+   * A ResizeObserver answers every version of this — the reveal, a phase
+   * changing the pill's width, a card opening — without the page having to
+   * know which one happened.
+   */
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => reportCoverage());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [reportCoverage]);
+
   // Every change to what is drawn moves the rectangle main is testing
   // against — a card opening, a beat advancing, a nudge retracting.
   useEffect(() => {
