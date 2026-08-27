@@ -559,6 +559,7 @@
               <span class="suffix mono">.justcue.app</span>
             </div>
             <p id="manual-error"></p>
+            <p class="sub">Got a sign-in link? Paste the whole thing here and you’re straight in.</p>
             <button class="btn" type="submit">Connect</button>
             <div class="linkrow"><button type="button" class="link" data-goto="signin">← Back to email sign-in</button></div>
           </form>
@@ -879,12 +880,18 @@
         }
         el("manual-form").addEventListener("submit", function (ev) {
           ev.preventDefault();
-          var sub = parseCueSubdomain(el("addr").value);
+          var raw = el("addr").value;
+          var sub = parseCueSubdomain(raw);
           el("manual-error").textContent = "";
           if (!sub) { el("manual-error").textContent = "Enter your Cue address."; return; }
           hLight();  // address complete
-          // No token — the instance SPA will run its own sign-in. Connect to it.
-          connectToInstance("https://" + sub + ".justcue.app", "");
+          // A whole sign-in link pasted here carries its own token, and
+          // `parseCueSubdomain` already yields the right host from one. Keep the
+          // token instead of dropping it: without this the only way in is to
+          // open the link on this device, which is impossible for anyone whose
+          // mail lives somewhere else — App Review among them. Bare address
+          // still connects with no token and the instance runs its own sign-in.
+          connectToInstance("https://" + sub + ".justcue.app", tokenFromUrl(raw) || "");
         });
 
         // Pure helpers exposed for the regression test (see

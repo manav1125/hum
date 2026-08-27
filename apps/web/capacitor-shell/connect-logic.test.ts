@@ -139,6 +139,22 @@ describe("mobile connect shell — pure logic", () => {
     expect(C.parseCueSubdomain("   ")).toBeNull();
   });
 
+  test("a whole sign-in link pasted into the address field yields host AND token", () => {
+    // App Review rejected 1.0 under 2.1(a): the reviewer typed the demo email,
+    // landed on "open your mail", and had no mailbox. The address field is the
+    // one way in that needs no mail — but only if it keeps the token. These two
+    // helpers are exactly what the submit handler feeds to connectToInstance.
+    const link =
+      "https://cue-app-review-1d647c14.justcue.app/assistant/?cueToken=a.b.c";
+    expect(C.parseCueSubdomain(link)).toBe("cue-app-review-1d647c14");
+    expect(C.tokenFromUrl(link)).toBe("a.b.c");
+
+    // A bare address still resolves, and still carries no token — the instance
+    // then runs its own sign-in, which is the pre-existing behaviour.
+    expect(C.parseCueSubdomain("cue-you")).toBe("cue-you");
+    expect(C.tokenFromUrl("cue-you")).toBeNull();
+  });
+
   test("strips the one-time token before remembering the instance", () => {
     expect(
       C.withoutToken(
