@@ -951,6 +951,31 @@ async function fetchWebsiteStatic(url: string): Promise<string> {
 export async function extractFromWebsite(
   url: string,
 ): Promise<DraftBrandProfile> {
+  // **The endpoint's contract is that it never throws**, and the client is
+  // built on that: a 200 with `extraction.status` is shown as a readable
+  // failure, while a rejected request becomes "The scan request didn't
+  // complete" — which tells the owner to check their connection about a
+  // machine that is working fine. The promise was documented and then left to
+  // the inside of the function to keep. Kept here instead, where it cannot be
+  // lost by a future edit deeper in.
+  try {
+    return await extractFromWebsiteInner(url);
+  } catch (err) {
+    log.warn(
+      { err: String(err), url },
+      "brand website extraction threw; returning an unreachable draft",
+    );
+    return emptyDraft("website", url, {
+      status: "unreachable",
+      detail:
+        "Something went wrong reading that page. Nothing was pulled in — try again, or build the kit by hand.",
+    });
+  }
+}
+
+async function extractFromWebsiteInner(
+  url: string,
+): Promise<DraftBrandProfile> {
   if (getDisableBrandExtract()) {
     log.debug({ url }, "CUE_DISABLE_BRAND_EXTRACT set; skipping");
     return emptyDraft("website", url, {
@@ -969,7 +994,19 @@ export async function extractFromWebsite(
   }
 
   // Preferred path: headless browser with computed-CSS hints.
-  const scraped = await scrapeWebsiteHeadless(url);
+  //
+  // Guarded even though `scrapeWebsiteHeadless` is meant to return `null`
+  // rather than throw: this is the optional path, and an optional path must
+  // never be able to take the whole scan down. On an instance with no browser
+  // installed it runs a runtime check that touches the filesystem and may try
+  // to fetch a shell — plenty of ways to raise something nobody predicted.
+  const scraped = await scrapeWebsiteHeadless(url).catch((err: unknown) => {
+    log.warn(
+      { err: String(err), url },
+      "headless scrape threw; falling back to static fetch",
+    );
+    return null;
+  });
   if (scraped && scraped.source.trim()) {
     const extracted = await runFlashExtraction({
       kind: "website",

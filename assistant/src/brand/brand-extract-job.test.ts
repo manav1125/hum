@@ -631,3 +631,35 @@ describe("extraction outcome", () => {
     expect(Object.values(draft.palette ?? {})).toContain("#ff0000");
   });
 });
+
+describe("the scan endpoint's promise that it never throws", () => {
+  test("REGRESSION: an unreadable page resolves as a failure, it does not reject", async () => {
+    // The client is built on this. A 200 carrying `extraction.status` is shown
+    // as a readable failure; a REJECTED request becomes "The scan request
+    // didn't complete. Check the address and your connection" — which tells
+    // the owner to check a connection that is working fine, about a machine
+    // that is working fine. The promise was documented and left to the inside
+    // of the function to keep; it is enforced at the boundary now.
+    mockBrowserAvailable = false;
+    mockWebFetchIsError = true;
+    mockWebFetchContent = "";
+
+    const draft = await extractFromWebsite("https://example.com");
+    expect(draft.extraction.status).not.toBe("extracted");
+    expect(draft.source).toBe("website");
+  });
+
+  test("a browser that blows up falls back rather than taking the scan down", async () => {
+    // The headless path is the OPTIONAL one. On an instance with no browser
+    // installed it runs a runtime check that touches the filesystem and may
+    // try to fetch a shell — an optional path must never be able to end the
+    // whole request.
+    mockBrowserAvailable = false;
+    mockWebFetchIsError = false;
+    mockWebFetchContent = '<html><body style="color:#ff0000">Hi</body></html>';
+    mockSidechainText = "{}";
+
+    const draft = await extractFromWebsite("https://example.com");
+    expect(draft.source).toBe("website");
+  });
+});
