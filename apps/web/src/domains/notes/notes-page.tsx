@@ -960,6 +960,36 @@ function NoteView({
     }
   }, [loaded, body]);
 
+  /**
+   * Autosave, because the note says it autosaves.
+   *
+   * It did not. Saving happened only on an explicit close, so the editor
+   * promised "Private · autosaved" while the only path that persisted
+   * anything was the back arrow — and anything else (closing the window,
+   * quitting, following a link) dropped the edit silently. A capture surface
+   * that loses what you typed is worse than one that never claimed to keep
+   * it.
+   *
+   * Debounced rather than per-keystroke: this is a write to the instance, and
+   * the point is to survive leaving, not to record every character.
+   */
+  useEffect(() => {
+    if (!loaded) return;
+    const nextBody = body ?? "";
+    const nextTitle = title ?? "";
+    if (nextBody === loaded.body && nextTitle === loaded.title) return;
+    const t = setTimeout(() => {
+      void updateNote.mutateAsync({
+        path: { assistant_id: assistantId, id: noteId },
+        body: {
+          ...(nextBody !== loaded.body ? { body: nextBody } : {}),
+          ...(nextTitle !== loaded.title ? { title: nextTitle } : {}),
+        },
+      });
+    }, 900);
+    return () => clearTimeout(t);
+  }, [body, title, loaded, assistantId, noteId, updateNote]);
+
   const close = useCallback(async () => {
     const current = bodyRef.current;
     const currentTitle = titleRef.current;

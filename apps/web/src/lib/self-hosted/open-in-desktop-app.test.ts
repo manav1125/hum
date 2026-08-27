@@ -26,7 +26,7 @@ mock.module("@/lib/self-hosted/cue-self-host", () => ({
   getStoredActorToken: () => mockToken,
 }));
 
-const { shouldOfferDesktopHandoff } =
+const { shouldOfferDesktopHandoff, openInDesktopApp } =
   await import("@/lib/self-hosted/open-in-desktop-app");
 
 const originalMatchMedia = window.matchMedia;
@@ -83,5 +83,52 @@ describe("shouldOfferDesktopHandoff (B7)", () => {
     mockSeeded = true;
     mockToken = null;
     expect(shouldOfferDesktopHandoff()).toBe(false);
+  });
+});
+
+describe("the fallback scheme only fires when the first jump went nowhere", () => {
+  const originalAssign = window.location.assign;
+  const originalHasFocus = document.hasFocus;
+  let assigned: string[];
+
+  beforeEach(() => {
+    assigned = [];
+    mockSeeded = true;
+    mockToken = "actor-token";
+    setCoarsePointer(false);
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, origin: "https://x.example", assign: (u: string) => assigned.push(u) },
+    });
+  });
+
+  afterEach(() => {
+    document.hasFocus = originalHasFocus;
+    window.location.assign = originalAssign;
+  });
+
+  test("REGRESSION: a successful hand-off does not then prompt for the local scheme", async () => {
+    // The first jump opens Cue and takes focus. The delayed fallback used to
+    // fire regardless — and on any machine that has ever run a locally-built
+    // app, `vellum-assistant-local:` still resolves to a stray Electron.app in
+    // node_modules. The owner got "Open Electron?" on every single sign-in,
+    // AFTER Cue had already opened correctly.
+    document.hasFocus = () => false;
+    openInDesktopApp();
+    await new Promise((r) => setTimeout(r, 1400));
+
+    expect(assigned).toHaveLength(1);
+    expect(assigned[0]).toContain("vellum://connect");
+  });
+
+  test("a hand-off that went nowhere still gets its second chance", async () => {
+    // Which is the whole reason the fallback exists: a locally-built app
+    // registers only its env-suffixed scheme.
+    document.hasFocus = () => true;
+    openInDesktopApp();
+    await new Promise((r) => setTimeout(r, 1400));
+
+    expect(assigned).toHaveLength(2);
+    expect(assigned[1]).toContain("vellum-assistant-local://connect");
   });
 });

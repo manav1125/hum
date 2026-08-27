@@ -85,6 +85,25 @@ function isTouchOnlyDevice(): boolean {
   }
 }
 
+/**
+ * Whether this page still has the user's attention.
+ *
+ * A custom-scheme navigation that resolves hands focus to the app it opened,
+ * so a page that is still visible and focused afterwards is one whose jump
+ * went nowhere. Treated as "has focus" when the browser will not say, because
+ * the fallback existing at all is what makes local builds reachable — the
+ * failure to avoid is skipping a hand-off that was needed, not firing one
+ * that was not.
+ */
+function pageStillHasFocus(): boolean {
+  try {
+    if (document.visibilityState === "hidden") return false;
+    return document.hasFocus();
+  } catch {
+    return true;
+  }
+}
+
 /** Fire the handoff for the current URL. */
 export function openInDesktopApp(): void {
   const link = buildHandoffLinkFromStoredToken();
@@ -105,6 +124,18 @@ export function openInDesktopApp(): void {
         `${window.location.origin}/assistant/?cueToken=${encodeURIComponent(token)}`,
       )}`;
       window.setTimeout(() => {
+        // **Only if the first attempt did nothing.** The comment above used
+        // to claim this was harmless when the app had already opened — it is
+        // not. The navigation fires regardless, and on any machine that has
+        // ever run a locally-built app, `vellum-assistant-local:` still has a
+        // handler: a stray `Electron.app` inside `node_modules`. The user
+        // then gets "Open Electron?" every single sign-in, *after* Cue has
+        // already opened correctly.
+        //
+        // A successful scheme jump takes focus away from the browser, so a
+        // page that is still visible and focused is a page whose hand-off did
+        // not land. That is the only signal available here, and it is enough.
+        if (!pageStillHasFocus()) return;
         try {
           window.location.assign(alt);
         } catch {
