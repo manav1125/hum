@@ -274,6 +274,8 @@ export interface UpdateNoteInput {
   /** Pass `null` to unfile. Unfiled is a resting state, not a failure. */
   projectId?: string | null;
   audioPath?: string | null;
+  /** How long the recording ran. The list renders it as "12:41 kept". */
+  audioDurationMs?: number | null;
   transcript?: string | null;
   bodyIsSummary?: boolean;
   extractionState?: NoteExtractionState;
@@ -300,6 +302,9 @@ export function updateNote(id: string, patch: UpdateNoteInput): Note | null {
   }
   if (patch.projectId !== undefined) values.projectId = patch.projectId;
   if (patch.audioPath !== undefined) values.audioPath = patch.audioPath;
+  if (patch.audioDurationMs !== undefined) {
+    values.audioDurationMs = patch.audioDurationMs;
+  }
   if (patch.transcript !== undefined) values.transcript = patch.transcript;
   if (patch.bodyIsSummary !== undefined) {
     values.bodyIsSummary = patch.bodyIsSummary ? 1 : 0;

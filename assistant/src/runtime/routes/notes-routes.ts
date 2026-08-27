@@ -376,6 +376,13 @@ export const ROUTES: RouteDefinition[] = [
       body: z.string().optional(),
       projectId: z.string().nullable().optional(),
       audioPath: z.string().nullable().optional(),
+      // The recording session writes this when it stops, and it was not in
+      // this schema — so zod stripped it and every recorded note lost its
+      // duration, which is what the list renders as "12:41 kept". Silent,
+      // because a spread (`...(d > 0 ? { audioDurationMs: d } : {})`) bypasses
+      // TypeScript's excess-property check, so the client compiled fine while
+      // sending a field the server threw away.
+      audioDurationMs: z.number().int().nullable().optional(),
       transcript: z.string().nullable().optional(),
       bodyIsSummary: z.boolean().optional(),
     }),

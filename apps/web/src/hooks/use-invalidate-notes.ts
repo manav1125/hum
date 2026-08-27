@@ -20,9 +20,29 @@ import { useQueryClient } from "@tanstack/react-query";
 export function useInvalidateNotes() {
   const queryClient = useQueryClient();
   return () =>
-    void queryClient.invalidateQueries({
-      predicate: (query) => JSON.stringify(query.queryKey).includes("/notes"),
-    });
+    void queryClient.invalidateQueries({ predicate: isNotesQuery });
+}
+
+/**
+ * Whether a cached query is one of the Notes reads.
+ *
+ * **This matched nothing at all until 2026-08-27.** The predicate tested
+ * `JSON.stringify(queryKey).includes("/notes")`, but a generated key is
+ * `[{ _id: "notesGet", baseUrl, path: {...} }]` — the operation id has no
+ * slash in it, and neither does anything else in the key. So every notes
+ * mutation invalidated nothing: an imported note never appeared, a renamed
+ * note kept its old title in the list, and the counts the header makes its
+ * whole argument from went stale the moment anything changed.
+ *
+ * Matching the operation id is what the key actually offers. Anchored at the
+ * start so `notesGet`, `notesByIdGet` and `notesExtractionsWaitingGet` are all
+ * caught, without also catching some future `deniedNotesGet`.
+ */
+export function isNotesQuery(query: { queryKey: readonly unknown[] }): boolean {
+  const head = query.queryKey[0];
+  if (!head || typeof head !== "object") return false;
+  const id = (head as { _id?: unknown })._id;
+  return typeof id === "string" && id.startsWith("notes");
 }
 
 /**

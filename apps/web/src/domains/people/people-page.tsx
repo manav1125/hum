@@ -195,6 +195,14 @@ const KIND_TINT: Record<string, string> = {
  * Silent when the daemon reports healthy, and silent when the health read
  * itself fails — an unread health check is not evidence of a problem.
  */
+/**
+ * The most the daemon serves in one call — `listContacts` caps at 200.
+ *
+ * Named because two places have to agree: the request, and the notice that
+ * admits the list was cut.
+ */
+const PEOPLE_PAGE_LIMIT = 200;
+
 function ExtractionHealthNotice({ assistantId }: { assistantId: string }) {
   const health = useQuery({
     ...peopleMemoryHealthGetOptions({ path: { assistant_id: assistantId } }),
@@ -265,8 +273,22 @@ function PeoplePageDesktop() {
   // the raw viewport read. Two names because they are two different questions.
   const isNarrow = useIsMobile();
 
+  /**
+   * Ask for as many people as the daemon will give.
+   *
+   * The route defaults to **50**, ordered by most-recently-updated, and this
+   * page asked for no limit at all — so "The people Cue knows" quietly meant
+   * "the fifty Cue spoke to most recently", and anyone older simply vanished
+   * from a page whose whole promise is that it remembers. 200 is the store's
+   * hard cap (`listContacts`), so this is everything it will serve without
+   * paging, and `PEOPLE_PAGE_LIMIT` is checked against the result below so a
+   * truncated list says so rather than passing itself off as complete.
+   */
   const contactsQuery = useQuery({
-    ...contactsGetOptions({ path: { assistant_id: assistantId } }),
+    ...contactsGetOptions({
+      path: { assistant_id: assistantId },
+      query: { limit: PEOPLE_PAGE_LIMIT },
+    }),
     select: (data) => data.contacts,
   });
 
@@ -415,6 +437,9 @@ function PeoplePageDesktop() {
               selectedId={selected?.id ?? null}
               onSelect={setSelectedId}
               now={now}
+              truncated={
+                (contactsQuery.data?.length ?? 0) >= PEOPLE_PAGE_LIMIT
+              }
             />
             {selected ? (
               <DossierPane
@@ -440,6 +465,7 @@ function ContactList({
   selectedId,
   onSelect,
   now,
+  truncated = false,
 }: {
   contacts: ContactPayload[];
   search: string;
@@ -447,9 +473,21 @@ function ContactList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   now: number;
+  /** The daemon returned a full page, so there are people not on this list. */
+  truncated?: boolean;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {truncated ? (
+        // Said out loud rather than silently cut. A page called "the people
+        // Cue knows" that shows a subset without saying so is the small
+        // dishonesty this surface exists to avoid — and it is what made the
+        // list look like it was losing people.
+        <p style={{ fontSize: 11.5, color: C.t3, margin: 0 }}>
+          Showing the {PEOPLE_PAGE_LIMIT} most recently updated. Search reaches
+          the rest.
+        </p>
+      ) : null}
       <input
         value={search}
         onChange={(e) => onSearch(e.target.value)}
