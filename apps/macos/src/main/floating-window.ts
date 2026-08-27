@@ -124,6 +124,18 @@ export const createFloatingWindow = ({
     browserWindow: {
       ...browserWindow,
       type: "panel",
+      // **A window that never takes focus must accept first mouse, or it can
+      // never be clicked at all.** macOS consumes the first click on an
+      // inactive window to activate it. A non-activating panel never becomes
+      // key, so *every* click is that first click — swallowed by the
+      // activation that never happens, and never delivered to the page.
+      //
+      // This is what left the companion's introduction on screen with a Next
+      // button that did nothing, through several builds. It is invisible to
+      // every test and to the hit-test work that looked like the cause: the
+      // window was correctly claiming its clicks, and macOS was eating them
+      // one layer above.
+      ...(focusOnShow ? {} : { acceptFirstMouse: true }),
       width,
       height,
       frame: false,

@@ -217,6 +217,40 @@ describe("createFloatingWindow", () => {
     expect(focused.focus).toHaveBeenCalledTimes(1);
   });
 
+  test("REGRESSION: a window that never takes focus accepts first mouse", () => {
+    // macOS consumes the first click on an inactive window to activate it. A
+    // non-activating panel never becomes key, so EVERY click is that first
+    // click — swallowed by an activation that never happens and never
+    // delivered to the page. It left the companion's introduction on screen
+    // with a Next button that did nothing, across several builds, invisible
+    // to every test.
+    createFloatingWindow({
+      kind: kind("passive-mouse"),
+      route: "/passive",
+      width: 100,
+      height: 100,
+      focusOnShow: false,
+    });
+    const opts = createWindowMock.mock.calls.at(-1)?.[0] as {
+      browserWindow: Record<string, unknown>;
+    };
+    expect(opts.browserWindow.acceptFirstMouse).toBe(true);
+  });
+
+  test("a window that does take focus does not need it", () => {
+    createFloatingWindow({
+      kind: kind("focused-mouse"),
+      route: "/focused",
+      width: 100,
+      height: 100,
+      focusOnShow: true,
+    });
+    const opts = createWindowMock.mock.calls.at(-1)?.[0] as {
+      browserWindow: Record<string, unknown>;
+    };
+    expect(opts.browserWindow.acceptFirstMouse).toBeUndefined();
+  });
+
   test("reuses the existing window for a kind and repositions it before showing", () => {
     let x = 10;
     const singletonKind = kind("singleton");
