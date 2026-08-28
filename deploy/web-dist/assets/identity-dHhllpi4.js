@@ -1,1 +1,0 @@
-import{Dn as e}from"./sdk.gen-CHixPcvY.js";import{n as t}from"./api-errors-Cdgzt0p6.js";async function n(n){try{let{data:r,error:i,response:a}=await e({path:{assistant_id:n},throwOnError:!1});return t(a,i,`Failed to fetch assistant identity`),!a.ok||!r||typeof r!=`object`?null:r}catch{return null}}export{n as t};

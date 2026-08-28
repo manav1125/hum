@@ -1,0 +1,1 @@
+import{n as e}from"./utils-DI0DHMXv.js";var t=`0.8.5`,n=5e3,r=5*6e4;function i(){return e(t)?{staleTime:r,refetchInterval:!1,refetchOnWindowFocus:!1}:{staleTime:n,refetchInterval:n,refetchOnWindowFocus:!0}}export{i as t};
