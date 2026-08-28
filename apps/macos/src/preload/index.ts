@@ -709,6 +709,18 @@ const bridge: VellumBridge = {
     /** `esc`. Closes the card and cancels nothing. */
     closeCard: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:closeCard") as Promise<void>,
+    /**
+     * A mic is open in the companion window, or has just closed.
+     *
+     * The renderer is the only side that can hold a microphone, and main is
+     * the only side that may decide a phase — so the renderer reports and
+     * main resolves. The alternative, a renderer that drew `listening` for
+     * itself, is the creature showing one thing while main believes another,
+     * which is also main deciding who owns the clicks on a surface it is not
+     * drawing.
+     */
+    listening: (on: boolean): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:listening", on) as Promise<void>,
     /** The pill's `Stop`. Main decides what it stops — see the handler. */
     stop: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:stop") as Promise<void>,

@@ -451,6 +451,14 @@ export interface VellumBridge {
     openCard(): Promise<void>;
     /** `esc`. Closes the card and cancels nothing in flight. */
     closeCard(): Promise<void>;
+    /**
+     * A mic is open in the companion window, or has just closed (`C11`).
+     *
+     * The renderer is the only side that can hold a microphone; main is the
+     * only side that may decide a phase. So it reports and main resolves —
+     * never the other way round.
+     */
+    listening(on: boolean): Promise<void>;
     nudgeOpen(): Promise<void>;
     nudgeDismiss(): Promise<void>;
     setSize(size: string): Promise<void>;

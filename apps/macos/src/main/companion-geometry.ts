@@ -78,7 +78,21 @@ export type CompanionGrowth = "right" | "left";
 export type CompanionCardGrowth = "up" | "down";
 
 /** The widest the pill ever gets, at the base size. */
-export const COMPANION_BASE_PILL_MAX = 316;
+/**
+ * The widest the surface ever gets, at the base size.
+ *
+ * Sized for the **caught drop** (`C10`), which is the widest state there is:
+ * creature, a chip naming the file, "Got it —", three choices and a ✕ on one
+ * row. It was 316 — enough for the hover pill and nothing else — so a dropped
+ * file rendered a pill wider than its own canvas and was clipped at both
+ * ends, with "Read it" cut in half.
+ *
+ * The canvas is fixed and never resizes on a phase, which is the whole design;
+ * the consequence is that this number has to be the widest state, not the
+ * commonest one. The extra width is transparent and click-through, so it costs
+ * nothing but the arithmetic.
+ */
+export const COMPANION_BASE_PILL_MAX = 520;
 /** The typing card's height at the base size. */
 export const COMPANION_BASE_CARD_HEIGHT = 196;
 

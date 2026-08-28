@@ -56,6 +56,7 @@ const askSpy = mock((_m: string) => undefined);
 const keepSpy = mock((_m: string) => undefined);
 const closeCardSpy = mock(() => undefined);
 const nudgeDismissSpy = mock(() => undefined);
+const listeningSpy = mock((_on: boolean) => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
   companionTalk: talkSpy,
@@ -85,6 +86,7 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   companionKeepAsNote: keepSpy,
   companionCloseCard: closeCardSpy,
   companionNudgeDismiss: nudgeDismissSpy,
+  companionListening: listeningSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
     return () => {
@@ -101,12 +103,53 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   },
 }));
 
+/**
+ * The mic, faked at the platform edge rather than at the hook.
+ *
+ * Mocking `useTalkRecorder` would prove the page calls a function; what has to
+ * be true is that a real `MediaStream` is opened on the way down and every
+ * track of it is stopped on the way up. `stoppedTracks` is the only assertion
+ * that distinguishes "the mic closed" from "the component stopped mentioning
+ * it".
+ */
+let stoppedTracks = 0;
+const getUserMediaSpy = mock(() => {
+  const track = {
+    stop: () => {
+      stoppedTracks += 1;
+    },
+  };
+  return Promise.resolve({ getTracks: () => [track] } as unknown as MediaStream);
+});
+
+class FakeMediaRecorder {
+  static isTypeSupported = () => true;
+  mimeType = "audio/webm";
+  ondataavailable: ((event: { data: Blob }) => void) | null = null;
+  onstop: (() => void) | null = null;
+  constructor(readonly stream: MediaStream) {}
+  start() {}
+  stop() {
+    this.onstop?.();
+  }
+}
+
+Object.defineProperty(navigator, "mediaDevices", {
+  configurable: true,
+  value: { getUserMedia: getUserMediaSpy },
+});
+(globalThis as { MediaRecorder?: unknown }).MediaRecorder = FakeMediaRecorder;
+
 const { CompanionPage } = await import("./companion-page");
 
 // happy-dom does not implement pointer capture. The page's contract is that it
 // *asks* for capture and always releases it, so record the asks.
 const captured = new Set<number>();
 beforeEach(() => {
+  stoppedTracks = 0;
+  getUserMediaSpy.mockClear();
+  listeningSpy.mockClear();
+  localStorage.removeItem("vellum:selectedAssistantId");
   Object.assign(HTMLElement.prototype, {
     setPointerCapture(id: number) {
       captured.add(id);
@@ -644,8 +687,61 @@ describe("the hover pill offers actions it can actually perform", () => {
     fireEvent.click(screen.getByText("✎ Type"));
     expect(openCardSpy).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByText("◎ Hold to talk"));
+    // No assistant has ever been selected in this window, so there is nobody
+    // to transcribe for and the press hands off to the voice surface — which
+    // mounts the lifecycle and can resolve one for itself.
+    const talk = screen.getByText("◎ Hold to talk");
+    fireEvent.pointerDown(talk, { pointerId: 1 });
     expect(talkSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("hold to talk holds a mic open, and closing it is not optional", async () => {
+    // The label is not a metaphor. A click-to-toggle would leave a live
+    // microphone in a panel that floats over everything — the one thing this
+    // surface may not do — so the mic opens on the way down and shuts on the
+    // way up, and main is told both times because main owns the phase.
+    localStorage.setItem("vellum:selectedAssistantId", "asst_1");
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "hover" });
+
+    const talk = screen.getByText("◎ Hold to talk");
+    await act(async () => {
+      fireEvent.pointerDown(talk, { pointerId: 1 });
+    });
+    // The voice surface is NOT opened: this window records for itself.
+    expect(talkSpy).toHaveBeenCalledTimes(0);
+    expect(getUserMediaSpy).toHaveBeenCalledTimes(1);
+    expect(listeningSpy).toHaveBeenLastCalledWith(true);
+
+    await act(async () => {
+      fireEvent.pointerUp(talk, { pointerId: 1 });
+    });
+    expect(listeningSpy).toHaveBeenLastCalledWith(false);
+    expect(stoppedTracks).toBe(1);
+  });
+
+  test("REGRESSION: a mic outliving the window it was held in", async () => {
+    // A hold that ends because the window went away never delivers its own
+    // release. Without the blur stop the mic would stay open with nothing
+    // left to close it.
+    localStorage.setItem("vellum:selectedAssistantId", "asst_1");
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "hover" });
+
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByText("◎ Hold to talk"), {
+        pointerId: 1,
+      });
+    });
+    expect(stoppedTracks).toBe(0);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(stoppedTracks).toBe(1);
+    expect(listeningSpy).toHaveBeenLastCalledWith(false);
   });
 });
 

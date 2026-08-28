@@ -376,6 +376,8 @@ describe("installCompanionWindow", () => {
       "vellum:companion:dropRelease",
       "vellum:companion:ask",
       "vellum:companion:keepAsNote",
+      "vellum:companion:openCard",
+      "vellum:companion:listening",
       "vellum:companion:closeCard",
       "vellum:companion:nudgeDismiss",
       "vellum:companion:talk",
@@ -442,7 +444,7 @@ describe("installCompanionWindow", () => {
     // no room to unfurl rightward the pill grows left, so the canvas is
     // anchored by its right edge — and the card grows up, so the canvas
     // reserves its height above.
-    expect(companionWin()?.setPosition).toHaveBeenLastCalledWith(988, 195);
+    expect(companionWin()?.setPosition).toHaveBeenLastCalledWith(682, 195);
   });
 
   test("it comes back where it was left, from the centre rather than the bounds", () => {
@@ -515,7 +517,7 @@ describe("the canvas resizes for a size step and nothing else", () => {
       false,
     ]);
     // Same creature, same place — only bigger.
-    expect(win.setPosition).toHaveBeenLastCalledWith(807, 74);
+    expect(win.setPosition).toHaveBeenLastCalledWith(399, 74);
     expect(writeSettingMock).toHaveBeenCalledWith("companionCentre", {
       x: 1531,
       y: 558,
@@ -962,9 +964,9 @@ describe("main hit-tests the cursor against what was actually drawn", () => {
     ipcHandlers.get("vellum:companion:ready")?.([]);
     win.setIgnoreMouseEvents.mockClear();
 
-    // The window sits at (988, 195); a card drawn across its left half.
+    // The window sits at (682, 195); a card drawn across its left half.
     rect({ x: 10, y: 10, width: 300, height: 120 });
-    cursor = { x: 988 + 150, y: 195 + 60 };
+    cursor = { x: 682 + 150, y: 195 + 60 };
     await Bun.sleep(160);
 
     expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
@@ -978,9 +980,9 @@ describe("main hit-tests the cursor against what was actually drawn", () => {
     ipcHandlers.get("vellum:companion:ready")?.([]);
 
     rect({ x: 10, y: 10, width: 300, height: 120 });
-    cursor = { x: 988 + 150, y: 195 + 60 };
+    cursor = { x: 682 + 150, y: 195 + 60 };
     await Bun.sleep(160);
-    cursor = { x: 988 + 500, y: 195 + 400 };
+    cursor = { x: 682 + 500, y: 195 + 400 };
     await Bun.sleep(160);
 
     expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, {
@@ -995,7 +997,7 @@ describe("main hit-tests the cursor against what was actually drawn", () => {
     ipcHandlers.get("vellum:companion:ready")?.([]);
 
     rect({ x: 10, y: 10, width: 300, height: 120 });
-    cursor = { x: 988 + 150, y: 195 + 60 };
+    cursor = { x: 682 + 150, y: 195 + 60 };
     await Bun.sleep(160);
 
     expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({

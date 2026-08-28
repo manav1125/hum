@@ -1205,6 +1205,17 @@ export const installCompanionWindow = (): void => {
     summonCompanionCard();
   });
 
+  /**
+   * The companion window is holding a mic open, or has let it go.
+   *
+   * `listening` outranks everything but the card, which is what makes it the
+   * evidence it has to be: while a mic is open nothing quieter may cover it
+   * (`C11`). Main resolves that; the renderer only says which it is.
+   */
+  handle("vellum:companion:listening", z.tuple([z.boolean()]), ([on]) => {
+    phases?.set({ listening: on });
+  });
+
   /** `esc`, and the summon pressed a second time. Cancels nothing. */
   handle("vellum:companion:closeCard", z.tuple([]), () => {
     phases?.set({ typing: false });

@@ -14,28 +14,19 @@
  * nothing to turn it off.
  *
  * Used by the floating corner (F2·E), where no native code is needed because
- * the panel has focus while it is open.
+ * the panel has focus while it is open. The recording itself lives in
+ * {@link useTalkRecorder}, shared with the companion's pointer hold — this
+ * hook is only the keyboard half.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 
-import { useLiveTranscript } from "@/hooks/use-live-transcript";
+import {
+  useTalkRecorder,
+  type TalkRecorderState,
+} from "@/hooks/use-talk-recorder";
 
-import { notesVoicePost } from "@/generated/daemon/sdk.gen";
-
-export type HoldToTalkState = "idle" | "listening" | "transcribing";
-
-/** Below this it is a stray keypress, not a sentence. */
-const MIN_HOLD_MS = 400;
-
-function toBase64(buffer: ArrayBuffer): string {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.byteLength; i += 1) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
-  return btoa(binary);
-}
+export type HoldToTalkState = TalkRecorderState;
 
 export function useHoldToTalk({
   assistantId,
@@ -49,111 +40,13 @@ export function useHoldToTalk({
 }): {
   state: HoldToTalkState;
   error: string | null;
-  /** Words heard so far this hold — see {@link useLiveTranscript}. */
+  /** Words heard so far this hold. */
   partial: string;
 } {
-  const [state, setState] = useState<HoldToTalkState>("idle");
-  const live = useLiveTranscript();
-  const [error, setError] = useState<string | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const startedAtRef = useRef(0);
-  /** Guards against a key-repeat storm starting a second recorder. */
-  const startingRef = useRef(false);
-
-  const hardStop = useCallback(() => {
-    live.stop();
-    const recorder = recorderRef.current;
-    recorderRef.current = null;
-    startingRef.current = false;
-    if (!recorder) return null;
-    recorder.stream.getTracks().forEach((track) => track.stop());
-    return recorder;
-  }, [live]);
-
-  const finish = useCallback(async () => {
-    const recorder = recorderRef.current;
-    if (!recorder) return;
-
-    const durationMs = Date.now() - startedAtRef.current;
-    const mimeType = recorder.mimeType || "audio/webm";
-    const blob = await new Promise<Blob>((resolve) => {
-      recorder.onstop = () =>
-        resolve(new Blob(chunksRef.current, { type: mimeType }));
-      recorder.stop();
-    });
-    hardStop();
-
-    // A brush of the key is not a sentence. Silently returning to idle is
-    // right here — an error for that is noise.
-    if (durationMs < MIN_HOLD_MS || blob.size === 0) {
-      setState("idle");
-      return;
-    }
-
-    setState("transcribing");
-    try {
-      const result = await notesVoicePost({
-        path: { assistant_id: assistantId },
-        body: {
-          audioBase64: toBase64(await blob.arrayBuffer()),
-          mimeType,
-          audioDurationMs: durationMs,
-        },
-      });
-      const data = result.data as
-        | {
-            status: string;
-            note?: { body?: string } | null;
-            reason?: string | null;
-          }
-        | undefined;
-
-      if (data?.status === "created" && data.note?.body) {
-        onTranscript(data.note.body);
-        setError(null);
-      } else if (data?.status === "empty") {
-        setError("I couldn't make out anything in that.");
-      } else {
-        setError(data?.reason ?? "That didn't come through.");
-      }
-    } catch {
-      setError("That didn't come through.");
-    } finally {
-      setState("idle");
-    }
-  }, [assistantId, hardStop, onTranscript]);
-
-  const begin = useCallback(async () => {
-    if (recorderRef.current || startingRef.current) return;
-    startingRef.current = true;
-    setError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // The key may already be back up by the time permission resolves. Do
-      // not open a mic nobody is holding.
-      if (!startingRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      startedAtRef.current = Date.now();
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      startingRef.current = false;
-      // Display only, and started AFTER the recorder so a streaming failure can
-      // never cost the recording. See `useLiveTranscript`.
-      live.start();
-      setState("listening");
-    } catch {
-      startingRef.current = false;
-      setError("I couldn't reach your microphone. Nothing was recorded.");
-    }
-  }, [live]);
+  const { state, error, partial, begin, finish } = useTalkRecorder({
+    assistantId,
+    onTranscript,
+  });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -183,11 +76,8 @@ export function useHoldToTalk({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onHidden);
-      // The mic cannot survive this hook. If the panel closes mid-hold, the
-      // recording stops with it.
-      hardStop();
     };
-  }, [begin, finish, hardStop, modifier]);
+  }, [begin, finish, modifier]);
 
-  return { state, error, partial: live.text };
+  return { state, error, partial };
 }

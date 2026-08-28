@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import type { CompanionPhase } from "@vellumai/ipc-contract";
 
@@ -110,8 +110,31 @@ export interface CompanionSurfaceProps {
   /** What was caught, named exactly (`C10`). */
   caught?: { kind: string; label: string };
   onDropChoose?: (choice: "read" | "file" | "note") => void;
-  /** `◎ Hold to talk` on the hover pill. */
-  onTalk?: () => void;
+  /**
+   * `◎ Hold to talk` on the hover pill — the press, and the release.
+   *
+   * Two handlers rather than one `onClick` because the label is not a
+   * metaphor: the mic opens on the way down and closes on the way up, so it
+   * can never outlive the finger holding it. A click-to-toggle would leave a
+   * live microphone in a panel that floats over everything, which is the one
+   * thing this surface may not do.
+   */
+  onTalkStart?: () => void;
+  onTalkEnd?: () => void;
+  /**
+   * What has been heard so far this hold, and what became of it.
+   *
+   * The only thing the renderer says about itself. Main cannot know it — the
+   * words exist in this window and nowhere else — but main still owns the
+   * *phase*, so this is the words, never the state.
+   */
+  heard?: string;
+  /** The words are with the model. Not a phase: the mic is already shut. */
+  transcribing?: boolean;
+  /** The mic could not be reached, or the words did not come through. */
+  talkError?: string;
+  /** What a finished hold left in the composer, ready to send or keep. */
+  draft?: string;
   /** `✎ Type` on the hover pill — the same thing `⌥Space` does. */
   onType?: () => void;
   /** `↵` — ask Cue. Handed to the app; never answered into a thread. */
@@ -245,11 +268,54 @@ export function CompanionSurface(props: CompanionSurfaceProps): React.ReactEleme
   );
 }
 
+/**
+ * The last words of a live transcript, so a long sentence scrolls off its own
+ * front instead of pushing the pill past the canvas it was sized for.
+ *
+ * Words, not characters: cutting mid-word reads as a rendering fault rather
+ * than as speech still arriving.
+ */
+function tailWords(heard: string, max = 48): string {
+  const text = heard.trim();
+  if (text.length <= max) return text;
+  const words = text.split(/\s+/);
+  const kept: string[] = [];
+  let length = 0;
+  for (let i = words.length - 1; i >= 0; i -= 1) {
+    const word = words[i]!;
+    if (length + word.length + 1 > max) break;
+    kept.unshift(word);
+    length += word.length + 1;
+  }
+  return kept.length ? `\u2026 ${kept.join(" ")}` : text.slice(-max);
+}
+
 /** The horizontal states: everything that is not the typing card. */
 function Pill(
   props: CompanionSurfaceProps & { scale: number; creature: ReactNode },
 ): React.ReactElement {
   const { phase, scale, line, detail, growth, creature } = props;
+  /**
+   * What the mic has to say for itself, if anything.
+   *
+   * While it is open the pill shows the words as they arrive — and says
+   * "Listening…" until the first of them lands, so the creature breathing is
+   * never the only evidence that something is recording (`C11`). Afterwards
+   * it says what became of them, in the same place, because the release
+   * leaves the pointer exactly here and a result reported anywhere else is a
+   * result nobody sees.
+   *
+   * Clamped, because the canvas is fixed: a long sentence must scroll off its
+   * own front rather than push the pill past the edge it was sized for.
+   */
+  const talkNote =
+    phase === "listening"
+      ? props.heard
+        ? tailWords(props.heard)
+        : "Listening\u2026"
+      : props.transcribing
+        ? "Making that out\u2026"
+        : props.talkError;
   const pad =
     growth === "right"
       ? `${SEAT}px ${20 * scale}px ${SEAT}px ${SEAT}px`
@@ -273,15 +339,22 @@ function Pill(
       }}
     >
       {creature}
-      {phase === "hover" ? (
+      {/* Hover offers, unless the mic has something to report — a result the
+          affordances covered would be a result nobody ever saw. */}
+      {phase === "hover" && !talkNote ? (
         <HoverAffordances
           scale={scale}
-          {...(props.onTalk ? { onTalk: props.onTalk } : {})}
+          {...(props.onTalkStart ? { onTalkStart: props.onTalkStart } : {})}
+          {...(props.onTalkEnd ? { onTalkEnd: props.onTalkEnd } : {})}
           {...(props.onType ? { onType: props.onType } : {})}
         />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {line ? <span style={{ color: T1, whiteSpace: "nowrap" }}>{line}</span> : null}
+          {talkNote ?? line ? (
+            <span style={{ color: T1, whiteSpace: "nowrap" }}>
+              {talkNote ?? line}
+            </span>
+          ) : null}
           {detail ? (
             <span style={{ color: T2, fontSize: "0.86em", whiteSpace: "nowrap" }}>
               {detail}
@@ -325,16 +398,23 @@ function Pill(
  */
 function HoverAffordances({
   scale,
-  onTalk,
+  onTalkStart,
+  onTalkEnd,
   onType,
 }: {
   scale: number;
-  onTalk?: () => void;
+  onTalkStart?: () => void;
+  onTalkEnd?: () => void;
   onType?: () => void;
 }): React.ReactElement {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 14 * scale }}>
-      <AffordanceButton onClick={onTalk}>◎ Hold to talk</AffordanceButton>
+      <AffordanceButton
+        {...(onTalkStart ? { onPressStart: onTalkStart } : {})}
+        {...(onTalkEnd ? { onPressEnd: onTalkEnd } : {})}
+      >
+        ◎ Hold to talk
+      </AffordanceButton>
       <AffordanceButton onClick={onType}>✎ Type</AffordanceButton>
       {/* `␣` (U+2423) is missing from several mono faces and falls back to a
           tofu box; the system UI stack has it. */}
@@ -345,18 +425,48 @@ function HoverAffordances({
   );
 }
 
-/** An affordance that does the thing it names. ≥44pt effective (`C12`). */
+/**
+ * An affordance that does the thing it names. ≥44pt effective (`C12`).
+ *
+ * Either a press (`onClick`) or a hold (`onPressStart`/`onPressEnd`). The hold
+ * captures the pointer, so a finger that wanders off the button while held
+ * still delivers its release here — otherwise a drifting hand would leave the
+ * mic open with nothing to close it. `onPointerCancel` covers the rest: the
+ * system taking the gesture away is a release too.
+ */
 function AffordanceButton({
   children,
   onClick,
+  onPressStart,
+  onPressEnd,
 }: {
   children: ReactNode;
   onClick?: () => void;
+  onPressStart?: () => void;
+  onPressEnd?: () => void;
 }): React.ReactElement {
+  const held = Boolean(onPressStart);
   return (
     <button
       type="button"
-      onClick={onClick}
+      {...(onClick ? { onClick } : {})}
+      {...(held
+        ? {
+            onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
+              // The whole surface is a drag handle; a press that starts the
+              // mic must not also start walking the creature across the
+              // desktop.
+              event.stopPropagation();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onPressStart?.();
+            },
+            onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => {
+              event.stopPropagation();
+              onPressEnd?.();
+            },
+            onPointerCancel: () => onPressEnd?.(),
+          }
+        : {})}
       style={{
         background: "none",
         border: 0,
@@ -454,6 +564,7 @@ function TypingCard(
         onAsk={props.onAsk}
         onKeepAsNote={props.onKeepAsNote}
         onClose={props.onCloseCard}
+        {...(props.draft !== undefined ? { draft: props.draft } : {})}
       />
 
       <p style={{ margin: 0, color: T2, fontSize: 11 }}>
@@ -597,6 +708,11 @@ function CaughtChip({
     >
       {creature}
       <span
+        // Bounded, and ellipsised rather than wrapped. The canvas is fixed and
+        // never resizes on a phase, so a long filename must not be able to
+        // push the choices off the end of it — which is what clipped "Read it"
+        // in half on a real drop. `describeDrop` already trims the name and
+        // keeps the extension; this is the layout half of the same promise.
         style={{
           fontSize: "0.96em",
           color: T2,
@@ -605,6 +721,9 @@ function CaughtChip({
           borderRadius: 8,
           padding: "5px 10px",
           whiteSpace: "nowrap",
+          maxWidth: 190 * scale,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
         {caught.kind === "url" ? "🔗" : caught.kind === "text" ? "✎" : "📄"}{" "}
@@ -638,12 +757,30 @@ function Composer({
   onAsk,
   onKeepAsNote,
   onClose,
+  draft = "",
 }: {
   onAsk?: (message: string) => void;
   onKeepAsNote?: (note: string) => void;
   onClose?: () => void;
+  /**
+   * What a finished hold-to-talk left here.
+   *
+   * Speech chooses the words; it does not choose what they are for. The card
+   * has two verbs — `↵` asks and `⌘↵` keeps a note — so a transcript that
+   * sent itself would pick one for you, and the Notes ↔ Chat boundary is the
+   * stronger rule.
+   */
+  draft?: string;
 }): React.ReactElement {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(draft);
+  // A later hold appends to whatever is already here rather than replacing
+  // it, so a second sentence extends the first instead of eating it.
+  const seenDraft = useRef(draft);
+  useEffect(() => {
+    if (draft === seenDraft.current) return;
+    seenDraft.current = draft;
+    if (draft) setText((current) => (current ? `${current} ${draft}` : draft));
+  }, [draft]);
 
   return (
     <div

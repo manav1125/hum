@@ -193,6 +193,19 @@ export function companionOpenCard(): void {
   void window.vellum?.companion?.openCard?.();
 }
 
+/**
+ * Report that a mic is open in this window, or has just closed.
+ *
+ * This window is the only side that can hold a microphone; main is the only
+ * side that may decide a phase. So it reports, and main resolves — never the
+ * other way round, or the creature shows `listening` while main believes
+ * `resting` and hands the clicks to whatever it thinks is drawn.
+ */
+export function companionListening(on: boolean): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.listening?.(on);
+}
+
 /** `esc`. Closes the card; cancels nothing in flight. */
 export function companionCloseCard(): void {
   if (!isElectron()) return;

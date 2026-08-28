@@ -381,6 +381,8 @@ declare global {
         keepAsNote?(note: string): Promise<void>;
         openCard?(): Promise<void>;
         closeCard?(): Promise<void>;
+        /** A mic is open in this window, or has just closed (`C11`). */
+        listening?(on: boolean): Promise<void>;
         /** Answering a nudge (`C7`). Neither of these acts on anything. */
         nudgeOpen?(): Promise<void>;
         nudgeDismiss?(): Promise<void>;

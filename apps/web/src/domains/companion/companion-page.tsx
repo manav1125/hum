@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   companionDragBegin,
   companionDragEnd,
+  companionListening,
   companionOpenCard,
   companionTalk,
   companionOpenCue,
@@ -24,6 +25,9 @@ import {
   openCompanionMenu,
   subscribeCompanionState,
 } from "@/domains/companion/companion-bridge";
+
+import { readSelectedAssistantId } from "@/assistant/selected-assistant-storage";
+import { useTalkRecorder } from "@/hooks/use-talk-recorder";
 
 import { CompanionSurface, turnAnnouncement } from "./companion-surface";
 import type {
@@ -132,6 +136,95 @@ function describeDropped(
 export function CompanionPage(): React.ReactElement {
   const [state, setState] = useState<CompanionState>(RESTING);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const [draft, setDraft] = useState("");
+
+  /**
+   * Whose mic this is.
+   *
+   * The raw storage key, NOT `useActiveAssistantId()`. This is a standalone
+   * route — sibling of `/assistant`, outside auth and `RootLayout` so the
+   * panel loads instantly — so the lifecycle that resolves an assistant is
+   * not mounted above it and the hook would throw on first render. The key is
+   * written by the app in the *other* window of the same origin, which is why
+   * reading it here works at all, and why the `storage` event keeps it live
+   * if the owner switches assistants while the companion is up.
+   */
+  const [assistantId, setAssistantId] = useState(
+    () => readSelectedAssistantId() ?? "",
+  );
+  useEffect(() => {
+    const reread = () => setAssistantId(readSelectedAssistantId() ?? "");
+    window.addEventListener("storage", reread);
+    window.addEventListener("vellum:pref-changed", reread);
+    return () => {
+      window.removeEventListener("storage", reread);
+      window.removeEventListener("vellum:pref-changed", reread);
+    };
+  }, []);
+
+  /**
+   * `◎ Hold to talk`, held right here (`C2`).
+   *
+   * The transcript lands in the card rather than sending itself. The card has
+   * two verbs — `↵` asks and `⌘↵` keeps a note — so speech that sent itself
+   * would pick one for you, and the Notes ↔ Chat boundary is the stronger
+   * rule: speech chooses the words, the owner still chooses what they are for.
+   */
+  const onTranscript = useCallback((text: string) => {
+    setDraft(text);
+    // The card is main's to open — it owns the geometry the card unfurls
+    // into — so this asks for it rather than drawing one.
+    companionOpenCard();
+  }, []);
+  const talk = useTalkRecorder({ assistantId, onTranscript });
+
+  /**
+   * Report the mic to main, which owns the phase.
+   *
+   * `transcribing` reports as *not* listening, and that is the honest
+   * reading: the mic is shut by then. The pill says what became of the words
+   * through `talkError`; the ring is reserved for a microphone that is
+   * actually open.
+   */
+  useEffect(() => {
+    companionListening(talk.state === "listening");
+  }, [talk.state]);
+
+  /**
+   * A failure says its piece and then gets out of the way.
+   *
+   * It renders on the pill, on top of the affordances — so one that never
+   * expired would leave the surface with a permanent complaint where "Hold to
+   * talk" used to be.
+   */
+  const { error: talkError, dismissError } = talk;
+  useEffect(() => {
+    if (!talkError) return;
+    const timer = setTimeout(dismissError, 6_000);
+    return () => clearTimeout(timer);
+  }, [talkError, dismissError]);
+
+  /**
+   * The stops a pointer hold cannot deliver for itself.
+   *
+   * A press that ends because the window went away never sends its own
+   * release, so without these a mic could outlive the gesture that opened it
+   * — the one thing this surface may not do.
+   */
+  const { state: talkState, finish: finishTalk } = talk;
+  useEffect(() => {
+    if (talkState !== "listening") return;
+    const stop = () => void finishTalk();
+    const onHidden = () => {
+      if (document.hidden) stop();
+    };
+    window.addEventListener("blur", stop);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("blur", stop);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
+  }, [talkState, finishTalk]);
 
   // Main publishes every change; the renderer never invents one. The one-shot
   // pull is for a cold window whose route chunk was still loading when main
@@ -377,12 +470,24 @@ export function CompanionPage(): React.ReactElement {
           onIntroNext={companionIntroNext}
           onIntroDismiss={companionIntroDismiss}
           onType={companionOpenCard}
-          // Real hold-to-talk in this window needs mic capture and an
-          // assistant id the floating route does not carry — a feature slice,
-          // not a wiring fix. Until then this opens the voice surface, which
-          // is what the tray's "Talk to Cue" already does: a press that goes
-          // somewhere beats a label that goes nowhere.
-          onTalk={() => void companionTalk()}
+          draft={draft}
+          {...(talk.partial ? { heard: talk.partial } : {})}
+          {...(talk.state === "transcribing" ? { transcribing: true } : {})}
+          {...(talk.error ? { talkError: talk.error } : {})}
+          /**
+           * Hold to talk, held here — unless there is no assistant to
+           * transcribe for.
+           *
+           * That happens in a window opened before the app has ever resolved
+           * one. Rather than record into nothing and fail at the end, the
+           * press falls back to the voice surface, which mounts the whole
+           * lifecycle and can resolve an assistant for itself. A press that
+           * goes somewhere beats one that records and then apologises.
+           */
+          onTalkStart={
+            assistantId ? () => void talk.begin() : () => void companionTalk()
+          }
+          {...(assistantId ? { onTalkEnd: () => void talk.finish() } : {})}
           onOpen={() =>
             phase === "nudge" ? companionNudgeOpen() : void companionOpenCue()
           }
