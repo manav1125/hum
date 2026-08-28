@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   companionDragBegin,
   companionDragEnd,
+  companionOpenCard,
+  companionTalk,
   companionOpenCue,
   companionIntroDismiss,
   companionIntroNext,
@@ -374,6 +376,13 @@ export function CompanionPage(): React.ReactElement {
           onCloseCard={companionCloseCard}
           onIntroNext={companionIntroNext}
           onIntroDismiss={companionIntroDismiss}
+          onType={companionOpenCard}
+          // Real hold-to-talk in this window needs mic capture and an
+          // assistant id the floating route does not carry — a feature slice,
+          // not a wiring fix. Until then this opens the voice surface, which
+          // is what the tray's "Talk to Cue" already does: a press that goes
+          // somewhere beats a label that goes nowhere.
+          onTalk={() => void companionTalk()}
           onOpen={() =>
             phase === "nudge" ? companionNudgeOpen() : void companionOpenCue()
           }

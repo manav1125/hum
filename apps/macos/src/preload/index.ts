@@ -703,6 +703,9 @@ const bridge: VellumBridge = {
       ipcRenderer.invoke("vellum:companion:ask", message) as Promise<void>,
     keepAsNote: (note: string): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:keepAsNote", note) as Promise<void>,
+    /** `✎ Type` on the hover pill — the same thing `⌥Space` does. */
+    openCard: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:openCard") as Promise<void>,
     /** `esc`. Closes the card and cancels nothing. */
     closeCard: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:closeCard") as Promise<void>,

@@ -37,6 +37,7 @@ const getStatusSpy = mock(() => Promise.resolve(pulledStatus));
 const getStateSpy = mock(() => Promise.resolve(pulledState));
 const pointerOverSpy = mock((_over: boolean) => undefined);
 const readySpy = mock(() => undefined);
+const openCardSpy = mock(() => undefined);
 const drawnRectSpy = mock(
   (_r: { x: number; y: number; width: number; height: number }) => undefined,
 );
@@ -68,6 +69,7 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   setCompanionPointerOver: pointerOverSpy,
   setCompanionDrawnRect: drawnRectSpy,
   companionReady: readySpy,
+  companionOpenCard: openCardSpy,
   companionDragBegin: dragBeginSpy,
   companionDragEnd: dragEndSpy,
   openCompanionMenu: menuSpy,
@@ -180,6 +182,7 @@ beforeEach(() => {
   pointerOverSpy.mockClear();
   drawnRectSpy.mockClear();
   readySpy.mockClear();
+  openCardSpy.mockClear();
   dragBeginSpy.mockClear();
   dragEndSpy.mockClear();
   menuSpy.mockClear();
@@ -626,6 +629,23 @@ describe("drops — the arc's mouth is the slot (C10)", () => {
 
     fireEvent.click(screen.getByLabelText("Let it go"));
     expect(dropReleaseSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the hover pill offers actions it can actually perform", () => {
+  test("REGRESSION: the affordances are buttons, not labels", async () => {
+    // They were two `<span>`s. The pill unfurled, named two things you could
+    // do, and neither was attached to anything — so the surface looked right
+    // and did nothing, which reads as broken rather than unfinished.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "hover" });
+
+    fireEvent.click(screen.getByText("✎ Type"));
+    expect(openCardSpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText("◎ Hold to talk"));
+    expect(talkSpy).toHaveBeenCalledTimes(1);
   });
 });
 

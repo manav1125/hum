@@ -1194,6 +1194,17 @@ export const installCompanionWindow = (): void => {
     },
   );
 
+  /**
+   * `✎ Type` on the hover pill — the same thing `⌥Space` does.
+   *
+   * Routed through main rather than set in the renderer because main owns the
+   * phase, and because the summon has to work identically whether it came
+   * from a key or a click.
+   */
+  handle("vellum:companion:openCard", z.tuple([]), () => {
+    summonCompanionCard();
+  });
+
   /** `esc`, and the summon pressed a second time. Cancels nothing. */
   handle("vellum:companion:closeCard", z.tuple([]), () => {
     phases?.set({ typing: false });

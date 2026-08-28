@@ -196,12 +196,16 @@ const KIND_TINT: Record<string, string> = {
  * itself fails — an unread health check is not evidence of a problem.
  */
 /**
- * The most the daemon serves in one call — `listContacts` caps at 200.
+ * Everyone, not a page of them.
  *
- * Named because two places have to agree: the request, and the notice that
- * admits the list was cut.
+ * The route's default cap is 200; asking above it lifts the cap, because this
+ * page's whole promise is completeness. It was showing the 200 most recently
+ * updated, so anyone older quietly dropped off and Cue looked like it was
+ * forgetting people it still knew. The ceiling stays finite so a runaway
+ * contact table cannot hang the page, and the notice below still admits it if
+ * anyone ever reaches it.
  */
-const PEOPLE_PAGE_LIMIT = 200;
+const PEOPLE_PAGE_LIMIT = 5000;
 
 function ExtractionHealthNotice({ assistantId }: { assistantId: string }) {
   const health = useQuery({
@@ -484,8 +488,8 @@ function ContactList({
         // dishonesty this surface exists to avoid — and it is what made the
         // list look like it was losing people.
         <p style={{ fontSize: 11.5, color: C.t3, margin: 0 }}>
-          Showing the {PEOPLE_PAGE_LIMIT} most recently updated. Search reaches
-          the rest.
+          Showing the {PEOPLE_PAGE_LIMIT} most recently updated — there are
+          more. Search reaches them.
         </p>
       ) : null}
       <input

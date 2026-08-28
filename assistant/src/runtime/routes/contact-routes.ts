@@ -155,7 +155,15 @@ function handleListContacts(queryParams: Record<string, string>) {
     };
   }
 
-  const contacts = listContacts(limit, role, contactType);
+  // **People is meant to be everyone Cue knows.** The 200 cap is a guard
+  // against an unbounded read from a generic list call; the People page is the
+  // one caller whose entire promise is completeness, and with the cap it
+  // silently showed the most recently updated 200 while older people dropped
+  // off — which reads as Cue forgetting them. An explicit `limit` above the
+  // cap is treated as that caller asking for the whole set.
+  const contacts = listContacts(limit, role, contactType, {
+    uncapped: limit > 200,
+  });
   return {
     ok: true,
     contacts: dedupeContactsForDisplay(contacts.map(withGuardianNameOverride)),
@@ -358,7 +366,9 @@ export const ROUTES: RouteDefinition[] = [
       {
         name: "limit",
         schema: { type: "integer" },
-        description: "Max contacts to return (default 50)",
+        description:
+          "Max contacts to return (default 50). Values above 200 lift the " +
+          "default cap — People asks for the whole set.",
       },
       {
         name: "role",

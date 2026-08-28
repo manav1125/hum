@@ -187,6 +187,12 @@ export function companionKeepAsNote(note: string): void {
   void window.vellum?.companion?.keepAsNote?.(note);
 }
 
+/** `✎ Type` on the hover pill — the same thing `⌥Space` does. */
+export function companionOpenCard(): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.openCard?.();
+}
+
 /** `esc`. Closes the card; cancels nothing in flight. */
 export function companionCloseCard(): void {
   if (!isElectron()) return;

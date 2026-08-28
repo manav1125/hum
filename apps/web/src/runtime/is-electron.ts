@@ -379,6 +379,7 @@ declare global {
         /** The typing card's two verbs (`C2`). Both hand off to the app. */
         ask?(message: string): Promise<void>;
         keepAsNote?(note: string): Promise<void>;
+        openCard?(): Promise<void>;
         closeCard?(): Promise<void>;
         /** Answering a nudge (`C7`). Neither of these acts on anything. */
         nudgeOpen?(): Promise<void>;

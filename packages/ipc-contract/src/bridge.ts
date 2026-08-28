@@ -447,6 +447,8 @@ export interface VellumBridge {
      */
     ask(message: string): Promise<void>;
     keepAsNote(note: string): Promise<void>;
+    /** `✎ Type` on the hover pill — the same thing `⌥Space` does. */
+    openCard(): Promise<void>;
     /** `esc`. Closes the card and cancels nothing in flight. */
     closeCard(): Promise<void>;
     nudgeOpen(): Promise<void>;

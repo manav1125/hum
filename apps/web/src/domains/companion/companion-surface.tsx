@@ -110,6 +110,10 @@ export interface CompanionSurfaceProps {
   /** What was caught, named exactly (`C10`). */
   caught?: { kind: string; label: string };
   onDropChoose?: (choice: "read" | "file" | "note") => void;
+  /** `◎ Hold to talk` on the hover pill. */
+  onTalk?: () => void;
+  /** `✎ Type` on the hover pill — the same thing `⌥Space` does. */
+  onType?: () => void;
   /** `↵` — ask Cue. Handed to the app; never answered into a thread. */
   onAsk?: (message: string) => void;
   /** `⌘↵` — keep what you typed as a note instead (`Q4`). */
@@ -270,7 +274,11 @@ function Pill(
     >
       {creature}
       {phase === "hover" ? (
-        <HoverAffordances scale={scale} />
+        <HoverAffordances
+          scale={scale}
+          {...(props.onTalk ? { onTalk: props.onTalk } : {})}
+          {...(props.onType ? { onType: props.onType } : {})}
+        />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {line ? <span style={{ color: T1, whiteSpace: "nowrap" }}>{line}</span> : null}
@@ -307,17 +315,61 @@ function Pill(
   );
 }
 
-function HoverAffordances({ scale }: { scale: number }): React.ReactElement {
+/**
+ * What hover offers — and, until now, only *said* it offered.
+ *
+ * These were two `<span>`s. The pill unfurled, named two things you could do,
+ * and neither was attached to anything: the window was interactive the whole
+ * time and there was simply nothing behind the words. A surface that lists
+ * actions it cannot perform is worse than one that lists none.
+ */
+function HoverAffordances({
+  scale,
+  onTalk,
+  onType,
+}: {
+  scale: number;
+  onTalk?: () => void;
+  onType?: () => void;
+}): React.ReactElement {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 14 * scale }}>
-      <span style={{ color: T1, whiteSpace: "nowrap" }}>◎ Hold to talk</span>
-      <span style={{ color: T1, whiteSpace: "nowrap" }}>✎ Type</span>
+      <AffordanceButton onClick={onTalk}>◎ Hold to talk</AffordanceButton>
+      <AffordanceButton onClick={onType}>✎ Type</AffordanceButton>
       {/* `␣` (U+2423) is missing from several mono faces and falls back to a
           tofu box; the system UI stack has it. */}
       <span style={{ color: T2, fontSize: "0.86em", letterSpacing: ".04em" }}>
         ⌥␣
       </span>
     </div>
+  );
+}
+
+/** An affordance that does the thing it names. ≥44pt effective (`C12`). */
+function AffordanceButton({
+  children,
+  onClick,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: "none",
+        border: 0,
+        font: "inherit",
+        color: T1,
+        whiteSpace: "nowrap",
+        cursor: "pointer",
+        margin: "-12px",
+        padding: 12,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
