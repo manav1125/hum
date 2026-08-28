@@ -1160,6 +1160,36 @@ describe("the summon, and the card's two verbs (C12, C2)", () => {
     });
   });
 
+  test("REGRESSION: it brings a hidden companion back", async () => {
+    // The guard used to refuse when hidden, directly under a comment claiming
+    // it did the opposite — so hiding the creature made the one key that
+    // brings it back do nothing, and the menu bar became the only way in.
+    // That is the corner a keyboard path exists to avoid.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    settingsState["companionVisible"] = false;
+    installCompanionWindow();
+    expect(created).toHaveLength(0);
+
+    summonCompanionCard();
+
+    expect(writeSettingMock).toHaveBeenCalledWith("companionVisible", true);
+    expect(created).toHaveLength(1);
+  });
+
+  test("and clears a hide-until-tomorrow while it is at it", () => {
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    settingsState["companionHiddenUntil"] = new Date(
+      Date.now() + 60_000,
+    ).toISOString();
+    installCompanionWindow();
+    expect(created).toHaveLength(0);
+
+    summonCompanionCard();
+    expect(created).toHaveLength(1);
+  });
+
   test("it does nothing at all when the companion is off", () => {
     installCompanionWindow();
     expect(() => summonCompanionCard()).not.toThrow();

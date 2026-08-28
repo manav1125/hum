@@ -19,7 +19,7 @@ import {
   consumePendingComposerFocus,
   insertTextAtSelection,
   shouldFocusComposerForTyping,
-} from "@/domains/chat/composer-focus";
+} from "@/utils/composer-focus";
 import { useComposerStore } from "@/domains/chat/composer-store";
 
 export function useComposerKeyboard(

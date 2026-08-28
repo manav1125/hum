@@ -684,6 +684,11 @@ async function contactMemoryExtractJob(
       );
     case "empty_reply":
       return jobEmpty("the model was reached and returned nothing at all");
+    case "no_channel":
+      // Not a failure: a desktop chat with Cue has no second person in it.
+      // Counting these as failed identifications is what made an ordinary
+      // day's conversations read as an outage on the People page.
+      return jobSkipped("this conversation has nobody in it but you and Cue");
     case "not_identified":
       return jobSkipped("the conversation is not bound to a known person");
     case "no_transcript":

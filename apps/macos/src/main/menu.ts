@@ -280,9 +280,14 @@ const buildTemplate = (): MenuItemConstructorOptions[] => {
         },
         { type: "separator" },
         {
+          // Was `docs.vellum.ai` — a menu item labelled "Cue Documentation"
+          // that opened the upstream fork's company documentation. Cue has no
+          // docs site yet (`docs.justcue.ai` does not resolve and
+          // `justcue.ai/docs` is a 404), so this lands on Cue's own site:
+          // less useful than real documentation, and not another company's.
           label: "Cue Documentation",
           click: () => {
-            void shell.openExternal("https://docs.vellum.ai");
+            void shell.openExternal("https://justcue.ai");
           },
         },
       ],

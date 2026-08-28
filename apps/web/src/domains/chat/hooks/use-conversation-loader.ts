@@ -21,7 +21,7 @@ import {
 import { toast } from "@vellumai/design-library";
 
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
-import { requestComposerFocus } from "@/domains/chat/composer-focus";
+import { requestComposerFocus } from "@/utils/composer-focus";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
 import { useConversationStore } from "@/stores/conversation-store";
 import { haptic } from "@/utils/haptics";

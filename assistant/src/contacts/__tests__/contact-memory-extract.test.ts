@@ -201,7 +201,9 @@ describe("runContactMemoryExtraction", () => {
     ]);
 
     const outcome = await runContactMemoryExtraction(conv.id);
-    expect(outcome.kind).toBe("not_identified");
+    // A desktop chat has no channel, so there was never anybody to identify —
+    // distinct from a channel that resolved to nobody.
+    expect(outcome.kind).toBe("no_channel");
     // The LLM is never even called for an unidentified conversation.
     expect(sidechainCalls).toBe(0);
     // And no rows land anywhere.
@@ -254,14 +256,23 @@ describe("runContactMemoryExtraction", () => {
 
 describe("a run of conversations that resolve nobody", () => {
   test("stops being silent: the health record goes degraded and says why", async () => {
-    // Exactly what production did: local conversations, no channel binding,
-    // every job completing having written nothing.
+    // A channel arrived and resolved to nobody — the case the owner can
+    // actually act on. Local desktop chats used to count here too, which is
+    // what put "Cue is reading your channels but learning nothing about the
+    // people in them" on an instance whose channels were fine; they are
+    // excluded now and covered by their own test below.
     for (let i = 0; i < UNIDENTIFIED_CONVERSATION_WARN_AT; i++) {
       const conv = bootstrapConversation({
         conversationType: "standard",
-        source: "vellum",
-        origin: "local",
-        systemHint: "local chat",
+        source: "slack",
+        origin: "channel_inbound",
+        systemHint: "Slack DM",
+      });
+      upsertBinding({
+        conversationId: conv.id,
+        sourceChannel: "slack",
+        externalChatId: `C-NOBODY-${i}`,
+        externalUserId: `U-NOBODY-${i}`,
       });
       const outcome = await runContactMemoryExtraction(conv.id);
       expect(outcome.kind).toBe("not_identified");
@@ -279,9 +290,15 @@ describe("a run of conversations that resolve nobody", () => {
     for (let i = 0; i < UNIDENTIFIED_CONVERSATION_WARN_AT; i++) {
       const conv = bootstrapConversation({
         conversationType: "standard",
-        source: "vellum",
-        origin: "local",
-        systemHint: "local chat",
+        source: "slack",
+        origin: "channel_inbound",
+        systemHint: "Slack DM",
+      });
+      upsertBinding({
+        conversationId: conv.id,
+        sourceChannel: "slack",
+        externalChatId: `C-NONE-${i}`,
+        externalUserId: `U-NONE-${i}`,
       });
       await runContactMemoryExtraction(conv.id);
     }
@@ -399,5 +416,31 @@ describe("buildExtractionPrompt", () => {
     const bodyEnd = prompt.indexOf("</transcript>", bodyStart);
     const body = prompt.slice(bodyStart, bodyEnd);
     expect(body).not.toContain("</transcript>");
+  });
+});
+
+describe("a conversation with nobody in it is not a failure", () => {
+  test("REGRESSION: talking to Cue all day never degrades People", async () => {
+    // Most of anyone's conversations are with Cue itself. Those have no second
+    // person to find and never did — counting them as failed identifications
+    // told the owner "Cue is reading your channels but learning nothing about
+    // the people in them" about channels that were working, on a page whose
+    // emptiness then looked like breakage.
+    for (let i = 0; i < UNIDENTIFIED_CONVERSATION_WARN_AT * 2; i++) {
+      const conv = bootstrapConversation({
+        conversationType: "standard",
+        source: "vellum",
+        origin: "local",
+        systemHint: "local chat",
+      });
+      const outcome = await runContactMemoryExtraction(conv.id);
+      expect(outcome.kind).toBe("no_channel");
+    }
+
+    const health = getContactMemoryHealth();
+    expect(health.degraded).toBe(false);
+    expect(health.degradedReason).toBeNull();
+    // And they are not counted as runs at all — the record is about channels.
+    expect(health.conversationRuns).toBe(0);
   });
 });

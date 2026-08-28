@@ -923,9 +923,16 @@ const afterCardRemoved = (): void => {
  * summon you have to reach for the mouse to undo.
  */
 export const summonCompanionCard = (): void => {
-  if (!isCompanionEnabled() || !isCompanionVisible()) return;
-  // A hidden companion is summoned back into view rather than refused: the
-  // key is the way in for somebody who cannot reach the menu bar either.
+  if (!isCompanionEnabled()) return;
+  // **A hidden companion is summoned back into view, not refused.** The guard
+  // here used to include `!isCompanionVisible()`, two lines above this comment
+  // saying the opposite — so hiding the creature made the one key that brings
+  // it back do nothing, and the menu bar became the only way in. That is
+  // exactly the corner a keyboard path exists to avoid.
+  if (!isCompanionVisible()) {
+    clearSetting("companionHiddenUntil");
+    writeSetting("companionVisible", true);
+  }
   if (!companionWindow()) syncCompanionWindow();
   const typing = phases?.read().typing ?? false;
   phases?.set({ typing: !typing });

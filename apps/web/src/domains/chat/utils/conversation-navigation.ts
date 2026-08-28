@@ -5,7 +5,7 @@ import { isElectron } from "@/runtime/is-electron";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
-import { requestComposerFocus } from "@/domains/chat/composer-focus";
+import { requestComposerFocus } from "@/utils/composer-focus";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
 import { useViewerStore } from "@/stores/viewer-store";

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   insertTextAtSelection,
   shouldFocusComposerForTyping,
-} from "@/domains/chat/composer-focus";
+} from "@/utils/composer-focus";
 
 const BASE_EVENT = {
   altKey: false,

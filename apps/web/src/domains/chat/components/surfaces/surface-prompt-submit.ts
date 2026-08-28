@@ -10,7 +10,7 @@
  * Surfaces render deep inside the transcript, far below where
  * `useComposerSubmit` lives (`chat-route-content.tsx`), so rather than
  * threading a callback through every transcript layer this mirrors the
- * window-event pattern of `composer-focus.ts`: the surface dispatches, the
+ * window-event pattern of `@/utils/composer-focus`: the surface dispatches, the
  * mounted chat route listens and calls `submitMessage(prompt)`.
  *
  * If no listener is mounted (e.g. a story/test rendering a surface in

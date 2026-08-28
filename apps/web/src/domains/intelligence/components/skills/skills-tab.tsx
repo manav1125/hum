@@ -3,6 +3,9 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { requestComposerFocus } from "@/utils/composer-focus";
+import { routes } from "@/utils/routes";
+
 import { SkillCard } from "@/domains/intelligence/components/skills/skill-card";
 import { SkillCategoryIndex } from "@/domains/intelligence/components/skills/skill-category-index";
 import { SkillDetail } from "@/domains/intelligence/components/skills/skill-detail";
@@ -372,7 +375,14 @@ function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
             className="cue-pressable"
             onClick={() => {
               haptic.light();
-              void navigate("/assistant/");
+              // Skills are written by asking Cue — there is no separate
+              // creation surface — so this lands in the composer, focused and
+              // ready. It used to navigate to `/assistant/` and stop there:
+              // from inside the app that is a move to a page you may already
+              // be on, with nothing focused and nothing said, which reads as a
+              // button that does nothing at all.
+              void navigate(routes.home);
+              requestComposerFocus();
             }}
             style={{
               fontSize: 12.5,

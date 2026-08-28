@@ -148,6 +148,24 @@ export interface IdentifiedContact {
  * chat id doesn't map to a single contact, yields null — we never guess a
  * contact from message content, so a fact is never bound to the wrong person.
  */
+/**
+ * Could this conversation identify anyone at all?
+ *
+ * True when it carries a channel binding or inbound-channel state — the only
+ * two things identification reads. False for a desktop chat with Cue, where
+ * there is no second person to find and never was.
+ */
+export function conversationHasChannel(conversationId: string): boolean {
+  if (getBindingByConversation(conversationId)) return true;
+  const db = getDb();
+  const inbox = db
+    .select({ conversationId: assistantInboxConversationState.conversationId })
+    .from(assistantInboxConversationState)
+    .where(eq(assistantInboxConversationState.conversationId, conversationId))
+    .get();
+  return Boolean(inbox);
+}
+
 export function identifyConversationContact(
   conversationId: string,
 ): IdentifiedContact | null {
@@ -431,8 +449,9 @@ function evaluateDegraded(): void {
 /** Fold one conversation-keyed run into the record. */
 function recordConversationRun(outcome: ContactMemoryExtractOutcome): void {
   // "disabled" is a switch the owner threw, not a failure — it must not
-  // accumulate a streak that reads as breakage.
-  if (outcome.kind === "disabled") return;
+  // accumulate a streak that reads as breakage. Neither must a conversation
+  // that never had anybody in it to find.
+  if (outcome.kind === "disabled" || outcome.kind === "no_channel") return;
 
   health.conversationRuns++;
   if (outcome.kind === "extracted") {
@@ -524,6 +543,17 @@ export function enqueueContactMemoryExtractIfEnabled(args: {
 
 export type ContactMemoryExtractOutcome =
   | { kind: "disabled" }
+  /**
+   * The conversation has no channel to identify anyone through — a desktop
+   * chat with Cue itself, which has no other person in it by definition.
+   *
+   * Distinct from `not_identified`, which means there WAS a channel and no
+   * contact matched it. Only the second is a failure; the first is what most
+   * of a person's conversations legitimately are, and counting it as a failed
+   * identification is what produced "Cue is reading your channels but learning
+   * nothing about the people in them" on an instance whose channels were fine.
+   */
+  | { kind: "no_channel" }
   | { kind: "not_identified" }
   | { kind: "no_transcript" }
   | { kind: "no_provider" }
@@ -633,11 +663,17 @@ async function runContactMemoryExtractionInner(
 
   const identified = identifyConversationContact(conversationId);
   if (!identified) {
+    // Separate "nobody to identify" from "could not identify anybody". A chat
+    // between the owner and Cue has no second person in it; treating that as a
+    // failed identification makes every ordinary day look like an outage.
+    const addressable = conversationHasChannel(conversationId);
     log.debug(
-      { conversationId },
-      "no confidently-identified contact; extracting nothing",
+      { conversationId, addressable },
+      addressable
+        ? "channel present but no contact matched; extracting nothing"
+        : "no channel on this conversation; nobody to identify",
     );
-    return { kind: "not_identified" };
+    return addressable ? { kind: "not_identified" } : { kind: "no_channel" };
   }
 
   const conversation = getConversation(conversationId);

@@ -29,7 +29,17 @@ import { createWindow } from "./windows";
  * right metadata.
  */
 
-const WEBSITE = "https://vellum.ai";
+/**
+ * Cue's own site.
+ *
+ * This was `https://vellum.ai` — the upstream fork's company, shown in Cue's
+ * About box and clickable. Pointing an owner at another company's domain from
+ * inside the product is the same leak class as the sign-in redirect that once
+ * asked Cue users for credentials on `vellum.ai`: a host is neither a display
+ * string nor a protocol identifier, so the rebrand's usual two-way split
+ * misses it.
+ */
+const WEBSITE = "https://justcue.ai";
 
 // Injected by `electron.vite.config.ts` at build time.
 declare const __VELLUM_BUILD_SHA__: string;

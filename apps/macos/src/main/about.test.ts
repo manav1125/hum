@@ -121,7 +121,7 @@ describe("getVersionInfo", () => {
     const info = getVersionInfo();
     expect(info.appName).toBe("Cue");
     expect(info.version).toBe("1.2.3");
-    expect(info.website).toBe("https://vellum.ai");
+    expect(info.website).toBe("https://justcue.ai");
     expect(info.copyright).toContain("Cue");
     expect(info.copyright).toContain(String(new Date().getFullYear()));
     // SHA isn't defined off the build pipeline; the module falls back
@@ -154,7 +154,7 @@ describe("installAbout", () => {
     };
     expect(opts.applicationName).toBe("Cue");
     expect(opts.applicationVersion).toBe("1.2.3");
-    expect(opts.website).toBe("https://vellum.ai");
+    expect(opts.website).toBe("https://justcue.ai");
   });
 });
 

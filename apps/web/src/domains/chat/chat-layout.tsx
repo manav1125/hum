@@ -66,7 +66,7 @@ import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-st
 import { useConversationStore } from "@/stores/conversation-store";
 import { useViewerStore } from "@/stores/viewer-store";
 import type { Conversation } from "@/types/conversation-types";
-import { requestComposerFocus } from "./composer-focus";
+import { requestComposerFocus } from "@/utils/composer-focus";
 
 import { LazyBoundary } from "@/components/lazy-boundary";
 import { StatusBanner } from "@/components/status-banner";
@@ -472,7 +472,7 @@ export function ChatLayout() {
   // Electron host commands (File menu / global hotkeys). The hook is a
   // no-op on the web host. Handlers close over the latest state via an
   // internal ref, so we don't need to memoize them. Composer focus is
-  // routed via `requestComposerFocus` (see `./composer-focus.ts`) so it
+  // routed via `requestComposerFocus` (see `@/utils/composer-focus`) so it
   // works whether ChatPage is already mounted (event listener) or the
   // command comes from another `/assistant/*` route (pending flag drained
   // on the next ChatPage mount).
