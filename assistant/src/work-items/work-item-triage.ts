@@ -37,9 +37,11 @@ import {
   classifyAutonomy,
 } from "../permissions/autonomy-class.js";
 import { getAutonomyPolicy } from "../permissions/autonomy-policy-reader.js";
+import { effectiveAgentAutonomy } from "../playbooks/autonomy-cap.js";
 import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
 import { getLogger } from "../util/logger.js";
+import { resolveAgent } from "./agent-binding.js";
 import { listProjects, type Project } from "./project-store.js";
 import { findAuthorizingStandingRule } from "./standing-rules-store.js";
 import {
@@ -552,6 +554,8 @@ export interface AutoRunDecision {
     | "hard_denied"
     | "policy_ask"
     | "concurrency_cap"
+    | "agent_paused"
+    | "agent_tier"
     | "run_failed";
 }
 
@@ -589,6 +593,37 @@ export async function maybeAutoRunWorkItem(
       "auto-run hard-denied: required tools need a human in the loop (item stays queued)",
     );
     return { started: false, reason: "hard_denied" };
+  }
+
+  // Per-agent posture, evaluated after the hard-deny floor and before the
+  // per-category policy.
+  //
+  // The roster's tier and pause toggle used to be display-only: an agent set
+  // to "suggests only" auto-ran exactly like one set to "acts autonomously",
+  // and pausing an agent stopped nothing. Both are controls the owner reaches
+  // for precisely to say how much a named agent may do on its own, so leaving
+  // them inert made the whole roster advisory.
+  //
+  // The tier sits alongside the global dial rather than under it: an agent
+  // held at draft must not act even when the workspace is Autonomous, because
+  // that setting is the reason the owner staffed it that way.
+  const itemAgent = resolveAgent({ assignee: item.assignee });
+  if (itemAgent) {
+    const autonomy = effectiveAgentAutonomy("auto", itemAgent);
+    if (autonomy.pausedAgent) {
+      log.info(
+        { workItemId, agent: itemAgent.name },
+        "auto-run deferred: agent is paused (item stays queued)",
+      );
+      return { started: false, reason: "agent_paused" };
+    }
+    if (autonomy.effective !== "auto") {
+      log.info(
+        { workItemId, agent: itemAgent.name, tier: itemAgent.tier },
+        "auto-run deferred: agent's tier does not permit acting unattended",
+      );
+      return { started: false, reason: "agent_tier" };
+    }
   }
 
   const policy = await getAutonomyPolicy();
