@@ -50,6 +50,7 @@ import { parseIdentityFields } from "./handlers/identity.js";
 import type { ConversationCreateOptions } from "./handlers/shared.js";
 import { setGlobalSkillIpcSender } from "./meet-host-supervisor.js";
 import { PluginSourceWatcher } from "./plugin-source-watcher.js";
+import { mayDiscardOnReload } from "./reload-eviction.js";
 import { refreshSkillCapabilityMemories } from "./skill-memory-refresh.js";
 import { WorkspaceToolsWatcher } from "./workspace-tools-watcher.js";
 
@@ -400,7 +401,20 @@ export class DaemonServer {
   private evictConversationsForReload(): void {
     const subagentManager = getSubagentManager();
     for (const [id, conversation] of conversationEntries()) {
-      if (!conversation.isProcessing()) {
+      // `isProcessing()` alone is not "safe to discard". Subagents spawn
+      // asynchronously, so a parent waiting on a child sits idle between tool
+      // calls — and evicting it aborts that child. Saving SOUL.md, a skill, or
+      // config would therefore kill mid-task subagents, which is exactly what
+      // an owner does while watching one work.
+      //
+      // The TTL/LRU evictor already knows the right predicate; the reload path
+      // just was not asking it.
+      if (
+        mayDiscardOnReload({
+          isProcessing: conversation.isProcessing(),
+          hasLiveChildren: this.evictor.shouldProtect?.(id) === true,
+        })
+      ) {
         subagentManager.abortAllForParent(id);
         conversation.dispose();
         deleteConversation(id);
