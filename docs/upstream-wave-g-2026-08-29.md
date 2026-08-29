@@ -150,6 +150,29 @@ model pin and charter intact.
 
 ---
 
+## Verification
+
+Full assistant suite (1863 files) run on this branch and on `5240d29300`, the
+commit the branch starts from, and the failing-file sets diffed:
+
+- baseline: **86** unique failing files
+- this branch: **84**
+
+The two fewer are `base-url-route-validation` (14 SSRF/provider-gate tests that
+had never run) and `registry` / `inline-command-runner`. Nothing fails on this
+branch that does not fail on baseline, except one file that passes reliably
+per-file across repeated runs and is a combined-run ordering flake.
+
+The diff caught two real regressions I would otherwise have shipped:
+`openai-provider` asserted the SDK constructor options exactly and broke on the
+new fetch wrapper, and the binding lookup put a throwing DB read on the
+conversation-construction path. Both fixed; the second was a robustness bug in
+its own right, not just a test failure.
+
+apps/web: 566/568 files, the two known flakes. Gateway trust-rule suites green.
+
+---
+
 ## Two things you should know
 
 **A repo-wide test condition, not caused by this branch.** ~300 test files use
