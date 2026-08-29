@@ -2,8 +2,12 @@ import OpenAI from "openai";
 
 import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../../prompts/cache-boundary.js";
 import { isAbortReason } from "../../util/abort-reasons.js";
-import { ProviderError } from "../../util/errors.js";
+import {
+  ProviderError,
+  type ProviderErrorReason as NormalizedReason,
+} from "../../util/errors.js";
 import { getLogger } from "../../util/logger.js";
+import { isVisionNotSupportedError } from "../../util/provider-error-patterns.js";
 import { extractRetryAfterMs } from "../../util/retry.js";
 import { escapeXmlAttr } from "../../util/xml.js";
 import { resolveVisionFallbackModel } from "../model-catalog.js";
@@ -22,6 +26,11 @@ import {
   extractOverflowTokensFromMessage,
 } from "../types.js";
 import { wrapUnparseableToolArgs } from "../unparseable-tool-args.js";
+import {
+  captureRawErrorBodyFetch,
+  formatNormalizedOpenAIAPIError,
+  normalizeOpenAIAPIError,
+} from "./api-error-normalization.js";
 
 /**
  * Detect OpenAI-compatible context-overflow signals on an `OpenAI.APIError`.
@@ -106,20 +115,45 @@ export function extractApiErrorDetail(
  *  OpenRouter's `error.metadata.raw` strings, which are typically <1KB. */
 const MAX_API_ERROR_DETAIL_CHARS = 2000;
 
-const VISION_NOT_SUPPORTED_PATTERNS = [
-  /no endpoints found that support image input/i,
-  /does not support image/i,
-  /image input is not supported/i,
-  /this model does not support vision/i,
-  /vision is not supported/i,
-  /multi-?modal.*not.*support/i,
-];
-
+/**
+ * Standalone vision-rejection probe over an `APIError`'s SDK-visible fields.
+ *
+ * The live send path no longer calls this: it reads `reason ===
+ * "vision_unsupported"` off the normalized error, which scans the captured raw
+ * body and so also catches an OpenRouter-wrapped rejection. Kept as the
+ * SDK-only probe for callers holding just an `APIError`, and pointed at the
+ * shared pattern list so the two paths cannot drift apart.
+ */
 export function detectVisionNotSupported(
   error: InstanceType<typeof OpenAI.APIError>,
 ): boolean {
   const haystack = `${error.message} ${JSON.stringify((error as { error?: unknown }).error ?? "")}`;
-  return VISION_NOT_SUPPORTED_PATTERNS.some((re) => re.test(haystack));
+  return isVisionNotSupportedError(haystack);
+}
+
+/**
+ * Carry the normalized upstream fields onto the thrown `ProviderError` so the
+ * daemon's classifier and the request-diagnostics record can read the intact
+ * provider payload instead of re-deriving intent from a status code.
+ */
+function normalizedErrorOptions(
+  n: ReturnType<typeof normalizeOpenAIAPIError>,
+): {
+  apiErrorCode?: string;
+  apiErrorType?: string;
+  apiErrorParam?: string;
+  requestId?: string;
+  rawBody?: string;
+  reason?: NormalizedReason;
+} {
+  return {
+    ...(n.apiErrorCode ? { apiErrorCode: n.apiErrorCode } : {}),
+    ...(n.apiErrorType ? { apiErrorType: n.apiErrorType } : {}),
+    ...(n.apiErrorParam ? { apiErrorParam: n.apiErrorParam } : {}),
+    ...(n.requestId ? { requestId: n.requestId } : {}),
+    ...(n.rawBody ? { rawBody: n.rawBody } : {}),
+    ...(n.reason ? { reason: n.reason } : {}),
+  };
 }
 
 const visionFallbackLog = getLogger("vision-fallback");
@@ -357,6 +391,12 @@ export class OpenAIChatCompletionsProvider implements Provider {
       apiKey,
       baseURL: options.baseURL,
       timeout: sdkTimeoutMs,
+      // The SDK keeps only the `.error` key of a parsed JSON error body and
+      // renders anything it cannot parse as "(no body)", which is how an
+      // OpenRouter rejection reaches us as a bare "Provider returned error"
+      // with the real reason stranded in `metadata.raw`. Capture the raw
+      // non-2xx body so the normalizer can reconstruct it.
+      fetch: captureRawErrorBodyFetch,
     });
     this.model = model;
     this.extraCreateParams = options.extraCreateParams ?? {};
@@ -765,10 +805,16 @@ export class OpenAIChatCompletionsProvider implements Provider {
           ? signal.reason
           : undefined;
       if (error instanceof OpenAI.APIError) {
-        const { detail, requestId } = extractApiErrorDetail(error);
-        const detailSuffix = detail ? ` ${detail}` : "";
-        const requestIdSuffix = requestId ? ` [request_id=${requestId}]` : "";
-        const formattedMessage = `${this.providerLabel} API error (${error.status}): ${error.message}${detailSuffix}${requestIdSuffix}`;
+        // Normalize off the captured raw body rather than the SDK's lossy
+        // `error.message`: an OpenRouter-wrapped upstream rejection only names
+        // its real cause inside `metadata.raw`, and a Django-proxy `{detail}`
+        // payload never reaches the thrown APIError at all.
+        const normalized = normalizeOpenAIAPIError(error);
+        const formattedMessage = formatNormalizedOpenAIAPIError(
+          this.providerLabel,
+          error.status,
+          normalized,
+        );
         const overflow = detectOpenAICompatibleContextOverflow(error);
         if (overflow) {
           throw new ContextOverflowError(formattedMessage, this.name, {
@@ -778,7 +824,7 @@ export class OpenAIChatCompletionsProvider implements Provider {
             cause: error,
           });
         }
-        if (detectVisionNotSupported(error)) {
+        if (normalized.reason === "vision_unsupported") {
           const model = modelOverride ?? this.model;
           // The model the caller actually selected. On a fallback retry
           // `model` is the fallback, so the marker carries the original id
@@ -827,7 +873,10 @@ export class OpenAIChatCompletionsProvider implements Provider {
             `This model (${originalModel}) doesn't support image input. Remove the image or switch to a vision-capable model.`,
             this.name,
             error.status,
-            abortReason ? { abortReason } : undefined,
+            {
+              ...normalizedErrorOptions(normalized),
+              ...(abortReason ? { abortReason } : {}),
+            },
           );
         }
         const retryAfterMs = extractRetryAfterMs(error.headers);
@@ -838,12 +887,10 @@ export class OpenAIChatCompletionsProvider implements Provider {
         if (retryAfterMs !== undefined)
           errorOptions.retryAfterMs = retryAfterMs;
         if (abortReason) errorOptions.abortReason = abortReason;
-        throw new ProviderError(
-          formattedMessage,
-          this.name,
-          error.status,
-          Object.keys(errorOptions).length > 0 ? errorOptions : undefined,
-        );
+        throw new ProviderError(formattedMessage, this.name, error.status, {
+          ...normalizedErrorOptions(normalized),
+          ...errorOptions,
+        });
       }
       throw new ProviderError(
         `${this.providerLabel} request failed: ${

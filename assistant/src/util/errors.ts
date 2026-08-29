@@ -99,9 +99,44 @@ export class AssistantError extends VellumError {
   }
 }
 
+/**
+ * Semantic classification of why a provider call failed. Stamped at the throw
+ * site from the intact upstream body (see `providers/openai/api-error-
+ * normalization.ts`) so downstream retry/fallback/copy can switch on intent
+ * rather than re-deriving it from a status code and a regex over prose that
+ * the SDK may already have flattened.
+ */
+export type ProviderErrorReason =
+  | "invalid_credentials"
+  | "model_restricted"
+  | "model_not_found"
+  | "insufficient_credits"
+  | "daily_limit_reached"
+  | "rate_limited"
+  | "overloaded"
+  | "context_overflow"
+  | "vision_unsupported"
+  | "request_shape_unsupported"
+  | "bad_request"
+  | "server_error"
+  | "network_error"
+  | "unknown";
+
 export class ProviderError extends AssistantError {
   /** Delay (in ms) suggested by the server's Retry-After header, if present. */
   public readonly retryAfterMs?: number;
+  /** Upstream provider error metadata, parsed from the raw non-2xx body. */
+  public readonly apiErrorCode?: string;
+  public readonly apiErrorType?: string;
+  public readonly apiErrorParam?: string;
+  public readonly requestId?: string;
+  /**
+   * Verbatim upstream non-2xx body (possibly truncated). Carried so the
+   * request-diagnostics record can show the actual provider payload rather
+   * than only the extracted fields — the difference between diagnosing an
+   * OpenRouter rejection in minutes and in days.
+   */
+  public readonly rawBody?: string;
   /**
    * Tagged daemon-owned abort reason carried over from the AbortSignal that
    * triggered this error. Untyped here to avoid a daemon→util import cycle;
@@ -109,17 +144,35 @@ export class ProviderError extends AssistantError {
    * `isAbortReason` is the canonical type guard for consumers.
    */
   public readonly abortReason?: unknown;
+  /** Semantic failure classification stamped at the throw site. */
+  public readonly reason?: ProviderErrorReason;
 
   constructor(
     message: string,
     public readonly provider: string,
     public readonly statusCode?: number,
-    options?: { cause?: unknown; retryAfterMs?: number; abortReason?: unknown },
+    options?: {
+      cause?: unknown;
+      retryAfterMs?: number;
+      abortReason?: unknown;
+      apiErrorCode?: string;
+      apiErrorType?: string;
+      apiErrorParam?: string;
+      requestId?: string;
+      rawBody?: string;
+      reason?: ProviderErrorReason;
+    },
   ) {
     super(message, ErrorCode.PROVIDER_ERROR, options);
     this.name = "ProviderError";
     this.retryAfterMs = options?.retryAfterMs;
     this.abortReason = options?.abortReason;
+    this.apiErrorCode = options?.apiErrorCode;
+    this.apiErrorType = options?.apiErrorType;
+    this.apiErrorParam = options?.apiErrorParam;
+    this.requestId = options?.requestId;
+    this.rawBody = options?.rawBody;
+    this.reason = options?.reason;
   }
 }
 
