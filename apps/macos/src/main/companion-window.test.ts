@@ -24,6 +24,7 @@ type StubWindow = {
   setIgnoreMouseEvents: ReturnType<typeof mock>;
   show: ReturnType<typeof mock>;
   focus: ReturnType<typeof mock>;
+  blur: ReturnType<typeof mock>;
   showInactive: ReturnType<typeof mock>;
   isVisible: () => boolean;
   loadURL: ReturnType<typeof mock>;
@@ -121,6 +122,7 @@ const makeWindow = (opts: CreateWindowOptions): StubWindow => {
     setIgnoreMouseEvents: mock((_ignore: boolean) => undefined),
     show: mock(() => undefined),
     focus: mock(() => undefined),
+    blur: mock(() => undefined),
     showInactive: mock(() => {
       visible = true;
     }),
@@ -1160,6 +1162,35 @@ describe("the summon, and the card's two verbs (C12, C2)", () => {
     expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
       phase: "resting",
     });
+  });
+
+  test("REGRESSION: the card took the keyboard, and gave it back", async () => {
+    // A window shown with `showInactive()` is never key, and a window that is
+    // never key receives no keystroke. So the summon opened a card with an
+    // autofocused text field that could not be typed into — the field had
+    // focus inside a window that had none.
+    //
+    // `type: "panel"` is what makes taking them safe: measured on Electron 42,
+    // a panel's `focus()` takes key status while the frontmost application is
+    // unchanged. Giving them back matters just as much — a resting creature
+    // holding the keyboard would swallow every shortcut of whatever is
+    // underneath it.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    const win = created.at(-1)!.win;
+    ipcHandlers.get("vellum:companion:ready")?.([]);
+    expect(win.focus).not.toHaveBeenCalled();
+
+    summonCompanionCard();
+    expect(win.focus).toHaveBeenCalledTimes(1);
+    expect(win.blur).not.toHaveBeenCalled();
+
+    summonCompanionCard();
+    expect(win.blur).toHaveBeenCalledTimes(1);
+    // And not once more per republish: the transitions are applied on the
+    // change, not on every push.
+    expect(win.focus).toHaveBeenCalledTimes(1);
   });
 
   test("REGRESSION: it brings a hidden companion back", async () => {

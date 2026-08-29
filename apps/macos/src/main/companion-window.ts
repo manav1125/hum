@@ -258,8 +258,49 @@ const companionState = (): Record<string, unknown> => {
   };
 };
 
+/**
+ * Whether the card currently holds the keyboard, so the transitions are
+ * applied once each rather than on every republish.
+ */
+let cardHoldsKeys = false;
+
+/**
+ * Keyboard focus follows the card, and nothing else.
+ *
+ * **A window that is never key never receives a keystroke.** The companion is
+ * shown with `showInactive()` so the creature cannot steal focus from the app
+ * you are working in, and `acceptFirstMouse` is what lets it be *clicked*
+ * anyway — but there is no equivalent for the keyboard. So `⌥Space` opened a
+ * card with a text field in it, autofocused, that could not be typed into:
+ * the field had focus inside a window that had none.
+ *
+ * `type: "panel"` is what makes the fix safe. Measured on Electron 42: a
+ * panel's `focus()` takes key status while the frontmost application is
+ * unchanged — the creature gets the keys without Cue coming to the front and
+ * without the app you were in losing its place. A normal window would have
+ * activated the app, which is the one thing an always-on companion may not
+ * do.
+ *
+ * Only the card takes them, and it gives them back the moment it closes.
+ * Holding keys for a resting creature would swallow every shortcut of
+ * whatever is underneath it.
+ */
+const applyCardFocus = (): void => {
+  const wantsKeys = phases?.read().typing ?? false;
+  if (wantsKeys === cardHoldsKeys) return;
+  const win = companionWindow();
+  if (!win || win.isDestroyed()) return;
+  // A card cannot take the keyboard before its window is on screen; the
+  // release still has to run, so that check is only on the way in.
+  if (wantsKeys && !win.isVisible()) return;
+  cardHoldsKeys = wantsKeys;
+  if (wantsKeys) win.focus();
+  else win.blur();
+};
+
 const publishState = (): void => {
   send("vellum:companion:state", companionState());
+  applyCardFocus();
 };
 
 /** First-run home, or the centre the user last settled the creature at. */
@@ -971,6 +1012,10 @@ export const syncCompanionWindow = (): void => {
     return;
   }
   if (!shouldShow && existing) {
+    // The keyboard belongs to a window that is about to stop existing. Left
+    // set, the next companion would believe it already held the keys and skip
+    // the `focus()` that makes its card typeable.
+    cardHoldsKeys = false;
     existing.close();
   }
 };

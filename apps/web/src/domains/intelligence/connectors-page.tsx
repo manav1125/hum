@@ -1,5 +1,5 @@
 import { Loader2, Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlocker, useNavigate } from "react-router";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -444,6 +444,26 @@ function ConnectorsPageDesktop() {
   const [note, setNote] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
+  const catalogRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * "Browse catalog" — which is on this page, and always was.
+   *
+   * It used to `navigate(routes.library.root)`. The Library is the owner's own
+   * apps and documents; it has never listed a connector. So the one button on
+   * the page whose whole job is "show me what I can connect" took you to your
+   * files — which is the button not doing what it says rather than a broken
+   * link, and no error anywhere to suggest it.
+   *
+   * The catalog is the list below, so this clears whatever is narrowing it and
+   * scrolls to it. Clearing first matters: arriving at a filtered list that
+   * happens to be empty would read as an empty catalog.
+   */
+  const browseCatalog = useCallback(() => {
+    setQuery("");
+    setCategory("all");
+    catalogRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
   const [tipDismissed, setTipDismissed] = useState(false);
   // Poll briefly on mount so the health probe kicked by refreshHealth=1
   // lands without a manual refresh; a connect flow extends the window.
@@ -689,7 +709,7 @@ function ConnectorsPageDesktop() {
             className="cue-pressable"
             onClick={() => {
               haptic.light();
-              navigate(routes.library.root);
+              browseCatalog();
             }}
             style={{
               fontSize: 12.5,
@@ -756,6 +776,8 @@ function ConnectorsPageDesktop() {
         </div>
       )}
 
+      {/* The catalog itself — what "Browse catalog" scrolls to. */}
+      <div ref={catalogRef} />
       {/* search + filter — inline search+select on desktop; on mobile the
           search goes full-width and the category filter becomes a scrollable
           chip rail (a native <select> crowds the 390px row). */}
@@ -966,7 +988,7 @@ function ConnectorsPageDesktop() {
             className="cue-pressable"
             onClick={() =>
               connectors.length === 0
-                ? navigate(routes.library.root)
+                ? browseCatalog()
                 : (setQuery(""), setCategory("all"))
             }
             style={{

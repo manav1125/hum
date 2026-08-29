@@ -31,6 +31,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+
+import { splitContacts } from "./contact-kind";
 import { useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -319,15 +321,31 @@ function PeoplePageDesktop() {
     );
   }, [contactsQuery.data]);
 
+  /**
+   * People, and everything else that writes to you.
+   *
+   * Once Cue reads a whole mailbox most of what it has "learnt about" is
+   * receipts, newsletters, alerts and `no-reply@` senders — so a page you came
+   * to for a person opens on a wall of machines. Both groups are kept and both
+   * counts are shown: this organises the page, it never removes anyone, which
+   * is the line between a record of what Cue knows and an opinion about it.
+   */
+  const [kind, setKind] = useState<"person" | "service">("person");
+  const { people, services } = useMemo(
+    () => splitContacts(contacts),
+    [contacts],
+  );
+  const inKind = kind === "service" ? services : people;
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter((c) => c.displayName.toLowerCase().includes(q));
-  }, [contacts, search]);
+    if (!q) return inKind;
+    return inKind.filter((c) => c.displayName.toLowerCase().includes(q));
+  }, [inKind, search]);
 
   const selected =
     contacts.find((c) => c.id === selectedId) ??
-    (isMobile ? null : (filtered[0] ?? contacts[0] ?? null));
+    (isMobile ? null : (filtered[0] ?? inKind[0] ?? null));
 
   // Mobile: once a contact is selected, push a full-screen detail view.
   if (isMobile && selected) {
@@ -436,6 +454,10 @@ function PeoplePageDesktop() {
           >
             <ContactList
               contacts={filtered}
+              kind={kind}
+              onKind={setKind}
+              peopleCount={people.length}
+              serviceCount={services.length}
               search={search}
               onSearch={setSearch}
               selectedId={selected?.id ?? null}
@@ -462,8 +484,57 @@ function PeoplePageDesktop() {
 
 // ── Contact list ────────────────────────────────────────────────────────────
 
+/**
+ * One side of the People/Services split, with its count.
+ *
+ * The count is not decoration. It is the promise that the other group is still
+ * there, which is what separates organising a list from filtering one.
+ */
+function KindTab({
+  active,
+  count,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  count: number;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        flex: 1,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+        fontSize: 12,
+        fontWeight: active ? 600 : 500,
+        color: active ? C.t1 : C.t2,
+        background: active ? C.surface : "transparent",
+        border: `1px solid ${active ? C.line : "transparent"}`,
+        borderRadius: 9,
+        padding: "7px 10px",
+        minHeight: 32,
+        cursor: "pointer",
+      }}
+    >
+      {children}
+      <span style={{ fontSize: 11, color: C.t3 }}>{count}</span>
+    </button>
+  );
+}
+
 function ContactList({
   contacts,
+  kind,
+  onKind,
+  peopleCount,
+  serviceCount,
   search,
   onSearch,
   selectedId,
@@ -472,6 +543,10 @@ function ContactList({
   truncated = false,
 }: {
   contacts: ContactPayload[];
+  kind: "person" | "service";
+  onKind: (kind: "person" | "service") => void;
+  peopleCount: number;
+  serviceCount: number;
   search: string;
   onSearch: (v: string) => void;
   selectedId: string | null;
@@ -492,10 +567,29 @@ function ContactList({
           more. Search reaches them.
         </p>
       ) : null}
+      {/* Both counts, always. The number beside the group you are not looking
+          at is what makes it obvious nothing was thrown away — a tab that
+          merely said "Services" would read as a filter that hid things. */}
+      <div style={{ display: "flex", gap: 6 }}>
+        <KindTab
+          active={kind === "person"}
+          count={peopleCount}
+          onClick={() => onKind("person")}
+        >
+          People
+        </KindTab>
+        <KindTab
+          active={kind === "service"}
+          count={serviceCount}
+          onClick={() => onKind("service")}
+        >
+          Services &amp; lists
+        </KindTab>
+      </div>
       <input
         value={search}
         onChange={(e) => onSearch(e.target.value)}
-        placeholder="Search people"
+        placeholder={kind === "service" ? "Search senders" : "Search people"}
         style={{
           width: "100%",
           background: C.surface,
@@ -516,7 +610,11 @@ function ContactList({
             textAlign: "center",
           }}
         >
-          No one matches “{search}”.
+          {search
+            ? `No one matches \u201C${search}\u201D.`
+            : kind === "service"
+              ? "Nothing here yet — newsletters, receipts and alerts land in this group."
+              : "No people in this group yet."}
         </div>
       ) : (
         contacts.map((c) => {

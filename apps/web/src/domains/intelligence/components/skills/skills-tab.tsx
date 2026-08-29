@@ -382,7 +382,12 @@ function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
               // be on, with nothing focused and nothing said, which reads as a
               // button that does nothing at all.
               void navigate(routes.home);
-              requestComposerFocus();
+              // With the sentence already written. Focus alone landed you in
+              // chat with a blinking cursor and nothing said, which is a
+              // button that moved you rather than one that did anything.
+              requestComposerFocus(
+                "Create a skill for me. Ask me what it should do, when it should run, and what it needs access to — then write it.",
+              );
             }}
             style={{
               fontSize: 12.5,

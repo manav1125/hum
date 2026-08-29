@@ -35,6 +35,7 @@ import {
 import { useInvalidateNotes } from "@/hooks/use-invalidate-notes";
 import {
   enqueue,
+  getLocalNote,
   listLocalNotes,
   mirrorServerNotes,
   type LocalNote,
@@ -253,8 +254,28 @@ export function useNoteSync(assistantId: string) {
   return { online, pending, refreshPending };
 }
 
+/**
+ * One note — the daemon's copy, or this device's, whichever exists.
+ *
+ * **The local fallback is not an offline nicety; it is the only way a
+ * just-written note can be opened at all.** Capture is local-first by
+ * contract: `useCreateNote` mints an id, saves to this device, queues a push
+ * and returns — the note is durable here before the function resolves, and
+ * the daemon has not heard of it yet. This view then asked the daemon for it
+ * by id, got a 404, and said "I couldn't open this note just now. This is
+ * about the connection, not about the note — nothing has been lost, and it is
+ * still here." Every word of that was true and the view was looking in the
+ * one place the note was not.
+ *
+ * The list has had this fallback since it was written, which is why the list
+ * worked and opening what it listed did not. The asymmetry was the bug.
+ *
+ * Extractions stay server-only, and a local-only note reports none. That is
+ * honest rather than lossy: proposals are something the daemon makes about a
+ * note it has read, and it has not read this one yet.
+ */
 export function useNote(assistantId: string, noteId: string | null) {
-  return useQuery({
+  const query = useQuery({
     ...notesByIdGetOptions({
       path: { assistant_id: assistantId, id: noteId ?? "" },
     }),
@@ -266,6 +287,75 @@ export function useNote(assistantId: string, noteId: string | null) {
     /** See the note on `resolveNotesView`: a disabled query sits here. */
     fetchStatus: "fetching" | "paused" | "idle";
     refetch: () => void;
+  };
+
+  // `undefined` is "not looked yet", `null` is "looked, and it is not here".
+  // The difference decides whether this view may show a failure, so the two
+  // cannot be collapsed.
+  const [local, setLocal] = useState<LocalNote | null | undefined>(undefined);
+  useEffect(() => {
+    if (!noteId) {
+      setLocal(null);
+      return;
+    }
+    let cancelled = false;
+    setLocal(undefined);
+    void getLocalNote(noteId)
+      .catch(() => null)
+      .then((found) => {
+        if (!cancelled) setLocal(found);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [noteId]);
+
+  // Mirror what the daemon says, so the next open works with no network at
+  // all — the same thing the list does with its page of notes.
+  useEffect(() => {
+    if (query.data?.note) void mirrorServerNotes([query.data.note]);
+  }, [query.data]);
+
+  return { ...query, ...resolveNoteDetail(query, local, noteId) } as typeof query;
+}
+
+/**
+ * Which copy of the note the detail view gets, and whether it may fail yet.
+ *
+ * Pure, and exported, for the same reason `resolveNotesView` is: these are the
+ * branches that were wrong in a build someone actually used, and a test that
+ * re-derived them could pass while the hook did the opposite.
+ */
+export function resolveNoteDetail(
+  query: {
+    data?: { note: Note; extractions: NoteExtraction[] };
+    isPending: boolean;
+    fetchStatus: "fetching" | "paused" | "idle";
+  },
+  local: LocalNote | null | undefined,
+  noteId: string | null,
+): {
+  data?: { note: Note; extractions: NoteExtraction[] };
+  isPending: boolean;
+  fetchStatus: "fetching" | "paused" | "idle";
+} {
+  // A local read still outstanding is work in flight, on BOTH of the fields
+  // the view tests. It draws its failure only when `isPending` is false *and*
+  // `fetchStatus` is idle, so reporting one without the other still lets the
+  // failure flash in the gap between the daemon answering "no" and this
+  // device answering "yes" — a failure that un-fails itself, which is worse
+  // than either answer.
+  const stillReadingLocally = local === undefined && Boolean(noteId);
+  const data = query.data?.note
+    ? query.data
+    : local
+      ? { note: local as Note, extractions: [] as NoteExtraction[] }
+      : undefined;
+
+  return {
+    ...(data ? { data } : {}),
+    isPending: query.isPending || stillReadingLocally,
+    fetchStatus: stillReadingLocally ? "fetching" : query.fetchStatus,
   };
 }
 

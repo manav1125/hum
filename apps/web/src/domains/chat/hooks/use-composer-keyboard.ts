@@ -16,6 +16,7 @@ import { type MutableRefObject, useEffect } from "react";
 
 import {
   COMPOSER_FOCUS_EVENT,
+  consumePendingComposerDraft,
   consumePendingComposerFocus,
   insertTextAtSelection,
   shouldFocusComposerForTyping,
@@ -27,7 +28,23 @@ export function useComposerKeyboard(
 ): void {
   // 1. Electron host focus relay + pending-focus drain.
   useEffect(() => {
-    const focusInput = () => inputRef.current?.focus();
+    /**
+     * A seeded sentence never overwrites one already being written.
+     *
+     * The seed exists to save you typing the obvious opening, not to take the
+     * composer away from you — so a composer with anything in it keeps what
+     * it has, and the draft is spent either way.
+     */
+    const applyDraft = () => {
+      const draft = consumePendingComposerDraft();
+      if (!draft) return;
+      const store = useComposerStore.getState();
+      store.setInput((current) => (current.trim() ? current : draft));
+    };
+    const focusInput = () => {
+      applyDraft();
+      inputRef.current?.focus();
+    };
     const handleFocusRequest = () => {
       consumePendingComposerFocus();
       focusInput();

@@ -17,12 +17,37 @@
 export const COMPOSER_FOCUS_EVENT = "vellum:focus-composer";
 
 let pending = false;
+let pendingDraft: string | null = null;
 
-export function requestComposerFocus(): void {
+/**
+ * @param draft Words to put in the composer along with the focus.
+ *
+ * For buttons that name an action Cue performs by being asked — "Create a
+ * skill" is the one that prompted this. Focusing an empty composer is a
+ * cursor blinking in a box: it moved you somewhere and left you to guess the
+ * sentence. Arriving with the sentence already written, unsent, is the button
+ * doing what it says while leaving the words yours to change.
+ */
+export function requestComposerFocus(draft?: string): void {
   pending = true;
+  if (draft !== undefined) pendingDraft = draft;
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT));
   }
+}
+
+/**
+ * Returns and clears the pending draft in one step.
+ *
+ * One-shot like the focus flag beside it, and for the same reason: the
+ * composer may mount after the request, so this has to survive the gap — but
+ * exactly once, or every later visit to chat would re-seed a sentence the
+ * owner already dismissed.
+ */
+export function consumePendingComposerDraft(): string | null {
+  const draft = pendingDraft;
+  pendingDraft = null;
+  return draft;
 }
 
 /** Returns and clears the pending flag in one step. */

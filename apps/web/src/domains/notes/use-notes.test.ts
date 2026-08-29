@@ -19,9 +19,10 @@
 
 import { describe, expect, test } from "bun:test";
 
-import type { Note, NoteCounts } from "@/types/notes";
+import type { Note, NoteCounts, NoteExtraction } from "@/types/notes";
+import type { LocalNote } from "@/stores/note-local-store";
 
-import { resolveNotesView } from "./use-notes";
+import { resolveNoteDetail, resolveNotesView } from "./use-notes";
 
 /**
  * Drives the REAL resolver the hook calls — not a restatement of it. A test
@@ -170,5 +171,69 @@ describe("empty and unreachable are never the same screen", () => {
     expect(
       resolve({ isPending: false, isError: true, local: [note("a")] }),
     ).toEqual({ status: "ready", source: "local" });
+  });
+});
+
+/**
+ * Opening a note you just wrote.
+ *
+ * Capture is local-first by contract: `useCreateNote` mints an id, saves to
+ * this device, queues a push and returns — so at the moment the page opens
+ * the note, the daemon has never heard of it. The detail view asked the
+ * daemon anyway, got a 404, and reported "I couldn't open this note just now
+ * … nothing has been lost, and it is still here." Every word true, and it was
+ * looking in the one place the note was not.
+ */
+describe("resolveNoteDetail", () => {
+  const local = (id: string): LocalNote =>
+    ({ id, title: "n", body: "typed", occurredAt: 1, pending: true }) as LocalNote;
+  const server = (id: string) => ({
+    note: note(id),
+    extractions: [] as NoteExtraction[],
+  });
+
+  test("REGRESSION: a just-created note opens from this device", () => {
+    const out = resolveNoteDetail(
+      { isPending: false, fetchStatus: "idle" },
+      local("a"),
+      "a",
+    );
+    expect(out.data?.note.body).toBe("typed");
+    expect(out.isPending).toBe(false);
+  });
+
+  test("the daemon's copy wins when it has one", () => {
+    // It carries the extractions, which a local-only note cannot have.
+    const out = resolveNoteDetail(
+      { data: server("a"), isPending: false, fetchStatus: "idle" },
+      local("a"),
+      "a",
+    );
+    expect(out.data?.note.body).toBe("");
+  });
+
+  test("REGRESSION: the failure must not flash before the device answers", () => {
+    // `undefined` local is "not looked yet". The view draws its failure only
+    // when isPending is false AND fetchStatus is idle, so both have to say
+    // work is in flight or the error appears and then un-appears.
+    const out = resolveNoteDetail(
+      { isPending: false, fetchStatus: "idle" },
+      undefined,
+      "a",
+    );
+    expect(out.data).toBeUndefined();
+    expect(out.isPending).toBe(true);
+    expect(out.fetchStatus).toBe("fetching");
+  });
+
+  test("looked everywhere and it is genuinely not here: the failure stands", () => {
+    const out = resolveNoteDetail(
+      { isPending: false, fetchStatus: "idle" },
+      null,
+      "a",
+    );
+    expect(out.data).toBeUndefined();
+    expect(out.isPending).toBe(false);
+    expect(out.fetchStatus).toBe("idle");
   });
 });
