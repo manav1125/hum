@@ -16,6 +16,22 @@ import { current as currentMainWindow } from "./main-window";
 
 /** Where the self-host connect flow parks the actor token. */
 const ACTOR_TOKEN_KEY = "cue:selfHost:actorToken";
+/**
+ * The credential the renderer actually authenticates with.
+ *
+ * Self-host keeps two: `cue:selfHost:actorToken` is the durable ~30d one the
+ * connect link seeded, and `vellum:gw:token` is the live slot the auth layer
+ * rotates, re-mints on 401s, and re-derives from the durable one when it goes
+ * missing. Only the second is guaranteed to have been minted by the gateway
+ * that is running now.
+ *
+ * Main was reading the durable one, and on this owner's instance that token
+ * predates a change of the gateway's signing key — so it failed
+ * `invalid_signature` on every request main made, forever, while the renderer
+ * sailed on with its rotated slot. Reading the live slot first is what
+ * "borrow the credential from the window" was always supposed to mean.
+ */
+const GATEWAY_TOKEN_KEY = "vellum:gw:token";
 const SELF_HOST_FLAG_KEY = "cue:selfHost";
 
 /**
@@ -31,9 +47,15 @@ export async function readActorToken(): Promise<string | null> {
   if (!win || win.webContents.isDestroyed()) return null;
   try {
     const token = (await win.webContents.executeJavaScript(
+      // Live slot first, durable one as the fallback for a session seeded
+      // before that slot existed — the same preference order, and the same
+      // reason, as `EXTENSION_SESSION_TOKEN_LS_KEYS` reversed: the extension
+      // wants the long-lived credential to pair with, main wants the one that
+      // verifies right now.
       `(() => { try {
          if (localStorage.getItem(${JSON.stringify(SELF_HOST_FLAG_KEY)}) !== "1") return null;
-         return localStorage.getItem(${JSON.stringify(ACTOR_TOKEN_KEY)});
+         return localStorage.getItem(${JSON.stringify(GATEWAY_TOKEN_KEY)})
+           || localStorage.getItem(${JSON.stringify(ACTOR_TOKEN_KEY)});
        } catch { return null; } })()`,
       true,
     )) as unknown;
