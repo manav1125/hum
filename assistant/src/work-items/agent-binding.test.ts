@@ -13,7 +13,7 @@
  * survive.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
 import {
   type AgentBindable,
@@ -114,6 +114,26 @@ describe("model pin", () => {
   test("no pin and no agent both mean no override", () => {
     expect(resolveAgentModelOverride(agent({ model: null }))).toBeUndefined();
     expect(resolveAgentModelOverride(undefined)).toBeUndefined();
+  });
+});
+
+describe("a binding we cannot read", () => {
+  test("degrades to the house assistant instead of failing construction", async () => {
+    // Conversation construction calls this. The daemon's rule is that a
+    // subsystem failure degrades rather than blocking, and a conversation that
+    // could not be built because one column read failed loses the owner their
+    // assistant entirely — a far worse outcome than losing an agent's scoping.
+    const real = await import("../memory/conversation-crud.js");
+    mock.module("../memory/conversation-crud.js", () => ({
+      ...real,
+      getConversationAgentId: () => {
+        throw new Error("no such table: conversations");
+      },
+    }));
+    const { resolveConversationAgent } = await import("./agent-binding.js");
+    expect(() => resolveConversationAgent("conv-1")).not.toThrow();
+    expect(resolveConversationAgent("conv-1")).toBeUndefined();
+    mock.module("../memory/conversation-crud.js", () => ({ ...real }));
   });
 });
 

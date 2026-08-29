@@ -16,7 +16,6 @@
 
 import { resolveCallSiteConfig } from "../config/llm-resolver.js";
 import { getConfig } from "../config/loader.js";
-import { getConversationAgentId } from "../memory/conversation-crud.js";
 import { buildSystemPrompt } from "../prompts/system-prompt.js";
 import { wrapWithCallSiteRouting } from "../providers/call-site-routing.js";
 import { resolveDefaultProvider } from "../providers/connection-resolution.js";
@@ -28,8 +27,8 @@ import { getLogger } from "../util/logger.js";
 import { getSandboxWorkingDir } from "../util/platform.js";
 import {
   applyAgentBinding,
-  resolveAgent,
   resolveAgentModelOverride,
+  resolveConversationAgent,
 } from "../work-items/agent-binding.js";
 import { Conversation } from "./conversation.js";
 import type { ConversationEvictor } from "./conversation-evictor.js";
@@ -195,9 +194,7 @@ export async function getOrCreateConversation(
           speedOverride: storedOptions?.speed,
           modelOverride:
             storedOptions?.modelOverride ??
-            resolveAgentModelOverride(
-              resolveAgent({ agentId: getConversationAgentId(conversationId) }),
-            ),
+            resolveAgentModelOverride(resolveConversationAgent(conversationId)),
         },
       );
       // Includes the Conversation constructor (tool wiring + a second
@@ -231,9 +228,7 @@ export async function getOrCreateConversation(
       //
       // An explicit modelOverride from the caller wins: it is a deliberate
       // per-call choice, and an agent's pin is a default for its own runs.
-      const boundAgent = resolveAgent({
-        agentId: getConversationAgentId(conversationId),
-      });
+      const boundAgent = resolveConversationAgent(conversationId);
       applyAgentBinding(newConversation, boundAgent);
 
       if (storedOptions?.assistantId) {

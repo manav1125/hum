@@ -27,6 +27,7 @@
  */
 
 import { buildAgentToolScopeFilter } from "../guardrails/agent-tool-scopes.js";
+import { getConversationAgentId } from "../memory/conversation-crud.js";
 import { getLogger } from "../util/logger.js";
 import { type Agent, getAgent, getAgentByAssignee } from "./agent-store.js";
 
@@ -65,6 +66,37 @@ export function resolveAgent(opts: {
   }
   if (opts.assignee) return getAgentByAssignee(opts.assignee);
   return undefined;
+}
+
+/**
+ * The agent bound to a conversation, resolved without ever throwing.
+ *
+ * Conversation construction calls this, and the daemon's rule is that a
+ * subsystem failure degrades rather than blocking startup or a turn. A
+ * conversation that could not be built because one column read failed is a
+ * far worse outcome than one built without its binding — the owner would lose
+ * the assistant entirely, not just an agent's scoping.
+ *
+ * The fallback is the house assistant, which is unrestricted, so this widens a
+ * guardrail on failure. That is only acceptable because the failure means the
+ * conversations table is unreadable, at which point nothing else works either.
+ * It is logged at error rather than swallowed, because a scoped agent quietly
+ * becoming unscoped is exactly the lapse this module exists to prevent.
+ */
+export function resolveConversationAgent(
+  conversationId: string,
+): Agent | undefined {
+  let agentId: string | null;
+  try {
+    agentId = getConversationAgentId(conversationId);
+  } catch (err) {
+    log.error(
+      { err, conversationId },
+      "could not read the conversation's agent binding; running unrestricted as the house assistant",
+    );
+    return undefined;
+  }
+  return resolveAgent({ agentId });
 }
 
 /**

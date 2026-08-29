@@ -28,6 +28,7 @@ import {
   buildSlackMessageDeepLinks,
   buildSlackWebChannelUrl,
 } from "../../messaging/providers/slack/deep-link.js";
+import { resolveAgent } from "../../work-items/agent-binding.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -215,6 +216,7 @@ export function serializeConversationSummary(params: {
   const originChannel = parseChannelId(conversation.originChannel);
   const assistantAttention = buildAssistantAttention(attentionState);
   const forkParent = buildForkParent(conversation, parentCache);
+  const agent = resolveAgent({ agentId: conversation.agentId });
 
   return {
     id: conversation.id,
@@ -226,6 +228,22 @@ export function serializeConversationSummary(params: {
     source: conversation.source ?? "user",
     ...(conversation.scheduleJobId
       ? { scheduleJobId: conversation.scheduleJobId }
+      : {}),
+    // Whose thread this is. Sent as the agent's display identity rather than
+    // its id alone: a client that can only render an opaque id would have to
+    // fetch the roster to say "Ops", and the one place this matters is a list
+    // where the owner is scanning for which of their agents is working on
+    // what. An id naming an agent that no longer exists sends nothing, which
+    // is the same as the house assistant — and is what the run itself now
+    // does too.
+    ...(agent
+      ? {
+          agent: {
+            id: agent.id,
+            name: agent.name,
+            ...(agent.emoji ? { emoji: agent.emoji } : {}),
+          },
+        }
       : {}),
     ...(binding
       ? {

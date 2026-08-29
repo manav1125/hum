@@ -309,7 +309,7 @@ describe("OpenAIProvider", () => {
     });
 
     expect(compatible.name).toBe("ollama");
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "sk-local",
       baseURL: "http://127.0.0.1:11434/v1",
       timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -322,7 +322,7 @@ describe("OpenAIProvider", () => {
       delete process.env.OLLAMA_BASE_URL;
       const ollama = new OllamaProvider("llama3.2");
       expect(ollama.name).toBe("ollama");
-      expect(lastConstructorOptions).toEqual({
+      expect(lastConstructorOptions).toMatchObject({
         apiKey: "ollama",
         baseURL: "http://127.0.0.1:11434/v1",
         timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -342,7 +342,7 @@ describe("OpenAIProvider", () => {
       process.env.OLLAMA_BASE_URL = "   ";
       const ollama = new OllamaProvider("llama3.2");
       expect(ollama.name).toBe("ollama");
-      expect(lastConstructorOptions).toEqual({
+      expect(lastConstructorOptions).toMatchObject({
         apiKey: "ollama",
         baseURL: "http://127.0.0.1:11434/v1",
         timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -1260,17 +1260,31 @@ describe("custom baseURL initialization", () => {
     });
 
     expect(managed.name).toBe("openai");
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "ast-key-123",
       baseURL: "https://platform.example.com/v1/runtime-proxy/openai",
       timeout: DEFAULT_SDK_TIMEOUT_MS,
     });
   });
 
+  test("every OpenAI-compatible client installs the raw-error-body fetch", () => {
+    // The SDK renders a body it cannot parse as "(no body)" and keeps only the
+    // `.error` key of one it can, which is how an OpenRouter rejection reaches
+    // us as a bare "Provider returned error" with the real cause stranded in
+    // metadata.raw. The wrapper that captures the intact body is what makes
+    // the error legible, and it is installed at construction — so losing it
+    // would be invisible until the next outage was hard to diagnose.
+    //
+    // The assertions above use toMatchObject precisely because this option is
+    // expected to be there; this is the one that says so on purpose.
+    new OpenAIProvider("sk-user-key", "gpt-4o");
+    expect(typeof lastConstructorOptions?.fetch).toBe("function");
+  });
+
   test("OpenAIProvider without baseURL calls provider directly", () => {
     new OpenAIProvider("sk-user-key", "gpt-4o");
 
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "sk-user-key",
       baseURL: undefined,
       timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -1282,7 +1296,7 @@ describe("custom baseURL initialization", () => {
       streamTimeoutMs: 300_000,
     });
 
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "sk-user-key",
       baseURL: undefined,
       timeout: 360_000,
@@ -1299,7 +1313,7 @@ describe("custom baseURL initialization", () => {
     );
 
     expect(managed.name).toBe("fireworks");
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "ast-key-123",
       baseURL: "https://platform.example.com/v1/runtime-proxy/fireworks",
       timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -1312,7 +1326,7 @@ describe("custom baseURL initialization", () => {
       "accounts/fireworks/models/llama-v3p1-70b-instruct",
     );
 
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "fw-user-key",
       baseURL: "https://api.fireworks.ai/inference/v1",
       timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -1325,7 +1339,7 @@ describe("custom baseURL initialization", () => {
     });
 
     expect(managed.name).toBe("openrouter");
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "ast-key-123",
       baseURL: "https://platform.example.com/v1/runtime-proxy/openrouter",
       timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -1335,7 +1349,7 @@ describe("custom baseURL initialization", () => {
   test("OpenRouterProvider without custom baseURL uses default OpenRouter URL", () => {
     new OpenRouterProvider("or-user-key", "openai/gpt-4o");
 
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "or-user-key",
       baseURL: "https://openrouter.ai/api/v1",
       timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -1348,7 +1362,7 @@ describe("custom baseURL initialization", () => {
     });
 
     expect(managed.name).toBe("minimax");
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "ast-key-123",
       baseURL: "https://platform.example.com/v1/runtime-proxy/minimax",
       timeout: DEFAULT_SDK_TIMEOUT_MS,
@@ -1358,7 +1372,7 @@ describe("custom baseURL initialization", () => {
   test("MinimaxProvider without custom baseURL uses default MiniMax URL", () => {
     new MinimaxProvider("mm-user-key", "MiniMax-M2.7");
 
-    expect(lastConstructorOptions).toEqual({
+    expect(lastConstructorOptions).toMatchObject({
       apiKey: "mm-user-key",
       baseURL: "https://api.minimax.io/v1",
       timeout: DEFAULT_SDK_TIMEOUT_MS,

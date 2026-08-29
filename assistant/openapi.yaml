@@ -12523,6 +12523,19 @@ paths:
                           type: string
                         scheduleJobId:
                           type: string
+                        agent:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            emoji:
+                              type: string
+                          required:
+                            - id
+                            - name
+                          additionalProperties: false
                         channelBinding:
                           type: object
                           properties:
@@ -12887,6 +12900,19 @@ paths:
                         type: string
                       scheduleJobId:
                         type: string
+                      agent:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          emoji:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        additionalProperties: false
                       channelBinding:
                         type: object
                         properties:
@@ -13088,6 +13114,19 @@ paths:
                         type: string
                       scheduleJobId:
                         type: string
+                      agent:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          emoji:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        additionalProperties: false
                       channelBinding:
                         type: object
                         properties:
@@ -14143,6 +14182,19 @@ paths:
                         type: string
                       scheduleJobId:
                         type: string
+                      agent:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          emoji:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        additionalProperties: false
                       channelBinding:
                         type: object
                         properties:

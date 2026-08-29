@@ -130,6 +130,18 @@ export const conversationSummarySchema = z.object({
   conversationType: z.enum(["standard", "background", "scheduled"]),
   source: z.string(),
   scheduleJobId: z.string().optional(),
+  /**
+   * The roster agent whose thread this is, absent for the house assistant.
+   * Carries the display identity rather than the id alone so a list can label
+   * "Ops is working on this" without fetching the roster per row.
+   */
+  agent: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      emoji: z.string().optional(),
+    })
+    .optional(),
   channelBinding: channelBindingSchema.optional(),
   conversationOriginChannel: channelIdSchema.nullable().optional(),
   assistantAttention: assistantAttentionSchema.optional(),
