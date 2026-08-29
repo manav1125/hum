@@ -456,6 +456,13 @@ export class Conversation {
    * @internal
    */
   wakePersonaOverride?: SystemPromptPersonaOverride;
+  /**
+   * Identity of the roster agent this conversation belongs to, set from the
+   * persisted binding on every hydration. Rebuilt into the system prompt each
+   * turn so the agent keeps being that agent across a long thread and across
+   * a restart, rather than only for the run that created it.
+   */
+  agentCharter?: string;
   /** @internal */ currentTurnOverrideProfile?: string;
   /** @internal */ toolRoutedProfile?: string;
   /** @internal */ authContext?: AuthContext;
@@ -756,6 +763,7 @@ export class Conversation {
               trustContext: this.currentTurnTrustContext,
               channelCapabilities: this.currentTurnChannelCapabilities,
               personaOverride: this.wakePersonaOverride,
+              ...(this.agentCharter ? { agentCharter: this.agentCharter } : {}),
               onboardingContext: this.getOnboardingContext(),
               conversationId: this.conversationId,
             }),

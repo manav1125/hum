@@ -35,6 +35,7 @@ const log = getLogger("agent-binding");
 /** The subset of a conversation this needs, so callers stay testable. */
 export interface AgentBindable {
   toolScopeFilter?: (toolName: string) => boolean;
+  agentCharter?: string;
 }
 
 /**
@@ -82,6 +83,7 @@ export function applyAgentBinding(
   conversation.toolScopeFilter = agent?.toolScopes
     ? buildAgentToolScopeFilter(agent.toolScopes)
     : undefined;
+  conversation.agentCharter = buildAgentCharterPreamble(agent);
 }
 
 /**

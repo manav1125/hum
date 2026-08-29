@@ -358,6 +358,17 @@ export interface BuildSystemPromptOptions {
    * is selected, the conversation is marked as an activation session.
    */
   conversationId?: string;
+  /**
+   * Identity of the roster agent this conversation belongs to, rendered ahead
+   * of everything else so the agent introduces itself as itself.
+   *
+   * Rebuilt every turn from the conversation's persisted binding rather than
+   * injected once at the start of a run. An agent whose charter only reaches
+   * the first message drifts back into being generic Cue over a long thread —
+   * the same lapse as its tool scopes expiring, just slower and harder to
+   * notice.
+   */
+  agentCharter?: string;
 }
 
 /**
@@ -454,10 +465,14 @@ export function buildSystemPrompt(options?: BuildSystemPromptOptions): string {
   // splits into independently cached system blocks and other providers
   // strip.  Empty blocks are dropped so the marker never dangles at
   // either end of the prompt.
-  const rendered = renderWorkspaceSections(ctx)
+  const body = renderWorkspaceSections(ctx)
     .map((block) => block.join("\n\n"))
     .filter((block) => block.length > 0)
     .join(SYSTEM_PROMPT_CACHE_BOUNDARY);
+  // Ahead of the workspace sections: who this agent is has to be read before
+  // the instructions it is being given, and it is the shortest, most stable
+  // part of the prompt.
+  const rendered = ctx.agentCharter ? `${ctx.agentCharter}\n\n${body}` : body;
 
   if (systemPromptMemo.size >= SYSTEM_PROMPT_MEMO_MAX_ENTRIES) {
     systemPromptMemo.clear();
@@ -510,6 +525,7 @@ function systemPromptMemoKey(ctx: {
   channelSlug: string;
   trustContext?: TrustContext;
   channelCapabilities?: ChannelCapabilities;
+  agentCharter?: string;
 }): string {
   return JSON.stringify([
     ctx.hasNoClient ?? false,
@@ -523,6 +539,10 @@ function systemPromptMemoKey(ctx: {
     ctx.channelSlug,
     ctx.trustContext != null,
     ctx.channelCapabilities != null,
+    // The charter itself, not a boolean: two agents differ only by this
+    // string, and keying on presence alone would serve one agent the other's
+    // cached identity.
+    ctx.agentCharter ?? null,
   ]);
 }
 

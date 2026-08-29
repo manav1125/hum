@@ -86,6 +86,24 @@ describe("a binding that changes must not leave the old rules behind", () => {
   });
 });
 
+describe("the charter travels with the binding", () => {
+  test("applying a binding sets the agent's identity on the conversation", () => {
+    const conversation: AgentBindable = {};
+    applyAgentBinding(conversation, agent());
+    expect(conversation.agentCharter).toContain("Ops");
+    expect(conversation.agentCharter).toContain("Keep the books straight");
+  });
+
+  test("rebinding to the house assistant clears the identity", () => {
+    // A conversation that kept a previous agent's charter would introduce
+    // itself as an agent that is no longer running it.
+    const conversation: AgentBindable = {};
+    applyAgentBinding(conversation, agent());
+    applyAgentBinding(conversation, undefined);
+    expect(conversation.agentCharter).toBeUndefined();
+  });
+});
+
 describe("model pin", () => {
   test("an agent's pin becomes the conversation's model override", () => {
     expect(resolveAgentModelOverride(agent({ model: "deepseek/x" }))).toBe(
