@@ -715,6 +715,28 @@ function connectSelfHostAssistant(baseUrl: string): void {
     // Re-read the renderer's session before each reconnect: the actor token
     // can be re-seeded (new connect link) while the app runs.
     onRefreshToken: () => refreshSelfHostActorToken(),
+    /**
+     * The instance rejected this device's credential twice. Stop, and
+     * remember which token was refused.
+     *
+     * Dropping the connection matters as much as stopping: `reconcile`
+     * returns early whenever one exists, so a client left in the map with its
+     * retries disarmed would stay dead until the app restarted — including
+     * after the owner reconnected the device, which is the one moment it
+     * should come back on its own.
+     *
+     * Remembering the token is what stops that recovery becoming the same
+     * loop at a slower tempo. Reconcile retries only when the session holds a
+     * DIFFERENT credential from the one that was refused.
+     */
+    onAuthRejected: () => {
+      selfHostRejectedToken = getCachedSelfHostActorToken();
+      connections.delete(SELF_HOST_CONNECTION_KEY);
+      log.warn(
+        "[host-proxy-router] self-host instance rejected this device's token — " +
+          "stopping until the session holds a different one (reconnect the app)",
+      );
+    },
   });
   const poster = new HostProxyPoster({ endpointBase, authHeaders });
 
@@ -746,6 +768,9 @@ function connectSelfHostAssistant(baseUrl: string): void {
  * no-op and `HostProxySseClient` owns the (backing-off) retry.
  */
 let loggedMissingSelfHostToken = false;
+/** The credential the instance refused, so reconcile does not offer it again. */
+let selfHostRejectedToken: string | null = null;
+let loggedRejectedSelfHostToken = false;
 
 async function reconcileSelfHostConnection(): Promise<void> {
   const baseUrl = selfHostBaseUrl();
@@ -781,6 +806,20 @@ async function reconcileSelfHostConnection(): Promise<void> {
     return;
   }
   loggedMissingSelfHostToken = false;
+
+  // Already refused. Offering it again is the retry loop this exists to end —
+  // and the gateway's limiter counts every one of them.
+  if (selfHostRejectedToken && token === selfHostRejectedToken) {
+    if (!loggedRejectedSelfHostToken) {
+      loggedRejectedSelfHostToken = true;
+      log.info(
+        "[host-proxy-router] session still holds the refused token — not reconnecting",
+      );
+    }
+    return;
+  }
+  selfHostRejectedToken = null;
+  loggedRejectedSelfHostToken = false;
 
   connectSelfHostAssistant(baseUrl);
 }

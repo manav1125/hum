@@ -203,7 +203,11 @@ describe("HostProxySseClient", () => {
     const fakeFetch: typeof globalThis.fetch = (async () => {
       fetchCount++;
       if (fetchCount === 1) {
-        return new Response("Unauthorized", { status: 401 });
+        // A connection problem, NOT an auth rejection. 401 used to stand in
+        // for "non-200" here; it now has its own policy (see the auth tests
+        // below), and a fixture that conflates the two would assert the
+        // opposite of what the client must do.
+        return new Response("Service Unavailable", { status: 503 });
       }
       return new Response(sseStream(['data: {"type":"ok"}\n\n']), {
         status: 200,
@@ -421,5 +425,101 @@ describe("HostProxySseClient", () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]!.type).toBe("split_msg");
+  });
+});
+
+/**
+ * The give-up the main process never had.
+ *
+ * Every non-OK response was treated as a connection problem and retried
+ * forever. A 401 is not one: reopening cannot mint a valid credential, and
+ * each attempt records another auth failure against this IP in the gateway's
+ * limiter — ten in sixty seconds blocks it, which locks the owner out of
+ * their own instance. The desktop app did exactly this against a live
+ * instance, every thirty seconds, with a token signed by a retired key.
+ */
+describe("HostProxySseClient auth rejections", () => {
+  let client: InstanceType<typeof HostProxySseClient> | null = null;
+  afterEach(() => {
+    client?.disconnect();
+    client = null;
+  });
+
+  test("REGRESSION: a rejected credential stops, it does not hammer", async () => {
+    let fetchCount = 0;
+    const fakeFetch = (async () => {
+      fetchCount += 1;
+      return new Response("Unauthorized", { status: 401 });
+    }) as unknown as typeof globalThis.fetch;
+
+    let rejected = 0;
+    client = new HostProxySseClient({
+      eventsUrl: "http://127.0.0.1:9999/v1/events",
+      authHeaders: () => ({ Authorization: "Bearer stale" }),
+      fetch: fakeFetch,
+      onRefreshToken: () => Promise.resolve("stale"),
+      onAuthRejected: () => {
+        rejected += 1;
+      },
+    });
+    client.connect();
+    await flush(3_000);
+
+    // One refresh is allowed, because a new connect link can re-seed the
+    // token while the app runs. The second rejection is the credential.
+    expect(fetchCount).toBe(2);
+    expect(rejected).toBe(1);
+  });
+
+  test("with nothing able to refresh it, the first rejection is final", async () => {
+    let fetchCount = 0;
+    const fakeFetch = (async () => {
+      fetchCount += 1;
+      return new Response("Unauthorized", { status: 401 });
+    }) as unknown as typeof globalThis.fetch;
+
+    client = new HostProxySseClient({
+      eventsUrl: "http://127.0.0.1:9999/v1/events",
+      authHeaders: () => ({ Authorization: "Bearer stale" }),
+      fetch: fakeFetch,
+    });
+    client.connect();
+    await flush(3_000);
+
+    // Retrying would present the identical token, so there is nothing to
+    // learn from a second attempt and a limiter strike to lose.
+    expect(fetchCount).toBe(1);
+  });
+
+  test("a refresh that produces a working token recovers", async () => {
+    let fetchCount = 0;
+    let token = "stale";
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      fetchCount += 1;
+      const auth = (init.headers as Record<string, string>).Authorization;
+      if (auth !== "Bearer fresh") {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      return new Response(sseStream(['data: {"type":"ok"}\n\n']), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    const messages: HostProxySseMessage[] = [];
+    client = new HostProxySseClient({
+      eventsUrl: "http://127.0.0.1:9999/v1/events",
+      authHeaders: () => ({ Authorization: `Bearer ${token}` }),
+      fetch: fakeFetch,
+      onRefreshToken: () => {
+        token = "fresh";
+        return Promise.resolve(token);
+      },
+    });
+    client.setMessageCallback((m: HostProxySseMessage) => messages.push(m));
+    client.connect();
+    await flush(3_000);
+
+    expect(messages.some((m) => m.type === "ok")).toBe(true);
   });
 });

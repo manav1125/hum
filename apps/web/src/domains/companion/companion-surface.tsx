@@ -555,8 +555,16 @@ function TypingCard(
           {source}
           {" · "}
           <TextButton onClick={props.onOpen}>show</TextButton>
-          {" · "}
-          <TextButton onClick={props.onUndo}>Undo</TextButton>
+          {/* Only offered when something can actually take it back. Undo sits
+              next to the claim rather than in a toast precisely so it can be
+              trusted, and a trusted-looking button with nothing behind it is
+              the failure this surface keeps being caught by. */}
+          {props.onUndo ? (
+            <>
+              {" · "}
+              <TextButton onClick={props.onUndo}>Undo</TextButton>
+            </>
+          ) : null}
         </p>
       ) : null}
 

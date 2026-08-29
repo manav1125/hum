@@ -27,6 +27,14 @@ export interface HostProxySseOptions {
   idleCheckIntervalMs?: number;
   /** Called before each reconnect — return a fresh token or null. */
   onRefreshToken?: () => Promise<string | null>;
+  /**
+   * The instance rejected this device's credential and retrying cannot fix it.
+   *
+   * Separate from the ordinary reconnect path because it is not a connection
+   * problem: no number of attempts turns a token signed with a retired key
+   * into a valid one. See {@link HostProxySseClient.handleResponse}.
+   */
+  onAuthRejected?: () => void;
 }
 
 export interface HostProxySseMessage {
@@ -48,6 +56,7 @@ export class HostProxySseClient {
   private readonly idleTimeoutMs: number;
   private readonly idleCheckIntervalMs: number;
   private readonly onRefreshToken: (() => Promise<string | null>) | null;
+  private readonly onAuthRejected: (() => void) | null;
   private onMessage: MessageCallback | null = null;
 
   private abortController: AbortController | null = null;
@@ -57,6 +66,8 @@ export class HostProxySseClient {
   private lastTrafficAt = 0;
   private _connected = false;
   private shouldReconnect = false;
+  /** Consecutive auth rejections. One is a stale cache; two is the credential. */
+  private authRejections = 0;
 
   constructor(options: HostProxySseOptions) {
     this.eventsUrl = options.eventsUrl;
@@ -65,6 +76,7 @@ export class HostProxySseClient {
     this.idleTimeoutMs = options.idleTimeoutMs ?? IDLE_TIMEOUT_MS;
     this.idleCheckIntervalMs = options.idleCheckIntervalMs ?? IDLE_CHECK_INTERVAL_MS;
     this.onRefreshToken = options.onRefreshToken ?? null;
+    this.onAuthRejected = options.onAuthRejected ?? null;
   }
 
   /** Register a callback for parsed SSE messages. */
@@ -81,6 +93,7 @@ export class HostProxySseClient {
   connect(): void {
     if (this.abortController) return;
     this.shouldReconnect = true;
+    this.authRejections = 0;
     this.startStream();
   }
 
@@ -127,6 +140,41 @@ export class HostProxySseClient {
   }
 
   private async handleResponse(response: Response): Promise<void> {
+    /**
+     * **An auth rejection is the one failure that must not be retried.**
+     *
+     * Every other non-OK response is a connection problem and backing off is
+     * right. A 401 is not: reopening cannot mint a valid credential, and every
+     * attempt records another auth failure against this IP in the gateway's
+     * limiter — ten in sixty seconds blocks it. So the retry that looks like
+     * resilience is the thing that locks the owner out of their own instance.
+     *
+     * This looped for weeks. The desktop app hit the instance every thirty
+     * seconds — `MAX_RECONNECT_DELAY_MS`, visible as an exact cadence in the
+     * gateway log — with a token signed by a signing key the instance had
+     * since replaced, so it could never come good. The renderer's own stream
+     * has had this give-up all along, with this reason written beside it; the
+     * main process simply never grew one, because `handleResponse` never
+     * looked at the status.
+     *
+     * One refresh first, because the cache genuinely can be stale — a new
+     * connect link re-seeds the token while the app runs. A second rejection
+     * is the credential itself, and that is somebody's to fix, not a timer's.
+     */
+    if (response.status === 401 || response.status === 403) {
+      this._connected = false;
+      this.authRejections += 1;
+      if (this.authRejections === 1 && this.onRefreshToken) {
+        this.scheduleReconnect();
+        return;
+      }
+      this.shouldReconnect = false;
+      this.clearReconnectTimer();
+      this.clearIdleWatchdog();
+      this.onAuthRejected?.();
+      return;
+    }
+
     if (!response.ok || !response.body) {
       this._connected = false;
       this.scheduleReconnect();
@@ -134,6 +182,7 @@ export class HostProxySseClient {
     }
 
     this._connected = true;
+    this.authRejections = 0;
     this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
     this.lastTrafficAt = Date.now();
     this.startIdleWatchdog();
