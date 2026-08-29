@@ -48,6 +48,7 @@ import {
 } from "./conversation-slash.js";
 import { getModelInfo } from "./handlers/config-model.js";
 import { preactivateHostProxySkills } from "./host-proxy-preactivation.js";
+import { bindInteractiveTurnSender } from "./interactive-turn-sender.js";
 import type {
   ServerMessage,
   UserMessageAttachment,
@@ -1013,10 +1014,25 @@ async function drainSingleMessage(
   if (agentLoopContent !== resolvedContent)
     drainLoopOptions.titleText = resolvedContent;
 
+  // By the time the drain runs, the conversation-level sender is usually the
+  // no-op the just-finished interactive turn's restore (or conversation birth)
+  // left behind, and the drain bypasses `processMessage`, so without a fresh
+  // bind the PermissionPrompter's confirmation_request — which reads the
+  // conversation-level sender, not the turn's `onEvent` — would be emitted into
+  // nothing and hang until the permission timeout auto-denied it. Same
+  // bind/restore contract as `processMessage`.
+  const restoreSender =
+    next.isInteractive === true
+      ? bindInteractiveTurnSender(conversation)
+      : undefined;
+
   conversation
     .runAgentLoop(agentLoopContent, userMessageId, {
       ...drainLoopOptions,
       onEvent: next.onEvent,
+    })
+    .finally(() => {
+      restoreSender?.();
     })
     .catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
@@ -1440,10 +1456,21 @@ async function drainBatch(
 
   // Fire-and-forget: runAgentLoop's finally block recursively calls drainQueue
   // when this run completes. Mirrors drainSingleMessage.
+  // Same sender contract as drainSingleMessage: an interactive drained batch
+  // must rebind the conversation-level sender, or prompter confirmations
+  // raised during this turn reach no client.
+  const restoreSender =
+    drainLoopOptions.isInteractive === true
+      ? bindInteractiveTurnSender(conversation)
+      : undefined;
+
   conversation
     .runAgentLoop(lastSuccessfulContent, lastUserMessageId, {
       ...drainLoopOptions,
       onEvent: fanOutOnEvent,
+    })
+    .finally(() => {
+      restoreSender?.();
     })
     .catch((err) => {
       const message = err instanceof Error ? err.message : String(err);

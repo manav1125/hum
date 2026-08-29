@@ -31,7 +31,6 @@ import { updateMetaFile } from "../memory/conversation-disk-view.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import { DAEMON_INTERNAL_ASSISTANT_ID } from "../runtime/assistant-scope.js";
 import { publishConversationMessagesChanged } from "../runtime/sync/resource-sync-events.js";
-import { getSubagentManager } from "../subagent/index.js";
 import { getLogger } from "../util/logger.js";
 import type { Conversation } from "./conversation.js";
 import {
@@ -58,6 +57,7 @@ import {
   preactivateHostProxySkills,
   shouldAttachHostProxyForCapability,
 } from "./host-proxy-preactivation.js";
+import { bindInteractiveTurnSender } from "./interactive-turn-sender.js";
 import type { ServerMessage } from "./message-protocol.js";
 import { restingTrust } from "./trust-context.js";
 
@@ -533,10 +533,10 @@ export async function processMessage(
   });
   publishConversationMessagesChanged(conversationId);
 
-  if (options?.isInteractive === true) {
-    conversation.updateClient(broadcastMessage, false);
-    getSubagentManager().updateParentSender(conversationId, broadcastMessage);
-  }
+  const restoreSender =
+    options?.isInteractive === true
+      ? bindInteractiveTurnSender(conversation)
+      : undefined;
 
   try {
     await conversation.runAgentLoop(resolvedContent, messageId, {
@@ -549,12 +549,7 @@ export async function processMessage(
         : {}),
     });
   } finally {
-    if (
-      options?.isInteractive === true &&
-      conversation.getCurrentSender() === broadcastMessage
-    ) {
-      conversation.updateClient(() => {}, true);
-    }
+    restoreSender?.();
   }
 
   return { messageId };
@@ -593,10 +588,10 @@ export async function processMessageInBackground(
   });
   publishConversationMessagesChanged(conversationId);
 
-  if (options?.isInteractive === true) {
-    conversation.updateClient(broadcastMessage, false);
-    getSubagentManager().updateParentSender(conversationId, broadcastMessage);
-  }
+  const restoreSender =
+    options?.isInteractive === true
+      ? bindInteractiveTurnSender(conversation)
+      : undefined;
 
   conversation
     .runAgentLoop(content, messageId, {
@@ -609,12 +604,7 @@ export async function processMessageInBackground(
         : {}),
     })
     .finally(() => {
-      if (
-        options?.isInteractive === true &&
-        conversation.getCurrentSender() === broadcastMessage
-      ) {
-        conversation.updateClient(() => {}, true);
-      }
+      restoreSender?.();
     })
     .catch((err) => {
       log.error({ err, conversationId }, "Background agent loop failed");
