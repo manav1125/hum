@@ -113,6 +113,7 @@ import {
   getWorkspacePromptPath,
 } from "../../util/platform.js";
 import { silentlyWithLog } from "../../util/silently.js";
+import type { TrustContext } from "../actor-trust-resolver.js";
 import { assistantEventHub, broadcastMessage } from "../assistant-event-hub.js";
 import { DAEMON_INTERNAL_ASSISTANT_ID } from "../assistant-scope.js";
 import { getPersistedSeq } from "../assistant-stream-state.js";
@@ -1482,6 +1483,18 @@ async function handleSendMessageImpl(
     conversation.setOnboardingContext(body.onboarding!);
   }
 
+  // The requester's trust, resolved into a local rather than written straight
+  // onto the conversation.
+  //
+  // The conversation's trust slot is the RESTING actor: what an idle
+  // conversation hydrates and scopes history as. A turn already in flight
+  // resolves the same slot for its own capabilities, so writing it here — at
+  // request arrival, before we know whether this send will run inline or be
+  // queued behind that turn — hands the in-flight turn whoever sent this
+  // message. The slot is bound below, only once we have committed to running
+  // this request's turn on an idle conversation.
+  let requesterTrustContext: TrustContext | null = null;
+
   // Resolve guardian context from the AuthContext's actorPrincipalId.
   // The JWT-verified principal is used as the sender identity through
   // the same trust resolution pipeline that channel ingress uses.
@@ -1490,7 +1503,7 @@ async function handleSendMessageImpl(
     // won't match any guardian binding. Resolve from the local guardian
     // binding instead, which produces the correct guardian trust context.
     if (isHttpAuthDisabled() && actorPrincipalId === "dev-bypass") {
-      conversation.setTrustContext(resolveLocalTrustContext(sourceChannel));
+      requesterTrustContext = resolveLocalTrustContext(sourceChannel);
     } else {
       const assistantId = DAEMON_INTERNAL_ASSISTANT_ID;
       let trustCtx = resolveTrustContext({
@@ -1531,12 +1544,12 @@ async function handleSendMessageImpl(
           );
         }
       }
-      conversation.setTrustContext(withSourceChannel(sourceChannel, trustCtx));
+      requesterTrustContext = withSourceChannel(sourceChannel, trustCtx);
     }
   } else {
     // Service principals (svc_gateway) or tokens without an actor ID
     // get a minimal guardian context so downstream code has something.
-    conversation.setTrustContext({ trustClass: "guardian", sourceChannel });
+    requesterTrustContext = { trustClass: "guardian", sourceChannel };
   }
 
   // The trust this request's turn runs under, captured here rather than read
@@ -1546,7 +1559,7 @@ async function handleSendMessageImpl(
   // this turn (channel ingress for another actor, voice hydration, the voice
   // bridge), and the loop would otherwise re-read it and run this turn as
   // whoever wrote last.
-  const turnTrustContext = conversation.trustContext;
+  const turnTrustContext = requesterTrustContext;
 
   const isInteractive = isInteractiveInterface(sourceInterface);
   // Use the JWT-verified requester principal — not guardianPrincipalId,
@@ -1680,7 +1693,7 @@ async function handleSendMessageImpl(
 
       const conversationId = mapping.conversationId;
       const channelMeta = buildChannelMetadata(sourceChannel, sourceInterface, {
-        trustContext: conversation.trustContext,
+        trustContext: requesterTrustContext,
       });
 
       const assistantMsg = createAssistantMessage(cannedGreeting);
@@ -1798,9 +1811,9 @@ async function handleSendMessageImpl(
   // Resolve the verified actor's external user ID and principal for inline
   // approval routing from the conversation's guardian context.
   const verifiedActorExternalUserId =
-    conversation.trustContext?.guardianExternalUserId;
+    requesterTrustContext?.guardianExternalUserId;
   const verifiedActorPrincipalId =
-    conversation.trustContext?.guardianPrincipalId ?? undefined;
+    requesterTrustContext?.guardianPrincipalId ?? undefined;
 
   // Try to consume the message as a canonical guardian approval/rejection reply.
   // On failure, degrade to the existing queue/auto-deny path rather than
@@ -1926,6 +1939,19 @@ async function handleSendMessageImpl(
     };
   }
 
+  // Committed to running this turn inline on an idle conversation, so bind
+  // the resting actor now.
+  //
+  // Deliberately after the isProcessing() branch above and not at arrival: the
+  // readers of this slot (actor-scoped history hydration, persisted
+  // provenance, the turn's own trust) belong to whichever turn is running, and
+  // a send that arrived while another turn was in flight has just been queued
+  // rather than reaching here. Binding earlier would repoint that other
+  // actor's live turn.
+  if (requesterTrustContext) {
+    conversation.setTrustContext(requesterTrustContext);
+  }
+
   // Auto-deny pending confirmations for idle conversations. The legacy
   // handleUserMessage called autoDenyPendingConfirmations unconditionally
   // before dispatching, so an idle conversation with lingering confirmations
@@ -2017,7 +2043,7 @@ async function handleSendMessageImpl(
       }
 
       const channelMeta = buildChannelMetadata(sourceChannel, sourceInterface, {
-        trustContext: conversation.trustContext,
+        trustContext: requesterTrustContext,
       });
       const assistantMsg = createAssistantMessage(slashResult.message);
       const persistedAssistant = await addMessage(
@@ -2149,7 +2175,7 @@ async function handleSendMessageImpl(
 
     const conversationId = mapping.conversationId;
     const channelMeta = buildChannelMetadata(sourceChannel, sourceInterface, {
-      trustContext: conversation.trustContext,
+      trustContext: requesterTrustContext,
     });
 
     // Fire-and-forget: return 202 immediately, run compaction async.
@@ -2231,7 +2257,7 @@ async function handleSendMessageImpl(
       }
 
       const channelMeta = buildChannelMetadata(sourceChannel, sourceInterface, {
-        trustContext: conversation.trustContext,
+        trustContext: requesterTrustContext,
       });
       try {
         broadcastMessage({
