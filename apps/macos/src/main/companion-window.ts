@@ -226,6 +226,17 @@ const send = (channel: string, payload: unknown): void => {
  * forwarding trick exists: a renderer that decided its own hover would have to
  * claim the entire canvas to find out it was being pointed at.
  */
+/**
+ * The tail of the conversation, as the app's window last published it.
+ *
+ * Main holds it rather than deriving it because main has no conversation —
+ * the app's window is the only side that does. This is a relay, and holding
+ * the last value is what lets a companion window that opened later draw the
+ * exchange that is already underway instead of an empty card.
+ */
+let turns: import("@vellumai/ipc-contract").CompanionTurn[] = [];
+let thinking = false;
+
 const companionState = (): Record<string, unknown> => {
   const current = placement?.current();
   const geometry = current?.geometry ?? geometryFor(companionSize());
@@ -240,6 +251,8 @@ const companionState = (): Record<string, unknown> => {
       : null;
   return {
     ...resolved,
+    ...(turns.length > 0 ? { turns } : {}),
+    ...(thinking ? { thinking: true } : {}),
     ...(introducing ? { intro: introducing } : {}),
     // The glint an ignored nudge retracts to. Never lost, never repeated out
     // loud — it waits for a hover rather than saying itself again.
@@ -684,7 +697,22 @@ export const beginCompanionDrag = (): void => {
 export const endCompanionDrag = (): void => {
   stopDragPoll();
   if (!drag?.isHeld()) return;
-  drag.end(screen.getCursorScreenPoint());
+  const { dragged } = drag.end(screen.getCursorScreenPoint());
+  /**
+   * A press that never moved is a click, and a click on the creature opens
+   * the card.
+   *
+   * The drag engine has always known the difference — `end()` returns it —
+   * and this threw the answer away, so clicking the creature did nothing at
+   * all. What the hover pill offered instead was a *sentence*: `⌥Space`. A
+   * surface whose response to being clicked is to name a keyboard shortcut is
+   * telling you the thing it could simply have done.
+   *
+   * `C12`'s rule is that every creature action has a key, so the pointer is
+   * never the only path to it. This is the same rule read the other way: the
+   * key is never the only path either.
+   */
+  if (!dragged) summonCompanionCard();
 };
 
 /**
@@ -1212,19 +1240,49 @@ export const installCompanionWindow = (): void => {
   /**
    * The typing card's two verbs (`C2`, `Q1`).
    *
-   * Both hand off rather than acting here, which is the same rule the whole
-   * surface obeys: the companion talks, and the app acts. The card is one
-   * exchange and never grows a thread, so there is nothing here that needs
-   * somewhere to put a conversation.
+   * `⌘↵` still hands off — a note belongs in Notes, and that is the Notes ↔
+   * Chat boundary rather than a limitation of this card.
+   *
+   * `↵` no longer does. It used to raise the app window and start a *new*
+   * draft conversation for every message, which is why the card could only
+   * ever be one exchange: the answer landed somewhere else and the question
+   * was gone. It now goes into the conversation the app already has, the
+   * window stays where it is, and the reply comes back as turns.
    */
-  handle("vellum:companion:ask", z.tuple([z.string()]), async ([message]) => {
+  handle("vellum:companion:ask", z.tuple([z.string()]), ([message]) => {
     const text = message.trim();
     if (!text) return;
-    phases?.set({ typing: false });
-    afterCardRemoved();
-    await ensureMainWindowVisible();
-    dispatchToMain({ kind: "quickInputSubmit", message: text });
+    // The card stays open — this is a conversation now, and closing it on
+    // send is what made every answer arrive somewhere you were not looking.
+    thinking = true;
+    publishState();
+    dispatchToMain({ kind: "companionAsk", message: text });
   });
+
+  /**
+   * The app's window telling main what the conversation looks like now.
+   *
+   * Only that window owns a conversation, and only main may publish to the
+   * companion, so this is the seam between them. Truncation happens on the
+   * app's side: what crosses is already a glance.
+   */
+  handle(
+    "vellum:companion:publishTurns",
+    z.tuple([
+      z.array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          text: z.string(),
+        }),
+      ),
+      z.boolean(),
+    ]),
+    ([nextTurns, nextThinking]) => {
+      turns = nextTurns;
+      thinking = nextThinking;
+      publishState();
+    },
+  );
 
   handle(
     "vellum:companion:keepAsNote",

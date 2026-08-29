@@ -1009,3 +1009,55 @@ describe("the mic finds its assistant (self-host)", () => {
     expect(talkSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * The card holds a conversation — the thing this surface shipped without.
+ *
+ * The retired corner's rule ("one exchange, then done") was applied to the
+ * companion, a different surface with a different job, so every question went
+ * into a brand-new conversation in the app and the answer arrived somewhere
+ * the owner was not looking.
+ */
+describe("the card carries the exchange (C2)", () => {
+  test("turns are drawn, most recent last", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "typing",
+      turns: [
+        { role: "user", text: "what did I miss" },
+        { role: "assistant", text: "two things from Priya" },
+      ],
+    });
+
+    expect(screen.getByText("what did I miss")).toBeDefined();
+    expect(screen.getByText("two things from Priya")).toBeDefined();
+  });
+
+  test("REGRESSION: sending does not close the card", async () => {
+    // It used to close on send and raise the app, which is what made a second
+    // exchange impossible: the reply landed in a window you had been thrown
+    // into, and the card was gone.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "typing", turns: [{ role: "user", text: "hello" }] });
+
+    const input = screen.getByLabelText("Ask Cue") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "and then?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(askSpy).toHaveBeenCalledWith("and then?");
+    // The card is still here, and so is the exchange.
+    expect(screen.getByLabelText("Ask Cue")).toBeDefined();
+    expect(screen.getByText("hello")).toBeDefined();
+  });
+
+  test("the footer no longer claims one exchange", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "typing" });
+
+    expect(screen.queryByText(/One exchange, then done/)).toBeNull();
+    expect(screen.getByText("Open in Cue ›")).toBeDefined();
+  });
+});

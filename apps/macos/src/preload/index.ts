@@ -721,6 +721,22 @@ const bridge: VellumBridge = {
      */
     listening: (on: boolean): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:listening", on) as Promise<void>,
+    /**
+     * The app's window telling main what the conversation looks like now.
+     *
+     * Sent by the MAIN window, not the companion: only that window owns a
+     * conversation, and only main may publish to the companion. Already
+     * truncated to a glance by the caller.
+     */
+    publishTurns: (
+      turns: Array<{ role: "user" | "assistant"; text: string }>,
+      thinking: boolean,
+    ): Promise<void> =>
+      ipcRenderer.invoke(
+        "vellum:companion:publishTurns",
+        turns,
+        thinking,
+      ) as Promise<void>,
     /** The pill's `Stop`. Main decides what it stops — see the handler. */
     stop: (): Promise<void> =>
       ipcRenderer.invoke("vellum:companion:stop") as Promise<void>,

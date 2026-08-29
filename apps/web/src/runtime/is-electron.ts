@@ -383,6 +383,11 @@ declare global {
         closeCard?(): Promise<void>;
         /** A mic is open in this window, or has just closed (`C11`). */
         listening?(on: boolean): Promise<void>;
+        /** The app's window publishing the conversation tail to main. */
+        publishTurns?(
+          turns: Array<{ role: "user" | "assistant"; text: string }>,
+          thinking: boolean,
+        ): Promise<void>;
         /** Answering a nudge (`C7`). Neither of these acts on anything. */
         nudgeOpen?(): Promise<void>;
         nudgeDismiss?(): Promise<void>;

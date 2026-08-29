@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import type { CompanionPhase } from "@vellumai/ipc-contract";
+import type { CompanionPhase, CompanionTurn } from "@vellumai/ipc-contract";
 
 import { CompanionCreature, CompanionCreatureKeyframes } from "./companion-creature";
 import type { CreatureTone } from "./companion-creature";
@@ -167,6 +167,17 @@ export interface CompanionSurfaceProps {
   line?: string;
   /** A second, quieter line — the consequence, or the source. */
   detail?: string;
+  /**
+   * The tail of the conversation, most recent last (`C2`, upstream's shape).
+   *
+   * The card is a glance, not a chat window — only the last few are drawn and
+   * the app holds the thread — but there IS a thread, and this is what lets
+   * the card carry a second exchange instead of throwing each answer into the
+   * app and forgetting the question.
+   */
+  turns?: CompanionTurn[];
+  /** A turn is in flight. The last row and an unfinished one look identical. */
+  thinking?: boolean;
   /** The answer in the typing card. */
   answer?: string;
   /** Where the answer came from. An unsourced answer never renders. */
@@ -567,7 +578,9 @@ function TypingCard(
         gap: 10,
       }}
     >
-      {answer ? (
+      {props.turns && props.turns.length > 0 ? (
+        <Turns turns={props.turns} thinking={props.thinking ?? false} />
+      ) : answer ? (
         <p style={{ margin: 0, color: T1, fontSize: 14, lineHeight: 1.5 }}>{answer}</p>
       ) : null}
 
@@ -601,7 +614,9 @@ function TypingCard(
       />
 
       <p style={{ margin: 0, color: T2, fontSize: 11 }}>
-        One exchange, then done ·{" "}
+        {/* It is not one exchange any more, and saying so was the surface
+            describing a limitation rather than a rule. The handoff stays: the
+            app is still where the thread lives. */}
         <TextButton onClick={props.onOpen}>Open in Cue ›</TextButton>
       </p>
     </div>
@@ -773,6 +788,62 @@ function CaughtChip({
       <TextButton onClick={onDropRelease} muted aria-label="Let it go">
         ✕
       </TextButton>
+    </div>
+  );
+}
+
+/**
+ * The exchange so far, most recent last.
+ *
+ * Scrolls rather than grows past `TURNS_MAX_HEIGHT`: the card is still a card,
+ * and a surface that grew with every reply would run off the top of the
+ * display. Pinned to the bottom, because the newest turn is the one being
+ * read.
+ */
+const TURNS_MAX_HEIGHT = 220;
+
+function Turns({
+  turns,
+  thinking,
+}: {
+  turns: CompanionTurn[];
+  thinking: boolean;
+}): React.ReactElement {
+  const scroller = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [turns, thinking]);
+
+  return (
+    <div
+      ref={scroller}
+      style={{
+        maxHeight: TURNS_MAX_HEIGHT,
+        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+      }}
+    >
+      {turns.map((turn, i) => (
+        <p
+          key={`${turn.role}-${i}`}
+          style={{
+            margin: 0,
+            fontSize: 13,
+            lineHeight: 1.5,
+            // Yours is quieter and indented; Cue's is the thing being read.
+            color: turn.role === "user" ? T2 : T1,
+            paddingLeft: turn.role === "user" ? 14 : 0,
+          }}
+        >
+          {turn.text}
+        </p>
+      ))}
+      {thinking ? (
+        <p style={{ margin: 0, fontSize: 13, color: T2 }}>…</p>
+      ) : null}
     </div>
   );
 }

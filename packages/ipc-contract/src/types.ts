@@ -54,6 +54,14 @@ export type VellumCommand =
   | { kind: "createAssistant" }
   | { kind: "retireAssistant"; assistantId: string }
   | { kind: "quickInputSubmit"; message: string }
+  /**
+   * The companion card asking, into the conversation the app already has.
+   *
+   * Distinct from `quickInputSubmit`, which mints a NEW draft conversation and
+   * raises the window — right for a quick-input box that has no context, and
+   * exactly what made the companion card incapable of a second exchange.
+   */
+  | { kind: "companionAsk"; message: string }
   | { kind: "cancelActiveAction" }
   | { kind: "cancelDictation" }
   | { kind: "replayOnboarding" }

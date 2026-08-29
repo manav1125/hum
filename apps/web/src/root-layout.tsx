@@ -295,6 +295,35 @@ export function RootLayout() {
         `${routes.conversation(draftId)}?prompt=${encodeURIComponent(command.message)}`,
       );
     },
+    /**
+     * The companion card asking — into the conversation this window already
+     * has, and without coming to the front.
+     *
+     * Deliberately not `quickInputSubmit`. That mints a NEW draft for every
+     * message and raises the window, which is right for a quick-input box with
+     * no context and is exactly what made the card incapable of a second
+     * exchange: each question went somewhere else, so the reply never came
+     * back to the surface that asked it.
+     *
+     * A draft is still minted when there is genuinely nothing to continue.
+     */
+    companionAsk: (command) => {
+      if (command.kind !== "companionAsk") {
+        return;
+      }
+      const active = useConversationStore.getState().activeConversationId;
+      const target = active ?? createDraftConversationId();
+      if (!active) {
+        useConversationStore.getState().setActiveConversationId(target);
+      }
+      // No `setMainView`, and no raise: the point of the card is that you do
+      // not have to leave what you were doing. The reply arrives in the card
+      // through the turns this window publishes.
+      void navigate(
+        `${routes.conversation(target)}?prompt=${encodeURIComponent(command.message)}`,
+        { replace: true },
+      );
+    },
     replayOnboarding: () => {
       void navigate(`${routes.onboarding.privacy}?preview=true`);
     },

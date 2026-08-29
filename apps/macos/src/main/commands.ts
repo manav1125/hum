@@ -68,6 +68,8 @@ export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
   createAssistant: "",
   retireAssistant: "",
   quickInputSubmit: "",
+  // No accelerator: the companion card is its only caller.
+  companionAsk: "",
   cancelActiveAction: "",
   cancelDictation: "",
   replayOnboarding: "",

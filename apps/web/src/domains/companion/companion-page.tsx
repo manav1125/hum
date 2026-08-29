@@ -35,6 +35,7 @@ import type {
   CompanionIntroBeat,
   CompanionPhase,
 } from "./companion-surface";
+import type { CompanionTurn } from "@vellumai/ipc-contract";
 
 /**
  * The always-on companion, rendered inside its Electron canvas.
@@ -73,6 +74,10 @@ const NEAR_EDGE = BASE_AVATAR_BOX / 2 + BASE_CANVAS_PAD;
 
 interface CompanionState {
   phase: CompanionPhase;
+  /** The tail of the conversation the card is talking into. */
+  turns?: CompanionTurn[];
+  /** A turn is in flight right now. */
+  thinking?: boolean;
   avatarBox: number;
   growth: "right" | "left";
   cardGrowth: "up" | "down";
@@ -326,6 +331,18 @@ export function CompanionPage(): React.ReactElement {
    */
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    /**
+     * The drag handle is the creature and its pill, never the controls on it.
+     *
+     * Every button here used to begin a drag as well as its own action, which
+     * was harmless only while a click did nothing. Now that a click that never
+     * moved opens the card, a press on `✎ Type` would open it twice — once
+     * from the button and once from the click — and the summon toggles, so
+     * two opens is a card that never appears.
+     */
+    if ((e.target as HTMLElement | null)?.closest("button, input, textarea")) {
+      return;
+    }
     e.currentTarget.setPointerCapture?.(e.pointerId);
     companionDragBegin();
   }, []);
@@ -488,6 +505,8 @@ export function CompanionPage(): React.ReactElement {
           cardGrowth={state.cardGrowth}
           {...(state.line !== undefined ? { line: state.line } : {})}
           {...(state.detail !== undefined ? { detail: state.detail } : {})}
+          {...(state.turns !== undefined ? { turns: state.turns } : {})}
+          {...(state.thinking !== undefined ? { thinking: state.thinking } : {})}
           {...(state.answer !== undefined ? { answer: state.answer } : {})}
           {...(state.source !== undefined ? { source: state.source } : {})}
           {...(state.quiet !== undefined ? { quiet: state.quiet } : {})}

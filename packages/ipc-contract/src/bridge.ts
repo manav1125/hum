@@ -459,6 +459,11 @@ export interface VellumBridge {
      * never the other way round.
      */
     listening(on: boolean): Promise<void>;
+    /** The app's window publishing the conversation tail to main. */
+    publishTurns(
+      turns: Array<{ role: "user" | "assistant"; text: string }>,
+      thinking: boolean,
+    ): Promise<void>;
     nudgeOpen(): Promise<void>;
     nudgeDismiss(): Promise<void>;
     setSize(size: string): Promise<void>;
