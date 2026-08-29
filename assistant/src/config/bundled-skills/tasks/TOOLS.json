@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "task_list_add",
-      "description": "Add a task to the user's task queue. Use whenever the user asks to add/track/remember a to-do, action item, or commitment (\"add to my tasks\", \"put this on my list\", \"track this\", \"I need to do X later\"). Provide a short `title` and, when the task needs real instructions to execute, an `execution_prompt` with the full detail. After enqueueing, Cue auto-triages the item (urgency + priority) and — when the user's autonomy policy allows — runs it in the background and brings the result back for review. Dedupes on title by default.",
+      "description": "Add a task to the user's task queue. Use whenever the user asks to add/track/remember a to-do, action item, or commitment (\"add to my tasks\", \"put this on my list\", \"track this\", \"I need to do X later\"). Provide a short `title` and, when the task needs real instructions to execute, an `execution_prompt` with the full detail. After enqueueing, Cue auto-triages the item (urgency + priority) and \u2014 when the user's autonomy policy allows \u2014 runs it in the background and brings the result back for review. Dedupes on title by default. Pass `assignee` to delegate the item to a roster agent; call agent_roster first to see who exists and what each is scoped to.",
       "category": "tasks",
       "risk": "low",
       "input_schema": {
@@ -15,7 +15,7 @@
           },
           "execution_prompt": {
             "type": "string",
-            "description": "Full instruction the executor should receive at run time — include every detail needed to do the work cold (paths, names, links). Defaults to notes/title when omitted."
+            "description": "Full instruction the executor should receive at run time \u2014 include every detail needed to do the work cold (paths, names, links). Defaults to notes/title when omitted."
           },
           "notes": {
             "type": "string",
@@ -27,7 +27,9 @@
           },
           "required_tools": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Optional explicit tool allowlist snapshot for the run."
           },
           "if_exists": {
@@ -42,6 +44,10 @@
           "task_name": {
             "type": "string",
             "description": "Enqueue from a saved task template by name."
+          },
+          "assignee": {
+            "type": "string",
+            "description": "Hand this work to a named agent from the roster (call agent_roster first \u2014 the name must match exactly, and an unknown name is rejected rather than silently run by the house assistant). \"you\" parks it for the owner. Omit to run as the house assistant."
           }
         }
       },
@@ -67,7 +73,7 @@
     },
     {
       "name": "task_list_update",
-      "description": "Update a task on the queue — change priority, notes, sort order, or status (e.g. approve an awaiting_review item to done). Select the item by work_item_id (preferred), task_id, task_name, or title.",
+      "description": "Update a task on the queue \u2014 change priority, notes, sort order, or status (e.g. approve an awaiting_review item to done). Select the item by work_item_id (preferred), task_id, task_name, or title.",
       "category": "tasks",
       "risk": "low",
       "input_schema": {
@@ -77,8 +83,12 @@
             "type": "string",
             "description": "Work item id (preferred selector)."
           },
-          "task_id": { "type": "string" },
-          "task_name": { "type": "string" },
+          "task_id": {
+            "type": "string"
+          },
+          "task_name": {
+            "type": "string"
+          },
           "title": {
             "type": "string",
             "description": "Title selector (matches the active item)."
@@ -87,12 +97,16 @@
             "type": "number",
             "description": "0 = high, 1 = medium, 2 = low."
           },
-          "notes": { "type": "string" },
+          "notes": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
             "description": "New status. Note: done is only reachable from awaiting_review."
           },
-          "sort_index": { "type": "number" }
+          "sort_index": {
+            "type": "number"
+          }
         }
       },
       "executor": "tools/task-list-update.ts",
@@ -106,9 +120,15 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "work_item_id": { "type": "string" },
-          "task_name": { "type": "string" },
-          "title": { "type": "string" }
+          "work_item_id": {
+            "type": "string"
+          },
+          "task_name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
         }
       },
       "executor": "tools/task-list-remove.ts",
@@ -122,12 +142,30 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "work_item_id": { "type": "string" },
-          "task_name": { "type": "string" },
-          "title": { "type": "string" }
+          "work_item_id": {
+            "type": "string"
+          },
+          "task_name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
         }
       },
       "executor": "tools/task-queue-run.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "agent_roster",
+      "description": "List the owner's agents: name, domain, charter, autonomy tier, spend against cap, tool scopes, and model pin. Read this before delegating with task_list_add's `assignee` \u2014 assignee matching is by exact name, and it also tells you whether an agent is paused, near its cap, or scoped away from the work you were about to hand it.",
+      "category": "tasks",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "executor": "tools/agent-roster.ts",
       "execution_target": "host"
     }
   ]

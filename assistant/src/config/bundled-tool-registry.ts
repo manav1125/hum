@@ -143,6 +143,7 @@ import * as subagentMessage from "./bundled-skills/subagent/tools/subagent-messa
 import * as subagentRead from "./bundled-skills/subagent/tools/subagent-read.js";
 import * as subagentSpawn from "./bundled-skills/subagent/tools/subagent-spawn.js";
 import * as subagentStatus from "./bundled-skills/subagent/tools/subagent-status.js";
+import * as agentRoster from "./bundled-skills/tasks/tools/agent-roster.js";
 // ── tasks ──────────────────────────────────────────────────────────────────────
 import * as taskListAdd from "./bundled-skills/tasks/tools/task-list-add.js";
 import * as taskListRemove from "./bundled-skills/tasks/tools/task-list-remove.js";
@@ -324,6 +325,7 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
 
   // tasks
   ["tasks:tools/task-list-add.ts", taskListAdd],
+  ["tasks:tools/agent-roster.ts", agentRoster],
   ["tasks:tools/task-list-show.ts", taskListShow],
   ["tasks:tools/task-list-update.ts", taskListUpdate],
   ["tasks:tools/task-list-remove.ts", taskListRemove],

@@ -1,6 +1,7 @@
 import { createTask, getTask, listTasks } from "../../tasks/task-store.js";
 import { sanitizeToolList } from "../../tasks/tool-sanitizer.js";
 import { getLogger } from "../../util/logger.js";
+import { listAgents } from "../../work-items/agent-store.js";
 import {
   buildWorkItemMismatchError,
   createWorkItemWithPermissions,
@@ -235,6 +236,50 @@ function handleDuplicate(
   return null;
 }
 
+/**
+ * Resolve the requested assignee against the agent roster.
+ *
+ * Assignee matching is by NAME, case-insensitively, and everything downstream
+ * keys off that match: the agent's budget cap, its tool scopes, its model pin.
+ * A name that does not match resolves to the house assistant, so a near-miss
+ * ("Ops team" for an agent called "Ops") would silently hand the work to
+ * unrestricted generic Cue while the owner believes they delegated it to a
+ * capped, scoped agent.
+ *
+ * So an unrecognised name is an error that names the roster, not a fallback.
+ * The two reserved words the work-item surfaces already use — "you" and "cue"
+ * — pass through untouched: they mean the owner and the house assistant, and
+ * neither is expected to be on the roster.
+ */
+function resolveAssignee(
+  raw: unknown,
+): { ok: true; assignee?: string } | { ok: false; message: string } {
+  if (raw === undefined || raw === null) return { ok: true };
+  if (typeof raw !== "string" || !raw.trim()) {
+    return {
+      ok: false,
+      message: "Error: assignee must be a non-empty string.",
+    };
+  }
+  const name = raw.trim();
+  const lowered = name.toLowerCase();
+  if (lowered === "you" || lowered === "cue")
+    return { ok: true, assignee: name };
+
+  const roster = listAgents();
+  const match = roster.find((a) => a.name.toLowerCase() === lowered);
+  if (match) return { ok: true, assignee: match.name };
+
+  const names = roster.map((a) => a.name);
+  return {
+    ok: false,
+    message:
+      names.length > 0
+        ? `Error: no agent named "${name}". The roster is: ${names.join(", ")}. Use one of those, "you" for the owner, or omit assignee for the house assistant.`
+        : `Error: no agent named "${name}", and the roster is empty. Omit assignee to let the house assistant run it.`,
+  };
+}
+
 export async function executeTaskListAdd(
   input: Record<string, unknown>,
   context: ToolContext,
@@ -250,6 +295,12 @@ export async function executeTaskListAdd(
     const rawRequiredTools = input.required_tools as string[] | undefined;
 
     const ifExists = (input.if_exists as string) || "reuse_existing";
+
+    const assigneeResult = resolveAssignee(input.assignee);
+    if (!assigneeResult.ok) {
+      return { content: assigneeResult.message, isError: true };
+    }
+    const assignee = assigneeResult.assignee;
 
     // Real channel provenance for this commitment (slack/telegram/…+ conv id),
     // or `{}` for a genuine local task. Stamped onto the work item so the feed
@@ -319,6 +370,7 @@ export async function executeTaskListAdd(
         priorityTier: priorityTier ?? 1,
         sortIndex,
         requiredTools: adHocRequiredTools,
+        ...(assignee ? { assignee } : {}),
         ...(originConversationId ? { originConversationId } : {}),
         ...source,
       });
@@ -455,6 +507,7 @@ export async function executeTaskListAdd(
       priorityTier: priorityTier ?? 1,
       sortIndex,
       requiredTools: resolvedRequiredTools,
+      ...(assignee ? { assignee } : {}),
       ...(originConversationId ? { originConversationId } : {}),
       ...source,
     });
