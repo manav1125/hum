@@ -115,6 +115,13 @@ const ADAPTER_FACTORIES: Record<string, AdapterFactory> = {
       // Custom OpenAI-compatible endpoints may front strict reasoning
       // models (DeepSeek thinking) that 400 on any explicit tool_choice.
       omitToolChoiceWhenReasoning: true,
+      // The same endpoints may front a model that expects its own reasoning
+      // back on the next turn. Without this a thinking-mode follow-up that
+      // carries tool calls replays no reasoning, and the model answers as
+      // though it had not thought about the first half of its own turn. Only
+      // written when there IS reasoning to replay, since strict Chat
+      // Completions schemas reject the extra key.
+      assistantReasoningField: "reasoning_content",
       ...(baseURL ? { baseURL } : {}),
     }),
   minimax: ({ apiKey, model, streamTimeoutMs }) =>
