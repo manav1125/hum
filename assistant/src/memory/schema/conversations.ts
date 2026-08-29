@@ -39,6 +39,15 @@ export const conversations = sqliteTable(
     forkParentMessageId: text("fork_parent_message_id"),
     isAutoTitle: integer("is_auto_title").notNull().default(1),
     scheduleJobId: text("schedule_job_id"),
+    /**
+     * The agent this conversation belongs to, or NULL for the house assistant.
+     *
+     * Persisted rather than held on the in-memory conversation so the agent's
+     * model pin, tool scopes and charter survive eviction, a daemon restart,
+     * and the owner replying hours later. Without it a scoped agent silently
+     * reverts to unrestricted tools the moment its conversation is swept.
+     */
+    agentId: text("agent_id"),
     lastMessageAt: integer("last_message_at"),
     archivedAt: integer("archived_at"),
     /**

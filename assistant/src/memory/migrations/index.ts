@@ -325,6 +325,7 @@ export { migrateMemoryNodeInjectionEvents } from "./329-memory-node-injection-ev
 export { migrateRitualSnapshots } from "./330-ritual-snapshots.js";
 export { migrateScheduleScriptEnv } from "./331-schedule-script-env.js";
 export { migrateNotes } from "./332-notes.js";
+export { migrateConversationAgentBinding } from "./333-conversation-agent-binding.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

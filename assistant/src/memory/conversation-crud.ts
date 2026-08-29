@@ -296,6 +296,7 @@ export interface ConversationRow {
   forkParentMessageId: string | null;
   isAutoTitle: number;
   scheduleJobId: string | null;
+  agentId: string | null;
   lastMessageAt: number | null;
   archivedAt: number | null;
   surfacedAt: number | null;
@@ -331,6 +332,7 @@ export const parseConversation = createRowMapper<
   forkParentMessageId: "forkParentMessageId",
   isAutoTitle: "isAutoTitle",
   scheduleJobId: "scheduleJobId",
+  agentId: "agentId",
   lastMessageAt: "lastMessageAt",
   archivedAt: "archivedAt",
   surfacedAt: "surfacedAt",
@@ -3205,4 +3207,33 @@ export function getAssistantMessageIdsInTurn(messageId: string): string[] {
     .all();
 
   return sorted.map((r) => r.id);
+}
+
+/**
+ * Bind a conversation to an agent, or clear the binding with `null`.
+ *
+ * Written when a run resolves its agent, so the identity survives eviction and
+ * restart. Read back by whatever hydrates the conversation. Deliberately a
+ * plain column write rather than part of `createConversation`: a conversation
+ * can be reassigned, and reassignment is the same operation as the first bind.
+ */
+export function setConversationAgentId(
+  conversationId: string,
+  agentId: string | null,
+): void {
+  getDb()
+    .update(conversations)
+    .set({ agentId, updatedAt: Date.now() })
+    .where(eq(conversations.id, conversationId))
+    .run();
+}
+
+/** The agent bound to a conversation, or null for the house assistant. */
+export function getConversationAgentId(conversationId: string): string | null {
+  const row = getDb()
+    .select({ agentId: conversations.agentId })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .get();
+  return row?.agentId ?? null;
 }

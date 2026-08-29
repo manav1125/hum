@@ -41,6 +41,7 @@ function makeConversationRow(
     forkParentMessageId: null,
     isAutoTitle: 0,
     scheduleJobId: null,
+    agentId: null,
     lastMessageAt: 3000,
     archivedAt: null,
     surfacedAt: null,

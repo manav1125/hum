@@ -16,6 +16,7 @@
 
 import { resolveCallSiteConfig } from "../config/llm-resolver.js";
 import { getConfig } from "../config/loader.js";
+import { getConversationAgentId } from "../memory/conversation-crud.js";
 import { buildSystemPrompt } from "../prompts/system-prompt.js";
 import { wrapWithCallSiteRouting } from "../providers/call-site-routing.js";
 import { resolveDefaultProvider } from "../providers/connection-resolution.js";
@@ -25,6 +26,11 @@ import { getSubagentManager } from "../subagent/index.js";
 import { ProviderNotConfiguredError } from "../util/errors.js";
 import { getLogger } from "../util/logger.js";
 import { getSandboxWorkingDir } from "../util/platform.js";
+import {
+  applyAgentBinding,
+  resolveAgent,
+  resolveAgentModelOverride,
+} from "../work-items/agent-binding.js";
 import { Conversation } from "./conversation.js";
 import type { ConversationEvictor } from "./conversation-evictor.js";
 import {
@@ -187,7 +193,11 @@ export async function getOrCreateConversation(
         {
           maxTokens,
           speedOverride: storedOptions?.speed,
-          modelOverride: storedOptions?.modelOverride,
+          modelOverride:
+            storedOptions?.modelOverride ??
+            resolveAgentModelOverride(
+              resolveAgent({ agentId: getConversationAgentId(conversationId) }),
+            ),
         },
       );
       // Includes the Conversation constructor (tool wiring + a second
@@ -210,6 +220,22 @@ export async function getOrCreateConversation(
           "conversation_create_timing",
         );
       }
+      // Re-apply the persisted agent binding.
+      //
+      // This is what makes an agent an agent across time rather than only for
+      // the run that created it. The evictor sweeps idle conversations and a
+      // restart drops them all, so without re-applying here a scoped agent's
+      // conversation comes back unrestricted — and the owner, who set that
+      // restriction on purpose, is never told it lapsed. It is also what makes
+      // replying to an agent reach that agent instead of generic Cue.
+      //
+      // An explicit modelOverride from the caller wins: it is a deliberate
+      // per-call choice, and an agent's pin is a default for its own runs.
+      const boundAgent = resolveAgent({
+        agentId: getConversationAgentId(conversationId),
+      });
+      applyAgentBinding(newConversation, boundAgent);
+
       if (storedOptions?.assistantId) {
         newConversation.setAssistantId(storedOptions.assistantId);
       }

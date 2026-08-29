@@ -7,13 +7,13 @@
 
 import { getOrCreateConversation } from "../daemon/conversation-store.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
-import { buildAgentToolScopeFilter } from "../guardrails/agent-tool-scopes.js";
 import {
   type BudgetCheckResult,
   checkRunStartBudget,
 } from "../guardrails/budget-enforcement.js";
 import { reconcileFeedForWorkItemStatus } from "../home/feed-writer.js";
 import { recordImpact } from "../home/impact-store.js";
+import { setConversationAgentId } from "../memory/conversation-crud.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import {
   extractWorkItemResult,
@@ -30,6 +30,7 @@ import {
   recordActForCompletedRun,
   reverseLatestActForWorkItem,
 } from "./agent-act-store.js";
+import { applyAgentBinding } from "./agent-binding.js";
 import { type Agent, getAgentByAssignee } from "./agent-store.js";
 import {
   ensureProjectKnowledgeFiles,
@@ -589,13 +590,9 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   const { preamble: contextPreamble, knowledgeByPath } =
     buildWorkItemRunContext(workItem, runAgent);
   const pinnedModel = runAgent?.model ?? null;
-  // Guardrails agent tool scopes: when the run agent carries `tool_scopes`,
-  // the run conversation gets a tool filter — out-of-scope domain tools are
-  // dropped from the wire definitions and rejected at execution time. Null
-  // scopes (and the implicit house agent) = unrestricted.
-  const toolScopeFilter = runAgent?.toolScopes
-    ? buildAgentToolScopeFilter(runAgent.toolScopes)
-    : null;
+  // Guardrails agent tool scopes are applied from the persisted binding by
+  // `applyAgentBinding` below, so the same rules survive eviction and restart
+  // rather than living only on this run's conversation object.
 
   // WS1 budget hard-stop (run boundary — mirrors the mission cycle-boundary
   // check in mission-orchestrator): if the item's agent (opted into hard-stop
@@ -718,9 +715,14 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
             } as ServerMessage);
             conversation.taskRunId = taskRunId;
             conversation.headlessLock = true;
-            if (toolScopeFilter) {
-              conversation.toolScopeFilter = toolScopeFilter;
-            }
+            // Persist the agent on the conversation as well as applying it
+            // here. Applying alone lasted only as long as this in-memory
+            // object: the evictor sweeps idle conversations and a restart
+            // drops them all, after which the conversation rehydrated with no
+            // tool scopes at all. An agent the owner deliberately restricted
+            // then answered their next message unrestricted.
+            setConversationAgentId(conversationId, runAgent?.id ?? null);
+            applyAgentBinding(conversation, runAgent);
             // Work items are captured from the owner's own surfaces (chat,
             // voice, meetings, the web UI) — running one executes the owner's
             // request, so the run carries guardian trust, matching the
