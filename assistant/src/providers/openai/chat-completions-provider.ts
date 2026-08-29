@@ -7,7 +7,10 @@ import {
   type ProviderErrorReason as NormalizedReason,
 } from "../../util/errors.js";
 import { getLogger } from "../../util/logger.js";
-import { isVisionNotSupportedError } from "../../util/provider-error-patterns.js";
+import {
+  isChatTemplateFailureError,
+  isVisionNotSupportedError,
+} from "../../util/provider-error-patterns.js";
 import { extractRetryAfterMs } from "../../util/retry.js";
 import { escapeXmlAttr } from "../../util/xml.js";
 import { resolveVisionFallbackModel } from "../model-catalog.js";
@@ -257,6 +260,139 @@ function isThinkingModeToolChoiceRejection(
   return /does not support this tool_choice/i.test(
     openaiCompatErrorHaystack(error),
   );
+}
+
+/**
+ * True when a parsed tool result contains a local JSON Schema reference.
+ *
+ * Gemini reserves `$ref` fields inside structured function responses for
+ * multimodal part references. OpenAI-compatible gateways can JSON-decode tool
+ * message content before translating it to Gemini, which makes a JSON Schema
+ * result look like one of those references and produces an INVALID_ARGUMENT.
+ */
+function containsLocalJsonSchemaReference(value: unknown): boolean {
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (Array.isArray(current)) {
+      pending.push(...current);
+      continue;
+    }
+    if (current === null || typeof current !== "object") {
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    const ref = record.$ref;
+    if (typeof ref === "string" && (ref === "#" || ref.startsWith("#/"))) {
+      return true;
+    }
+    pending.push(...Object.values(record));
+  }
+  return false;
+}
+
+/**
+ * Keep JSON Schema tool results opaque across OpenAI-compatible gateways.
+ *
+ * The outer object is deliberately valid JSON so a gateway that decodes tool
+ * content produces `{ output: string }`; the schema's `$ref` stays inside the
+ * string and cannot be read as a Gemini multimodal part reference.
+ */
+function protectJsonSchemaToolResult(payload: string): string {
+  if (!payload.includes('"$ref"')) {
+    return payload;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return payload;
+  }
+
+  return containsLocalJsonSchemaReference(parsed)
+    ? JSON.stringify({ output: payload })
+    : payload;
+}
+
+function paramsMessages(
+  params: unknown,
+): OpenAI.Chat.Completions.ChatCompletionMessageParam[] | undefined {
+  const messages = (params as { messages?: unknown }).messages;
+  return Array.isArray(messages)
+    ? (messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[])
+    : undefined;
+}
+
+function isTextualContentPart(part: { type: string }): boolean {
+  return part.type === "text" || part.type === "refusal";
+}
+
+function messagesCarryFlattenableContentPartsArrays(params: unknown): boolean {
+  const messages = paramsMessages(params);
+  if (!messages) {
+    return false;
+  }
+  const arrays = messages.filter((msg) => Array.isArray(msg.content));
+  if (arrays.length === 0) {
+    return false;
+  }
+  return arrays.every((msg) =>
+    (msg.content as Array<{ type: string }>).every(isTextualContentPart),
+  );
+}
+
+/**
+ * True when the endpoint's server-side chat-template renderer rejected the
+ * request and every content-parts array in the outbound messages is purely
+ * textual, so flattening to plain strings loses nothing. Some template engines
+ * behind OpenAI-compatible endpoints only render string message content
+ * (Together serving MiniMax M3 400s with `Failed to apply chat template:
+ * invalid operation: object is not callable`); one retry with flattened
+ * content lets the same endpoint succeed instead of surfacing the raw template
+ * error.
+ *
+ * Requests carrying media parts are never flattened: silently dropping an
+ * image or audio blob would let the model answer as though it had seen it, so
+ * those rejections propagate to error classification instead.
+ */
+function isChatTemplateRejection(error: unknown, params: unknown): boolean {
+  if (!isClientErrorStatus(error)) {
+    return false;
+  }
+  if (!isChatTemplateFailureError(openaiCompatErrorHaystack(error))) {
+    return false;
+  }
+  return messagesCarryFlattenableContentPartsArrays(params);
+}
+
+/**
+ * Rewrite every purely-textual content-parts array in `params.messages` into a
+ * plain string. Returns whether any message changed.
+ */
+function flattenContentPartsToStrings(params: unknown): boolean {
+  const messages = paramsMessages(params);
+  if (!messages) {
+    return false;
+  }
+  let flattened = false;
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) {
+      continue;
+    }
+    const parts = msg.content as Array<
+      { type: "text"; text: string } | { type: "refusal"; refusal: string }
+    >;
+    if (!parts.every(isTextualContentPart)) {
+      continue;
+    }
+    msg.content = parts
+      .map((part) => (part.type === "text" ? part.text : part.refusal))
+      .join("\n\n");
+    flattened = true;
+  }
+  return flattened;
 }
 
 const log = getLogger("chat-completions");
@@ -748,6 +884,17 @@ export class OpenAIChatCompletionsProvider implements Provider {
             );
             delete params.tool_choice;
             stream = await createStream();
+          } else if (isChatTemplateRejection(error, params)) {
+            log.warn(
+              {
+                provider: this.name,
+                model: modelOverride ?? this.model,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              "Upstream chat template rejected structured message content; retrying with flattened plain-text content",
+            );
+            flattenContentPartsToStrings(params);
+            stream = await createStream();
           } else {
             throw error;
           }
@@ -1141,7 +1288,9 @@ export class OpenAIChatCompletionsProvider implements Provider {
           result.push({
             role: "tool",
             tool_call_id: tr.tool_use_id,
-            content: tr.is_error ? `[ERROR] ${textContent}` : textContent,
+            content: tr.is_error
+              ? `[ERROR] ${textContent}`
+              : protectJsonSchemaToolResult(textContent),
           });
         }
 

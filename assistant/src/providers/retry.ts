@@ -4,7 +4,7 @@ import {
   resolveUsageAttribution,
   sanitizeUsageMetadataValue,
 } from "../usage/attribution.js";
-import { ProviderError } from "../util/errors.js";
+import { ProviderError, type ProviderErrorReason } from "../util/errors.js";
 import { getLogger } from "../util/logger.js";
 import {
   computeRetryDelay,
@@ -204,6 +204,33 @@ function isRetryableTransportAbort(error: unknown): boolean {
   return RETRYABLE_TRANSPORT_ABORT_PATTERNS.some((p) => p.test(error.message));
 }
 
+/**
+ * Failure intents worth another attempt, read off the semantic reason the
+ * OpenAI-compatible normalizer derives from the intact upstream body rather
+ * than from the SDK's lossy prose. An OpenRouter-wrapped 503 says only
+ * "Provider returned error" in `error.message`, so a pattern match over that
+ * string cannot tell it apart from a 400 — the reason can.
+ *
+ * `network_error` covers transport failures that never reached the server.
+ * Deadline and cancellation shapes never carry it: they surface as tagged
+ * aborts and short-circuit in `isRetryableError` before this check, so a
+ * 30-minute stream deadline is never retried through it.
+ */
+const RETRYABLE_PROVIDER_ERROR_REASONS = new Set<ProviderErrorReason>([
+  "rate_limited",
+  "overloaded",
+  "server_error",
+  "network_error",
+]);
+
+function isRetryableProviderReason(error: unknown): boolean {
+  return (
+    error instanceof ProviderError &&
+    error.reason !== undefined &&
+    RETRYABLE_PROVIDER_ERROR_REASONS.has(error.reason)
+  );
+}
+
 function isRetryableError(error: unknown): boolean {
   // Context overflow is deterministic — retrying the same oversized prompt
   // will never succeed. Short-circuit before the generic 429/5xx check so
@@ -221,6 +248,7 @@ function isRetryableError(error: unknown): boolean {
   if (error instanceof ProviderError && error.statusCode !== undefined) {
     if (error.statusCode === 429 || error.statusCode >= 500) return true;
   }
+  if (isRetryableProviderReason(error)) return true;
   if (isRetryableProviderMessage(error)) return true;
   if (isRetryableStreamError(error)) return true;
   if (isRetryableTransportAbort(error)) return true;

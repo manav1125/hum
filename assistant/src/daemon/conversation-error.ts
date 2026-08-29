@@ -12,6 +12,7 @@ import { ConnectionResolutionError } from "../providers/connection-resolution.js
 import { getProviderRoutingSource } from "../providers/registry.js";
 import { isAbortReason } from "../util/abort-reasons.js";
 import { ProviderError, ProviderNotConfiguredError } from "../util/errors.js";
+import { isChatTemplateFailureError } from "../util/provider-error-patterns.js";
 
 /**
  * Classified conversation error ready for client emission.
@@ -498,6 +499,22 @@ function classifyCore(
             "This model doesn't support image input. Remove the image or switch to a vision-capable model.",
           retryable: false,
           errorCategory: "vision_not_supported",
+        };
+      }
+      // A 4xx from the endpoint's own server-side chat-template renderer: the
+      // request SHAPE is what it cannot render, not the credentials or the
+      // model. The provider already retried once with flattened plain-text
+      // content, so reaching here means the request carries something a
+      // string-only template cannot express (media parts, tool payloads).
+      // Naming the capability mismatch is more actionable than surfacing a
+      // Jinja stack trace, and it is not retryable as sent.
+      if (isChatTemplateFailureError(message)) {
+        return {
+          code: "PROVIDER_API",
+          userMessage:
+            "This model's provider couldn't process the request format (tool calls or images may not be supported). Switch to a different model in Settings and try again.",
+          retryable: false,
+          errorCategory: "request_shape_unsupported",
         };
       }
       // Extract the provider detail after "API error (NNN): " prefix.
