@@ -217,7 +217,6 @@ export class OpenRouterProvider extends OpenAIChatCompletionsProvider {
       streamTimeoutMs: options.streamTimeoutMs,
       requestHeaders: OPENROUTER_APP_ATTRIBUTION_HEADERS,
       assistantReasoningField: "reasoning",
-      backfillEmptyAssistantContent: true,
       strictOpenAICompat: foreignEndpoint,
     });
     this.openRouterApiKey = apiKey;

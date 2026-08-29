@@ -352,7 +352,7 @@ describe("OpenAIChatCompletionsProvider reasoning parsing", () => {
     expect(assistantMsg.reasoning_content).toBeUndefined();
   });
 
-  test("backfills placeholder content for a reasoning-only assistant turn when enabled", async () => {
+  test("backfills placeholder content for a reasoning-only assistant turn", async () => {
     const { provider, requests } = stubProvider(
       [
         {
@@ -360,10 +360,7 @@ describe("OpenAIChatCompletionsProvider reasoning parsing", () => {
           usage: { prompt_tokens: 2, completion_tokens: 1 },
         },
       ],
-      {
-        assistantReasoningField: "reasoning",
-        backfillEmptyAssistantContent: true,
-      },
+      { assistantReasoningField: "reasoning" },
     );
 
     await provider.sendMessage([
@@ -402,7 +399,11 @@ describe("OpenAIChatCompletionsProvider reasoning parsing", () => {
     expect(EMPTY_ASSISTANT_TURN_PLACEHOLDER).not.toContain("\x00");
   });
 
-  test("leaves reasoning-only assistant content null when backfill is disabled", async () => {
+  test("backfills a reasoning-only turn for every adapter, not just the opted-in ones", async () => {
+    // The guard is unconditional. Any catalog provider can front a
+    // DeepSeek-class model, and because each retry resends the same history,
+    // one malformed historical turn wedges the conversation rather than
+    // failing a single request. OpenAI proper tolerates the placeholder.
     const { provider, requests } = stubProvider(
       [
         {
@@ -431,9 +432,29 @@ describe("OpenAIChatCompletionsProvider reasoning parsing", () => {
       messages: Array<{ role: string; content: string | null }>;
     };
     const assistantMsg = params.messages.find((m) => m.role === "assistant")!;
-    // Backfill defaults off, so providers that tolerate null assistant content
-    // (e.g. OpenAI proper) are unaffected by the OpenRouter-specific guard.
-    expect(assistantMsg.content).toBeNull();
+    expect(assistantMsg.content).toBe(EMPTY_ASSISTANT_TURN_PLACEHOLDER);
+  });
+
+  test("backfills whitespace-only assistant content", async () => {
+    // A validator that trims before checking presence rejects "   " for the
+    // same reason it rejects null, so the placeholder has to cover both.
+    const { provider, requests } = stubProvider([
+      {
+        choices: [{ delta: { content: "ok" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 2, completion_tokens: 1 },
+      },
+    ]);
+
+    await provider.sendMessage([
+      { role: "user", content: [{ type: "text", text: "question" }] },
+      { role: "assistant", content: [{ type: "text", text: "   \n  " }] },
+    ]);
+
+    const params = requests[0] as {
+      messages: Array<{ role: string; content: string | null }>;
+    };
+    const assistantMsg = params.messages.find((m) => m.role === "assistant")!;
+    expect(assistantMsg.content).toBe(EMPTY_ASSISTANT_TURN_PLACEHOLDER);
   });
 
   test("does not backfill content when tool calls are present", async () => {

@@ -64,7 +64,20 @@ export function detectOpenAICompatibleContextOverflow(
     /context.?length.?exceeded|context.?window.?exceeded|prompt.?is.?too.?long|prompt_too_long|input.?too.?long|too.?many.?(?:input.?)?tokens|maximum.?context/i.test(
       message,
     );
-  if (!codeMatches && !messageMatches) return null;
+  // string_above_max_length is OpenAI's generic oversized-string validation
+  // code, so only treat it as overflow when the error points at a message
+  // content part (e.g. "Invalid 'input[191].content[1].text': string too
+  // long" — OpenAI's per-part 10 MiB cap). A large attachment's extracted_text
+  // serialized as one part trips it, and without this the 400 reads as a
+  // generic provider error: the overflow ladder never runs, and since
+  // compaction hits the same 400, the conversation wedges permanently. The
+  // ladder's media-stubbing rung is exactly what shrinks the oversized part.
+  // Other oversized fields (tool definitions) are not something it can fix.
+  const oversizedContentPart =
+    /string.?too.?long|string_above_max_length/i.test(
+      `${code ?? ""} ${message}`,
+    ) && /\b(?:input|messages)\[\d+\]\.content/i.test(message);
+  if (!codeMatches && !messageMatches && !oversizedContentPart) return null;
   // OpenAI-compatible providers rarely report usable token counts; best-effort extract.
   return extractOverflowTokensFromMessage(message);
 }
@@ -346,7 +359,6 @@ export interface OpenAIChatCompletionsProviderOptions {
    *  (e.g. DeepSeek) reject such messages with `Invalid assistant message:
    *  content or tool_calls must be set`. See {@link
    *  EMPTY_ASSISTANT_TURN_PLACEHOLDER}. */
-  backfillEmptyAssistantContent?: boolean;
   /** Drop `tool_choice` when thinking/reasoning is on the wire. Strict
    *  OpenAI-compatible reasoning upstreams (DeepSeek thinking mode) reject any
    *  explicit `tool_choice` with `Thinking mode does not support this
@@ -472,7 +484,6 @@ export class OpenAIChatCompletionsProvider implements Provider {
     | "reasoning"
     | "reasoning_content"
     | undefined;
-  private backfillEmptyAssistantContent: boolean;
   private omitToolChoiceWhenReasoning: boolean;
   protected strictOpenAICompat: boolean;
 
@@ -509,8 +520,6 @@ export class OpenAIChatCompletionsProvider implements Provider {
     this.requestHeaders = options.requestHeaders ?? {};
     this.parseThinkTags = options.parseThinkTags ?? false;
     this.assistantReasoningField = options.assistantReasoningField;
-    this.backfillEmptyAssistantContent =
-      options.backfillEmptyAssistantContent ?? false;
     this.omitToolChoiceWhenReasoning =
       options.omitToolChoiceWhenReasoning ?? false;
     this.strictOpenAICompat = options.strictOpenAICompat ?? false;
@@ -1207,14 +1216,22 @@ export class OpenAIChatCompletionsProvider implements Provider {
     }
 
     // An assistant message must carry `content` or `tool_calls`. A turn with
-    // neither (e.g. reasoning-only) would serialize to null/empty content with
-    // no tool calls, which strict OpenAI-compatible backends reject. Reasoning
-    // lives in a separate field and does not satisfy this constraint. Scoped to
-    // providers that need it (OpenRouter) via `backfillEmptyAssistantContent`.
+    // neither (a reasoning-only turn, a Stop mid-stream before any text, or a
+    // turn whose text arrived as whitespace) would serialize to blank content
+    // with no tool calls, which strict OpenAI-compatible backends reject with
+    // `Invalid assistant message: content or tool_calls must be set`.
+    // Reasoning lives in a separate field and does not satisfy the constraint,
+    // and whitespace-only content does not survive a validator that trims
+    // before checking presence, so the placeholder covers both.
+    //
+    // Unconditional rather than opt-in per adapter: every catalog provider
+    // that can front a DeepSeek-class model is exposed, and because each retry
+    // resends the same history, a single malformed historical turn wedges the
+    // conversation permanently rather than failing one request.
     if (
-      this.backfillEmptyAssistantContent &&
       !result.tool_calls &&
-      (result.content === null || result.content === "")
+      (result.content === null ||
+        (typeof result.content === "string" && result.content.trim() === ""))
     ) {
       result.content = EMPTY_ASSISTANT_TURN_PLACEHOLDER;
     }
