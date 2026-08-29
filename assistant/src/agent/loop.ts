@@ -630,6 +630,55 @@ export type LoopToolExecutor = (
   answeredQuestion?: AnsweredQuestion;
 }>;
 
+type ToolUseBlock = Extract<ContentBlock, { type: "tool_use" }>;
+
+interface NormalizedToolUse {
+  /** Assistant content with at most one `tool_use` block per call id. */
+  content: ContentBlock[];
+  /** The `tool_use` blocks in `content`, in order. */
+  toolUseBlocks: ToolUseBlock[];
+  /** Coalesced copies: a call id and name for each block dropped. */
+  duplicates: Array<{ id: string; name: string }>;
+}
+
+/**
+ * Resolves an assistant reply's `tool_use` blocks into an executable set keyed
+ * by call id: a block with no id gets one, and a repeat of an id already in the
+ * reply is dropped so the call runs once and its single `tool_result`
+ * correlates unambiguously. Providers occasionally emit the same call twice
+ * under one id, and both Anthropic and OpenAI require exactly one
+ * `tool_result` per `tool_use` id, so the duplicate has no well-formed
+ * representation downstream. Giving the repeat a fresh id instead would satisfy
+ * the wire format by running the side effect twice, which is the wrong half of
+ * the problem to solve.
+ */
+function normalizeToolUseBlocks(
+  content: ReadonlyArray<ContentBlock>,
+): NormalizedToolUse {
+  const nextContent: ContentBlock[] = [];
+  const toolUseBlocks: ToolUseBlock[] = [];
+  const duplicates: Array<{ id: string; name: string }> = [];
+  const seenIds = new Set<string>();
+
+  for (const block of content) {
+    if (block.type !== "tool_use") {
+      nextContent.push(block);
+      continue;
+    }
+    if (seenIds.has(block.id)) {
+      duplicates.push({ id: block.id, name: block.name });
+      continue;
+    }
+    const normalized: ToolUseBlock =
+      block.id.length === 0 ? { ...block, id: crypto.randomUUID() } : block;
+    seenIds.add(normalized.id);
+    nextContent.push(normalized);
+    toolUseBlocks.push(normalized);
+  }
+
+  return { content: nextContent, toolUseBlocks, duplicates };
+}
+
 export interface AgentLoopConstructorOptions {
   /** LLM provider the loop issues every call through. */
   provider: Provider;
@@ -1683,16 +1732,28 @@ export class AgentLoop {
         // placeholders so the model never sees real sensitive values — neither
         // on subsequent loop turns nor on session reload from the database.
         // Substitution to real values happens only in streamed text_delta events.
+        // Resolve tool_use ids before anything downstream keys off them, so
+        // executor dispatch and tool_result correlation stay 1:1 for the rest
+        // of the turn.
+        const normalizedToolUse = normalizeToolUseBlocks(response.content);
+        for (const duplicate of normalizedToolUse.duplicates) {
+          rlog.warn(
+            {
+              turn: toolUseTurns,
+              duplicateId: duplicate.id,
+              duplicateName: duplicate.name,
+            },
+            "Duplicate tool_use id in the assistant reply, coalescing into a single call",
+          );
+        }
+
         let assistantMessage: Message = {
           role: "assistant",
-          content: response.content,
+          content: normalizedToolUse.content,
         };
 
         // Check for tool use
-        toolUseBlocks = response.content.filter(
-          (block): block is Extract<ContentBlock, { type: "tool_use" }> =>
-            block.type === "tool_use",
-        );
+        toolUseBlocks = normalizedToolUse.toolUseBlocks;
 
         rlog.info(
           {
