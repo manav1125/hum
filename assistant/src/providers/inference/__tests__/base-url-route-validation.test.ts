@@ -32,15 +32,26 @@ function bootDb() {
 // Create and hold a test DB; the mock returns it from getDb().
 const testDb = bootDb();
 
+const realDbConnection = await import("../../../memory/db-connection.js");
 mock.module("../../../memory/db-connection.js", () => ({
+  ...realDbConnection,
   getDb: () => testDb,
 }));
 
+const realFeatureFlags =
+  await import("../../../config/assistant-feature-flags.js");
 mock.module("../../../config/assistant-feature-flags.js", () => ({
+  ...realFeatureFlags,
   isAssistantFeatureFlagEnabled: () => false,
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it does
+// not name, for this file and for every file that runs after it in the same
+// process. Omitting `loadConfig` is what made the route module throw at import,
+// so this whole suite counted as one failure and never ran a single assertion.
+const realConfigLoader = await import("../../../config/loader.js");
 mock.module("../../../config/loader.js", () => ({
+  ...realConfigLoader,
   getConfig: () => ({ llm: {} }),
   getConfigReadOnly: () => ({ llm: {} }),
 }));

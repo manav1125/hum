@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import OpenAI from "openai";
+
 import { isPlaceholderSentinelText } from "../../placeholder-sentinels.js";
 import {
   EMPTY_ASSISTANT_TURN_PLACEHOLDER,
@@ -493,5 +495,287 @@ describe("OpenAIChatCompletionsProvider reasoning parsing", () => {
       }>;
     };
     expect(params.messages[0].reasoning_content).toBe("deepseek thinking");
+  });
+});
+
+function stubProviderWithErrors(
+  errors: unknown[],
+  chunks: MockChunk[],
+): { provider: OpenAIChatCompletionsProvider; requests: unknown[] } {
+  const provider = new OpenAIChatCompletionsProvider("test-key", "test-model");
+  const requests: unknown[] = [];
+  const pending = [...errors];
+  (provider as unknown as { client: unknown }).client = {
+    chat: {
+      completions: {
+        create: async (params: unknown) => {
+          // Snapshot: the fallback mutates `params` between attempts.
+          requests.push(JSON.parse(JSON.stringify(params)));
+          const error = pending.shift();
+          if (error !== undefined) {
+            throw error;
+          }
+          return makeStream(chunks);
+        },
+      },
+    },
+  };
+  return { provider, requests };
+}
+
+const OK_CHUNKS: MockChunk[] = [
+  {
+    choices: [{ delta: { content: "ok" }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 1, completion_tokens: 1 },
+  },
+];
+
+function rejection(message: string, status = 400): Error {
+  return Object.assign(new Error(message), { status });
+}
+
+describe("reasoning opt-out rejection fallback", () => {
+  test("retries once without reasoning params when a model rejects the explicit opt-out", async () => {
+    const { provider, requests } = stubProviderWithErrors(
+      [rejection("reasoning_effort 'none' is not supported for this model")],
+      OK_CHUNKS,
+    );
+
+    const response = await provider.sendMessage(
+      [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      { config: { effort: "none" } },
+    );
+
+    expect(requests).toHaveLength(2);
+    const first = requests[0] as { reasoning_effort?: string };
+    const second = requests[1] as {
+      reasoning_effort?: string;
+      reasoning?: unknown;
+    };
+    expect(first.reasoning_effort).toBe("none");
+    expect(second.reasoning_effort).toBeUndefined();
+    expect(second.reasoning).toBeUndefined();
+    const text = response.content.find((b) => b.type === "text") as
+      | { type: "text"; text: string }
+      | undefined;
+    expect(text?.text).toBe("ok");
+  });
+
+  test("retries once for an OpenRouter-wrapped reasoning rejection (detail in metadata.raw)", async () => {
+    // OpenRouter's SDK APIError.message is the generic wrapper
+    // ("400 Provider returned error"); the real reason lives only in
+    // error.error.metadata.raw, which normalizeOpenAIAPIError promotes into the
+    // normalized message. Matching error.message alone would miss it and the
+    // opt-out rejection would hard-fail instead of retrying.
+    const wrapped = new OpenAI.APIError(
+      400,
+      {
+        code: 400,
+        message: "Provider returned error",
+        metadata: {
+          raw: "reasoning_effort 'none' is not supported for this reasoning model",
+          provider_name: "deepseek",
+        },
+      },
+      undefined,
+      new Headers(),
+    );
+    // Guard: the wrapper message carries no reasoning signal, so the fallback
+    // can only fire off the normalized upstream detail.
+    expect(/reasoning/i.test(wrapped.message)).toBe(false);
+
+    const { provider, requests } = stubProviderWithErrors([wrapped], OK_CHUNKS);
+
+    const response = await provider.sendMessage(
+      [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      { config: { effort: "none" } },
+    );
+
+    expect(requests).toHaveLength(2);
+    const first = requests[0] as { reasoning_effort?: string };
+    const second = requests[1] as {
+      reasoning_effort?: string;
+      reasoning?: unknown;
+    };
+    expect(first.reasoning_effort).toBe("none");
+    expect(second.reasoning_effort).toBeUndefined();
+    expect(second.reasoning).toBeUndefined();
+    const text = response.content.find((b) => b.type === "text") as
+      | { type: "text"; text: string }
+      | undefined;
+    expect(text?.text).toBe("ok");
+  });
+
+  test("does not retry when the request did not opt out of reasoning", async () => {
+    const { provider, requests } = stubProviderWithErrors(
+      [rejection("reasoning_effort is invalid")],
+      OK_CHUNKS,
+    );
+
+    await expect(
+      provider.sendMessage(
+        [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        { config: { effort: "high" } },
+      ),
+    ).rejects.toThrow();
+    expect(requests).toHaveLength(1);
+  });
+
+  test("does not retry a 4xx that does not name reasoning", async () => {
+    const { provider, requests } = stubProviderWithErrors(
+      [rejection("invalid api key")],
+      OK_CHUNKS,
+    );
+
+    await expect(
+      provider.sendMessage(
+        [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        { config: { effort: "none" } },
+      ),
+    ).rejects.toThrow();
+    expect(requests).toHaveLength(1);
+  });
+
+  test("does not retry server errors", async () => {
+    const { provider, requests } = stubProviderWithErrors(
+      [rejection("reasoning backend unavailable", 500)],
+      OK_CHUNKS,
+    );
+
+    await expect(
+      provider.sendMessage(
+        [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        { config: { effort: "none" } },
+      ),
+    ).rejects.toThrow();
+    expect(requests).toHaveLength(1);
+  });
+});
+
+describe("thinking-mode tool_choice rejection fallback", () => {
+  test("retries once without tool_choice when thinking mode rejects it", async () => {
+    const { provider, requests } = stubProviderWithErrors(
+      [rejection("Thinking mode does not support this tool_choice")],
+      OK_CHUNKS,
+    );
+
+    const response = await provider.sendMessage(
+      [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      {
+        tools: [
+          {
+            name: "bash",
+            description: "Run a shell command",
+            input_schema: { type: "object", properties: {} },
+          },
+        ],
+        config: { tool_choice: { type: "none" }, effort: "high" },
+      },
+    );
+
+    expect(requests).toHaveLength(2);
+    const first = requests[0] as {
+      tool_choice?: string;
+      reasoning_effort?: string;
+    };
+    const second = requests[1] as {
+      tool_choice?: string;
+      reasoning_effort?: string;
+    };
+    expect(first.tool_choice).toBe("none");
+    expect(first.reasoning_effort).toBe("high");
+    expect(second.tool_choice).toBeUndefined();
+    expect(second.reasoning_effort).toBe("high");
+    const text = response.content.find((b) => b.type === "text") as
+      | { type: "text"; text: string }
+      | undefined;
+    expect(text?.text).toBe("ok");
+  });
+
+  test("retries once for an OpenRouter-wrapped thinking-mode tool_choice rejection", async () => {
+    const wrapped = new OpenAI.APIError(
+      400,
+      {
+        code: 400,
+        message: "Provider returned error",
+        metadata: {
+          raw: "[invalid_request_error] Thinking mode does not support this tool_choice",
+          provider_name: "deepseek",
+        },
+      },
+      undefined,
+      new Headers(),
+    );
+    expect(/tool_choice/i.test(wrapped.message)).toBe(false);
+
+    const { provider, requests } = stubProviderWithErrors([wrapped], OK_CHUNKS);
+
+    await provider.sendMessage(
+      [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      {
+        tools: [
+          {
+            name: "bash",
+            description: "Run a shell command",
+            input_schema: { type: "object", properties: {} },
+          },
+        ],
+        config: { tool_choice: { type: "none" }, effort: "high" },
+      },
+    );
+
+    expect(requests).toHaveLength(2);
+    expect((requests[0] as { tool_choice?: string }).tool_choice).toBe("none");
+    expect(
+      (requests[1] as { tool_choice?: string }).tool_choice,
+    ).toBeUndefined();
+  });
+
+  test("does not retry a 4xx that does not name tool_choice", async () => {
+    const { provider, requests } = stubProviderWithErrors(
+      [rejection("invalid api key")],
+      OK_CHUNKS,
+    );
+
+    await expect(
+      provider.sendMessage(
+        [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        {
+          tools: [
+            {
+              name: "bash",
+              description: "Run a shell command",
+              input_schema: { type: "object", properties: {} },
+            },
+          ],
+          config: { tool_choice: { type: "none" }, effort: "high" },
+        },
+      ),
+    ).rejects.toThrow();
+    expect(requests).toHaveLength(1);
+  });
+
+  test("does not retry thinking-mode tool_choice 500s", async () => {
+    const { provider, requests } = stubProviderWithErrors(
+      [rejection("Thinking mode does not support this tool_choice", 500)],
+      OK_CHUNKS,
+    );
+
+    await expect(
+      provider.sendMessage(
+        [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        {
+          tools: [
+            {
+              name: "bash",
+              description: "Run a shell command",
+              input_schema: { type: "object", properties: {} },
+            },
+          ],
+          config: { tool_choice: { type: "none" }, effort: "high" },
+        },
+      ),
+    ).rejects.toThrow();
+    expect(requests).toHaveLength(1);
   });
 });
