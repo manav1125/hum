@@ -18,9 +18,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  hasValidJpegStructure,
   optimizeImageForTransport,
   runFfmpeg,
   shouldRescaleImage,
+  sniffImageMime,
 } from "./image-optimize.js";
 
 const scratch: string[] = [];
@@ -143,4 +145,92 @@ describe("the encoder the container actually uses", () => {
     // Re-encoded at its own size, so it cannot have grown by an order of scale.
     expect(out!.length).toBeLessThan(Buffer.from(src, "base64").length * 2);
   }, 60_000);
+});
+
+describe("hasValidJpegStructure", () => {
+  // A minimal but structurally complete JPEG: SOI, an APP0 segment, an SOF0
+  // frame header, an SOS scan with one entropy byte, then EOI.
+  function completeJpeg(): Buffer {
+    return Buffer.from([
+      0xff,
+      0xd8, // SOI
+      0xff,
+      0xe0,
+      0x00,
+      0x04,
+      0x00,
+      0x00, // APP0, length 4
+      0xff,
+      0xc0,
+      0x00,
+      0x04,
+      0x00,
+      0x00, // SOF0, length 4
+      0xff,
+      0xda,
+      0x00,
+      0x04,
+      0x00,
+      0x00, // SOS, length 4
+      0x12, // entropy-coded data
+      0xff,
+      0xd9, // EOI
+    ]);
+  }
+
+  test("accepts a complete JPEG", () => {
+    expect(hasValidJpegStructure(completeJpeg())).toBe(true);
+  });
+
+  test("rejects a JPEG truncated before its EOI", () => {
+    // This is the payload sniffing alone lets through: the SOI header is
+    // intact, so it reads as image/jpeg, and the provider rejects it on every
+    // turn once it has been written into a compacted history.
+    const truncated = completeJpeg().subarray(0, 20);
+    expect(sniffImageMime(Buffer.concat([truncated, Buffer.alloc(12)]))).toBe(
+      "image/jpeg",
+    );
+    expect(hasValidJpegStructure(truncated)).toBe(false);
+  });
+
+  test("rejects a truncated JPEG whose metadata carries an embedded thumbnail", () => {
+    // An EXIF thumbnail is itself a complete JPEG, so a raw search for the
+    // FF D9 byte pair would find one inside the APP1 segment and accept a
+    // payload that has no top-level EOI at all.
+    const thumbnail = completeJpeg();
+    const segmentLength = thumbnail.length + 2;
+    const withThumb = Buffer.concat([
+      Buffer.from([0xff, 0xd8]), // SOI
+      Buffer.from([0xff, 0xe1, segmentLength >> 8, segmentLength & 0xff]),
+      thumbnail,
+      Buffer.from([0xff, 0xc0, 0x00, 0x04, 0x00, 0x00]), // SOF0
+      Buffer.from([0xff, 0xda, 0x00, 0x04, 0x00, 0x00]), // SOS, then cut off
+    ]);
+    expect(withThumb.includes(Buffer.from([0xff, 0xd9]))).toBe(true);
+    expect(hasValidJpegStructure(withThumb)).toBe(false);
+  });
+
+  test("rejects a degenerate SOI+EOI payload carrying no image data", () => {
+    expect(hasValidJpegStructure(Buffer.from([0xff, 0xd8, 0xff, 0xd9]))).toBe(
+      false,
+    );
+  });
+
+  test("keeps restart markers inside the scan", () => {
+    const withRestarts = Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      Buffer.from([0xff, 0xc0, 0x00, 0x04, 0x00, 0x00]),
+      Buffer.from([0xff, 0xda, 0x00, 0x04, 0x00, 0x00]),
+      Buffer.from([0x12, 0xff, 0x00, 0xff, 0xd0, 0x34]), // stuffed byte + RST0
+      Buffer.from([0xff, 0xd9]),
+    ]);
+    expect(hasValidJpegStructure(withRestarts)).toBe(true);
+  });
+
+  test("rejects a segment whose declared length overruns the buffer", () => {
+    const overrun = Buffer.from([
+      0xff, 0xd8, 0xff, 0xe0, 0x7f, 0xff, 0x00, 0x00,
+    ]);
+    expect(hasValidJpegStructure(overrun)).toBe(false);
+  });
 });

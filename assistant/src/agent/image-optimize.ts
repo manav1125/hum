@@ -72,6 +72,94 @@ function isCompleteJpeg(bytes: Buffer): boolean {
  * wrapper, which needs its `WEBP` tag checked at offset 8 to distinguish it
  * from any other RIFF payload.
  */
+/**
+ * Whether a JPEG's marker structure walks cleanly to a terminal EOI, having
+ * passed both a frame header and a scan.
+ *
+ * `sniffImageMime` reads only the SOI magic, which a truncated JPEG still
+ * carries, so a half-written file sniffs as a valid `image/jpeg` and a
+ * provider then rejects it. Once such bytes are baked into a compacted
+ * history that rejection repeats on every later turn, so the structural check
+ * has to happen before they are written.
+ *
+ * A raw search for the FF D9 byte pair is not enough either: a length-
+ * delimited APP segment can carry an EXIF thumbnail, which is itself a
+ * complete embedded JPEG, so a truncated image with intact metadata would
+ * pass. This walks segment boundaries from SOI, skips segment payloads,
+ * traverses entropy-coded scan data (stuffed FF 00 and RST0-7 stay inside the
+ * scan), and accepts only a top-level EOI. Requiring a frame (SOF) and a scan
+ * (SOS) first rejects a degenerate SOI+EOI payload that carries no image data.
+ */
+export function hasValidJpegStructure(bytes: Uint8Array): boolean {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    return false;
+  }
+  let sawFrame = false;
+  let sawScan = false;
+  let i = 2;
+  while (i + 1 < bytes.length) {
+    if (bytes[i] !== 0xff) {
+      return false;
+    }
+    // FF fill bytes before a marker are legal padding.
+    let j = i + 1;
+    while (j < bytes.length && bytes[j] === 0xff) {
+      j++;
+    }
+    if (j >= bytes.length) {
+      return false;
+    }
+    const marker = bytes[j];
+    i = j + 1;
+    if (marker === 0xd9) {
+      return sawFrame && sawScan;
+    }
+    // SOF0-SOF15 occupy C0-CF, excluding DHT (C4), JPG (C8), and DAC (CC).
+    if (
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
+      marker !== 0xc4 &&
+      marker !== 0xc8 &&
+      marker !== 0xcc
+    ) {
+      sawFrame = true;
+    }
+    // Standalone markers carry no length field: repeated SOI, TEM, RST0-7.
+    if (
+      marker === 0xd8 ||
+      marker === 0x01 ||
+      (marker >= 0xd0 && marker <= 0xd7)
+    ) {
+      continue;
+    }
+    if (i + 1 >= bytes.length) {
+      return false;
+    }
+    const segmentLength = (bytes[i]! << 8) | bytes[i + 1]!;
+    if (segmentLength < 2) {
+      return false;
+    }
+    i += segmentLength;
+    if (marker === 0xda) {
+      sawScan = true;
+      // SOS: entropy-coded data follows the header. Scan to the next real
+      // marker; FF 00 (stuffed data byte) and FF D0-D7 (restart) stay inside
+      // the scan.
+      while (i + 1 < bytes.length) {
+        if (
+          bytes[i] === 0xff &&
+          bytes[i + 1] !== 0x00 &&
+          !(bytes[i + 1]! >= 0xd0 && bytes[i + 1]! <= 0xd7)
+        ) {
+          break;
+        }
+        i++;
+      }
+    }
+  }
+  return false;
+}
+
 export function sniffImageMime(bytes: Buffer): string | null {
   if (bytes.length < 12) return null;
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";

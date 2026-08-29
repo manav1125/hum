@@ -19,6 +19,7 @@
  * `compacted: false` — never silently lose messages.
  */
 import {
+  hasValidJpegStructure,
   optimizeImageForTransport,
   sniffImageMime,
 } from "../agent/image-optimize.js";
@@ -839,7 +840,17 @@ async function buildRetainedImageBlocks(
     // recognisable image must be dropped here rather than wedging the
     // conversation for good. Reported as missing, which the caller already
     // surfaces, rather than dropped in silence.
-    if (!sniffImageMime(Buffer.from(optimized.data, "base64"))) {
+    //
+    // Sniffing the format is not sufficient for JPEG: a truncated JPEG keeps
+    // its SOI header and so still sniffs as `image/jpeg`, which is exactly the
+    // payload a provider rejects. JPEGs must also walk to a terminal EOI.
+    const optimizedBytes = Buffer.from(optimized.data, "base64");
+    const optimizedFormat = sniffImageMime(optimizedBytes);
+    const bytesAreValidImage =
+      optimizedFormat !== null &&
+      (optimizedFormat !== "image/jpeg" ||
+        hasValidJpegStructure(optimizedBytes));
+    if (!bytesAreValidImage) {
       missing.push(name);
       continue;
     }
