@@ -133,8 +133,19 @@ export interface CompanionSurfaceProps {
   transcribing?: boolean;
   /** The mic could not be reached, or the words did not come through. */
   talkError?: string;
-  /** What a finished hold left in the composer, ready to send or keep. */
-  draft?: string;
+  /**
+   * What a finished hold left in the composer, ready to send or keep.
+   *
+   * Carries a sequence rather than being a bare string so that saying the
+   * same words twice still lands twice. Compared by value, a second identical
+   * transcript is indistinguishable from no transcript at all — and silently
+   * dropping what somebody just said is the worst failure a capture surface
+   * has.
+   */
+  draft?: { text: string; seq: number };
+  /** A mic is open right now. The card cannot read this from `phase`: the
+   *  typing card outranks `listening`, so the resolved phase stays `typing`. */
+  micOpen?: boolean;
   /** `✎ Type` on the hover pill — the same thing `⌥Space` does. */
   onType?: () => void;
   /** `↵` — ask Cue. Handed to the app; never answered into a thread. */
@@ -572,7 +583,11 @@ function TypingCard(
         onAsk={props.onAsk}
         onKeepAsNote={props.onKeepAsNote}
         onClose={props.onCloseCard}
+        micOpen={props.micOpen ?? false}
+        transcribing={props.transcribing ?? false}
         {...(props.draft !== undefined ? { draft: props.draft } : {})}
+        {...(props.onTalkStart ? { onTalkStart: props.onTalkStart } : {})}
+        {...(props.onTalkEnd ? { onTalkEnd: props.onTalkEnd } : {})}
       />
 
       <p style={{ margin: 0, color: T2, fontSize: 11 }}>
@@ -765,7 +780,11 @@ function Composer({
   onAsk,
   onKeepAsNote,
   onClose,
-  draft = "",
+  draft,
+  micOpen = false,
+  transcribing = false,
+  onTalkStart,
+  onTalkEnd,
 }: {
   onAsk?: (message: string) => void;
   onKeepAsNote?: (note: string) => void;
@@ -778,16 +797,24 @@ function Composer({
    * sent itself would pick one for you, and the Notes ↔ Chat boundary is the
    * stronger rule.
    */
-  draft?: string;
+  draft?: { text: string; seq: number };
+  micOpen?: boolean;
+  transcribing?: boolean;
+  onTalkStart?: () => void;
+  onTalkEnd?: () => void;
 }): React.ReactElement {
-  const [text, setText] = useState(draft);
+  const [text, setText] = useState(draft?.text ?? "");
   // A later hold appends to whatever is already here rather than replacing
-  // it, so a second sentence extends the first instead of eating it.
-  const seenDraft = useRef(draft);
+  // it, so a second sentence extends the first instead of eating it. Keyed on
+  // the sequence, not the words: saying the same thing twice must land twice.
+  const seenSeq = useRef(draft?.seq ?? 0);
   useEffect(() => {
-    if (draft === seenDraft.current) return;
-    seenDraft.current = draft;
-    if (draft) setText((current) => (current ? `${current} ${draft}` : draft));
+    if (!draft || draft.seq === seenSeq.current) return;
+    seenSeq.current = draft.seq;
+    const spoken = draft.text;
+    if (spoken) {
+      setText((current) => (current ? `${current} ${spoken}` : spoken));
+    }
   }, [draft]);
 
   return (
@@ -819,7 +846,13 @@ function Composer({
           else onAsk?.(body);
           setText("");
         }}
-        placeholder="Reply, or ⌘↵ to keep as a note…"
+        placeholder={
+          micOpen
+            ? "Listening\u2026"
+            : transcribing
+              ? "Making that out\u2026"
+              : "Reply, speak, or \u2318\u21B5 to keep as a note\u2026"
+        }
         aria-label="Ask Cue"
         autoFocus
         style={{
@@ -833,6 +866,46 @@ function Composer({
           fontSize: 13,
         }}
       />
+      {/* The mic, in the card as well as on the pill.
+          The pill's affordance vanishes the moment the card opens — it is
+          replaced by the card — so without this one, opening the card to type
+          was also the act of giving up on speaking. Same hold, same recorder,
+          and the words land in this field rather than sending themselves:
+          the card has two verbs and speech does not get to pick one. */}
+      {onTalkStart ? (
+        <button
+          type="button"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onTalkStart();
+          }}
+          onPointerUp={() => onTalkEnd?.()}
+          onPointerCancel={() => onTalkEnd?.()}
+          aria-label={micOpen ? "Release to stop" : "Hold to talk"}
+          aria-pressed={micOpen}
+          title="Hold to talk"
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            // Lit while a mic is open — the only evidence, in this phase, that
+            // something is recording (`C11`): the typing card outranks
+            // `listening`, so the creature does not change.
+            background: micOpen ? "#E5484D" : "rgba(255,255,255,.08)",
+            color: micOpen ? "#fff" : T2,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 11,
+            flex: "0 0 auto",
+            border: 0,
+            cursor: "pointer",
+          }}
+        >
+          ◎
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={() => {

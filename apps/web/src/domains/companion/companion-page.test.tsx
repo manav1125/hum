@@ -130,6 +130,11 @@ class FakeMediaRecorder {
   constructor(readonly stream: MediaStream) {}
   start() {}
   stop() {
+    // Emit a chunk before stopping. Without one the blob is empty, and
+    // `useTalkRecorder` discards an empty recording before it ever reaches
+    // transcription — so a fake that skips this silently turns every
+    // transcript test into a test of the discard path.
+    this.ondataavailable?.({ data: new Blob(["audio"]) });
     this.onstop?.();
   }
 }
@@ -844,5 +849,117 @@ describe("the creature draws whose turn it is, as main resolved it", () => {
 
     expect(getStatusSpy).not.toHaveBeenCalled();
     expect(statusListeners).toHaveLength(0);
+  });
+});
+
+/**
+ * Speaking from inside the card — the pill's mic is gone by then.
+ *
+ * Opening the card replaces the hover pill, so before this the act of opening
+ * the card to type was also the act of giving up on speaking.
+ */
+describe("the card can be spoken into (C2)", () => {
+  test("holding the card's mic records, and the words land in the field", async () => {
+    localStorage.setItem("vellum:selectedAssistantId", "asst_1");
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "typing" });
+
+    const mic = screen.getByLabelText("Hold to talk");
+    await act(async () => {
+      fireEvent.pointerDown(mic, { pointerId: 1 });
+    });
+    expect(getUserMediaSpy).toHaveBeenCalledTimes(1);
+    expect(listeningSpy).toHaveBeenLastCalledWith(true);
+
+    await act(async () => {
+      fireEvent.pointerUp(mic, { pointerId: 1 });
+    });
+    expect(stoppedTracks).toBe(1);
+  });
+
+  /**
+   * Drive a hold that actually produces words.
+   *
+   * A short press is discarded before it is ever transcribed (`MIN_HOLD_MS`),
+   * so a test that just presses and releases proves nothing about what happens
+   * to a transcript — it would pass with the bug fully present. The clock is
+   * moved past the minimum and the transcription endpoint answers, so the
+   * words genuinely arrive.
+   */
+  const speak = async (mic: HTMLElement, words: string) => {
+    const realNow = Date.now;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ status: "created", note: { body: words } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )) as unknown as typeof globalThis.fetch;
+    try {
+      await act(async () => {
+        fireEvent.pointerDown(mic, { pointerId: 1 });
+      });
+      const startedAt = realNow();
+      Date.now = () => startedAt + 5_000;
+      await act(async () => {
+        fireEvent.pointerUp(mic, { pointerId: 1 });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    } finally {
+      Date.now = realNow;
+      globalThis.fetch = realFetch;
+    }
+  };
+
+  test("REGRESSION: a transcript must not close the card it was spoken into", async () => {
+    // `openCard` is the summon, and the summon TOGGLES — pressing it twice is
+    // how you close what it opened. Calling it unconditionally when the words
+    // arrived would shut the card at the exact moment the transcript needed
+    // somewhere to go.
+    localStorage.setItem("vellum:selectedAssistantId", "asst_1");
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "typing" });
+
+    openCardSpy.mockClear();
+    await speak(screen.getByLabelText("Hold to talk"), "ship the thing");
+
+    expect(openCardSpy).not.toHaveBeenCalled();
+    // And the words are in the field, not lost with the card.
+    expect(
+      (screen.getByLabelText("Ask Cue") as HTMLInputElement).value,
+    ).toContain("ship the thing");
+  });
+
+  test("spoken from the pill instead, the card IS asked for", async () => {
+    // The mirror of the case above: no card open, so the transcript needs one.
+    localStorage.setItem("vellum:selectedAssistantId", "asst_1");
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "hover" });
+
+    openCardSpy.mockClear();
+    // The pill's affordance is labelled by its text, not an aria-label.
+    await speak(screen.getByText("◎ Hold to talk"), "ship the thing");
+
+    expect(openCardSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("the mic is lit while it is open — the creature cannot say so here", async () => {
+    // The typing card outranks `listening`, so the resolved phase stays
+    // `typing` and the creature does not change. This button is the only
+    // evidence in this phase that something is recording.
+    localStorage.setItem("vellum:selectedAssistantId", "asst_1");
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "typing" });
+
+    expect(screen.getByLabelText("Hold to talk")).toBeDefined();
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByLabelText("Hold to talk"), {
+        pointerId: 1,
+      });
+    });
+    expect(screen.getByLabelText("Release to stop")).toBeDefined();
   });
 });

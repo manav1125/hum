@@ -136,7 +136,10 @@ function describeDropped(
 export function CompanionPage(): React.ReactElement {
   const [state, setState] = useState<CompanionState>(RESTING);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState<{ text: string; seq: number }>({
+    text: "",
+    seq: 0,
+  });
 
   /**
    * Whose mic this is.
@@ -170,11 +173,27 @@ export function CompanionPage(): React.ReactElement {
    * would pick one for you, and the Notes ↔ Chat boundary is the stronger
    * rule: speech chooses the words, the owner still chooses what they are for.
    */
+  /**
+   * The phase as main last published it, readable from a callback.
+   *
+   * `onTranscript` fires long after the render that created it, and what it
+   * has to decide — whether the card is already open — is a fact about *now*.
+   */
+  const phaseRef = useRef<CompanionPhase>("resting");
+
   const onTranscript = useCallback((text: string) => {
-    setDraft(text);
-    // The card is main's to open — it owns the geometry the card unfurls
-    // into — so this asks for it rather than drawing one.
-    companionOpenCard();
+    // A sequence, not just the words: saying the same thing twice has to land
+    // twice, and a bare string compares equal to itself.
+    setDraft((current) => ({ text, seq: current.seq + 1 }));
+    /**
+     * Ask for the card only when there is not one already.
+     *
+     * `openCard` is the summon, and the summon TOGGLES — pressing it twice is
+     * how you close what it opened. So calling it unconditionally after a
+     * hold-to-talk started *inside* the card would close the card at the
+     * moment the words arrived, throwing away the field they were going into.
+     */
+    if (phaseRef.current !== "typing") companionOpenCard();
   }, []);
   const talk = useTalkRecorder({ assistantId, onTranscript });
 
@@ -316,6 +335,11 @@ export function CompanionPage(): React.ReactElement {
   // the status, which is two sources of truth for one question — and the one
   // that loses is whichever the user is actually looking at.
   const { phase } = state;
+  // Keep the ref in step with every publish, so a callback firing between
+  // renders reads the phase the creature is actually in.
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   /**
    * What a screen reader hears — `C12`.
@@ -471,6 +495,7 @@ export function CompanionPage(): React.ReactElement {
           onIntroDismiss={companionIntroDismiss}
           onType={companionOpenCard}
           draft={draft}
+          {...(talk.state === "listening" ? { micOpen: true } : {})}
           {...(talk.partial ? { heard: talk.partial } : {})}
           {...(talk.state === "transcribing" ? { transcribing: true } : {})}
           {...(talk.error ? { talkError: talk.error } : {})}
