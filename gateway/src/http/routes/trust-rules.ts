@@ -184,10 +184,25 @@ export function createTrustRulesCreateHandler() {
       );
     }
 
-    const { tool, pattern, risk, description } = body as Record<
+    const { tool, pattern, risk, description, scope } = body as Record<
       string,
       unknown
     >;
+
+    // The engine matches rules on (tool, pattern). It has no notion of a
+    // directory, so a rule stored from a request that named one would
+    // auto-approve matching commands everywhere while the user believes they
+    // consented to a single directory. Refusing is the only honest answer:
+    // storing it would record consent narrower than the rule it enforces.
+    if (scope !== undefined && scope !== "everywhere") {
+      return Response.json(
+        {
+          error:
+            '"scope" must be "everywhere": trust rules match on tool and pattern, so a directory-scoped rule cannot be enforced',
+        },
+        { status: 400 },
+      );
+    }
 
     if (typeof tool !== "string" || !tool) {
       return Response.json(

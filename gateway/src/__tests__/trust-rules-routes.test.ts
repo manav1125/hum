@@ -238,6 +238,46 @@ describe("POST /v1/trust-rules — create", () => {
     expect(body.rule.origin).toBe("user_defined");
   });
 
+  test("refuses a directory-scoped rule rather than storing a broader one", async () => {
+    // The engine matches on (tool, pattern) and has no notion of a directory.
+    // Accepting this would store a rule that auto-approves everywhere while
+    // the user believes they consented to one directory, so it is refused.
+    const handler = createTrustRulesCreateHandler();
+    const res = await handler(
+      jsonRequest("http://localhost/v1/trust-rules", "POST", {
+        tool: "bash",
+        pattern: "rm -rf",
+        risk: "low",
+        description: "Allow rm in one project",
+        scope: "/Users/someone/project",
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/scope/i);
+
+    // And nothing was written.
+    const list = await createTrustRulesListHandler()(
+      new Request("http://localhost/v1/trust-rules"),
+    );
+    const listed = (await list.json()) as { rules: Array<{ pattern: string }> };
+    expect(listed.rules.some((r) => r.pattern === "rm -rf")).toBe(false);
+  });
+
+  test('accepts an explicit scope of "everywhere"', async () => {
+    const handler = createTrustRulesCreateHandler();
+    const res = await handler(
+      jsonRequest("http://localhost/v1/trust-rules", "POST", {
+        tool: "bash",
+        pattern: "ls -la",
+        risk: "low",
+        description: "Allow ls",
+        scope: "everywhere",
+      }),
+    );
+    expect(res.status).toBe(201);
+  });
+
   test("returns 400 for missing fields", async () => {
     const handler = createTrustRulesCreateHandler();
 

@@ -10433,9 +10433,6 @@ paths:
                 selectedPattern:
                   type: string
                   description: Allowlist pattern for persistent decisions
-                selectedScope:
-                  type: string
-                  description: Scope for persistent decisions
               required:
                 - requestId
                 - decision
@@ -11103,7 +11100,7 @@ paths:
           required: false
           schema:
             type: integer
-          description: Max contacts to return (default 50)
+          description: Max contacts to return (default 50). Values above 200 lift the default cap — People asks for the whole set.
         - name: role
           in: query
           required: false
@@ -33472,6 +33469,12 @@ paths:
                 audioPath:
                   anyOf:
                     - type: string
+                    - type: "null"
+                audioDurationMs:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
                     - type: "null"
                 transcript:
                   anyOf:

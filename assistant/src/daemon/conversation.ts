@@ -1650,7 +1650,6 @@ export class Conversation {
     decision: UserDecision,
     options?: {
       selectedPattern?: string;
-      selectedScope?: string;
       decisionContext?: string;
       emissionContext?: {
         source?: ConfirmationStateChanged["source"];
@@ -1670,7 +1669,6 @@ export class Conversation {
 
     this.prompter.resolveConfirmation(requestId, decision, {
       selectedPattern: options?.selectedPattern,
-      selectedScope: options?.selectedScope,
       decisionContext: options?.decisionContext,
     });
 

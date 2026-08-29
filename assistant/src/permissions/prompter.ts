@@ -16,7 +16,6 @@ const log = getLogger("permission-prompter");
 type ConfirmResult = {
   decision: UserDecision;
   selectedPattern?: string;
-  selectedScope?: string;
   decisionContext?: string;
   wasTimeout?: boolean;
   wasSystemCancel?: boolean;
@@ -234,7 +233,6 @@ export class PermissionPrompter {
     decision: UserDecision,
     options?: {
       selectedPattern?: string;
-      selectedScope?: string;
       decisionContext?: string;
     },
   ): void {
@@ -252,7 +250,6 @@ export class PermissionPrompter {
     (interaction?.rpcResolve as ((v: ConfirmResult) => void) | undefined)?.({
       decision,
       selectedPattern: options?.selectedPattern,
-      selectedScope: options?.selectedScope,
       decisionContext: options?.decisionContext,
     });
   }

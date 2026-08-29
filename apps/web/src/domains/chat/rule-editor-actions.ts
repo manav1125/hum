@@ -162,7 +162,7 @@ async function executeSaveRule(
         ctx.assistantId,
         context.requestId,
         "allow",
-        { selectedPattern: rule.pattern, selectedScope: rule.scope },
+        { selectedPattern: rule.pattern },
       );
       if (!result.ok) {
         useRuleEditorStore.getState().dismissRuleEditor();

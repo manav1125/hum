@@ -230,11 +230,6 @@ export function ChatRuleEditorModal({
     context.riskLevel,
   );
 
-  const directoryScopeFiltered = context.directoryScopeOptions.filter(
-    (opt) => opt.scope !== "everywhere",
-  );
-  const [selectedDirScopeIndex, setSelectedDirScopeIndex] = useState(-1);
-
   // Tracks whether user has manually interacted with the form.
   // Prevents a late-arriving LLM suggestion from overwriting user choices.
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
@@ -288,15 +283,6 @@ export function ChatRuleEditorModal({
           setSelectedPatternIndex(matchIdx);
         }
       }
-      // Apply suggestion directory scope in edit mode.
-      if (suggestion?.scope && suggestion.scope !== "everywhere") {
-        const matchIdx = directoryScopeFiltered.findIndex(
-          (o) => o.scope === suggestion.scope,
-        );
-        if (matchIdx >= 0) {
-          setSelectedDirScopeIndex(matchIdx);
-        }
-      }
     } else if (suggestion) {
       // Create mode with suggestion.
       if (suggestion.risk) {
@@ -311,14 +297,6 @@ export function ChatRuleEditorModal({
           (matchIdx >= 0 && isSingleOption)
         ) {
           setSelectedPatternIndex(matchIdx);
-        }
-      }
-      if (suggestion.scope && suggestion.scope !== "everywhere") {
-        const matchIdx = directoryScopeFiltered.findIndex(
-          (o) => o.scope === suggestion.scope,
-        );
-        if (matchIdx >= 0) {
-          setSelectedDirScopeIndex(matchIdx);
         }
       }
     } else {
@@ -336,7 +314,6 @@ export function ChatRuleEditorModal({
     effectiveOptions,
     isSingleOption,
     narrowerOptions,
-    directoryScopeFiltered,
     context.riskLevel,
     generalizationOffset,
   ]);
@@ -345,16 +322,6 @@ export function ChatRuleEditorModal({
     setHasUserInteracted(true);
     setter();
   }, []);
-
-  const resolvedScope = useCallback(() => {
-    if (
-      selectedDirScopeIndex >= 0 &&
-      selectedDirScopeIndex < directoryScopeFiltered.length
-    ) {
-      return directoryScopeFiltered[selectedDirScopeIndex].scope;
-    }
-    return "everywhere";
-  }, [selectedDirScopeIndex, directoryScopeFiltered]);
 
   const canSave =
     !isSaving &&
@@ -379,7 +346,7 @@ export function ChatRuleEditorModal({
         toolName: context.toolName,
         pattern: selectedOption.pattern,
         riskLevel: selectedRiskLevel,
-        scope: resolvedScope(),
+        scope: "everywhere",
       });
     }
   }, [
@@ -390,7 +357,6 @@ export function ChatRuleEditorModal({
     context.toolName,
     selectedPatternIndex,
     selectedRiskLevel,
-    resolvedScope,
     onSave,
   ]);
 
@@ -403,7 +369,7 @@ export function ChatRuleEditorModal({
       toolName: context.toolName,
       pattern: selectedOption.pattern,
       riskLevel: selectedRiskLevel,
-      scope: resolvedScope(),
+      scope: "everywhere",
     });
   }, [
     onSaveAsNew,
@@ -411,7 +377,6 @@ export function ChatRuleEditorModal({
     selectedPatternIndex,
     context.toolName,
     selectedRiskLevel,
-    resolvedScope,
   ]);
 
   const riskHint =
@@ -561,37 +526,6 @@ export function ChatRuleEditorModal({
                 </div>
               ) : null}
             </div>
-
-            {/* Where — directory scope */}
-            {directoryScopeFiltered.length > 0 && (
-              <div className="space-y-2">
-                <Typography
-                  variant="label-medium-default"
-                  className="text-[var(--content-secondary)]"
-                >
-                  Where
-                </Typography>
-                <div className="space-y-1">
-                  {directoryScopeFiltered.map((option, i) => (
-                    <RadioRow
-                      key={option.scope}
-                      label={option.label}
-                      selected={selectedDirScopeIndex === i}
-                      onSelect={() =>
-                        handleUserInteraction(() => setSelectedDirScopeIndex(i))
-                      }
-                    />
-                  ))}
-                  <RadioRow
-                    label="Everywhere"
-                    selected={selectedDirScopeIndex === -1}
-                    onSelect={() =>
-                      handleUserInteraction(() => setSelectedDirScopeIndex(-1))
-                    }
-                  />
-                </div>
-              </div>
-            )}
 
             {/* Treat as — risk level picker */}
             <div className="space-y-2">

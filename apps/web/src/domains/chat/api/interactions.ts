@@ -163,7 +163,7 @@ export async function submitConfirmation(
   assistantId: string,
   requestId: string,
   decision: ConfirmationDecision,
-  trustRule?: { selectedPattern: string; selectedScope: string },
+  trustRule?: { selectedPattern: string },
 ): Promise<SubmitConfirmationResult> {
   try {
     const { data, error, response } = await confirmPost({

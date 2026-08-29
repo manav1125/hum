@@ -87,7 +87,6 @@ export async function grantTrustScope(
         requestId: opts.requestId,
         decision: "always_allow",
         ...(opts.pattern ? { selectedPattern: opts.pattern } : {}),
-        ...(opts.scope ? { selectedScope: opts.scope } : {}),
       },
       throwOnError: false,
     });

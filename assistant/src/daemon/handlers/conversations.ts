@@ -31,7 +31,6 @@ export function handleConfirmationResponse(msg: ConfirmationResponse): void {
       touchConversation(conversationId);
       conversation.handleConfirmationResponse(msg.requestId, decision, {
         selectedPattern: msg.selectedPattern,
-        selectedScope: msg.selectedScope,
         emissionContext: { source: "button" },
       });
       return;

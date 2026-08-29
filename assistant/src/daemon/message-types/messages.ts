@@ -58,7 +58,6 @@ export interface ConfirmationResponse {
   requestId: string;
   decision: "allow" | "deny";
   selectedPattern?: string;
-  selectedScope?: string;
 }
 
 export interface SecretResponse {

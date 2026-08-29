@@ -54,7 +54,6 @@ function handleConfirm({ body }: RouteHandlerArgs) {
   const requestId = body?.requestId as string | undefined;
   const decision = body?.decision as string | undefined;
   const selectedPattern = body?.selectedPattern as string | undefined;
-  const selectedScope = body?.selectedScope as string | undefined;
 
   if (!requestId || typeof requestId !== "string") {
     throw new BadRequestError("requestId is required");
@@ -115,7 +114,6 @@ function handleConfirm({ body }: RouteHandlerArgs) {
     effectiveDecision as UserDecision,
     {
       selectedPattern,
-      selectedScope,
       emissionContext: { source: "button" },
     },
   );
@@ -389,10 +387,6 @@ export const ROUTES: RouteDefinition[] = [
       selectedPattern: z
         .string()
         .describe("Allowlist pattern for persistent decisions")
-        .optional(),
-      selectedScope: z
-        .string()
-        .describe("Scope for persistent decisions")
         .optional(),
     }),
     responseBody: z.object({

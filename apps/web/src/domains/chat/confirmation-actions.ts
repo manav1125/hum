@@ -157,10 +157,6 @@ export async function handleConfirmationSubmit(
     (snapshot.allowlistOptions?.length ?? 0) > 0
       ? {
           selectedPattern: snapshot.allowlistOptions![0]!.pattern,
-          selectedScope:
-            (snapshot.directoryScopeOptions?.[0]?.scope ??
-              snapshot.scopeOptions?.[0]?.scope) ||
-            "everywhere",
         }
       : undefined;
 
