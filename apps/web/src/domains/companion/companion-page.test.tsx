@@ -155,6 +155,7 @@ beforeEach(() => {
   getUserMediaSpy.mockClear();
   listeningSpy.mockClear();
   localStorage.removeItem("vellum:selectedAssistantId");
+  localStorage.removeItem("cue:selfHost");
   Object.assign(HTMLElement.prototype, {
     setPointerCapture(id: number) {
       captured.add(id);
@@ -961,5 +962,50 @@ describe("the card can be spoken into (C2)", () => {
       });
     });
     expect(screen.getByLabelText("Release to stop")).toBeDefined();
+  });
+});
+
+/**
+ * Whose mic it is, on the install this actually shipped to.
+ *
+ * A self-host deploy has exactly one assistant and nobody ever selects it —
+ * the lifecycle resolves it from the gateway — so `vellum:selectedAssistantId`
+ * is never written. The window read that key, found nothing, and fell back to
+ * opening the voice surface on every press. "Hold to talk does nothing" was
+ * that fallback, firing every time.
+ */
+describe("the mic finds its assistant (self-host)", () => {
+  test("REGRESSION: self-host records instead of falling back to the voice surface", async () => {
+    localStorage.setItem("cue:selfHost", "1");
+    // Deliberately NO `vellum:selectedAssistantId` — that is the shipped state.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "hover" });
+
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByText("◎ Hold to talk"), {
+        pointerId: 1,
+      });
+    });
+
+    expect(getUserMediaSpy).toHaveBeenCalledTimes(1);
+    expect(talkSpy).not.toHaveBeenCalled();
+  });
+
+  test("with neither an id nor self-host, the press still goes somewhere", async () => {
+    // A press that records into nothing and apologises later is worse than
+    // one that hands off to the surface which can resolve an assistant.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "hover" });
+
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByText("◎ Hold to talk"), {
+        pointerId: 1,
+      });
+    });
+
+    expect(getUserMediaSpy).not.toHaveBeenCalled();
+    expect(talkSpy).toHaveBeenCalledTimes(1);
   });
 });

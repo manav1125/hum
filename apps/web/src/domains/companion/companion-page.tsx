@@ -27,6 +27,7 @@ import {
 } from "@/domains/companion/companion-bridge";
 
 import { readSelectedAssistantId } from "@/assistant/selected-assistant-storage";
+import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { useTalkRecorder } from "@/hooks/use-talk-recorder";
 
 import { CompanionSurface, turnAnnouncement } from "./companion-surface";
@@ -151,19 +152,31 @@ export function CompanionPage(): React.ReactElement {
    * written by the app in the *other* window of the same origin, which is why
    * reading it here works at all, and why the `storage` event keeps it live
    * if the owner switches assistants while the companion is up.
+   *
+   * **On a self-host install that key is never written, and `self` is the
+   * answer.** There is one assistant and nobody ever *selects* it — the
+   * lifecycle resolves it from the gateway — so the slot stays empty for ever
+   * and the mic fell back to opening the voice surface on every press. That
+   * fallback is what "hold to talk does nothing" actually was. `self` is not
+   * a guess: it is the id this app already addresses every daemon route with
+   * on a self-host install (`assistant/api.ts`, `lifecycle-service.ts`), and
+   * the gateway rewrites `/v1/assistants/:id/...` to a flat daemon path, so
+   * the id is the app's own name for "the instance I am talking to".
    */
-  const [assistantId, setAssistantId] = useState(
-    () => readSelectedAssistantId() ?? "",
+  const resolveAssistantId = useCallback(
+    () => readSelectedAssistantId() ?? (isSelfHostMode() ? "self" : ""),
+    [],
   );
+  const [assistantId, setAssistantId] = useState(resolveAssistantId);
   useEffect(() => {
-    const reread = () => setAssistantId(readSelectedAssistantId() ?? "");
+    const reread = () => setAssistantId(resolveAssistantId());
     window.addEventListener("storage", reread);
     window.addEventListener("vellum:pref-changed", reread);
     return () => {
       window.removeEventListener("storage", reread);
       window.removeEventListener("vellum:pref-changed", reread);
     };
-  }, []);
+  }, [resolveAssistantId]);
 
   /**
    * `◎ Hold to talk`, held right here (`C2`).
