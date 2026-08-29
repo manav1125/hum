@@ -1,12 +1,13 @@
 ---
 name: skill-management
-description: Create, edit, and delete custom managed skills in the user's workspace. Use whenever the user wants to author a new skill from a description, scaffold a SKILL.md, or remove a skill they no longer need.
+description: Create, edit, and delete custom managed skills in the user's workspace. Use whenever the user wants to author a new skill from a description, learn one by watching them demonstrate it on their screen, scaffold a SKILL.md, or remove a skill they no longer need.
 metadata:
   emoji: "\U0001F9E9"
   vellum:
     display-name: "Skill Management"
     category: "system"
     activation-hints:
+      - "User offers to SHOW you how they do something rather than describe it (\"let me show you\", \"watch me do this\", \"learn how I handle X\")"
       - "User wants to scaffold a new managed skill in their workspace from a description"
       - "User wants to delete or list the custom skills they have defined"
       - "User wants to author or edit a SKILL.md and have it become invocable as a skill"
@@ -121,3 +122,28 @@ How you exercise it depends on what the skill does:
 - **Otherwise** (read-only or local-only skills) → run it against a realistic prompt directly. This is the default.
 
 > ⚠️ CRITICAL: Do not tell the user a skill is ready until you have confirmed it loads and activates on the intended trigger. A skill that was never loaded is a skill that was never tested. Never perform user-visible side effects just to test a skill without the user's consent.
+
+## Learning a skill by being shown
+
+When the user offers to *demonstrate* a task rather than describe it, use
+`teach_skill` instead of asking them to write it out. People are far better at
+performing a workflow than at describing one, and the steps they forget to
+mention are usually the ones that matter.
+
+1. `teach_skill` with `action: "start"` and a `goal` in their words. Say you
+   are watching and that they should just do the task normally.
+2. Wait. Do not narrate while they work.
+3. When they say they are done, `teach_skill` with `action: "stop"`. The result
+   is the observed transcript plus guidance for writing it up.
+4. Write the skill with `scaffold_managed_skill`, then show them what you wrote
+   and ask if it is right. They have just done the task, so this is the cheapest
+   moment for them to correct you.
+
+The transcript records what the screen *showed*, not what they *intended*. When
+a step's purpose is not evident, ask rather than infer — the skill may later run
+with nobody watching, so a guessed step is a guess that gets executed.
+
+Watching is bounded and explicit: it stops when they say so, or on its own at
+the session cap. It requires a connected desktop client that can share the
+screen; without one, `start` refuses rather than showing a watching state over
+a loop that sees nothing.

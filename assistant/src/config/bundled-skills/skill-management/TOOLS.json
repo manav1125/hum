@@ -2,6 +2,33 @@
   "version": 1,
   "tools": [
     {
+      "name": "teach_skill",
+      "description": "Learn a task by watching the user demonstrate it on their screen, then write it up as a skill. Use when the user offers to SHOW you how they do something (\"let me show you\", \"watch me do this\", \"learn how I handle X\") rather than describe it. Call with action \"start\" and a goal, let them perform the task, then call action \"stop\" \u2014 the result is the observed transcript plus guidance, which you then turn into a skill with scaffold_managed_skill in the same turn. Requires a connected desktop client that can share the screen. Watching is bounded: it stops when the user says so, or on its own at the session cap.",
+      "category": "skills",
+      "risk": "high",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["start", "stop", "status"],
+            "description": "start begins watching, stop ends it and returns the transcript to write up, status reports what has been seen so far."
+          },
+          "goal": {
+            "type": "string",
+            "description": "Required for \"start\": what the user is about to demonstrate, in their words (e.g. \"how I file a client invoice\")."
+          },
+          "duration_minutes": {
+            "type": "number",
+            "description": "Optional cap on how long to watch. Clamped to the session maximum; omitting it uses the default."
+          }
+        },
+        "required": ["action"]
+      },
+      "executor": "tools/teach.ts",
+      "execution_target": "host"
+    },
+    {
       "name": "scaffold_managed_skill",
       "description": "Create or update a managed skill in {workspaceDir}/skills. The skill becomes available for skill_load when a valid top-level SKILL.md is written under the skill directory. Never persist a skill without explicit user consent. Before persisting, test the snippet: write to a temp file with bash and run with `bun run /tmp/vellum-eval/snippet.ts`. Iterate up to 3 attempts, then ask the user. Clean up temp files after. Do not use file_write for temp files outside the working directory. After a skill is written, the next turn may run in a recreated conversation due to file-watcher eviction - continue normally.",
       "category": "skills",
@@ -35,7 +62,9 @@
           },
           "includes": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Optional list of child skill IDs that this skill includes (metadata only, no auto-activation)."
           },
           "add_to_index": {

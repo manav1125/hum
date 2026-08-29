@@ -411,7 +411,7 @@ export function observationDigest(input: {
   description?: string | null;
   imageBase64?: string | null;
 }): string {
-  const text = `${input.appName ?? ""} ${(input.description ?? "").trim()}`;
+  const text = `${input.appName ?? ""}\u0000${(input.description ?? "").trim()}`;
   let sampled = "";
   const image = input.imageBase64 ?? "";
   if (image.length > 0) {

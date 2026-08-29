@@ -57,6 +57,27 @@ export type CaptureSource = (
   signal: AbortSignal,
 ) => Promise<ScreenObservationInput | null>;
 
+/**
+ * Where a captured observation goes.
+ *
+ * Injected for the same reason {@link CaptureSource} is: the loop decides
+ * WHEN to look, and the sink decides what the looking is FOR. Ambient capture
+ * files work items; a teach session accumulates an ordered timeline it will
+ * later turn into a skill. Neither should be able to trigger the other's side
+ * effects, and a single hardwired sink would mean a demonstration silently
+ * filed todos.
+ */
+export type ObservationSink = (observation: ScreenObservationInput) => void;
+
+/**
+ * Whether the loop may look right now.
+ *
+ * Re-read every tick, never captured at start, so an owner who stops a
+ * session — or a session that expires mid-loop — takes effect on the next
+ * tick rather than one interval later.
+ */
+export type ArmedPredicate = () => boolean;
+
 export interface ObservationDriverHandle {
   /** Stop the loop and wait for an in-flight capture to settle. */
   stop: () => Promise<void>;
@@ -90,8 +111,16 @@ const MIN_CONFIG_TICK_MS = 5_000;
  */
 export function startObservationDriver(
   capture: CaptureSource,
-  opts: { intervalMs?: number } = {},
+  opts: {
+    intervalMs?: number;
+    /** Defaults to the ambient screen-observation session gate. */
+    isArmed?: ArmedPredicate;
+    /** Defaults to filing work items through the capture seam. */
+    sink?: ObservationSink;
+  } = {},
 ): ObservationDriverHandle {
+  const isArmed = opts.isArmed ?? isObservationCaptureArmed;
+  const sink = opts.sink ?? kickScreenObservationCapture;
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inFlight: Promise<void> | undefined;
@@ -109,13 +138,13 @@ export function startObservationDriver(
     // The session gate is re-read every tick rather than captured at start:
     // an owner who stops a session, or a session that expires mid-loop, must
     // take effect on the next tick and not one interval later.
-    if (!isObservationCaptureArmed()) return;
+    if (!isArmed()) return;
 
     try {
       const observation = await capture(controller.signal);
       if (!observation) return; // nothing to report — not an error
       if (!running) return; // stopped while the host was answering
-      kickScreenObservationCapture(observation);
+      sink(observation);
     } catch (err) {
       if (controller.signal.aborted) return;
       // A failed read is expected — the desktop disconnects, the screen locks.

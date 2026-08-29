@@ -134,6 +134,7 @@ import * as voiceConfigUpdate from "./bundled-skills/settings/tools/voice-config
 // ── skill-management ───────────────────────────────────────────────────────────
 import * as deleteManaged from "./bundled-skills/skill-management/tools/delete-managed.js";
 import * as scaffoldManaged from "./bundled-skills/skill-management/tools/scaffold-managed.js";
+import * as teachSkill from "./bundled-skills/skill-management/tools/teach.js";
 // ── spreadsheet-studio ─────────────────────────────────────────────────────────
 import * as spreadsheetCreate from "./bundled-skills/spreadsheet-studio/tools/spreadsheet-create.js";
 // ── subagent ───────────────────────────────────────────────────────────────────
@@ -308,6 +309,7 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
 
   // skill-management
   ["skill-management:tools/scaffold-managed.ts", scaffoldManaged],
+  ["skill-management:tools/teach.ts", teachSkill],
   ["skill-management:tools/delete-managed.ts", deleteManaged],
 
   // spreadsheet-studio
