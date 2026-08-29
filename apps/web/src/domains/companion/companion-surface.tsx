@@ -468,8 +468,18 @@ function AffordanceButton({
               // mic must not also start walking the creature across the
               // desktop.
               event.stopPropagation();
-              event.currentTarget.setPointerCapture(event.pointerId);
+              // **Start first, then capture.** Capture is what lets a finger
+              // that drifts off the button still deliver its release here —
+              // an improvement on the gesture, not a precondition for it. It
+              // was called first, so anything that made it throw took the
+              // whole recording with it and the press did nothing at all.
               onPressStart?.();
+              try {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              } catch {
+                // No capture: the release still arrives as this button's own
+                // `pointerup`, and the blur/hide stops remain behind that.
+              }
             },
             onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => {
               event.stopPropagation();
@@ -877,8 +887,14 @@ function Composer({
           type="button"
           onPointerDown={(event) => {
             event.preventDefault();
-            event.currentTarget.setPointerCapture(event.pointerId);
+            // Start first, then capture — see `AffordanceButton`. A capture
+            // that throws must never be able to swallow the recording.
             onTalkStart();
+            try {
+              event.currentTarget.setPointerCapture(event.pointerId);
+            } catch {
+              // No capture; this button still receives its own `pointerup`.
+            }
           }}
           onPointerUp={() => onTalkEnd?.()}
           onPointerCancel={() => onTalkEnd?.()}
