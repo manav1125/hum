@@ -13,6 +13,7 @@
 
 import { describe, expect, test } from "bun:test";
 
+import { isProcessAlive } from "../../util/process-liveness.js";
 import { classifyPidCmdline, readProcCmdline } from "../embedding-local.js";
 
 const WORKER_PATH = "/workspace/embedding-models/embed-worker.mjs";
@@ -68,5 +69,36 @@ describe("readProcCmdline", () => {
 
   test.skipIf(hasProc)("returns null where /proc does not exist", () => {
     expect(readProcCmdline(process.pid)).toBeNull();
+  });
+});
+
+/**
+ * The liveness half of the same guard.
+ *
+ * Identification only runs once the PID is judged alive. A bare
+ * `kill(pid, 0)` wrapped in a catch-all reports EPERM — "the process exists
+ * but belongs to another user" — identically to ESRCH, so a running worker
+ * owned by a different uid reads as a stale PID file. The handler for that
+ * verdict drops the file and spawns a replacement beside the live worker,
+ * which is the same ~500 MB leak arrived at from the other direction. A
+ * worker that outlives a daemon privilege drop is exactly this case.
+ */
+describe("isProcessAlive (the predicate reclaimStaleWorker consults)", () => {
+  test("a process we may not signal is alive, not gone", () => {
+    // PID 1 exists on every POSIX host and is root-owned, so an unprivileged
+    // test process gets EPERM from kill(1, 0). Either way the honest answer
+    // is the same: it is running. Running as root only removes the EPERM,
+    // never the liveness.
+    expect(isProcessAlive(1)).toBe(true);
+  });
+
+  test("our own live process is alive", () => {
+    expect(isProcessAlive(process.pid)).toBe(true);
+  });
+
+  test("a PID that cannot exist is not alive", () => {
+    expect(isProcessAlive(0)).toBe(false);
+    expect(isProcessAlive(-1)).toBe(false);
+    expect(isProcessAlive(2 ** 31)).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ import {
   getEmbeddingModelsDir,
   getEmbedWorkerPidPath,
 } from "../util/platform.js";
+import { isProcessAlive } from "../util/process-liveness.js";
 import { PromiseGuard } from "../util/promise-guard.js";
 import {
   deprioritizeWorker,
@@ -588,16 +589,12 @@ export class LocalEmbeddingBackend implements EmbeddingBackend {
     // trying to avoid.
     const deadline = Date.now() + WORKER_TERM_GRACE_MS;
     while (Date.now() < deadline) {
-      try {
-        process.kill(pid, 0);
-      } catch {
+      if (!isProcessAlive(pid)) {
         return; // Exited.
       }
       Bun.sleepSync(WORKER_TERM_POLL_MS);
     }
-    try {
-      process.kill(pid, 0);
-    } catch {
+    if (!isProcessAlive(pid)) {
       return;
     }
     log.warn(
@@ -631,16 +628,13 @@ export class LocalEmbeddingBackend implements EmbeddingBackend {
       return;
     }
 
-    let isAlive = false;
-    try {
-      // Signal 0 just probes for liveness without delivering a signal.
-      process.kill(pid, 0);
-      isAlive = true;
-    } catch {
-      // ESRCH — no such process. PID file is stale.
-    }
-
-    if (!isAlive) {
+    // `isProcessAlive` reports EPERM as alive. A bare `kill(pid, 0)` in a
+    // try/catch does not: it treats "the process exists but belongs to someone
+    // else" the same as "no such process". That misread is the expensive one —
+    // it classifies a running worker as a stale PID file, drops the file, and
+    // spawns a second worker beside a live one that nothing will ever reclaim.
+    // Workers outliving a daemon privilege drop are exactly that case.
+    if (!isProcessAlive(pid)) {
       log.info(
         { pid, model: this.model },
         "Removing stale embed worker PID file (process no longer exists)",
