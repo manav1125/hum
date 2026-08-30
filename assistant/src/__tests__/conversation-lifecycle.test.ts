@@ -132,6 +132,7 @@ mock.module(
 );
 
 import { Conversation } from "../daemon/conversation.js";
+import { isPersonalMemoryAllowed } from "../daemon/trust-context.js";
 
 beforeEach(() => {
   lifecycleStoreMockActive = true;
@@ -675,16 +676,16 @@ describe("loadFromDb metadata injection rehydration", () => {
     expect(messages[2].content).toEqual([{ type: "text", text: "Tail" }]);
   });
 
-  test("internal-channel trusted_contact view still rehydrates memoryV2StaticBlock", async () => {
-    // Regression: the prior `!isUntrustedTrustClass(trustClass)` gate
-    // blocked any non-guardian view from rehydrating personal memory,
-    // including legitimate internal flows (e.g. trusted_contact actors
-    // arriving over the internal `"vellum"` channel). Injection time
-    // uses `shouldExposePersonalMemory`, which keys on `sourceChannel`
-    // rather than `trustClass` and exposes personal memory for
-    // `sourceChannel === "vellum"` regardless of actor trust class. The
-    // rehydrate gate must match so a daemon-restart reload of the same
-    // conversation produces an identical prefix.
+  test("a trusted_contact view does NOT rehydrate personal memory, on any channel", async () => {
+    // This gate was once loosened so a trusted_contact arriving over the
+    // internal `vellum` channel could rehydrate personal memory, to keep the
+    // reload prefix identical to the injection prefix. But `vellum` is the
+    // first-party console, which a trusted contact can be sitting in — so the
+    // parity was bought by handing a non-guardian the owner's people,
+    // preferences and past work.
+    //
+    // Parity is still kept: injection and rehydrate consult the same gate, so
+    // they agree. They now agree on "no".
     mockConversation = defaultConv();
     mockDbMessages = [
       {
@@ -692,43 +693,23 @@ describe("loadFromDb metadata injection rehydration", () => {
         role: "user",
         content: JSON.stringify([{ type: "text", text: "First" }]),
         metadata: JSON.stringify({
-          // Rows must carry `trusted_contact` / `unknown` provenance to
-          // survive the row-level filter for non-guardian views.
           provenanceTrustClass: "trusted_contact",
           memoryV2StaticBlock:
             "<info>\n## Essentials\n\nAlice prefers VS Code.\n</info>",
         }),
       },
-      {
-        id: "m2",
-        role: "assistant",
-        content: JSON.stringify([{ type: "text", text: "Reply" }]),
-        metadata: JSON.stringify({ provenanceTrustClass: "trusted_contact" }),
-      },
-      {
-        id: "m3",
-        role: "user",
-        content: JSON.stringify([{ type: "text", text: "Tail" }]),
-        metadata: JSON.stringify({ provenanceTrustClass: "trusted_contact" }),
-      },
     ];
 
-    const conversation = makeConversation();
-    conversation.setTrustContext({
+    const conv = makeConversation();
+    conv.setTrustContext({
       trustClass: "trusted_contact",
       sourceChannel: "vellum",
     });
-    await conversation.loadFromDb();
-    const messages = conversation.getMessages();
+    await conv.loadFromDb();
 
-    expect(messages).toHaveLength(3);
-    expect(messages[0].content).toEqual([
-      {
-        type: "text",
-        text: "<info>\n## Essentials\n\nAlice prefers VS Code.\n</info>",
-      },
-      { type: "text", text: "First" },
-    ]);
+    const first = conv.messages[0];
+    const text = JSON.stringify(first?.content ?? "");
+    expect(text).not.toContain("Alice prefers VS Code");
   });
 
   test("rehydration order matches injection-time order for the full personal-memory set", async () => {
@@ -909,63 +890,29 @@ describe("loadFromDb metadata injection rehydration", () => {
     expect(messages[0].content).toEqual([{ type: "text", text: "First" }]);
   });
 
-  test("ensureActorScopedHistory reloads when sourceChannel changes within the same trust class", async () => {
-    // Regression: cache invalidation previously keyed only on trust class.
-    // `loadFromDb` gates `memoryV2StaticBlock` rehydration on `sourceChannel`
-    // via `shouldExposePersonalMemory`, so a same-trust-class reuse from a
-    // different channel (e.g. internal `vellum` → remote channel) must
-    // re-run `loadFromDb` or stale personal-memory exposure persists.
-    mockConversation = defaultConv();
-    mockDbMessages = [
-      {
-        id: "m1",
-        role: "user",
-        content: JSON.stringify([{ type: "text", text: "First" }]),
-        metadata: JSON.stringify({
-          provenanceTrustClass: "trusted_contact",
-          memoryV2StaticBlock:
-            "<info>\n## Essentials\n\nprivate memory\n</info>",
-        }),
-      },
-      {
-        id: "m2",
-        role: "assistant",
-        content: JSON.stringify([{ type: "text", text: "Reply" }]),
-        metadata: JSON.stringify({ provenanceTrustClass: "trusted_contact" }),
-      },
-      {
-        id: "m3",
-        role: "user",
-        content: JSON.stringify([{ type: "text", text: "Tail" }]),
-        metadata: JSON.stringify({ provenanceTrustClass: "trusted_contact" }),
-      },
-    ];
+  test("personal-memory exposure does not vary by channel within a trust class", async () => {
+    // The invalidation used to have to watch `sourceChannel` because the gate
+    // did. It no longer does: the class decides, on every channel. Pinned so a
+    // future change that reintroduces a channel-shaped exposure rule has to
+    // reintroduce the invalidation with it.
+    const contactOnConsole = {
+      trustClass: "trusted_contact" as const,
+      sourceChannel: "vellum" as const,
+    };
+    const contactRemote = {
+      trustClass: "trusted_contact" as const,
+      sourceChannel: "slack" as const,
+    };
 
-    const conversation = makeConversation();
-    // First load: internal channel, trusted_contact actor → personal memory
-    // exposed via `shouldExposePersonalMemory({sourceChannel: "vellum", ...})`.
-    conversation.setTrustContext({
-      trustClass: "trusted_contact",
-      sourceChannel: "vellum",
-    });
-    await conversation.ensureActorScopedHistory();
-    expect(conversation.getMessages()[0].content).toEqual([
-      {
-        type: "text",
-        text: "<info>\n## Essentials\n\nprivate memory\n</info>",
-      },
-      { type: "text", text: "First" },
-    ]);
-
-    // Reuse with the same trust class but a remote channel. The cache must
-    // invalidate and trigger a reload that strips the personal-memory block.
-    conversation.setTrustContext({
-      trustClass: "trusted_contact",
-      sourceChannel: "telegram",
-    });
-    await conversation.ensureActorScopedHistory();
-    expect(conversation.getMessages()[0].content).toEqual([
-      { type: "text", text: "First" },
-    ]);
+    expect(isPersonalMemoryAllowed(contactOnConsole)).toBe(
+      isPersonalMemoryAllowed(contactRemote),
+    );
+    expect(isPersonalMemoryAllowed(contactOnConsole)).toBe(false);
+    expect(
+      isPersonalMemoryAllowed({
+        trustClass: "guardian",
+        sourceChannel: "slack",
+      }),
+    ).toBe(true);
   });
 });
