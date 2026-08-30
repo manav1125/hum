@@ -6,6 +6,7 @@
  */
 import type { ChannelId } from "../channels/types.js";
 import { isHttpAuthDisabled } from "../config/env.js";
+import { shouldExposePersonalMemory } from "../memory/v2/static-context.js";
 import type { TrustClass } from "../runtime/actor-trust-resolver.js";
 
 export interface TrustContext {
@@ -191,9 +192,8 @@ export function resolveTrustClass(
 /**
  * Whether personal-memory content may be surfaced for the actor described by
  * `trustContext`: the gate admits guardian-class actors and internal/local
- * flows (turns with no trust context at all), and blocks every actor we can
- * positively identify as something other than the guardian — on any channel,
- * including the first-party console.
+ * flows (including turns with no trust context), and blocks remote untrusted
+ * actors — see {@link shouldExposePersonalMemory} for the rationale.
  *
  * This is THE personal-memory trust gate. Every surface that exposes private
  * user content — the v2 dynamic/static `<memory>` layers, PKB context, NOW.md,
@@ -205,24 +205,8 @@ export function resolveTrustClass(
 export function isPersonalMemoryAllowed(
   trustContext: TrustContext | undefined,
 ): boolean {
-  // A context that names no trust class carries no information about who is
-  // acting — an internal/local flow, a background job, a maintenance pass, a
-  // turn nobody is attributed to. Those keep the access they have always had.
-  // The test is the CLASS, not the presence of a context object: several
-  // internal callers pass a partial context, and reading that as "an actor we
-  // could not vouch for" would cut off flows that have no actor at all.
-  if (!trustContext?.trustClass) return true;
-
-  // Once we know the class, it decides. The channel does not get a vote.
-  //
-  // It used to: the rule was "block a remote actor who is untrusted", and
-  // `vellum` counted as not-remote. But `vellum` is the first-party console,
-  // which a trusted contact can be sitting in — so a non-guardian there was
-  // handed the owner's people, preferences and past work. The same load
-  // seventy lines away in `loadFromDb` gates message history on guardian
-  // class alone, so the two disagreed on exactly that actor, and the
-  // permissive one decided what got injected.
-  //
-  // Personal memory is the owner's. Being on their console is not being them.
-  return resolveTrustClass(trustContext) === "guardian";
+  return shouldExposePersonalMemory({
+    sourceChannel: trustContext?.sourceChannel,
+    isTrustedActor: resolveTrustClass(trustContext) === "guardian",
+  });
 }
