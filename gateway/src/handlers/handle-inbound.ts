@@ -94,6 +94,9 @@ export async function handleInbound(
     messageContent: event.message.content,
     actorExternalUserId: event.actor.actorExternalId,
     actorChatId: event.message.conversationExternalId,
+    // The room's shape decides whether a code may be redeemed here at all.
+    // Absent for channels with no rooms; present wherever rooms exist.
+    chatType: event.source?.chatType,
     actorDisplayName: event.actor.displayName,
     actorUsername: event.actor.username,
     replyCallbackUrl: options?.replyCallbackUrl,

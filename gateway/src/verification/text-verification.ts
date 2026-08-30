@@ -50,6 +50,7 @@ import {
   consumeSession,
   findSessionByHash,
   hasPendingOrActiveSession,
+  retireSessionDisclosedInRoom,
 } from "./session-helpers.js";
 
 const log = getLogger("text-verification");
@@ -63,6 +64,13 @@ export interface TextVerificationInterceptParams {
   messageContent: string;
   actorExternalUserId: string;
   actorChatId: string;
+  /**
+   * Shape of the room the message arrived in, as reported by the channel's
+   * normalizer: Slack `im` / `mpim` / `channel`, Telegram `private` / `group`
+   * / `supergroup`, WhatsApp `private`. Absent on channels that have no rooms
+   * (email), which is treated as one-to-one.
+   */
+  chatType?: string;
   actorDisplayName?: string;
   actorUsername?: string;
   replyCallbackUrl?: string;
@@ -79,6 +87,29 @@ export type TextVerificationResult =
       pendingReplyText?: string;
     };
 
+/**
+ * Whether a normalized `chatType` describes a room that can hold people other
+ * than the sender.
+ *
+ * An ALLOWLIST of one-to-one shapes, inverted — not a denylist of group
+ * shapes. A channel that grows a new room type, or one whose normalizer stops
+ * reporting a type, must read as multi-party rather than as a DM: the cost of
+ * being wrong is a guardian binding handed to a room, against the cost of
+ * telling one legitimate owner to try again in a DM.
+ *
+ * `undefined` is the one exception, and it means "this channel has no rooms"
+ * (email). Channels that DO have rooms always report a type.
+ *
+ * Exported only so its tests assert THIS function rather than a re-declared
+ * copy of it — a second copy would drift, and would drift silently in the
+ * permissive direction.
+ */
+export function isMultiPartyRoom(chatType: string | undefined): boolean {
+  if (chatType === undefined) return false;
+  const ONE_TO_ONE = new Set(["im", "private", "direct"]);
+  return !ONE_TO_ONE.has(chatType);
+}
+
 // ---------------------------------------------------------------------------
 // Main intercept
 // ---------------------------------------------------------------------------
@@ -91,6 +122,7 @@ export async function tryTextVerificationIntercept(
     messageContent,
     actorExternalUserId,
     actorChatId,
+    chatType,
     actorDisplayName,
     actorUsername,
     replyCallbackUrl,
@@ -148,6 +180,38 @@ export async function tryTextVerificationIntercept(
     log.info(
       { sourceChannel, actorExternalUserId: canonicalUserId },
       "Verification code did not match any pending session",
+    );
+    const pendingReplyText = await replyWithFailure(
+      replyCallbackUrl,
+      actorChatId,
+      assistantId,
+      "The verification code is invalid or has expired.",
+    );
+    return {
+      intercepted: true,
+      outcome: "failed",
+      trustClass: "guardian",
+      pendingReplyText,
+    };
+  }
+
+  // 4b. Lane guard — a code pasted into a room with other people in it.
+  //
+  // Redeeming here would bind the assistant to a shared room and, for a
+  // guardian session, hand guardianship to whoever pasted it. But the more
+  // pressing problem is that the code has now been shown to everyone
+  // present, so it must not merely be refused — it must be retired, or any
+  // observer can carry it to a DM and redeem it there themselves.
+  //
+  // The reply deliberately does not say a valid code was seen: that would
+  // tell a room full of people that the string someone just pasted is live.
+  // It reads as an ordinary failure, matching the anti-oracle handling of
+  // an identity mismatch below.
+  if (isMultiPartyRoom(chatType)) {
+    await retireSessionDisclosedInRoom(session.id);
+    log.warn(
+      { sourceChannel, sessionId: session.id, chatType },
+      "Verification code was pasted into a multi-party room; session retired without binding",
     );
     const pendingReplyText = await replyWithFailure(
       replyCallbackUrl,

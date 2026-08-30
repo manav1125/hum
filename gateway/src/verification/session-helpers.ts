@@ -160,3 +160,53 @@ export async function consumeSession(
 
   return true;
 }
+
+/**
+ * Retire a session whose code was disclosed in a multi-party room.
+ *
+ * Refusing to redeem in the room is not enough on its own. The code has
+ * already been shown to everyone present, so leaving it live means any
+ * observer can carry it to a DM and redeem it there — which, for a guardian
+ * session, hands them the guardian binding. Refusing without burning is
+ * strictly worse than useless: it denies the legitimate owner while leaving
+ * the credential valid and now public.
+ *
+ * Terminates as `expired` rather than `consumed`: nobody was bound, and the
+ * consumed_by_* columns exist to record who redeemed. The legitimate owner
+ * requests a fresh code, which is the correct cost.
+ */
+export async function retireSessionDisclosedInRoom(
+  sessionId: string,
+): Promise<void> {
+  const now = Date.now();
+  try {
+    await assistantDbRun(
+      `UPDATE channel_verification_sessions
+       SET status = 'expired', updated_at = ?
+       WHERE id = ?
+         AND status IN ${INTERCEPTABLE_STATUSES}`,
+      [now, sessionId],
+    );
+  } catch (err) {
+    // Loud: a code disclosed in a room that we then failed to burn is the
+    // exact state this exists to prevent.
+    log.error(
+      { err, sessionId },
+      "Failed to retire a verification session disclosed in a group room; the code may still be redeemable",
+    );
+  }
+
+  try {
+    const gwDb = getGatewayDb();
+    gwDb
+      .update(gwSessions)
+      .set({ status: "expired", updatedAt: now })
+      .where(eq(gwSessions.id, sessionId))
+      .run();
+  } catch (gwErr) {
+    log.warn(
+      { err: gwErr, sessionId },
+      "Gateway DB session retire dual-write failed (best-effort)",
+    );
+  }
+}
