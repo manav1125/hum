@@ -7,7 +7,7 @@
  * request from the expected status wins.
  */
 
-import { and, desc, eq, inArray, isNotNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 import { IntegrityError } from "../util/errors.js";
@@ -312,7 +312,14 @@ export function getCanonicalGuardianRequestByCode(
       ),
     )
     .get();
-  return row ? rowToRequest(row) : null;
+  if (!row) return null;
+  const request = rowToRequest(row);
+  // `pending` is a status, not a claim of liveness: a row whose deadline has
+  // passed is dead whether or not anything has written the flip yet. Reading
+  // the clock here is what lets the expiry sweep own that write — and own the
+  // card withdrawal and requester notice that must go with it — instead of
+  // boot flipping the status silently to keep this lookup honest.
+  return isRequestExpired(request) ? null : request;
 }
 
 interface ListCanonicalGuardianRequestsFilters {
@@ -513,15 +520,19 @@ export function expireAllPendingCanonicalRequests(): number {
     .where(
       and(
         eq(canonicalGuardianRequests.status, "pending"),
-        or(
-          // Interaction-bound kinds: always expire on restart
-          inArray(canonicalGuardianRequests.kind, INTERACTION_BOUND_KINDS),
-          // Persistent kinds: expire only if already past their deadline
-          and(
-            isNotNull(canonicalGuardianRequests.expiresAt),
-            lt(canonicalGuardianRequests.expiresAt, now),
-          ),
-        ),
+        // Interaction-bound kinds only. Their in-memory pending-interaction
+        // session died with the previous process, so nothing can ever complete
+        // them and there is no card left to withdraw.
+        //
+        // Persistent kinds are deliberately NOT expired here. This flip fans
+        // out nothing, so expiring an access_request or tool_grant_request at
+        // boot left its card actionable on every surface and never told the
+        // requester — the request was dead and the only two people who needed
+        // to know were the two who were not told. They are left past-deadline
+        // for the 60s expiry sweep, which owns that fan-out. Readers treat a
+        // past-deadline pending row as not live, so the wait suppresses
+        // nothing in the meantime.
+        inArray(canonicalGuardianRequests.kind, INTERACTION_BOUND_KINDS),
       ),
     )
     .run();
@@ -621,7 +632,7 @@ export function listPendingCanonicalGuardianRequestsByDestinationConversation(
     seenRequestIds.add(delivery.requestId);
 
     const request = getCanonicalGuardianRequest(delivery.requestId);
-    if (request && request.status === "pending") {
+    if (request && request.status === "pending" && !isRequestExpired(request)) {
       pendingRequests.push(request);
     }
   }
@@ -666,7 +677,7 @@ export function listPendingCanonicalGuardianRequestsByDestinationChat(
     seenRequestIds.add(delivery.requestId);
 
     const request = getCanonicalGuardianRequest(delivery.requestId);
-    if (request && request.status === "pending") {
+    if (request && request.status === "pending" && !isRequestExpired(request)) {
       pendingRequests.push(request);
     }
   }

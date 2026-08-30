@@ -12,6 +12,7 @@ import {
   createCanonicalGuardianRequest,
   expireAllPendingCanonicalRequests,
   getCanonicalGuardianRequest,
+  getCanonicalGuardianRequestByCode,
   listCanonicalGuardianDeliveries,
   listCanonicalGuardianRequests,
   listPendingCanonicalGuardianRequestsByDestinationChat,
@@ -836,7 +837,12 @@ describe("canonical-guardian-store", () => {
     );
   });
 
-  test("expireAllPendingCanonicalRequests expires persistent kinds with past expiresAt", () => {
+  test("boot leaves a past-deadline persistent request pending for the sweep", () => {
+    // Boot expiry fans out nothing. Flipping an access_request or
+    // tool_grant_request here left its card actionable on every surface and
+    // never told the requester — the request was dead and the only two people
+    // who needed to know were the two who were not told. The 60s expiry sweep
+    // owns that fan-out, so these wait for it.
     const expiredAccess = createCanonicalGuardianRequest({
       kind: "access_request",
       sourceType: "channel",
@@ -851,27 +857,32 @@ describe("canonical-guardian-store", () => {
       guardianPrincipalId: TEST_PRINCIPAL,
       expiresAt: Date.now() - 10_000,
     });
-    // Persistent kind with future expiresAt should NOT be expired
-    const futureAccess = createCanonicalGuardianRequest({
-      kind: "access_request",
-      sourceType: "channel",
-      conversationId: "conv-bulk-persist-expired-3",
-      guardianPrincipalId: TEST_PRINCIPAL,
-      expiresAt: Date.now() + 60_000,
-    });
 
-    const count = expireAllPendingCanonicalRequests();
-    expect(count).toBe(2);
+    expect(expireAllPendingCanonicalRequests()).toBe(0);
 
     expect(getCanonicalGuardianRequest(expiredAccess.id)!.status).toBe(
-      "expired",
-    );
-    expect(getCanonicalGuardianRequest(expiredGrant.id)!.status).toBe(
-      "expired",
-    );
-    expect(getCanonicalGuardianRequest(futureAccess.id)!.status).toBe(
       "pending",
     );
+    expect(getCanonicalGuardianRequest(expiredGrant.id)!.status).toBe(
+      "pending",
+    );
+  });
+
+  test("a past-deadline pending request is not live to readers", () => {
+    // What makes the wait safe. `pending` is a status, not a claim of
+    // liveness, so dedup and the guardian's pending list must read the clock —
+    // otherwise leaving the row unflipped would hand back a dead request
+    // instead of creating a fresh one.
+    const dead = createCanonicalGuardianRequest({
+      kind: "access_request",
+      sourceType: "channel",
+      conversationId: "conv-deadline-readers",
+      guardianPrincipalId: TEST_PRINCIPAL,
+      expiresAt: Date.now() - 10_000,
+    });
+
+    expect(getCanonicalGuardianRequest(dead.id)!.status).toBe("pending");
+    expect(getCanonicalGuardianRequestByCode(dead.requestCode!)).toBeNull();
   });
 
   test("expireAllPendingCanonicalRequests does not affect already-resolved requests", () => {
