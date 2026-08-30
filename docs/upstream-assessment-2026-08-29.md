@@ -184,45 +184,75 @@ a built-in-tool problem, not a connector one.
 
 ## Outstanding, in priority order
 
-1. **`7cfc7e3bd9` classify each tool invocation once, before the gates.**
-   254-line refactor of `permissions/checker.ts`, heavily diverged here.
-   Highest-value item remaining.
-2. **In-turn approval prompts go to the shared room, not the guardian's DM**
+1. **In-turn approval prompts go to the shared room, not the guardian's DM**
    (`a6f6234169`). We have no `guardian-channel-delivery.ts`; needs re-homing.
    Adjacent to the group-room lane guard now shipped.
-3. **`289c6eb188`** bound file reads by characters, not lines.
-4. **`de25f3203b`** dangling concept-page links — silent structural corruption
+2. **`de25f3203b`** dangling concept-page links — silent structural corruption
    of the memory corpus. Upstream's version lives in a directory layout we do
    not share; a re-homing exercise rather than a port.
-5. **`498c008ea8`** local-mode ownership-verified stale-lock breaking — same
-   family as the embeddings EPERM fix.
-6. Slack threading and backfill correctness: `5f98f27583`, `74ca7860b2`,
-   `650989bb65`, `acf2d3e401`, `0b33b4b2d6`.
+3. Slack threading and backfill correctness: `5f98f27583`, `74ca7860b2`,
+   `650989bb65`, `acf2d3e401`, `0b33b4b2d6`. Deprioritised — Slack is not in
+   use on this instance (see below).
+4. **The remaining exhaustive `mock.module` factories.** 436 were fixed on the
+   four modules that caused every import-time failure; roughly 2,600 remain on
+   other modules. Each is inert until someone adds an export, then it breaks a
+   suite silently.
 
-### Closed since this was written
+### Closed
 
-- **The personal-memory gate** — shipped narrow, see above.
-- **Retrospective no-findings loop** (`c17bbf8835`) — shipped. The loop already
-  computed `AgentLoopExitReason` and the wake dropped it; `WakeResult` now
-  carries the terminal reason and whether visible text was produced, and the
-  advancement gate reads the run's shape instead of byte-matching a sentence.
+- **The personal-memory gate** — shipped narrow.
+- **Retrospective no-findings loop** (`c17bbf8835`) — shipped. `WakeResult` now
+  carries the loop's terminal exit reason, which it already computed and threw
+  away, so the gate reads the run's shape instead of byte-matching a sentence.
 - **Verification codes redeem in group rooms** (`e40ede5b8b`) — shipped, and
-  the session is now retired rather than merely refused, since the code has
-  already been shown to the room. **This entry's stated blocker was wrong**:
-  it claimed we carry no conversation-shape signal on inbound events.
-  `chatType` was already on the canonical event and already normalized by
-  Slack, Telegram and WhatsApp. Checking the claim cost ten minutes; believing
-  it would have cost a plumbing project.
+  the session is retired rather than merely refused. **The stated blocker was
+  wrong**: `chatType` was already on the canonical event and already normalized
+  by Slack, Telegram and WhatsApp.
+- **`7cfc7e3bd9` classify-once** — **already true here.** `executor.ts`
+  classifies before the gates and `classifyRisk` is LRU-cached on
+  (tool, input, workingDir), so the permission checker's call is a hit. Our own
+  `8d283faaec` reached upstream's behaviour independently. What remains of the
+  upstream commit is refactor shape on a heavily diverged file, with no
+  behavioural gain — declined.
+- **`997697e0d2` needsAttention filter** — shipped. Applied in the query, with
+  the predicate exported from the attention store rather than reconstructed.
+- **`289c6eb188` character-bounded file reads** — shipped. The 2000-line cap
+  bounded nothing on a single-line file and the on-disk guard is 100 MB;
+  verified against the real tool, a 3 MB single-line file now returns 100 KB.
+- **`498c008ea8` stale-lock** — shipped, and reshaped. Ownership is now decided
+  by `kill(pid, 0)`, not a `ps` probe: the embed-worker scar is exactly a
+  singleton guard that forked `ps`, and forking fails first under memory
+  pressure. Age is kept as the PID-reuse escape hatch.
 - **Plugin `config.json` lost across upgrades** (`dc2726327d`) — was already
-  fixed during the wave itself (`0ac96f13b4`), including the `.disabled`
-  sentinel, which is the half that matters: auto-update runs unattended, so a
-  plugin the owner switched off came back on by itself.
-- **Channel readiness should ask whether anything is arriving** — deliberately
-  not built, on evidence. Prod holds **zero** Slack conversations and one
-  inbound Slack event ever (2026-06-20), so the channel is not in use here and
-  a recency probe would report a decade-old silence that means nothing. The
-  socket-liveness half is fixed and self-heals within 10 minutes. Worth
-  revisiting if Slack goes into real use.
+  fixed during the wave (`0ac96f13b4`).
+- **Channel readiness "is anything arriving"** — not built, on evidence. Prod
+  holds zero Slack conversations and one inbound Slack event ever (2026-06-20),
+  so a recency probe would report a silence that means nothing. The
+  socket-liveness half self-heals within 10 minutes.
+
+---
+
+## Test integrity
+
+The suite's failing count was partly fiction. 155 tests across ten files had
+**never run once** — each threw at import because its own exhaustive
+`mock.module` factory omitted an export its import graph needed, and each was
+counted as a known baseline failure.
+
+Full per-file runs, measured end to end:
+
+| | failing files |
+|---|---|
+| branch, before this work | 84 |
+| after the ten recoveries + 436-factory sweep | **66** |
+
+apps/web: 568/568, including the two long-standing flakes. Gateway typechecks
+and every touched suite is green.
+
+One of the ten was self-inflicted and is the clearest illustration of the
+hazard: adding `getConversationAgentId` to `conversation-crud` broke
+`background-workers-disk-pressure`, and the earlier baseline-set diff missed it
+because that file was already red for unrelated reasons.
 
 ---
 
