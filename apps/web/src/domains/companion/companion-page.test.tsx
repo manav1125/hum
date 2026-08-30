@@ -57,6 +57,7 @@ const keepSpy = mock((_m: string) => undefined);
 const closeCardSpy = mock(() => undefined);
 const nudgeDismissSpy = mock(() => undefined);
 const listeningSpy = mock((_on: boolean) => undefined);
+const openLinkSpy = mock((_href: string) => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
   companionTalk: talkSpy,
@@ -87,6 +88,7 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   companionCloseCard: closeCardSpy,
   companionNudgeDismiss: nudgeDismissSpy,
   companionListening: listeningSpy,
+  companionOpenLink: openLinkSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
     return () => {

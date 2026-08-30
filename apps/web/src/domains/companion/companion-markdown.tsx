@@ -31,9 +31,13 @@ import type { ReactNode } from "react";
 const INLINE =
   /(`[^`\n]+`)|(\[[^\]\n]*\]\([^)\s]+\))|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(\*[^*\n]+\*)|(_[^_\n]+_)/;
 
+/** The card's link colour. Matches the composer's send button. */
+const ACCENT_TEXT = "#6E9BFF";
+
 export function renderCompanionInline(
   text: string,
   keyPrefix = "i",
+  onOpenLink?: (href: string) => void,
 ): ReactNode[] {
   const out: ReactNode[] = [];
   let rest = text;
@@ -68,16 +72,38 @@ export function renderCompanionInline(
       const split = token.indexOf("](");
       const label = token.slice(1, split);
       const href = token.slice(split + 2, -1);
+      // An empty label would render as nothing at all, so the address stands
+      // in for it rather than the link vanishing.
+      const shown = label || href;
       out.push(
-        <span
-          key={key}
-          title={href}
-          style={{ textDecoration: "underline", textUnderlineOffset: 2 }}
-        >
-          {/* An empty label would render as nothing at all, so the address
-              stands in for it rather than the link vanishing. */}
-          {label || href}
-        </span>,
+        onOpenLink ? (
+          <button
+            key={key}
+            type="button"
+            title={href}
+            onClick={() => onOpenLink(href)}
+            style={{
+              background: "none",
+              border: 0,
+              padding: 0,
+              font: "inherit",
+              color: ACCENT_TEXT,
+              textDecoration: "underline",
+              textUnderlineOffset: 2,
+              cursor: "pointer",
+            }}
+          >
+            {shown}
+          </button>
+        ) : (
+          <span
+            key={key}
+            title={href}
+            style={{ textDecoration: "underline", textUnderlineOffset: 2 }}
+          >
+            {shown}
+          </span>
+        ),
       );
     } else if (token.startsWith("**") || token.startsWith("__")) {
       out.push(
@@ -96,20 +122,117 @@ export function renderCompanionInline(
 }
 
 /**
- * A turn's body: blank-line-separated paragraphs, with single newlines kept as
- * line breaks. Anything more structural is the app's job.
+ * A turn's body: headings, bullet and numbered lists, and paragraphs.
+ *
+ * Answers routinely come back as lists, and a list drawn as run-on prose with
+ * stray hyphens is harder to read than the paragraph it was trying not to be.
+ * Everything beyond this — tables, block quotes, fenced code — stays the app's
+ * job, and "Open in Cue ›" is how you get there.
  */
-export function renderCompanionMarkdown(text: string): ReactNode[] {
-  return text
-    .split(/\n{2,}/)
-    .filter((block) => block.trim().length > 0)
-    .map((block, b) => (
-      <span key={`b${b}`} style={{ display: "block", marginTop: b > 0 ? 6 : 0 }}>
-        {block.split("\n").map((line, l) => (
-          <span key={`l${l}`} style={{ display: "block" }}>
-            {renderCompanionInline(line, `b${b}l${l}`)}
+const BULLET = /^\s{0,3}[-*+]\s+(.*)$/;
+const NUMBERED = /^\s{0,3}(\d{1,2})[.)]\s+(.*)$/;
+const HEADING = /^\s{0,3}(#{1,4})\s+(.*)$/;
+
+type Block =
+  | { kind: "p"; lines: string[] }
+  | { kind: "h"; level: number; text: string }
+  | { kind: "ul"; items: string[] }
+  | { kind: "ol"; items: string[]; start: number };
+
+/** Group the lines into blocks. Exported for its test. */
+export function toCompanionBlocks(text: string): Block[] {
+  const blocks: Block[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const heading = HEADING.exec(line);
+    const bullet = BULLET.exec(line);
+    const numbered = NUMBERED.exec(line);
+    const last = blocks[blocks.length - 1];
+
+    if (!line.trim()) {
+      // A blank line ends whatever was open, which is what separates two
+      // paragraphs from one paragraph with a line break in it.
+      if (last && last.kind === "p") blocks.push({ kind: "p", lines: [] });
+      continue;
+    }
+    if (heading) {
+      blocks.push({ kind: "h", level: heading[1]!.length, text: heading[2]! });
+      continue;
+    }
+    if (bullet) {
+      if (last?.kind === "ul") last.items.push(bullet[1]!);
+      else blocks.push({ kind: "ul", items: [bullet[1]!] });
+      continue;
+    }
+    if (numbered) {
+      if (last?.kind === "ol") last.items.push(numbered[2]!);
+      else
+        blocks.push({
+          kind: "ol",
+          items: [numbered[2]!],
+          start: Number(numbered[1]),
+        });
+      continue;
+    }
+    if (last?.kind === "p" && last.lines.length > 0) last.lines.push(line);
+    else blocks.push({ kind: "p", lines: [line] });
+  }
+  return blocks.filter(
+    (b) =>
+      b.kind !== "p" || b.lines.some((l) => l.trim().length > 0),
+  );
+}
+
+export function renderCompanionMarkdown(
+  text: string,
+  onOpenLink?: (href: string) => void,
+): ReactNode[] {
+  const inline = (line: string, key: string) =>
+    renderCompanionInline(line, key, onOpenLink);
+
+  return toCompanionBlocks(text).map((block, b) => {
+    const spacing = { display: "block", marginTop: b > 0 ? 6 : 0 } as const;
+    if (block.kind === "h") {
+      return (
+        <span
+          key={`h${b}`}
+          style={{
+            ...spacing,
+            fontWeight: 600,
+            // The card is 360px wide; a heading that grew would shout. One
+            // step up from the body, and no more.
+            fontSize: block.level <= 2 ? "1.04em" : "1em",
+          }}
+        >
+          {inline(block.text, `h${b}`)}
+        </span>
+      );
+    }
+    if (block.kind === "ul" || block.kind === "ol") {
+      return (
+        <span key={`l${b}`} style={spacing}>
+          {block.items.map((item, i) => (
+            <span
+              key={`li${i}`}
+              style={{ display: "flex", gap: 7, alignItems: "baseline" }}
+            >
+              <span aria-hidden style={{ flex: "0 0 auto", opacity: 0.7 }}>
+                {block.kind === "ul" ? "•" : `${block.start + i}.`}
+              </span>
+              <span style={{ minWidth: 0 }}>{inline(item, `li${b}-${i}`)}</span>
+            </span>
+          ))}
+        </span>
+      );
+    }
+    return (
+      <span key={`p${b}`} style={spacing}>
+        {block.lines.map((line, l) => (
+          <span key={`pl${l}`} style={{ display: "block" }}>
+            {inline(line, `p${b}l${l}`)}
           </span>
         ))}
       </span>
-    ));
+    );
+  });
 }

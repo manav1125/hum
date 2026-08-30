@@ -199,9 +199,16 @@ mock.module("./logger", () => ({
 
 const menuPopups: Array<Electron.MenuItemConstructorOptions[]> = [];
 
+const openedExternally: string[] = [];
 mock.module("electron", () => ({
   app: appState,
   powerMonitor: { getSystemIdleTime: () => idleSeconds },
+  shell: {
+    openExternal: (url: string) => {
+      openedExternally.push(url);
+      return Promise.resolve();
+    },
+  },
   Menu: {
     buildFromTemplate: (template: Electron.MenuItemConstructorOptions[]) => {
       menuPopups.push(template);
@@ -377,6 +384,7 @@ describe("installCompanionWindow", () => {
       "vellum:companion:dropChoose",
       "vellum:companion:dropRelease",
       "vellum:companion:ask",
+      "vellum:companion:openLink",
       "vellum:companion:publishTurns",
       "vellum:companion:keepAsNote",
       "vellum:companion:openCard",
@@ -1251,6 +1259,36 @@ describe("the summon, and the card's two verbs (C12, C2)", () => {
       phase: "typing",
       thinking: true,
     });
+  });
+
+  test("a link the card drew opens in the browser, http(s) only", async () => {
+    /**
+     * The address came out of an ANSWER, so it is untrusted. Two things keep
+     * following one safe: it opens in the user's browser rather than in any
+     * Cue window, and only `http(s)` is honoured — a `file:` or `javascript:`
+     * link would be model output choosing what the app opens.
+     */
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    openedExternally.length = 0;
+    await ipcHandlers.get("vellum:companion:openLink")?.([
+      "https://example.com/report",
+    ]);
+    expect(openedExternally).toEqual(["https://example.com/report"]);
+
+    for (const hostile of [
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "vellum-assistant://run",
+      "data:text/html,<script>alert(1)</script>",
+      "not a url at all",
+    ]) {
+      openedExternally.length = 0;
+      await ipcHandlers.get("vellum:companion:openLink")?.([hostile]);
+      expect(openedExternally).toEqual([]);
+    }
   });
 
   test("the app's window publishes the conversation tail through main", async () => {

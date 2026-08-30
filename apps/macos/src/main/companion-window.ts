@@ -1,4 +1,4 @@
-import { Menu, powerMonitor, screen, type BrowserWindow } from "electron";
+import { Menu, powerMonitor, screen, shell, type BrowserWindow } from "electron";
 import { z } from "zod";
 
 import {
@@ -1257,6 +1257,27 @@ export const installCompanionWindow = (): void => {
     thinking = true;
     publishState();
     dispatchToMain({ kind: "companionAsk", message: text });
+  });
+
+  /**
+   * Follow a link the card drew.
+   *
+   * **The address came out of an answer, so it is untrusted.** Two things keep
+   * that safe: it opens in the user's browser rather than in any Cue window —
+   * the companion is `navigation: "deny-all"` and stays that way — and only
+   * `http(s)` is honoured, so a `file:`, `javascript:` or custom-scheme link
+   * cannot make the app open something on the owner's behalf. It is also only
+   * ever reached by an explicit click; nothing here follows a link by itself.
+   */
+  handle("vellum:companion:openLink", z.tuple([z.string()]), ([raw]) => {
+    let target: URL;
+    try {
+      target = new URL(raw);
+    } catch {
+      return;
+    }
+    if (target.protocol !== "https:" && target.protocol !== "http:") return;
+    void shell.openExternal(target.toString());
   });
 
   /**

@@ -728,6 +728,9 @@ const bridge: VellumBridge = {
      * conversation, and only main may publish to the companion. Already
      * truncated to a glance by the caller.
      */
+    /** Follow a link the card drew. http(s) only; main enforces it. */
+    openLink: (href: string): Promise<void> =>
+      ipcRenderer.invoke("vellum:companion:openLink", href) as Promise<void>,
     publishTurns: (
       turns: Array<{ role: "user" | "assistant"; text: string }>,
       thinking: boolean,

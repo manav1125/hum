@@ -5,6 +5,7 @@ import {
   companionDragEnd,
   companionListening,
   companionOpenCard,
+  companionOpenLink,
   companionTalk,
   companionOpenCue,
   companionIntroDismiss,
@@ -507,6 +508,7 @@ export function CompanionPage(): React.ReactElement {
           {...(state.detail !== undefined ? { detail: state.detail } : {})}
           {...(state.turns !== undefined ? { turns: state.turns } : {})}
           {...(state.thinking !== undefined ? { thinking: state.thinking } : {})}
+          onOpenLink={companionOpenLink}
           {...(state.answer !== undefined ? { answer: state.answer } : {})}
           {...(state.source !== undefined ? { source: state.source } : {})}
           {...(state.quiet !== undefined ? { quiet: state.quiet } : {})}

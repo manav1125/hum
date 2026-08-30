@@ -179,6 +179,8 @@ export interface CompanionSurfaceProps {
   turns?: CompanionTurn[];
   /** A turn is in flight. The last row and an unfinished one look identical. */
   thinking?: boolean;
+  /** Follow a link a turn drew. The window itself may not navigate. */
+  onOpenLink?: (href: string) => void;
   /** The answer in the typing card. */
   answer?: string;
   /** Where the answer came from. An unsourced answer never renders. */
@@ -580,7 +582,11 @@ function TypingCard(
       }}
     >
       {props.turns && props.turns.length > 0 ? (
-        <Turns turns={props.turns} thinking={props.thinking ?? false} />
+        <Turns
+          turns={props.turns}
+          thinking={props.thinking ?? false}
+          {...(props.onOpenLink ? { onOpenLink: props.onOpenLink } : {})}
+        />
       ) : answer ? (
         <p style={{ margin: 0, color: T1, fontSize: 14, lineHeight: 1.5 }}>{answer}</p>
       ) : null}
@@ -806,9 +812,11 @@ const TURNS_MAX_HEIGHT = 220;
 function Turns({
   turns,
   thinking,
+  onOpenLink,
 }: {
   turns: CompanionTurn[];
   thinking: boolean;
+  onOpenLink?: (href: string) => void;
 }): React.ReactElement {
   const scroller = useRef<HTMLDivElement | null>(null);
   const [scrolled, setScrolled] = useState(false);
@@ -864,7 +872,7 @@ function Turns({
               paddingLeft: turn.role === "user" ? 14 : 0,
             }}
           >
-            {renderCompanionMarkdown(turn.text)}
+            {renderCompanionMarkdown(turn.text, onOpenLink)}
           </p>
         ))}
         {thinking ? <Working /> : null}

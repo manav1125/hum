@@ -10,7 +10,10 @@ import { describe, expect, test } from "bun:test";
 import { render, cleanup } from "@testing-library/react";
 import { afterEach } from "bun:test";
 
-import { renderCompanionMarkdown } from "./companion-markdown";
+import {
+  renderCompanionMarkdown,
+  toCompanionBlocks,
+} from "./companion-markdown";
 
 afterEach(cleanup);
 
@@ -77,5 +80,81 @@ describe("renderCompanionMarkdown", () => {
     expect(draw("[](https://example.com/z)").container.textContent).toBe(
       "https://example.com/z",
     );
+  });
+});
+
+/**
+ * Structure, not just punctuation.
+ *
+ * Answers routinely come back as lists, and a list drawn as run-on prose with
+ * stray hyphens is harder to read than the paragraph it was trying not to be.
+ */
+describe("toCompanionBlocks", () => {
+  test("consecutive bullets are one list", () => {
+    const blocks = toCompanionBlocks("- one\n- two\n- three");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toEqual({ kind: "ul", items: ["one", "two", "three"] });
+  });
+
+  test("a numbered list keeps where it started", () => {
+    // Restarting at 1 would renumber the answer, which changes what it said.
+    const blocks = toCompanionBlocks("3. third\n4. fourth");
+    expect(blocks[0]).toEqual({
+      kind: "ol",
+      items: ["third", "fourth"],
+      start: 3,
+    });
+  });
+
+  test("headings are their own block", () => {
+    expect(toCompanionBlocks("## Today\nrain")).toEqual([
+      { kind: "h", level: 2, text: "Today" },
+      { kind: "p", lines: ["rain"] },
+    ]);
+  });
+
+  test("a blank line separates paragraphs; a single newline does not", () => {
+    expect(toCompanionBlocks("one\ntwo\n\nthree")).toEqual([
+      { kind: "p", lines: ["one", "two"] },
+      { kind: "p", lines: ["three"] },
+    ]);
+  });
+
+  test("REGRESSION: a hyphen mid-sentence is not a bullet", () => {
+    // "Mostly cloudy — high 30" and "- high 30" must not be the same thing.
+    const blocks = toCompanionBlocks("Mostly cloudy - high 30");
+    expect(blocks[0]!.kind).toBe("p");
+  });
+});
+
+describe("lists and links, drawn", () => {
+  test("bullets render one per line with a marker", () => {
+    const { container } = draw("- one\n- two");
+    expect(container.textContent).toContain("one");
+    expect(container.textContent).toContain("two");
+    expect(container.textContent).toContain("•");
+  });
+
+  test("a link is a button when there is somewhere to open it", () => {
+    const opened: string[] = [];
+    const { container } = render(
+      <p>
+        {renderCompanionMarkdown("see [docs](https://example.com/d)", (href) =>
+          opened.push(href),
+        )}
+      </p>,
+    );
+    const button = container.querySelector("button");
+    expect(button?.textContent).toBe("docs");
+    button?.click();
+    expect(opened).toEqual(["https://example.com/d"]);
+  });
+
+  test("and stays plain text when there is not", () => {
+    // No opener means no navigation is possible, and a link that looks
+    // clickable but is not is the failure this surface keeps being caught by.
+    const { container } = draw("see [docs](https://example.com/d)");
+    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).toBe("see docs");
   });
 });
