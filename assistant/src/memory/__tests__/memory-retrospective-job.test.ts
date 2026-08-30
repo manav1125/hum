@@ -44,7 +44,12 @@ let priorRetroId: string | null = null;
 let priorRetroOwnerId = "src-conv-1";
 let priorRetroMessages: Array<{ role: string; content: string }> = [];
 
-let mockWakeResult: { invoked: boolean; reason?: string } = { invoked: true };
+let mockWakeResult: {
+  invoked: boolean;
+  reason?: string;
+  exitReason?: string;
+  producedVisibleText?: boolean;
+} = { invoked: true };
 let mockWakeThrows: Error | null = null;
 let wakeCalls: Array<{
   conversationId: string;
@@ -1686,20 +1691,89 @@ describe("memoryRetrospectiveJob", () => {
     expect(deletedConversationIds).toEqual(["bg-conv-new"]);
   });
 
-  test("fail-closed: analysis-only reply (prose mentioning the sentinel) does not advance", async () => {
-    messagesByConversationId["bg-conv-new"] = [
-      {
-        role: "assistant",
-        content: JSON.stringify([
-          {
-            type: "text",
-            text: "I reviewed everything. Nothing new to save. Overall the user seems busy.",
-          },
-        ]),
-        createdAt: 1,
-        metadata: null,
-      },
-    ];
+  const freelyPhrasedNoFindingsReply = () => [
+    {
+      role: "assistant" as const,
+      content: JSON.stringify([
+        {
+          type: "text",
+          text: "I reviewed everything. Nothing new to save. Overall the user seems busy.",
+        },
+      ]),
+      createdAt: 1,
+      metadata: null,
+    },
+  ];
+
+  test("a freely-phrased no-findings reply does not advance on its own", async () => {
+    // Without a reported exit reason the run's shape is unproven, so the
+    // sentinel remains the only accepted evidence. Absence never counts.
+    messagesByConversationId["bg-conv-new"] = freelyPhrasedNoFindingsReply();
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("no_usable_output");
+    expect(stateUpserts).toHaveLength(0);
+  });
+
+  test("a freely-phrased no-findings reply DOES advance when the model chose to stop", async () => {
+    // The bug this fixes: byte-exact sentinel matching was the only accepted
+    // evidence, so a correct review phrased any other way was recorded a
+    // failure and the window re-queued forever. `no_tool_calls` is the loop's
+    // own report that the model decided it was done — not that it ran out of
+    // room, was cancelled, or errored.
+    messagesByConversationId["bg-conv-new"] = freelyPhrasedNoFindingsReply();
+    mockWakeResult = {
+      invoked: true,
+      exitReason: "no_tool_calls",
+      producedVisibleText: true,
+    };
+
+    const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+    expect(outcome.kind).toBe("invoked");
+    expect(stateUpserts).toHaveLength(1);
+    expect(stateUpserts[0]!.lastProcessedMessageId).toBe("m3");
+    expect(stateUpserts[0]!.rememberedLog).toEqual([]);
+  });
+
+  test("a truncated or cancelled run never advances, however it replied", async () => {
+    // These are the runs that must stay retryable: each ended with work
+    // possibly unfinished while still returning normally, which is exactly
+    // what `producedToolCalls: false` alone cannot distinguish.
+    for (const exitReason of [
+      "max_tokens_reached",
+      "context_too_large",
+      "aborted_pre_call",
+      "aborted_during_tools",
+      "aborted_post_response",
+      "budget_yield_unrecovered",
+      "error",
+    ]) {
+      stateUpserts.length = 0;
+      messagesByConversationId["bg-conv-new"] = freelyPhrasedNoFindingsReply();
+      mockWakeResult = {
+        invoked: true,
+        exitReason,
+        producedVisibleText: true,
+      };
+
+      const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
+
+      expect(outcome.kind).toBe("no_usable_output");
+      expect(stateUpserts).toHaveLength(0);
+    }
+  });
+
+  test("a clean stop with no visible text does not advance", async () => {
+    // The silent no-op path also reports no tool calls. Producing nothing is
+    // not the same as reviewing and finding nothing.
+    messagesByConversationId["bg-conv-new"] = [];
+    mockWakeResult = {
+      invoked: true,
+      exitReason: "no_tool_calls",
+      producedVisibleText: false,
+    };
 
     const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
 

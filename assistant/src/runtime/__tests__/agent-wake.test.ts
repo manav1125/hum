@@ -501,7 +501,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     expect(conversation.runCalls).toHaveLength(1);
   });
 
@@ -614,7 +614,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     expect(conversation.runCalls).toHaveLength(1);
     expect(conversation.runCalls[0]!.trust).toEqual({
       sourceChannel: "vellum",
@@ -669,7 +669,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     expect(conversation.personaOverrideSets).toEqual([override, undefined]);
   });
 
@@ -754,7 +754,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     // Nothing emitted to client.
     expect(conversation.emittedEvents).toHaveLength(0);
     // Nothing persisted.
@@ -813,7 +813,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     expect(conversation.runCalls[0]!.allowedTools).toEqual(["remember"]);
     expect(conversation.allowedToolSnapshots).toEqual([["remember"], ["bash"]]);
 
@@ -849,7 +849,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     // The gate mode is live on the conversation for the duration of the run
     // (the tool resolver and executor closures read it there)...
     expect(gateModeDuringRun).toBe("execution");
@@ -882,7 +882,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     // The pin is live on the conversation for the duration of the run (the
     // tool resolver reads it there for wire-definition parity)...
     expect(pinDuringRun).toEqual({
@@ -937,7 +937,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     expect(conversation.runCalls[0]!.allowedTools).toEqual(["remember"]);
     expect(conversation.allowedToolSnapshots).toEqual([
       ["remember"],
@@ -951,6 +951,69 @@ describe("wakeAgentForOpportunity", () => {
     expect(restoreIndex).toBeGreaterThan(-1);
     expect(restoreIndex).toBeLessThan(processingFalseIndex);
     expect(processingFalseIndex).toBeLessThan(drainIndex);
+  });
+
+  test("reports the loop's terminal exit reason and whether text was produced", async () => {
+    // These two fields are how a caller tells "the model reviewed and had
+    // nothing to do" from "the run stopped early and produced nothing" —
+    // `producedToolCalls: false` is identical in both cases. The memory
+    // retrospective advances its cursor on that distinction, and advancing it
+    // over an unreviewed window silently discards that window.
+    const conversation = makeWakeConversation({
+      baseline: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      scriptedAssistant: {
+        role: "assistant",
+        content: [{ type: "text", text: "Reviewed; nothing worth saving." }],
+      },
+      scriptedEvents: [{ type: "agent_loop_exit", reason: "no_tool_calls" }],
+    });
+
+    const result = await wakeAgentForOpportunity(
+      {
+        conversationId: conversation.conversationId,
+        hint: "retrospective",
+        source: "meet-chat-opportunity",
+      },
+      { resolveTarget: async () => conversation },
+    );
+
+    expect(result).toMatchObject({
+      invoked: true,
+      producedToolCalls: false,
+      exitReason: "no_tool_calls",
+      producedVisibleText: true,
+    });
+  });
+
+  test("reports a truncating exit reason rather than collapsing it to a clean stop", async () => {
+    // `max_tokens_reached` returns normally with whatever text it managed to
+    // emit. Without the reason it is indistinguishable from a model that
+    // finished.
+    const conversation = makeWakeConversation({
+      baseline: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      scriptedAssistant: {
+        role: "assistant",
+        content: [{ type: "text", text: "Partial answer that got cut" }],
+      },
+      scriptedEvents: [
+        { type: "agent_loop_exit", reason: "max_tokens_reached" },
+      ],
+    });
+
+    const result = await wakeAgentForOpportunity(
+      {
+        conversationId: conversation.conversationId,
+        hint: "retrospective",
+        source: "meet-chat-opportunity",
+      },
+      { resolveTarget: async () => conversation },
+    );
+
+    expect(result).toMatchObject({
+      invoked: true,
+      exitReason: "max_tokens_reached",
+      producedVisibleText: true,
+    });
   });
 
   test("produces tool calls when LLM emits a tool_use block", async () => {
@@ -979,7 +1042,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: true });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: true });
     // Assistant message persisted via the daemon boundary (addMessage).
     expect(conversation.persistedTailCalls).toHaveLength(1);
     expect(conversation.persistedTailCalls[0]).toEqual(assistantMessage);
@@ -1038,7 +1101,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: true });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: true });
 
     // All three tail messages persisted in order via the daemon boundary.
     expect(conversation.persistedTailCalls).toHaveLength(3);
@@ -1101,7 +1164,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     // Critical: the finally block must have released the flag despite
     // the thrown error, otherwise the next user turn would hang.
     expect(conversation.processingToggles).toEqual([true, false]);
@@ -1298,7 +1361,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     expect(conversation.persistedTailCalls).toHaveLength(0);
   });
 
@@ -1354,7 +1417,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     // Drain ran AFTER setProcessing(false), satisfying the
     // enqueueMessage gate invariant. Snapshot proves the flag was
     // false at the moment drain ran.
@@ -1680,7 +1743,7 @@ describe("wakeAgentForOpportunity", () => {
         { resolveTarget: async () => conversation },
       );
 
-      expect(result).toEqual({ invoked: true, producedToolCalls: true });
+      expect(result).toMatchObject({ invoked: true, producedToolCalls: true });
 
       // All 5 tail messages persisted in order. The first two via
       // turn-1 checkpoint, the next two via turn-2 checkpoint, and
@@ -1808,7 +1871,7 @@ describe("wakeAgentForOpportunity", () => {
         { resolveTarget: async () => conversation },
       );
 
-      expect(result).toEqual({ invoked: true, producedToolCalls: false });
+      expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
       // Nothing emitted, nothing persisted to the conversation.
       expect(conversation.emittedEvents).toHaveLength(0);
       expect(conversation.persistedTailCalls).toHaveLength(0);
@@ -1848,7 +1911,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     expect(recordRequestLogCalls).toHaveLength(1);
     expect(recordRequestLogCalls[0]).toMatchObject({
       conversationId: conversation.conversationId,
@@ -1888,7 +1951,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     expect(recordRequestLogCalls).toHaveLength(1);
     // Regression guard: persistLog used to hardcode "mainAgent", which
     // mislabeled retrospective/consolidation wake rows in llm_request_logs
@@ -1931,7 +1994,7 @@ describe("wakeAgentForOpportunity", () => {
       { resolveTarget: async () => conversation },
     );
 
-    expect(result).toEqual({ invoked: true, producedToolCalls: false });
+    expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     // Wake still produced output even though logging failed.
     expect(conversation.persistedTailCalls).toHaveLength(1);
     // No log row was inserted because JSON.stringify threw.
@@ -2317,7 +2380,7 @@ describe("wakeAgentForOpportunity", () => {
         { resolveTarget: async () => conversation },
       );
 
-      expect(result).toEqual({ invoked: true, producedToolCalls: false });
+      expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     });
 
     test("the compaction gate is sized with the wake's call site and forced profile", async () => {
@@ -2393,7 +2456,7 @@ describe("wakeAgentForOpportunity", () => {
         { resolveTarget: async () => conversation },
       );
 
-      expect(result).toEqual({ invoked: true, producedToolCalls: false });
+      expect(result).toMatchObject({ invoked: true, producedToolCalls: false });
     });
   });
 });

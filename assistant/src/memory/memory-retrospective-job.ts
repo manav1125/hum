@@ -35,6 +35,7 @@
 // conversations left by a mid-run crash are swept by
 // `memory-retrospective-startup-cleanup.ts`.
 
+import type { AgentLoopExitReason } from "../agent/loop.js";
 import {
   type InterfaceId,
   isInteractiveInterface,
@@ -241,6 +242,8 @@ async function runLegacyRetrospective(
   });
 
   let wakeSucceeded = false;
+  let wakeExitReason: AgentLoopExitReason | undefined;
+  let wakeProducedVisibleText: boolean | undefined;
   let failureReason: string | undefined;
   let threw: unknown;
 
@@ -260,6 +263,8 @@ async function runLegacyRetrospective(
     });
     wakeSucceeded = result.invoked;
     failureReason = result.reason;
+    wakeExitReason = result.exitReason;
+    wakeProducedVisibleText = result.producedVisibleText;
   } catch (err) {
     threw = err;
     failureReason = err instanceof Error ? err.message : String(err);
@@ -281,9 +286,12 @@ async function runLegacyRetrospective(
     const runEvidence = collectRetrospectiveRunEvidence(
       backgroundConversation.id,
     );
-    const reviewedNoFindings =
-      runEvidence.explicitNoFindings &&
-      runEvidence.durableToolAttemptCount === 0;
+    const reviewedNoFindings = isReviewedNoFindings({
+      explicitNoFindings: runEvidence.explicitNoFindings,
+      durableToolAttemptCount: runEvidence.durableToolAttemptCount,
+      exitReason: wakeExitReason,
+      producedVisibleText: wakeProducedVisibleText,
+    });
     if (runEvidence.durableToolCallCount > 0 || reviewedNoFindings) {
       return finalizeSuccessfulRetrospective({
         config,
@@ -303,6 +311,8 @@ async function runLegacyRetrospective(
         backgroundConversationId: backgroundConversation.id,
         newMessageCount: newMessages.length,
         durableToolAttempts: runEvidence.durableToolAttemptCount,
+        exitReason: wakeExitReason,
+        producedVisibleText: wakeProducedVisibleText,
       },
       "memory-retrospective: run produced neither a verified durable write nor an explicit no-findings reply; leaving window retryable",
     );
@@ -525,6 +535,8 @@ async function runForkBasedRetrospective(
   // `skipHintInjection: true` because the instruction is already a
   // persisted message — the wake's hint sandwich would only duplicate it.
   let wakeSucceeded = false;
+  let wakeExitReason: AgentLoopExitReason | undefined;
+  let wakeProducedVisibleText: boolean | undefined;
   let failureReason: string | undefined;
   let threw: unknown;
   try {
@@ -560,6 +572,8 @@ async function runForkBasedRetrospective(
     });
     wakeSucceeded = result.invoked;
     failureReason = result.reason;
+    wakeExitReason = result.exitReason;
+    wakeProducedVisibleText = result.producedVisibleText;
   } catch (err) {
     threw = err;
     failureReason = err instanceof Error ? err.message : String(err);
@@ -576,9 +590,12 @@ async function runForkBasedRetrospective(
   // saves can never satisfy it.
   if (wakeSucceeded) {
     const runEvidence = collectRetrospectiveRunEvidence(forkId);
-    const reviewedNoFindings =
-      runEvidence.explicitNoFindings &&
-      runEvidence.durableToolAttemptCount === 0;
+    const reviewedNoFindings = isReviewedNoFindings({
+      explicitNoFindings: runEvidence.explicitNoFindings,
+      durableToolAttemptCount: runEvidence.durableToolAttemptCount,
+      exitReason: wakeExitReason,
+      producedVisibleText: wakeProducedVisibleText,
+    });
     if (runEvidence.durableToolCallCount > 0 || reviewedNoFindings) {
       return finalizeSuccessfulRetrospective({
         config,
@@ -602,6 +619,8 @@ async function runForkBasedRetrospective(
         forkId,
         newMessageCount: newMessages.length,
         durableToolAttempts: runEvidence.durableToolAttemptCount,
+        exitReason: wakeExitReason,
+        producedVisibleText: wakeProducedVisibleText,
       },
       "memory-retrospective (fork): run produced neither a verified durable write nor an explicit no-findings reply; leaving window retryable",
     );
@@ -1039,6 +1058,62 @@ function extractRetrospectiveRunRemembers(conversationId: string): string[] {
  * future allowlisted memory-writing tool joins the gate by name alone.
  */
 const DURABLE_RETROSPECTIVE_TOOLS: ReadonlySet<string> = new Set(["remember"]);
+
+/**
+ * Whether a retrospective run is proven to have REVIEWED its window and found
+ * nothing worth saving — as opposed to having stopped early and produced
+ * nothing, which looks identical from the outside.
+ *
+ * Both are "no tool calls and some text". Advancing the cursor over the second
+ * discards a window nobody ever read, so the distinction has to come from
+ * evidence rather than from the reply.
+ *
+ * Two things count:
+ *
+ * 1. **The mandated sentinel**, byte-exact. Unambiguous when the model
+ *    complies, and the prompt still asks for it.
+ * 2. **The shape of the run**: the loop terminated because the model chose to
+ *    stop (`no_tool_calls`), after emitting visible text, having attempted no
+ *    memory write at all.
+ *
+ * The second exists because the first was the ONLY accepted evidence, and a
+ * correct review phrased even slightly differently — "Nothing new to save
+ * here.", a sentence of context around the phrase — was recorded a failure.
+ * The cursor then never advanced and the same window re-queued on every pass,
+ * forever. Open-weight models comply with an exact-phrasing instruction far
+ * less reliably than the frontier model the instruction was written against,
+ * so this is not a rare tail.
+ *
+ * What makes the shape check safe is that it reads the loop's OWN terminal
+ * reason. `no_tool_calls` is the only value meaning the model decided it was
+ * done; `max_tokens_reached`, `context_too_large`, every `aborted_*`,
+ * `error`, and the budget/checkpoint yields are all distinct values, and each
+ * of them can end a run that returned normally with its work unfinished.
+ * Those are exactly the runs that must stay retryable, and none of them
+ * satisfies this. An absent exit reason (a caller that does not report one, a
+ * loop that never emitted the event) also fails — absence is not proof.
+ *
+ * A nonzero ATTEMPT count disqualifies regardless of either signal: a run that
+ * tried to save and failed reviewed its window and has findings, so its window
+ * must be retried rather than marked reviewed-and-empty.
+ *
+ * What this deliberately does NOT defend against is a model that reviews
+ * nothing and says so anyway. Neither did the sentinel — accepting the run's
+ * own word is inherent to the design, and the choice here is only about how
+ * that word may be phrased.
+ */
+function isReviewedNoFindings(args: {
+  explicitNoFindings: boolean;
+  durableToolAttemptCount: number;
+  exitReason: AgentLoopExitReason | undefined;
+  producedVisibleText: boolean | undefined;
+}): boolean {
+  if (args.durableToolAttemptCount > 0) return false;
+  if (args.explicitNoFindings) return true;
+  return (
+    args.exitReason === "no_tool_calls" && args.producedVisibleText === true
+  );
+}
 
 /**
  * Durable evidence a retrospective run persisted: its `remember` contents

@@ -50,6 +50,7 @@
 
 import type {
   AgentEvent,
+  AgentLoopExitReason,
   CheckpointDecision,
   CheckpointInfo,
 } from "../agent/loop.js";
@@ -268,6 +269,26 @@ export interface WakeResult {
   producedToolCalls: boolean;
   /** Present only when `invoked: false`; identifies why the wake was skipped. */
   reason?: WakeSkipReason;
+  /**
+   * How the agent loop terminated, as reported by its own `agent_loop_exit`
+   * event. `"no_tool_calls"` is the only value that means the model chose to
+   * stop — every other value is an abort, an error, an output-budget stop, or
+   * a yield, all of which can leave a run's work unfinished while still
+   * returning normally.
+   *
+   * Callers that must distinguish "reviewed and had nothing to do" from
+   * "stopped early and produced nothing" need this: `producedToolCalls: false`
+   * alone cannot tell them apart. Absent when the loop never ran or never
+   * emitted the event, so a caller reading it must treat absence as
+   * unproven rather than clean.
+   */
+  exitReason?: AgentLoopExitReason;
+  /**
+   * The run appended at least one assistant text block visible to the caller.
+   * Distinguishes a genuine text answer from the silent no-op path, which
+   * also reports no tool calls.
+   */
+  producedVisibleText?: boolean;
 }
 
 /**
@@ -730,6 +751,10 @@ export async function wakeAgentForOpportunity(
     // so the latest-row lookup in `setAgentLoopExitReasonOnLatestLog`
     // can see the freshly-persisted final usage row.
     let pendingExitReason: string | null = null;
+    // The same signal, kept for the RESULT rather than the log row.
+    // `pendingExitReason` is cleared once persisted, so it cannot be read at
+    // return time; this one is written once and never reset.
+    let observedExitReason: AgentLoopExitReason | undefined;
     // Set when the provider rejects a call as context-too-large while
     // auto-compaction is suppressed. The loop has no recovery ladder to
     // drive (overflow recovery is disabled for wakes), so it swallows the
@@ -826,6 +851,7 @@ export async function wakeAgentForOpportunity(
       // reason is stashed and applied in `goLive` after pendingLogs are
       // persisted, preserving the same ordering guarantee.
       if (event.type === "agent_loop_exit") {
+        observedExitReason = event.reason;
         if (mode === "buffering") {
           pendingExitReason = event.reason;
         } else {
@@ -1191,7 +1217,12 @@ export async function wakeAgentForOpportunity(
       }
       drainedInTry = true;
 
-      return { invoked: true, producedToolCalls };
+      return {
+        invoked: true,
+        producedToolCalls,
+        exitReason: observedExitReason,
+        producedVisibleText: hasVisibleText,
+      };
     } finally {
       // The success path (above) already called setProcessing(false)
       // + drainQueue after tail persist. This catch-all handles the
