@@ -33,7 +33,7 @@ evictor fix **does not**.
 
 ## What the proper assessment found
 
-Eight bugs we had, none of which the subject-line pass surfaced. Five of them
+Eight bugs we had (seven fixed, one reverted pending a decision), none of which the subject-line pass surfaced. Five of them
 cluster: **an approval or a piece of state that is dead, or never delivered,
 with nothing telling anyone.**
 
@@ -75,14 +75,29 @@ follow-up commit — the single clearest argument for reading the whole set.
 
 ### Privacy and secrets
 
-**A non-guardian on the first-party console was shown personal memory.**
-The gate blocked "remote and untrusted" and treated `vellum` as not-remote. But
-`vellum` is the console a trusted contact can sit in. Message history seventy
-lines away is gated on guardian class alone, so the two predicates disagreed on
-exactly that actor and the permissive one decided what got injected.
+**A non-guardian on the first-party console is shown personal memory.**
+*Found, fixed, then reverted — a decision is owed.* The gate blocks "remote and
+untrusted" and treats `vellum` as not-remote. But `vellum` is the console a
+trusted contact can sit in. Message history seventy lines away is gated on
+guardian class alone, so the two predicates disagree on exactly that actor and
+the permissive one decides what gets injected.
 
-The loosening was *deliberate* — a comment recorded it, done for prefix parity
-on reload. Parity still holds; both sides now agree at deny.
+Switching the gate to read the class closes that, and denies more besides.
+`fallbackTurnTrust` synthesises `{ trustClass: "unknown", sourceChannel:
+"vellum" }` for any turn that never resolved an actor, so the same value stands
+for two different situations: an unrecognised sender on a channel, and an
+internal turn with nobody attached. Denying the first is the point; denying the
+second silently drops NOW.md, PKB context and the memory blocks from ordinary
+internal paths.
+
+Separating them means the fallback must stop asserting a class it has not
+resolved — a trust-model change whose blast radius reaches the admission floors
+that also read `unknown`. That is a decision, not a port, so the change was
+reverted rather than left half-understood on the branch.
+
+Worth noting the loosening was itself deliberate: a comment records it, made for
+prefix parity on reload. Parity survives either way, since both sides read the
+same gate.
 
 **Gateway log redaction had drifted off the canonical secret list.**
 The gateway kept its own copy of the patterns while the shared list grew.
@@ -132,7 +147,10 @@ in-process, so upstream's fix does not apply).
 
 ## Outstanding, in priority order
 
-1. **Retrospective no-findings loop** (`c17bbf8835`). A run that correctly
+1. **The personal-memory gate** — see above. The narrow reading (deny a resolved
+   `trusted_contact`) closes the reported hole without touching the fallback;
+   the broad reading needs the fallback to stop claiming a class. Your call.
+2. **Retrospective no-findings loop** (`c17bbf8835`). A run that correctly
    concluded there was nothing to save only counted if its reply was
    byte-identical to `"Nothing new to save."`. Any other phrasing was recorded a
    failure, the cursor never advanced, and the window re-queued **forever**.
@@ -142,26 +160,26 @@ in-process, so upstream's fix does not apply).
    loop ended on the model-driven stop), which needs the terminal exit reason
    plumbed through `WakeResult`. The cheap 2-of-3 version would advance the
    cursor over windows a truncated run never reviewed, which is silent data loss.
-2. **Verification codes redeem in group rooms** (`e40ede5b8b`). A guardian code
+3. **Verification codes redeem in group rooms** (`e40ede5b8b`). A guardian code
    pasted into a Slack channel or Telegram group redeems there after being shown
    to everyone, and stamps that room as the guardian binding. We carry no
    conversation-shape signal on inbound events at all, so the normalizers need
    plumbing before a lane guard can exist. Guardian-binding hijack path.
-3. **`7cfc7e3bd9` classify each tool invocation once, before the gates.**
+4. **`7cfc7e3bd9` classify each tool invocation once, before the gates.**
    254-line refactor of `permissions/checker.ts`, heavily diverged here.
-4. **In-turn approval prompts go to the shared room, not the guardian's DM**
+5. **In-turn approval prompts go to the shared room, not the guardian's DM**
    (`a6f6234169`). We have no `guardian-channel-delivery.ts`; needs re-homing.
-5. **Channel readiness should ask whether anything is arriving** — the socket
+6. **Channel readiness should ask whether anything is arriving** — the socket
    half is fixed; the reporting half still answers from credentials + auth.test.
-6. **Plugin config.json lost across upgrades** (`dc2726327d`) — host-owned runtime
+7. **Plugin config.json lost across upgrades** (`dc2726327d`) — host-owned runtime
    state overwritten by the pin.
-7. **`289c6eb188`** bound file reads by characters, not lines.
-8. **`de25f3203b`** dangling concept-page links — silent structural corruption of
+8. **`289c6eb188`** bound file reads by characters, not lines.
+9. **`de25f3203b`** dangling concept-page links — silent structural corruption of
    the memory corpus. Upstream's version lives in a directory layout we do not
    share; a re-homing exercise rather than a port.
-9. **`498c008ea8`** local-mode ownership-verified stale-lock breaking — same
+10. **`498c008ea8`** local-mode ownership-verified stale-lock breaking — same
    family as the embeddings EPERM fix.
-10. Slack threading and backfill correctness: `5f98f27583`, `74ca7860b2`,
+11. Slack threading and backfill correctness: `5f98f27583`, `74ca7860b2`,
     `650989bb65`, `acf2d3e401`, `0b33b4b2d6`.
 
 ---
