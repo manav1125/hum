@@ -31,6 +31,10 @@ mock.module("../../acp/index.js", () => ({
 // listMergedSessions; calls fall through to a final `.all()` returning [].
 const capturedLimits: number[] = [];
 
+// Spread the real module: an exhaustive factory deletes every export it does
+// not name, and this file's import graph needs ones it did not. The DB
+// accessors are then stubbed by name so nothing opens a real SQLite file.
+const actualDbConnection = await import("../../memory/db-connection.js");
 mock.module("../../memory/db-connection.js", () => {
   const builder: any = {};
   builder.select = () => builder;
@@ -43,9 +47,13 @@ mock.module("../../memory/db-connection.js", () => {
   };
   builder.all = () => [];
   return {
+    ...actualDbConnection,
     getDb: () => builder,
     getSqlite: () => ({ __stub: true }),
     getSqliteFrom: () => ({ __stub: true }),
+    getMemoryDb: () => builder,
+    getMemorySqlite: () => ({ __stub: true }),
+    isMemoryDbOpen: () => false,
     resetDb: () => {},
   };
 });

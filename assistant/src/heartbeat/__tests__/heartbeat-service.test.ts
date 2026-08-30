@@ -21,7 +21,11 @@ mock.module("../../runtime/assistant-event-hub.js", () => ({
 // read real workspace files. Use a fallback for early module-load calls
 // (e.g. AuthSessionCache constructor) before beforeEach sets workspaceDir.
 const fallbackDir = join(tmpdir(), "vellum-hb-svc-fallback");
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, and this file's import graph needs ones it did not.
+const actualPlatform = await import("../../util/platform.js");
 mock.module("../../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceDir: () => workspaceDir ?? fallbackDir,
   getWorkspacePromptPath: (name: string) =>
     join(workspaceDir ?? fallbackDir, name),

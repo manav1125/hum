@@ -32,7 +32,11 @@ mock.module("../../util/logger.js", () => ({
 
 const mockLoadedConfig: Record<string, unknown> = {};
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, and this file's import graph needs ones it did not.
+const actualConfigLoader = await import("../../config/loader.js");
 mock.module("../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({
     ui: {},
     services: {

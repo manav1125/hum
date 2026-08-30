@@ -66,7 +66,11 @@ mock.module("../schedule/recurrence-engine.js", () => ({
 }));
 
 const createdConversations: Array<{ conversationType: string }> = [];
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, and this file's import graph needs ones it did not.
+const actualConversationCrud = await import("../memory/conversation-crud.js");
 mock.module("../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   getConversation: () => null,
   getMessages: () => [],
   createConversation: (opts: { conversationType: string }) => {

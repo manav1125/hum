@@ -69,6 +69,24 @@ function pathError(
 export const DEFAULT_READ_LINE_LIMIT = 2000;
 
 /**
+ * Characters returned by a read, regardless of how few lines they occupy.
+ *
+ * The line cap alone does not bound anything: a minified bundle, a one-line
+ * JSON blob, a CSV written without newlines, or a base64 payload is a SINGLE
+ * line, so 2000 lines admits the entire file. The on-disk guard is 100 MB, so
+ * nothing between those two limits stopped a 90 MB single-line file from
+ * being read whole — and a file-read result is honored in full for the rest
+ * of the turn, so it would then ride every subsequent LLM call in that turn.
+ * That is a wedge, not a slow turn: the oversized request lives in history,
+ * so every retry resends it and compaction hits the same rejection.
+ *
+ * Sized so it never bites a legitimate read. 2000 lines of ordinary source is
+ * roughly 80 KB, comfortably under this; only lines long enough to be data
+ * rather than code reach it.
+ */
+export const DEFAULT_READ_CHAR_LIMIT = 100_000;
+
+/**
  * Trailing marker appended when a read stops short of the last line. Silent
  * truncation is the failure mode worth avoiding: a model that cannot tell a
  * window from a whole file reasons about code it never saw.
@@ -78,6 +96,27 @@ function truncationNotice(
   totalLines: number,
 ): string {
   return `\n\n[Truncated: showing through line ${lastLineReturned} of ${totalLines}. Read on with offset=${lastLineReturned + 1}, or pass an explicit limit.]`;
+}
+
+/**
+ * Marker for a read stopped by the character budget rather than the line one.
+ *
+ * Deliberately different from {@link truncationNotice}: that one hands back a
+ * resumable `offset`, and here there may be none to give. The budget can stop
+ * PART WAY THROUGH a line, and `offset` addresses lines, so "continue from
+ * line N+1" would silently skip the remainder of the line that was cut. Say
+ * what happened and point at the tools that suit the shape of file that
+ * triggers this, rather than inviting a paging loop that loses content.
+ */
+function charBudgetNotice(
+  charsReturned: number,
+  totalChars: number,
+  partialLine: boolean,
+): string {
+  const where = partialLine
+    ? "mid-line, so the remainder of that line is not shown"
+    : "at a line boundary";
+  return `\n\n[Truncated at the ${charsReturned.toLocaleString()}-character limit (${where}); the file holds ${totalChars.toLocaleString()} characters. This file has very long lines, so line offsets cannot page past the cut. Narrow the read with an explicit offset/limit, or search it with grep/rg instead of reading it whole.]`;
 }
 
 export class FileSystemOps {
@@ -132,6 +171,24 @@ export class FileSystemOps {
           return `${String(lineNum).padStart(6)}  ${line}`;
         })
         .join("\n");
+
+      // The character budget is applied to the already-line-limited window,
+      // so an ordinary read never reaches it and pays only a length check.
+      const charLimit = input.charLimit ?? DEFAULT_READ_CHAR_LIMIT;
+      if (numbered.length > charLimit) {
+        const clipped = numbered.slice(0, charLimit);
+        // Whether the cut landed inside a line rather than on a newline.
+        // Governs which advice the notice gives, so it must describe the cut
+        // and not merely whether more of the file remains.
+        const partialLine = numbered[charLimit] !== "\n";
+        return {
+          ok: true,
+          value: {
+            content:
+              clipped + charBudgetNotice(charLimit, raw.length, partialLine),
+          },
+        };
+      }
 
       // Only when the window stops before the last line. An empty window means
       // the caller paged past the end or asked for nothing, which is not a

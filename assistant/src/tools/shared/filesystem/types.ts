@@ -10,6 +10,12 @@ export interface ReadInput {
   offset?: number;
   /** Maximum number of lines to read. */
   limit?: number;
+  /**
+   * Maximum characters to return. Bounds files whose lines are long enough
+   * that the line limit does not bound anything (minified bundles, one-line
+   * JSON, newline-free CSV). Defaults to `DEFAULT_READ_CHAR_LIMIT`.
+   */
+  charLimit?: number;
 }
 
 export interface ReadOutput {

@@ -76,11 +76,22 @@ mock.module("../../../memory/v2/injection-events.js", () => ({
 // Database handle: the simulate route only passes this through to
 // `runRouter` and `computeInjectionScores`. Both are stubbed above, so a
 // sentinel object is sufficient.
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, and this file's import graph needs ones it did not.
+const actualDbConnection = await import("../../../memory/db-connection.js");
 mock.module("../../../memory/db-connection.js", () => ({
+  ...actualDbConnection,
   getDb: () => ({ __stub: true }),
   getSqlite: () => ({ __stub: true }),
   getSqliteFrom: () => ({ __stub: true }),
   resetDb: () => {},
+  // The memory-DB accessors are stubbed for the same reason as the ones
+  // above: this suite must not open a real SQLite file. They are named
+  // explicitly because the spread would otherwise hand back the real
+  // implementations, which try to open one.
+  getMemoryDb: () => ({ __stub: true }),
+  getMemorySqlite: () => ({ __stub: true }),
+  isMemoryDbOpen: () => false,
 }));
 
 // Config loader. The simulate route reads `memory.v2.enabled` (must be

@@ -41,7 +41,11 @@ mock.module("../runtime/sync/resource-sync-events.js", () => ({
   publishSchedulesChanged: () => {},
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, and this file's import graph needs ones it did not.
+const actualPlatform = await import("../util/platform.js");
 mock.module("../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceDir: () => testWorkspaceDir,
   getWorkspaceDirDisplay: () => testWorkspaceDir,
   getWorkspacePromptPath: (name: string) => workspacePath(name),
