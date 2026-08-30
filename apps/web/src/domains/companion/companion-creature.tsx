@@ -258,6 +258,12 @@ export function CompanionCreature({
 export function CompanionCreatureKeyframes(): React.ReactElement {
   return (
     <style>{`
+/* The card's "working on it" pulse. Lives with the creature's keyframes
+   because that component is mounted in every phase the card can be in. */
+@keyframes cue-companion-working {
+  0%, 100% { opacity: .35; transform: scale(.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
 @keyframes cueCreatureBlink {
   0%, 92%, 100% { transform: scaleY(1); }
   95% { transform: scaleY(.1); }

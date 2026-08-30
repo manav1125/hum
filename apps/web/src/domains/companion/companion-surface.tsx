@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 
 import type { CompanionPhase, CompanionTurn } from "@vellumai/ipc-contract";
 
+import { renderCompanionMarkdown } from "./companion-markdown";
 import { CompanionCreature, CompanionCreatureKeyframes } from "./companion-creature";
 import type { CreatureTone } from "./companion-creature";
 
@@ -810,41 +811,103 @@ function Turns({
   thinking: boolean;
 }): React.ReactElement {
   const scroller = useRef<HTMLDivElement | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+
   useEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setScrolled(el.scrollTop > 0);
   }, [turns, thinking]);
 
   return (
-    <div
-      ref={scroller}
-      style={{
-        maxHeight: TURNS_MAX_HEIGHT,
-        overflowY: "auto",
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-      }}
-    >
-      {turns.map((turn, i) => (
-        <p
-          key={`${turn.role}-${i}`}
+    <div style={{ position: "relative" }}>
+      {/* There is more above, and the card says so.
+          Pinned to the newest turn, the one before it is cut by the top edge —
+          which reads as a message that broke rather than a conversation that
+          continues. A fade is the difference between the two. */}
+      {scrolled ? (
+        <div
+          aria-hidden
           style={{
-            margin: 0,
-            fontSize: 13,
-            lineHeight: 1.5,
-            // Yours is quieter and indented; Cue's is the thing being read.
-            color: turn.role === "user" ? T2 : T1,
-            paddingLeft: turn.role === "user" ? 14 : 0,
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 18,
+            background: `linear-gradient(${INK}, transparent)`,
+            pointerEvents: "none",
+            zIndex: 1,
           }}
-        >
-          {turn.text}
-        </p>
-      ))}
-      {thinking ? (
-        <p style={{ margin: 0, fontSize: 13, color: T2 }}>…</p>
+        />
       ) : null}
+      <div
+        ref={scroller}
+        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+        style={{
+          maxHeight: TURNS_MAX_HEIGHT,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+        {turns.map((turn, i) => (
+          <p
+            key={`${turn.role}-${i}`}
+            style={{
+              margin: 0,
+              fontSize: 13,
+              lineHeight: 1.5,
+              // Yours is quieter and indented; Cue's is the thing being read.
+              color: turn.role === "user" ? T2 : T1,
+              paddingLeft: turn.role === "user" ? 14 : 0,
+            }}
+          >
+            {renderCompanionMarkdown(turn.text)}
+          </p>
+        ))}
+        {thinking ? <Working /> : null}
+      </div>
     </div>
+  );
+}
+
+/**
+ * That Cue is working on it — said, not implied.
+ *
+ * It was a bare `…`, which is indistinguishable from an answer that trailed
+ * off: you ask, the card shows three dots, and nothing tells you whether it is
+ * composing or has already finished badly. The creature cannot help here —
+ * the typing card outranks every phase that would have animated it — so this
+ * row is the only thing that can say it.
+ */
+function Working(): React.ReactElement {
+  return (
+    <p
+      style={{
+        margin: 0,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        fontSize: 12.5,
+        color: T2,
+      }}
+      aria-live="polite"
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: ACCENT,
+          animation: "cue-companion-working 1200ms ease-in-out infinite",
+          flex: "0 0 auto",
+        }}
+        aria-hidden
+      />
+      Working on it…
+    </p>
   );
 }
 

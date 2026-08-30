@@ -30,10 +30,15 @@ import { isElectron } from "@/runtime/is-electron";
 /**
  * How much of the thread the card carries.
  *
- * Four is two exchanges: enough to see what you asked and what came back, and
- * the one before it for context. The app is where the thread lives.
+ * Four was two exchanges, and in use that was too few: a third question
+ * pushed the first answer out, so a card the owner was still reading lost its
+ * top while they typed. Eight is four exchanges — still a glance, still
+ * bounded, and now the conversation you can see is the one you are having.
+ *
+ * The card scrolls rather than grows, so this costs height only up to
+ * `TURNS_MAX_HEIGHT`; past that it is scrollback, which is cheap.
  */
-export const COMPANION_TURN_TAIL = 4;
+export const COMPANION_TURN_TAIL = 8;
 
 export interface CompanionTurnRow {
   role: "user" | "assistant";

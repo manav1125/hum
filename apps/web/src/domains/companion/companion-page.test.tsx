@@ -1061,3 +1061,59 @@ describe("the card carries the exchange (C2)", () => {
     expect(screen.getByText("Open in Cue ›")).toBeDefined();
   });
 });
+
+/**
+ * Saying that it is working, and drawing what came back as prose.
+ */
+describe("the card says what it is doing (C2)", () => {
+  test("REGRESSION: a working turn says so, rather than showing three dots", async () => {
+    // It was a bare "…", which is indistinguishable from an answer that
+    // trailed off — you ask, and nothing tells you whether it is composing or
+    // has already finished badly.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "typing",
+      turns: [{ role: "user", text: "what's the weather" }],
+      thinking: true,
+    });
+
+    expect(screen.getByText("Working on it…")).toBeDefined();
+  });
+
+  test("it stops saying so once the answer lands", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "typing",
+      turns: [
+        { role: "user", text: "what's the weather" },
+        { role: "assistant", text: "Mostly cloudy." },
+      ],
+      thinking: false,
+    });
+
+    expect(screen.queryByText("Working on it…")).toBeNull();
+    expect(screen.getByText("Mostly cloudy.")).toBeDefined();
+  });
+
+  test("REGRESSION: an answer is drawn as prose, not as its punctuation", async () => {
+    // The card drew raw model output, so a real reply arrived carrying its
+    // asterisks and a URL longer than the sentence around it.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "typing",
+      turns: [
+        {
+          role: "assistant",
+          text: "**Hong Kong** — per the [Observatory](https://example.com/hk).",
+        },
+      ],
+    });
+
+    expect(screen.getByText("Hong Kong")).toBeDefined();
+    expect(screen.getByText("Observatory")).toBeDefined();
+    expect(screen.queryByText(/https:\/\/example\.com/)).toBeNull();
+  });
+});
