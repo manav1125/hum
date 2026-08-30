@@ -37,4 +37,17 @@ describe("mayDiscardOnReload", () => {
       mayDiscardOnReload({ isProcessing: true, hasLiveChildren: true }),
     ).toBe(false);
   });
+
+  test("the same rule has to hold at the rebuild gate, not just the sweep", () => {
+    // Marking the parent stale only defers the problem: the rebuild on next
+    // access disposes it, which aborts the children too. Protecting one gate
+    // and not the other relocates the death from file-save to the next touch.
+    // This documents the pairing; the rebuild gate applies the identical
+    // predicate in conversation-store's getOrCreateConversation.
+    const parentWaitingOnChild = {
+      isProcessing: false,
+      hasLiveChildren: true,
+    };
+    expect(mayDiscardOnReload(parentWaitingOnChild)).toBe(false);
+  });
 });

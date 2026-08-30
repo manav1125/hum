@@ -101,6 +101,20 @@ function applyTransportMetadata(
 }
 
 /**
+ * Whether any subagent under this conversation is still running or pending.
+ *
+ * The same question the evictor's `shouldProtect` asks, phrased where the
+ * rebuild gate can reach it. Both callers need it because a parent with live
+ * children must survive BOTH the reload sweep and the rebuild-on-access that
+ * follows it — protecting only one just relocates the abort.
+ */
+function hasLiveSubagents(conversationId: string): boolean {
+  return getSubagentManager()
+    .getChildrenOf(conversationId)
+    .some((c) => c.status === "running" || c.status === "pending");
+}
+
+/**
  * Get or create an active conversation by ID.
  *
  * Handles provider setup, rate limiting, system prompt, memory policy,
@@ -120,10 +134,20 @@ export async function getOrCreateConversation(
     mergeConversationOptions(conversationId, persistentOptions);
   }
 
-  if (
-    !conversation ||
-    (conversation.isStale() && !conversation.isProcessing())
-  ) {
+  // A stale conversation is rebuilt on next access so a config or credential
+  // reload actually applies. The rebuild disposes the old one, which aborts
+  // every subagent under it — so "idle" is not sufficient grounds. A parent
+  // waiting on a child is idle between tool calls, and rebuilding it there
+  // would kill the child at the next touch instead of at file-save: the same
+  // death, moved. Defer until the children are terminal; the reload still
+  // lands, on the parent's next turn after they finish.
+  const rebuildable =
+    conversation !== undefined &&
+    conversation.isStale() &&
+    !conversation.isProcessing() &&
+    !hasLiveSubagents(conversationId);
+
+  if (!conversation || rebuildable) {
     if (conversation) {
       getSubagentManager().abortAllForParent(conversationId);
       conversation.dispose();
