@@ -247,10 +247,68 @@ function getStartupLockPath(): string {
   return getDaemonStartupLockPath();
 }
 
-/** Attempt to acquire a startup lock. Returns true on success. Stale locks
- *  (older than STARTUP_LOCK_STALE_MS) are forcibly removed to prevent
- *  permanent deadlocks from a crashed caller. */
-function acquireStartupLock(): boolean {
+/**
+ * Contents of the startup lock: who holds it, and since when.
+ *
+ * The PID is the part that matters. Age alone cannot distinguish a crashed
+ * holder from a slow one, and those two need opposite handling — see
+ * {@link acquireStartupLock}. Written as JSON; a bare-number body from an
+ * older build parses as a timestamp with no owner, which is treated as
+ * unverifiable and falls back to the age rule.
+ */
+interface StartupLockRecord {
+  pid?: number;
+  ts: number;
+}
+
+function readStartupLock(lockPath: string): StartupLockRecord | null {
+  let raw: string;
+  try {
+    raw = readFileSync(lockPath, "utf-8").trim();
+  } catch {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as { pid?: unknown; ts?: unknown };
+    if (typeof parsed.ts === "number") {
+      return {
+        ts: parsed.ts,
+        ...(typeof parsed.pid === "number" ? { pid: parsed.pid } : {}),
+      };
+    }
+  } catch {
+    // Fall through to the legacy bare-timestamp format.
+  }
+  const ts = parseInt(raw, 10);
+  return isNaN(ts) ? null : { ts };
+}
+
+/**
+ * Attempt to acquire the daemon startup lock. Returns true on success.
+ *
+ * Breaking a held lock is decided by OWNERSHIP first and age only second.
+ * The lock used to be broken on age alone, which gets the dangerous case
+ * backwards: a daemon that legitimately takes longer than the timeout to
+ * start is not a crashed one, and stealing its lock starts a SECOND daemon
+ * against the same workspace. Two daemons is the one failure this codebase
+ * refuses to degrade into — invisible to health checks, unreachable by stop
+ * commands, and still running the scheduler, memory worker and background
+ * wake against a shared database, so every side effect happens twice.
+ *
+ * So: a lock whose owner is provably gone is broken immediately, however
+ * fresh it is — a crashed starter should not block the next one for two
+ * minutes. A lock whose owner is alive is respected for the stale window.
+ *
+ * The age rule is kept as the escape hatch rather than replaced by ownership,
+ * because a PID can be reused: an unrelated process that inherits the number
+ * would otherwise hold the lock forever. Age also remains the only rule
+ * available for a lock that names no owner, which now means a file written by
+ * an older build.
+ *
+ * Exported only so its tests exercise this function rather than a re-declared
+ * copy of the rule, which would drift toward permissive without failing.
+ */
+export function acquireStartupLock(): boolean {
   const lockPath = getStartupLockPath();
   try {
     // Ensure the root directory exists before attempting the lock file write.
@@ -259,26 +317,77 @@ function acquireStartupLock(): boolean {
     // "lock already held."
     ensureDataDir();
     // O_CREAT | O_EXCL — fails atomically if the file already exists.
-    writeFileSync(lockPath, String(Date.now()), { flag: "wx" });
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: process.pid, ts: Date.now() }),
+      { flag: "wx" },
+    );
     return true;
   } catch {
-    // Lock file exists — check for staleness.
-    try {
-      const ts = parseInt(readFileSync(lockPath, "utf-8").trim(), 10);
-      if (!isNaN(ts) && Date.now() - ts > STARTUP_LOCK_STALE_MS) {
+    // Lock file exists — decide whether its holder is still there.
+    const record = readStartupLock(lockPath);
+    if (record === null) {
+      // Unreadable: another process may be mid-write. Do not break it.
+      return false;
+    }
+
+    if (record.pid !== undefined && isProcessRunning(record.pid)) {
+      // Owner is alive. Respect the lock unless it has also outlived the
+      // stale window, which is the escape hatch for PID reuse: an unrelated
+      // process that inherited the number would otherwise hold the lock
+      // forever.
+      //
+      // Liveness is `kill(pid, 0)` — a syscall, deliberately not a `ps`
+      // probe of the command line. Identifying a process by forking `ps` is
+      // a known scar here: forking is what fails first under memory
+      // pressure, so the check returns "not ours" exactly when the machine
+      // is struggling, and a live holder's lock gets broken at the worst
+      // possible moment. The starter is also not necessarily the daemon
+      // entry point, so a command-line match would not identify it anyway.
+      if (Date.now() - record.ts <= STARTUP_LOCK_STALE_MS) return false;
+    } else if (record.pid !== undefined) {
+      // Owner is provably gone: break immediately however fresh the lock is.
+      // A crashed starter should not block the next one for two minutes.
+      try {
         unlinkSync(lockPath);
-        return acquireStartupLock();
+      } catch {
+        // Someone else removed it first; retrying is still correct.
       }
-    } catch {
-      // Can't read the lock — another process may be manipulating it.
+      return acquireStartupLock();
+    }
+
+    if (Date.now() - record.ts > STARTUP_LOCK_STALE_MS) {
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        /* raced with another breaker */
+      }
+      return acquireStartupLock();
     }
     return false;
   }
 }
 
-function releaseStartupLock(): void {
+/**
+ * Release the startup lock, but only if this process still owns it.
+ *
+ * An unconditional unlink can delete a lock another process legitimately
+ * acquired after ours was broken, which would let a third start proceed
+ * concurrently — reintroducing the two-daemon case from the other side.
+ */
+export function releaseStartupLock(): void {
+  const lockPath = getStartupLockPath();
+  const record = readStartupLock(lockPath);
+  // A legacy lock names no owner; it can only have been ours to release.
+  if (
+    record !== null &&
+    record.pid !== undefined &&
+    record.pid !== process.pid
+  ) {
+    return;
+  }
   try {
-    unlinkSync(getStartupLockPath());
+    unlinkSync(lockPath);
   } catch {
     /* already removed */
   }
