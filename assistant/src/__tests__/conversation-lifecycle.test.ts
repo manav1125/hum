@@ -675,16 +675,17 @@ describe("loadFromDb metadata injection rehydration", () => {
     expect(messages[2].content).toEqual([{ type: "text", text: "Tail" }]);
   });
 
-  test("internal-channel trusted_contact view still rehydrates memoryV2StaticBlock", async () => {
-    // Regression: the prior `!isUntrustedTrustClass(trustClass)` gate
-    // blocked any non-guardian view from rehydrating personal memory,
-    // including legitimate internal flows (e.g. trusted_contact actors
-    // arriving over the internal `"vellum"` channel). Injection time
-    // uses `shouldExposePersonalMemory`, which keys on `sourceChannel`
-    // rather than `trustClass` and exposes personal memory for
-    // `sourceChannel === "vellum"` regardless of actor trust class. The
-    // rehydrate gate must match so a daemon-restart reload of the same
-    // conversation produces an identical prefix.
+  test("internal unresolved-actor view still rehydrates memoryV2StaticBlock", async () => {
+    // Regression: an early `!isUntrustedTrustClass(trustClass)` gate blocked
+    // every non-guardian view from rehydrating personal memory, including
+    // legitimate internal flows. The invariant is prefix parity — rehydration
+    // must reproduce what injection would have produced, or a daemon restart
+    // silently changes msg[0] and busts the provider prefix cache.
+    //
+    // The internal flow that needs this is the one with no resolved actor:
+    // `FALLBACK_TURN_TRUST` is `{ trustClass: "unknown", sourceChannel:
+    // "vellum" }`, which `isPersonalMemoryAllowed` admits. A resolved
+    // `trusted_contact` is a different case and is asserted denied below.
     mockConversation = defaultConv();
     mockDbMessages = [
       {
@@ -692,8 +693,60 @@ describe("loadFromDb metadata injection rehydration", () => {
         role: "user",
         content: JSON.stringify([{ type: "text", text: "First" }]),
         metadata: JSON.stringify({
-          // Rows must carry `trusted_contact` / `unknown` provenance to
-          // survive the row-level filter for non-guardian views.
+          // Rows must carry non-guardian provenance to survive the row-level
+          // filter for non-guardian views.
+          provenanceTrustClass: "unknown",
+          memoryV2StaticBlock:
+            "<info>\n## Essentials\n\nAlice prefers VS Code.\n</info>",
+        }),
+      },
+      {
+        id: "m2",
+        role: "assistant",
+        content: JSON.stringify([{ type: "text", text: "Reply" }]),
+        metadata: JSON.stringify({ provenanceTrustClass: "unknown" }),
+      },
+      {
+        id: "m3",
+        role: "user",
+        content: JSON.stringify([{ type: "text", text: "Tail" }]),
+        metadata: JSON.stringify({ provenanceTrustClass: "unknown" }),
+      },
+    ];
+
+    const conversation = makeConversation();
+    conversation.setTrustContext({
+      trustClass: "unknown",
+      sourceChannel: "vellum",
+    });
+    await conversation.loadFromDb();
+    const messages = conversation.getMessages();
+
+    expect(messages).toHaveLength(3);
+    expect(messages[0].content).toEqual([
+      {
+        type: "text",
+        text: "<info>\n## Essentials\n\nAlice prefers VS Code.\n</info>",
+      },
+      { type: "text", text: "First" },
+    ]);
+  });
+
+  test("a trusted contact on the internal channel does NOT rehydrate memoryV2StaticBlock", async () => {
+    // The console is not a proxy for the owner. `vellum` is also the
+    // first-party surface a trusted contact can sit in, so a positively
+    // identified non-owner must not be handed the owner's private memory —
+    // on reload any more than on injection.
+    //
+    // Prefix parity is not weakened by this: both sides read
+    // `isPersonalMemoryAllowed`, so both now produce no block for this actor.
+    mockConversation = defaultConv();
+    mockDbMessages = [
+      {
+        id: "m1",
+        role: "user",
+        content: JSON.stringify([{ type: "text", text: "First" }]),
+        metadata: JSON.stringify({
           provenanceTrustClass: "trusted_contact",
           memoryV2StaticBlock:
             "<info>\n## Essentials\n\nAlice prefers VS Code.\n</info>",
@@ -722,13 +775,7 @@ describe("loadFromDb metadata injection rehydration", () => {
     const messages = conversation.getMessages();
 
     expect(messages).toHaveLength(3);
-    expect(messages[0].content).toEqual([
-      {
-        type: "text",
-        text: "<info>\n## Essentials\n\nAlice prefers VS Code.\n</info>",
-      },
-      { type: "text", text: "First" },
-    ]);
+    expect(messages[0].content).toEqual([{ type: "text", text: "First" }]);
   });
 
   test("rehydration order matches injection-time order for the full personal-memory set", async () => {
@@ -911,10 +958,15 @@ describe("loadFromDb metadata injection rehydration", () => {
 
   test("ensureActorScopedHistory reloads when sourceChannel changes within the same trust class", async () => {
     // Regression: cache invalidation previously keyed only on trust class.
-    // `loadFromDb` gates `memoryV2StaticBlock` rehydration on `sourceChannel`
-    // via `shouldExposePersonalMemory`, so a same-trust-class reuse from a
-    // different channel (e.g. internal `vellum` → remote channel) must
-    // re-run `loadFromDb` or stale personal-memory exposure persists.
+    // `loadFromDb` gates `memoryV2StaticBlock` rehydration on the channel as
+    // well as the class, so a same-class reuse from a different channel
+    // (internal `vellum` → remote) must re-run `loadFromDb` or stale
+    // personal-memory exposure persists.
+    //
+    // Driven with `unknown` because that is the class whose exposure still
+    // turns on the channel: an unresolved internal turn is admitted, the same
+    // class arriving remotely is not. `trusted_contact` is now denied on both
+    // sides, so it can no longer detect a missed invalidation.
     mockConversation = defaultConv();
     mockDbMessages = [
       {
@@ -922,7 +974,7 @@ describe("loadFromDb metadata injection rehydration", () => {
         role: "user",
         content: JSON.stringify([{ type: "text", text: "First" }]),
         metadata: JSON.stringify({
-          provenanceTrustClass: "trusted_contact",
+          provenanceTrustClass: "unknown",
           memoryV2StaticBlock:
             "<info>\n## Essentials\n\nprivate memory\n</info>",
         }),
@@ -931,21 +983,21 @@ describe("loadFromDb metadata injection rehydration", () => {
         id: "m2",
         role: "assistant",
         content: JSON.stringify([{ type: "text", text: "Reply" }]),
-        metadata: JSON.stringify({ provenanceTrustClass: "trusted_contact" }),
+        metadata: JSON.stringify({ provenanceTrustClass: "unknown" }),
       },
       {
         id: "m3",
         role: "user",
         content: JSON.stringify([{ type: "text", text: "Tail" }]),
-        metadata: JSON.stringify({ provenanceTrustClass: "trusted_contact" }),
+        metadata: JSON.stringify({ provenanceTrustClass: "unknown" }),
       },
     ];
 
     const conversation = makeConversation();
-    // First load: internal channel, trusted_contact actor → personal memory
-    // exposed via `shouldExposePersonalMemory({sourceChannel: "vellum", ...})`.
+    // First load: internal channel, unresolved actor → personal memory
+    // exposed.
     conversation.setTrustContext({
-      trustClass: "trusted_contact",
+      trustClass: "unknown",
       sourceChannel: "vellum",
     });
     await conversation.ensureActorScopedHistory();
@@ -960,7 +1012,7 @@ describe("loadFromDb metadata injection rehydration", () => {
     // Reuse with the same trust class but a remote channel. The cache must
     // invalidate and trigger a reload that strips the personal-memory block.
     conversation.setTrustContext({
-      trustClass: "trusted_contact",
+      trustClass: "unknown",
       sourceChannel: "telegram",
     });
     await conversation.ensureActorScopedHistory();

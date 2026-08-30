@@ -191,9 +191,7 @@ export function resolveTrustClass(
 
 /**
  * Whether personal-memory content may be surfaced for the actor described by
- * `trustContext`: the gate admits guardian-class actors and internal/local
- * flows (including turns with no trust context), and blocks remote untrusted
- * actors — see {@link shouldExposePersonalMemory} for the rationale.
+ * `trustContext`.
  *
  * This is THE personal-memory trust gate. Every surface that exposes private
  * user content — the v2 dynamic/static `<memory>` layers, PKB context, NOW.md,
@@ -201,10 +199,34 @@ export function resolveTrustClass(
  * memory blocks — must call this one helper so the exposure rule cannot drift
  * between copies. It folds in {@link resolveTrustClass} so the dev-bypass
  * (HTTP auth disabled → guardian) applies uniformly at every call site.
+ *
+ * Two conditions deny, and they are separate on purpose:
+ *
+ * 1. **A resolved `trusted_contact`, on any channel.** The channel-shaped rule
+ *    below treats `vellum` as internal, which is true of the transport and not
+ *    of the people on it: `vellum` is also the first-party console a trusted
+ *    contact can be sitting in. That made this gate disagree with the message-
+ *    history gate — which keys on guardian class alone — about exactly one
+ *    actor, and the more permissive of the two decided what got injected.
+ *    A `trusted_contact` is by definition someone we positively identified as
+ *    *not* the owner, so the owner's private memory is not theirs to read.
+ *
+ * 2. **A non-guardian arriving over a remote channel**, which is the original
+ *    prompt-injection rule and is unchanged.
+ *
+ * `unknown` on `vellum` is deliberately still allowed. That value is not only
+ * "a stranger": {@link FALLBACK_TURN_TRUST} synthesises it for any turn that
+ * never resolved an actor at all, so denying it here would silently strip
+ * NOW.md, PKB context and the memory blocks from ordinary internal paths —
+ * heartbeats, compaction, background jobs. Separating the two meanings
+ * requires the fallback to stop asserting a class it never resolved, which is
+ * a trust-model change reaching the admission floors that also read `unknown`.
+ * Until then this gate denies the actor it can actually name.
  */
 export function isPersonalMemoryAllowed(
   trustContext: TrustContext | undefined,
 ): boolean {
+  if (resolveTrustClass(trustContext) === "trusted_contact") return false;
   return shouldExposePersonalMemory({
     sourceChannel: trustContext?.sourceChannel,
     isTrustedActor: resolveTrustClass(trustContext) === "guardian",
