@@ -142,6 +142,33 @@ function isSlackMuteCommand(text: string, botUserId?: string): boolean {
 }
 
 /**
+ * How long the socket may deliver nothing before we stop believing it.
+ *
+ * A Socket Mode connection can stop delivering while staying OPEN at the
+ * socket layer. Nothing here could notice: there was no ping, no idle timer
+ * and no connect deadline, and recovery waited on a `close` event a half-open
+ * socket never fires. Delivery stayed dead until something unrelated bounced
+ * the stack. The readiness probe meanwhile checks credentials and auth.test,
+ * neither of which asks whether anything is arriving, so the product reports
+ * Slack healthy throughout.
+ *
+ * Deliberately generous. A healthy socket sees Slack's own periodic frames
+ * well inside this, and the cost of being wrong in the other direction is one
+ * reconnect on a quiet workspace — which is cheap and safe here, because
+ * reconnect already replays the gap. Being wrong the slow way is a silent
+ * outage, so the asymmetry points this way.
+ */
+const SOCKET_IDLE_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * How long to wait for `open` before giving up on a connect attempt.
+ *
+ * Without this a socket that never opens leaves the client neither connected
+ * nor reconnecting, because the retry is driven by `close`.
+ */
+const CONNECT_TIMEOUT_MS = 30_000;
+
+/**
  * Slack Socket Mode WebSocket client.
  *
  * Opens a Socket Mode connection via `apps.connections.open`, maintains
@@ -158,6 +185,8 @@ export class SlackSocketModeClient {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private dedupCleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectDeadline: ReturnType<typeof setTimeout> | null = null;
   private store: SlackStore;
   private emitQueues: Map<string, Promise<void>> | undefined = new Map();
 
@@ -315,6 +344,8 @@ export class SlackSocketModeClient {
     this.running = false;
     this.connecting = false;
     this.stopDedupCleanup();
+    this.clearIdleTimer();
+    this.clearConnectDeadline();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -686,8 +717,29 @@ export class SlackSocketModeClient {
       this.ws = ws;
       this.connecting = false;
 
+      // A socket that never opens would otherwise leave us neither connected
+      // nor reconnecting: the retry is driven by `close`, which never comes.
+      this.clearConnectDeadline();
+      this.connectDeadline = setTimeout(() => {
+        if (this.ws !== ws || ws.readyState === WebSocket.OPEN) return;
+        log.warn("Slack Socket Mode connect timed out; retrying");
+        try {
+          ws.close(4000, "connect timeout");
+        } catch {
+          // The socket may already be unusable; the reconnect below is what
+          // matters.
+        }
+        if (this.ws === ws) {
+          this.ws = null;
+          this.scheduleReconnect();
+        }
+      }, CONNECT_TIMEOUT_MS);
+      this.connectDeadline.unref?.();
+
       ws.addEventListener("open", () => {
         log.info("Slack Socket Mode connected");
+        this.clearConnectDeadline();
+        this.armIdleTimer(ws);
         this.reconnectAttempt = 0;
         // Retry bot identity resolution on every reconnect so a transient
         // auth.test failure at startup is self-healing. Once resolved, the
@@ -713,6 +765,10 @@ export class SlackSocketModeClient {
       });
 
       ws.addEventListener("message", (messageEvent) => {
+        // Any frame proves the socket is live, including Slack's own
+        // housekeeping envelopes — which is the point: the clock measures
+        // silence, not the absence of user traffic.
+        this.armIdleTimer(ws);
         this.handleMessage(messageEvent.data as string, ws);
       });
 
@@ -726,6 +782,8 @@ export class SlackSocketModeClient {
         // so a stale close event should be ignored.
         if (this.ws === ws) {
           this.ws = null;
+          this.clearIdleTimer();
+          this.clearConnectDeadline();
           this.scheduleReconnect();
         }
       });
@@ -1740,6 +1798,37 @@ export class SlackSocketModeClient {
     );
     if (normalized) {
       this.onEvent(normalized);
+    }
+  }
+
+  /**
+   * Restart the silence clock. Called on connect and on every frame, so the
+   * timer measures "time since anything arrived" rather than connection age.
+   */
+  private armIdleTimer(ws: WebSocket): void {
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      if (this.ws !== ws || !this.running) return;
+      log.warn(
+        { idleMs: SOCKET_IDLE_TIMEOUT_MS },
+        "Slack Socket Mode delivered nothing for the idle window; treating the connection as dead and reconnecting",
+      );
+      this.forceReconnect();
+    }, SOCKET_IDLE_TIMEOUT_MS);
+    this.idleTimer.unref?.();
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  private clearConnectDeadline(): void {
+    if (this.connectDeadline) {
+      clearTimeout(this.connectDeadline);
+      this.connectDeadline = null;
     }
   }
 
