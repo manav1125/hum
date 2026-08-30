@@ -145,42 +145,84 @@ in-process, so upstream's fix does not apply).
 
 ---
 
+## Decisions, resolved 2026-08-30
+
+**Personal-memory gate — narrow reading, shipped.** Denies a resolved
+`trusted_contact` on every channel; `unknown` on `vellum` stays admitted
+because `FALLBACK_TURN_TRUST` synthesises that exact value for turns with no
+resolved actor. Closes the reported hole with no blast radius on internal
+paths. The broad reading still needs the fallback to stop asserting a class,
+and that remains a separate trust-model change.
+
+**Per-contact auto-approve threshold — not adopted.** Wrong order. This wave
+found four controls that claimed to constrain and enforced nothing; adding a
+*widening* control before the constraining ones are observed working in
+production is backwards, and the rogue-send scar was precisely a trust path
+clearing a gate it should not have. Revisit after this ships.
+
+**MCP tools defaulting to medium risk — not adopted, and the measurement
+reversed the recommendation.** Upstream's case is that connectors prompt on
+89–100% of calls. Ours do not. Across 8,853 real invocations on prod
+(2026-06-14 → 08-30):
+
+| | total | low | medium | high | denied |
+|---|---|---|---|---|---|
+| MCP (`mcp__*`) | 800 | 785 | **0** | 15 | 30 (3.8%) |
+| built-in | 8,053 | 6,852 | 713 | 488 | 922 (11.4%) |
+
+Our MCP tools already resolve to **low** 98% of the time. Upstream's fix
+raises a floor that is too high for them; applied here it would raise ours
+from low to medium and *increase* prompting. We do not have their problem,
+and adopting their fix would import it.
+
+Where our friction actually is, from the same table: `bash` 563 denials of
+2,467 (23%), `file_write` 194 of 734 (26%), `file_edit` 121 of 392 (31%).
+That is the same shape as the earlier unattended-denials finding, and it is
+a built-in-tool problem, not a connector one.
+
+---
+
 ## Outstanding, in priority order
 
-1. **The personal-memory gate** — see above. The narrow reading (deny a resolved
-   `trusted_contact`) closes the reported hole without touching the fallback;
-   the broad reading needs the fallback to stop claiming a class. Your call.
-2. **Retrospective no-findings loop** (`c17bbf8835`). A run that correctly
-   concluded there was nothing to save only counted if its reply was
-   byte-identical to `"Nothing new to save."`. Any other phrasing was recorded a
-   failure, the cursor never advanced, and the window re-queued **forever**.
-   Upstream measured 55 of 73 correct replies failing this way in one workspace
-   day; with an open-weight brain ours is likely worse. Not a quick fix: the safe
-   version reads the *shape* of the run (text reply, no memory write attempted,
-   loop ended on the model-driven stop), which needs the terminal exit reason
-   plumbed through `WakeResult`. The cheap 2-of-3 version would advance the
-   cursor over windows a truncated run never reviewed, which is silent data loss.
-3. **Verification codes redeem in group rooms** (`e40ede5b8b`). A guardian code
-   pasted into a Slack channel or Telegram group redeems there after being shown
-   to everyone, and stamps that room as the guardian binding. We carry no
-   conversation-shape signal on inbound events at all, so the normalizers need
-   plumbing before a lane guard can exist. Guardian-binding hijack path.
-4. **`7cfc7e3bd9` classify each tool invocation once, before the gates.**
+1. **`7cfc7e3bd9` classify each tool invocation once, before the gates.**
    254-line refactor of `permissions/checker.ts`, heavily diverged here.
-5. **In-turn approval prompts go to the shared room, not the guardian's DM**
+   Highest-value item remaining.
+2. **In-turn approval prompts go to the shared room, not the guardian's DM**
    (`a6f6234169`). We have no `guardian-channel-delivery.ts`; needs re-homing.
-6. **Channel readiness should ask whether anything is arriving** — the socket
-   half is fixed; the reporting half still answers from credentials + auth.test.
-7. **Plugin config.json lost across upgrades** (`dc2726327d`) — host-owned runtime
-   state overwritten by the pin.
-8. **`289c6eb188`** bound file reads by characters, not lines.
-9. **`de25f3203b`** dangling concept-page links — silent structural corruption of
-   the memory corpus. Upstream's version lives in a directory layout we do not
-   share; a re-homing exercise rather than a port.
-10. **`498c008ea8`** local-mode ownership-verified stale-lock breaking — same
+   Adjacent to the group-room lane guard now shipped.
+3. **`289c6eb188`** bound file reads by characters, not lines.
+4. **`de25f3203b`** dangling concept-page links — silent structural corruption
+   of the memory corpus. Upstream's version lives in a directory layout we do
+   not share; a re-homing exercise rather than a port.
+5. **`498c008ea8`** local-mode ownership-verified stale-lock breaking — same
    family as the embeddings EPERM fix.
-11. Slack threading and backfill correctness: `5f98f27583`, `74ca7860b2`,
-    `650989bb65`, `acf2d3e401`, `0b33b4b2d6`.
+6. Slack threading and backfill correctness: `5f98f27583`, `74ca7860b2`,
+   `650989bb65`, `acf2d3e401`, `0b33b4b2d6`.
+
+### Closed since this was written
+
+- **The personal-memory gate** — shipped narrow, see above.
+- **Retrospective no-findings loop** (`c17bbf8835`) — shipped. The loop already
+  computed `AgentLoopExitReason` and the wake dropped it; `WakeResult` now
+  carries the terminal reason and whether visible text was produced, and the
+  advancement gate reads the run's shape instead of byte-matching a sentence.
+- **Verification codes redeem in group rooms** (`e40ede5b8b`) — shipped, and
+  the session is now retired rather than merely refused, since the code has
+  already been shown to the room. **This entry's stated blocker was wrong**:
+  it claimed we carry no conversation-shape signal on inbound events.
+  `chatType` was already on the canonical event and already normalized by
+  Slack, Telegram and WhatsApp. Checking the claim cost ten minutes; believing
+  it would have cost a plumbing project.
+- **Plugin `config.json` lost across upgrades** (`dc2726327d`) — was already
+  fixed during the wave itself (`0ac96f13b4`), including the `.disabled`
+  sentinel, which is the half that matters: auto-update runs unattended, so a
+  plugin the owner switched off came back on by itself.
+- **Channel readiness should ask whether anything is arriving** — deliberately
+  not built, on evidence. Prod holds **zero** Slack conversations and one
+  inbound Slack event ever (2026-06-20), so the channel is not in use here and
+  a recency probe would report a decade-old silence that means nothing. The
+  socket-liveness half is fixed and self-heals within 10 minutes. Worth
+  revisiting if Slack goes into real use.
 
 ---
 
