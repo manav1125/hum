@@ -841,3 +841,94 @@ describe("getMessageRoleStatsByConversation", () => {
     expect(users.get(a.id)).toEqual({ count: 2, lastAt: 2000 });
   });
 });
+
+describe("needsAttention filter", () => {
+  /**
+   * "Waiting on you" has to be applied in the QUERY, not by the client.
+   *
+   * Filtering client-side cannot page: the client receives a page selected by
+   * recency, drops most of it, and compares what remains against a `hasMore`
+   * computed over the unfiltered total. It then pages toward a count it can
+   * never reach, and a page that happens to contain no attention rows is
+   * indistinguishable from "nothing needs you".
+   *
+   * The list and the count must therefore agree, which is what these pin.
+   */
+  function setAttention(
+    conversationId: string,
+    latestAt: number | null,
+    seenAt: number | null,
+  ): void {
+    rawRun(
+      `INSERT INTO conversation_assistant_attention_state
+         (conversation_id, latest_assistant_message_at,
+          last_seen_assistant_message_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(conversation_id) DO UPDATE SET
+         latest_assistant_message_at = excluded.latest_assistant_message_at,
+         last_seen_assistant_message_at = excluded.last_seen_assistant_message_at`,
+      conversationId,
+      latestAt,
+      seenAt,
+      1,
+      1,
+    );
+  }
+
+  beforeEach(() => {
+    resetTables();
+    rawRun(`DELETE FROM conversation_assistant_attention_state`);
+  });
+
+  test("returns only conversations the user has not caught up with", () => {
+    const unseen = createConversation({ title: "unseen" });
+    const caughtUp = createConversation({ title: "caught up" });
+    const neverSpoke = createConversation({ title: "no assistant message" });
+
+    setAttention(unseen.id, 2000, 1000); // assistant spoke after last seen
+    setAttention(caughtUp.id, 2000, 2000); // seen cursor is level
+    setAttention(neverSpoke.id, null, null); // nothing to be behind on
+
+    const rows = listConversations(50, "standard", 0, "active", {
+      needsAttention: true,
+    });
+
+    expect(rows.map((r) => r.id)).toEqual([unseen.id]);
+  });
+
+  test("a conversation never seen at all counts as needing attention", () => {
+    // Null seen-cursor is the common case for a brand new arrival, and it
+    // must not read as "caught up" just because the cursor is missing.
+    const fresh = createConversation({ title: "fresh" });
+    setAttention(fresh.id, 5000, null);
+
+    const rows = listConversations(50, "standard", 0, "active", {
+      needsAttention: true,
+    });
+    expect(rows.map((r) => r.id)).toEqual([fresh.id]);
+  });
+
+  test("the count matches the filtered list, not the unfiltered total", () => {
+    // The bug that makes client-side filtering unpageable.
+    const a = createConversation({ title: "a" });
+    const b = createConversation({ title: "b" });
+    createConversation({ title: "c" });
+    createConversation({ title: "d" });
+    setAttention(a.id, 2000, 1000);
+    setAttention(b.id, 2000, null);
+
+    expect(
+      countConversations("standard", "active", { needsAttention: true }),
+    ).toBe(2);
+    expect(countConversations("standard", "active")).toBe(4);
+  });
+
+  test("omitting the flag is unchanged — every conversation, attention or not", () => {
+    const a = createConversation({ title: "a" });
+    createConversation({ title: "b" });
+    setAttention(a.id, 2000, 1000);
+
+    expect(listConversations(50, "standard", 0, "active")).toHaveLength(2);
+    expect(countConversations("standard", "active")).toBe(2);
+  });
+});

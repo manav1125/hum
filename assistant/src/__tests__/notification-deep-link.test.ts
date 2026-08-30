@@ -41,7 +41,12 @@ mock.module("../notifications/deliveries-store.js", () => ({
 // Mock conversation-crud so the broadcaster's source-context fallback lookup
 // can be driven from tests without DB access.
 let mockExistingConversations: Record<string, { id: string }> = {};
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../memory/conversation-crud.js");
 mock.module("../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   getConversation: (id: string) => mockExistingConversations[id] ?? null,
 }));
 

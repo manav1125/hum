@@ -7,6 +7,7 @@ import {
   wrapUntrustedContent,
 } from "../security/untrusted-content.js";
 import { getLogger } from "../util/logger.js";
+import { unseenAttentionPredicate } from "./conversation-attention-store.js";
 import type { ConversationRow } from "./conversation-crud.js";
 import { parseConversation } from "./conversation-crud.js";
 import { ensureDisplayOrderMigration } from "./conversation-display-order-migration.js";
@@ -14,7 +15,11 @@ import { ensureGroupMigration } from "./conversation-group-migration.js";
 import type { ConversationType } from "./conversation-types.js";
 import { getDb } from "./db-connection.js";
 import { rawAll } from "./raw-query.js";
-import { conversations, messages } from "./schema.js";
+import {
+  conversationAssistantAttentionState,
+  conversations,
+  messages,
+} from "./schema.js";
 
 const log = getLogger("conversation-store");
 
@@ -166,6 +171,7 @@ export function listConversations(
   conversationType: ConversationType = "standard",
   offset = 0,
   archiveStatus: ArchiveStatusFilter = "active",
+  opts?: { needsAttention?: boolean },
 ): ConversationRow[] {
   ensureDisplayOrderMigration();
   ensureGroupMigration();
@@ -173,18 +179,42 @@ export function listConversations(
   const typeCond = conversationTypeClause(conversationType);
   const archiveCond = archiveStatusClause(archiveStatus);
   const where = archiveCond ? sql`${typeCond} AND ${archiveCond}` : typeCond;
-  const query = db
+  const order = desc(
+    sql`COALESCE(${conversations.lastMessageAt}, ${conversations.updatedAt})`,
+  );
+
+  // The two branches are kept separate rather than unified behind one builder:
+  // a join yields `{ conversations: row, ... }` and a plain select yields the
+  // row, and collapsing them would mean widening the type until neither shape
+  // is checked.
+  if (opts?.needsAttention) {
+    const joined = db
+      .select()
+      .from(conversations)
+      .innerJoin(
+        conversationAssistantAttentionState,
+        eq(
+          conversationAssistantAttentionState.conversationId,
+          conversations.id,
+        ),
+      )
+      .where(and(where, unseenAttentionPredicate()))
+      .orderBy(order)
+      .limit(limit ?? 100)
+      .offset(offset)
+      .all();
+    return joined.map((r) => parseConversation(r.conversations));
+  }
+
+  return db
     .select()
     .from(conversations)
     .where(where)
-    .orderBy(
-      desc(
-        sql`COALESCE(${conversations.lastMessageAt}, ${conversations.updatedAt})`,
-      ),
-    )
+    .orderBy(order)
     .limit(limit ?? 100)
-    .offset(offset);
-  return query.all().map(parseConversation);
+    .offset(offset)
+    .all()
+    .map(parseConversation);
 }
 
 /**
@@ -368,17 +398,30 @@ export function listConversationsByTitlePrefix(
 export function countConversations(
   conversationType: ConversationType = "standard",
   archiveStatus: ArchiveStatusFilter = "active",
+  opts?: { needsAttention?: boolean },
 ): number {
   ensureGroupMigration();
   const db = getDb();
   const typeCond = conversationTypeClause(conversationType);
   const archiveCond = archiveStatusClause(archiveStatus);
   const where = archiveCond ? sql`${typeCond} AND ${archiveCond}` : typeCond;
-  const [{ total }] = db
-    .select({ total: count() })
-    .from(conversations)
-    .where(where)
-    .all();
+  // The count must apply the SAME filter as the list, or `hasMore` describes a
+  // different set than the page it accompanies — the client pages toward a
+  // total it can never reach, or stops early believing it is done.
+  const [{ total }] = opts?.needsAttention
+    ? db
+        .select({ total: count() })
+        .from(conversations)
+        .innerJoin(
+          conversationAssistantAttentionState,
+          eq(
+            conversationAssistantAttentionState.conversationId,
+            conversations.id,
+          ),
+        )
+        .where(and(where, unseenAttentionPredicate()))
+        .all()
+    : db.select({ total: count() }).from(conversations).where(where).all();
   return total;
 }
 

@@ -16,7 +16,12 @@ mock.module("../util/logger.js", () => ({
 
 // The compactor reads the conversation's image attachments from the DB to
 // build its manifest; with no images these return empty.
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../memory/conversation-crud.js");
 mock.module("../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   getMessages: () => [],
 }));
 mock.module("../memory/attachments-store.js", () => ({

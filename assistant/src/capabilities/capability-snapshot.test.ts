@@ -6,7 +6,12 @@ let mockNativeRows: Array<{ provider: string }> = [];
 let mockToolNames: string[] = [];
 let dbThrows = false;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({ mcp: { servers: mockMcpServers }, twilio: undefined }),
 }));
 
@@ -23,7 +28,12 @@ mock.module("../memory/schema/oauth.js", () => ({
   oauthConnections: { provider: "provider", status: "status" },
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualDbConnection = await import("../memory/db-connection.js");
 mock.module("../memory/db-connection.js", () => ({
+  ...actualDbConnection,
   getDb: () => ({
     select: () => ({
       from: () => ({

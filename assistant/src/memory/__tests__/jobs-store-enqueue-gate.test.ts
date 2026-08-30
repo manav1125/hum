@@ -31,7 +31,12 @@ mock.module("../../util/logger.js", () => ({
 type MemoryEnabledShape = boolean | null | undefined;
 let memoryEnabled: MemoryEnabledShape = true;
 let getConfigThrows = false;
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../config/loader.js");
 mock.module("../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => {
     if (getConfigThrows) throw new Error("config load failed");
     if (memoryEnabled === null) return {};
@@ -55,7 +60,12 @@ mock.module("../../runtime/actor-trust-resolver.js", () => ({
 
 // Stub the conversation-source lookup so the recursion guards in the
 // retrospective and auto-analysis paths fall through to the enqueue.
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../conversation-crud.js");
 mock.module("../conversation-crud.js", () => ({
+  ...actualConversationCrud,
   getConversationSource: () => null,
   reserveMessage: mock(async () => ({ id: "msg-reserve" })),
 }));
@@ -117,7 +127,12 @@ function makeStubDb() {
   };
 }
 const stubDb = makeStubDb();
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualDbConnection = await import("../db-connection.js");
 mock.module("../db-connection.js", () => ({
+  ...actualDbConnection,
   getDb: () => stubDb,
   // memory_jobs lives on the dedicated memory connection since migration
   // 328 — the same stub observes those writes.

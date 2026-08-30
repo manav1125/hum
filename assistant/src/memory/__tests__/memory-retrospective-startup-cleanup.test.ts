@@ -116,7 +116,12 @@ const stubConnection = () => ({
   }),
 });
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualDbConnection = await import("../db-connection.js");
 mock.module("../db-connection.js", () => ({
+  ...actualDbConnection,
   getDb: stubConnection,
   getMemoryDb: stubConnection,
 }));
@@ -125,7 +130,12 @@ let activeJobSourceConvIds = new Set<string>();
 let injectedNowMinusOrphanAgeMs = 0;
 let mockKeepSupersededRuns = false;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../config/loader.js");
 mock.module("../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({
     memory: {
       retrospective: { keepSupersededRuns: mockKeepSupersededRuns },
@@ -133,7 +143,12 @@ mock.module("../../config/loader.js", () => ({
   }),
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../conversation-crud.js");
 mock.module("../conversation-crud.js", () => ({
+  ...actualConversationCrud,
   deleteConversation: (id: string) => {
     deletedIds.push(id);
     mockConversations = mockConversations.filter((c) => c.id !== id);

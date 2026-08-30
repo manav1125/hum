@@ -95,7 +95,12 @@ mock.module("../config/skills.js", () => ({
   loadSkillCatalog: () => mockResolvedSkills.map((r) => r.summary),
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({}),
   invalidateConfigCache: () => {},
   loadRawConfig: () => ({}),
@@ -251,7 +256,12 @@ mock.module("../providers/provider-send-message.js", () => ({
 // Real isTextMimeType — we want actual classification here.
 // No mock needed; let it fall through to the real implementation.
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualPlatform = await import("../util/platform.js");
 mock.module("../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceSkillsDir: () => "/tmp/test-skills",
 }));
 mock.module("../util/platform.ts", () => ({

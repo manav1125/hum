@@ -80,7 +80,12 @@ mock.module("../contacts/contact-store.js", () => ({
 //   db.update(contacts).set({ userFile: slug }).where(eq(contacts.id, guardian.id)).run();
 // The stub captures the payload into `updatedUserFiles` and also mutates
 // the active mock guardian in place so downstream reads observe the new slug.
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualDbConnection = await import("../memory/db-connection.js");
 mock.module("../memory/db-connection.js", () => ({
+  ...actualDbConnection,
   getDb: () => ({
     update: () => ({
       set: (values: { userFile: string }) => ({

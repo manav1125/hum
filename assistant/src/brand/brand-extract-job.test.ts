@@ -28,7 +28,12 @@ mock.module("../providers/provider-send-message.js", () => ({
 mock.module("../config/llm-resolver.js", () => ({
   resolveCallSiteConfig: () => ({ provider: "mock", maxTokens: 512 }),
 }));
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({ llm: {} }),
 }));
 mock.module("../runtime/btw-sidechain.js", () => ({

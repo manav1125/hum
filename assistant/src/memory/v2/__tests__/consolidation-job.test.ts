@@ -93,7 +93,12 @@ const enqueuedJobs: Array<{
 }> = [];
 let nextJobIdCounter = 0;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualJobsStore = await import("../../jobs-store.js");
 mock.module("../../jobs-store.js", () => ({
+  ...actualJobsStore,
   enqueueMemoryJob: (
     type: string,
     payload: Record<string, unknown>,
@@ -119,7 +124,12 @@ const listBySourceCalls: Array<{
   opts: Record<string, unknown> | undefined;
 }> = [];
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../../conversation-crud.js");
 mock.module("../../conversation-crud.js", () => ({
+  ...actualConversationCrud,
   deleteConversation: (id: string) => {
     deletedConversationIds.push(id);
     return { segmentIds: [], deletedSummaryIds: [] };

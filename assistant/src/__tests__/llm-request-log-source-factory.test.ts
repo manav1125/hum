@@ -27,7 +27,12 @@ mock.module("../util/logger.js", () => ({
 // because none of the factory tests exercise the CH read path.
 const LOCAL_DEFAULT_CONFIG = { llmRequestLogs: { readSource: "local" } };
 let currentConfig: unknown = LOCAL_DEFAULT_CONFIG;
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => currentConfig,
 }));
 

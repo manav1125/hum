@@ -16,13 +16,24 @@ const conversationLookups: string[] = [];
 let conversationRow: { conversationType: string } | null = null;
 let conversationLookupShouldThrow = false;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualFeedWriter = await import("../../home/feed-writer.js");
 mock.module("../../home/feed-writer.js", () => ({
+  ...actualFeedWriter,
   appendFeedItem: async (item: FeedItem) => {
     appendCalls.push(item);
   },
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud =
+  await import("../../memory/conversation-crud.js");
 mock.module("../../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   getConversation: (id: string) => {
     conversationLookups.push(id);
     if (conversationLookupShouldThrow) {

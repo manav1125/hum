@@ -20,7 +20,12 @@ mock.module("../../../util/logger.js", () => ({
 
 const FAKE_WORKSPACE = "/tmp/content-source-routes-test-workspace";
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualPlatform = await import("../../../util/platform.js");
 mock.module("../../../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceDir: () => FAKE_WORKSPACE,
 }));
 

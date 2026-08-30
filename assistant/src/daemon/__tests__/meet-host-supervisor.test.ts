@@ -25,7 +25,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 // Stub the config loader before importing the module under test so the
 // idle-timeout reader doesn't walk into the real workspace loader.
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../config/loader.js");
 mock.module("../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({}),
   getNestedValue: () => undefined,
 }));

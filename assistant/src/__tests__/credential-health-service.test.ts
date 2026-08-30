@@ -128,8 +128,17 @@ mock.module("../security/token-manager.js", () => ({
 // Managed-path mocks: services schema, config loader, platform client,
 // PlatformOAuthConnection. The managed code path uses dynamic imports for
 // these so they only matter when a managed test scenario is exercised.
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualServicesSchema = await import("../config/schemas/services.js");
 mock.module("../config/schemas/services.js", () => ({
+  ...actualServicesSchema,
   ServicesSchema: {
+    // The real schema's `parse` is kept: `config/schema.ts` calls
+    // `ServicesSchema.parse({})` at module scope to build its default, so a
+    // stub without it throws during import rather than in a test.
+    ...actualServicesSchema.ServicesSchema,
     shape: {
       "google-oauth": {},
       "notion-oauth": {},
@@ -142,7 +151,12 @@ mock.module("../config/schemas/services.js", () => ({
 // MCP server config drives isProviderMcpConnected / isProviderAgentReachable.
 let mockMcpServers: Record<string, { enabled?: boolean }> = {};
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({ services: {}, mcp: { servers: mockMcpServers } }),
 }));
 
@@ -187,9 +201,13 @@ mock.module("../oauth/platform-connection.js", () => ({
 
 // ── Import under test ────────────────────────────────────────────────
 
-const { checkAllCredentials, checkCredentialForProvider,
-  hasCredentialConnection, isProviderAgentReachable, _setFetchFn } =
-  await import("../credential-health/credential-health-service.js");
+const {
+  checkAllCredentials,
+  checkCredentialForProvider,
+  hasCredentialConnection,
+  isProviderAgentReachable,
+  _setFetchFn,
+} = await import("../credential-health/credential-health-service.js");
 
 // Inject mock fetch via the test helper (Bun's global fetch can't be
 // overridden via globalThis assignment).

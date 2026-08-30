@@ -96,7 +96,12 @@ mock.module("../provider-registry.js", () => ({
 // Build the rest from the real schema defaults so this mock narrows exactly one
 // key and nothing else.
 const watchersDefaults = WatchersConfigSchema.parse({});
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../config/loader.js");
 mock.module("../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => {
     if (configThrows) throw new Error("no config");
     return {

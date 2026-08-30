@@ -28,7 +28,12 @@ mock.module("../../util/logger.js", () => ({
   getLogger: getLoggerSpy,
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../config/loader.js");
 mock.module("../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({
     services: { tts: { provider: "elevenlabs" }, nested: { value: 42 } },
   }),
@@ -52,7 +57,12 @@ mock.module("../identity-helpers.js", () => ({
   getAssistantName: () => null,
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualPlatform = await import("../../util/platform.js");
 mock.module("../../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceDir: () => "/tmp/workspace",
   vellumRoot: () => "/tmp/vellum",
 }));
@@ -93,7 +103,13 @@ mock.module("../../security/secure-keys.js", () => ({
   getProviderKeyAsync: async () => undefined,
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud =
+  await import("../../memory/conversation-crud.js");
 mock.module("../../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   addMessage: async () => ({ id: "msg-123" }),
   reserveMessage: mock(async () => ({ id: "msg-reserve" })),
 }));

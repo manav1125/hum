@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
 // Mock conversation-crud before importing tool executors that depend on it.
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../memory/conversation-crud.js");
 mock.module("../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   setConversationOriginChannelIfUnset: () => {},
   updateConversationContextWindow: () => {},
   deleteMessageById: () => {},

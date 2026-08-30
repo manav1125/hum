@@ -37,7 +37,13 @@ const addMessageCalls: Array<{
 
 const deleteConversationCalls: string[] = [];
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud =
+  await import("../../memory/conversation-crud.js");
 mock.module("../../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   addMessage: async (conversationId: string, role: string, content: string) => {
     addMessageCalls.push({ conversationId, role, content });
     return { id: `msg-${addMessageCalls.length}` };

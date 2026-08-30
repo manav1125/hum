@@ -17,7 +17,12 @@ const upsertCalls: Array<{
   runAfter: number;
 }> = [];
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../conversation-crud.js");
 mock.module("../conversation-crud.js", () => ({
+  ...actualConversationCrud,
   getConversationSource: (_id: string) => sourceTag,
   reserveMessage: mock(async () => ({ id: "msg-reserve" })),
 }));

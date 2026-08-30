@@ -17,7 +17,12 @@ mock.module("../util/logger.js", () => ({
   getLogger: () => noopLogger,
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({
     ui: {},
 
@@ -48,7 +53,12 @@ mock.module("../config/loader.js", () => ({
 const mockMessages: Array<{ id: string; role: string; content: string }> = [];
 let mockMessageIdCounter = 0;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../memory/conversation-crud.js");
 mock.module("../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   setConversationOriginChannelIfUnset: () => {},
   updateConversationContextWindow: () => {},
   deleteMessageById: () => {},

@@ -579,6 +579,28 @@ export function getAttentionStateByConversationIds(
   return result;
 }
 
+/**
+ * SQL predicate for "this conversation is waiting on the person".
+ *
+ * Exported so the conversations list can filter on the SAME definition the
+ * attention list uses. A second reconstruction of this predicate would drift,
+ * and the drift would be invisible: the two surfaces would simply disagree
+ * about which conversations need you, with nothing failing.
+ *
+ * Unseen means the assistant has said something (`latestAssistantMessageAt`
+ * is set) and the person has not caught up with it — either no seen cursor at
+ * all, or a cursor behind the latest message.
+ */
+export function unseenAttentionPredicate() {
+  return and(
+    sql`${conversationAssistantAttentionState.latestAssistantMessageAt} IS NOT NULL`,
+    or(
+      isNull(conversationAssistantAttentionState.lastSeenAssistantMessageAt),
+      sql`${conversationAssistantAttentionState.lastSeenAssistantMessageAt} < ${conversationAssistantAttentionState.latestAssistantMessageAt}`,
+    ),
+  );
+}
+
 // ── listConversationAttention ────────────────────────────────────────
 
 export type AttentionFilterState = "seen" | "unseen" | "all";

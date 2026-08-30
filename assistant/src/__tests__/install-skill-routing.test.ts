@@ -96,7 +96,12 @@ mock.module("../skills/install-meta.js", () => ({
 mock.module("../config/assistant-feature-flags.js", () => ({
   isAssistantFeatureFlagEnabled: () => true,
 }));
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({ memory: { v2: { enabled: false } } }),
   invalidateConfigCache: () => {},
   loadRawConfig: () => ({}),
@@ -153,7 +158,12 @@ mock.module("../memory/graph/capability-seed.js", () => ({
   seedSkillGraphNodes: mockSeedSkillGraphNodes,
   seedUninstalledCatalogSkillMemories: async () => {},
 }));
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualPlatform = await import("../util/platform.js");
 mock.module("../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceSkillsDir: () => TEST_SKILLS_DIR,
 }));
 mock.module("../daemon/handlers/shared.js", () => ({

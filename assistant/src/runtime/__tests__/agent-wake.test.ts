@@ -121,7 +121,13 @@ let mockGetConversationOverrideProfile: (
   conversationId: string,
 ) => string | undefined = () => undefined;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud =
+  await import("../../memory/conversation-crud.js");
 mock.module("../../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   getConversationOverrideProfile: (conversationId: string) =>
     mockGetConversationOverrideProfile(conversationId),
   getConversation: () => ({
@@ -194,7 +200,12 @@ mock.module("../../daemon/conversation-store.js", () => ({
   },
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../config/loader.js");
 mock.module("../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({ llm: {} }),
   loadConfig: () => ({ llm: {} }),
   loadRawConfig: () => ({}),

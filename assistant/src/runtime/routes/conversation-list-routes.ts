@@ -229,17 +229,33 @@ function handleListConversations({ queryParams = {} }: RouteHandlerArgs) {
         ? "all"
         : "active";
 
-  let rows = listConversations(limit, conversationType, offset, archiveStatus);
-  const totalCount = countConversations(conversationType, archiveStatus);
+  // Server-side "waiting on you" filter. Filtering client-side cannot work
+  // under pagination: the client would receive a page selected by recency,
+  // drop most of it, and compare what is left against a `hasMore` computed
+  // over the UNFILTERED total — so it pages toward a count it can never
+  // reach, and a page with no attention rows reads identically to "nothing
+  // needs you". Both the rows and the count take the same flag.
+  const needsAttention = queryParams.needsAttention === "true";
+
+  let rows = listConversations(limit, conversationType, offset, archiveStatus, {
+    needsAttention,
+  });
+  const totalCount = countConversations(conversationType, archiveStatus, {
+    needsAttention,
+  });
 
   // On the first page, ensure all pinned conversations are included
   // even if they fall outside the paginated window. Pinned injection is
   // skipped in archived/all views since the Archive page renders archived
   // rows in archive-time order, not pin order.
+  // Skipped when filtering: a pinned conversation the person has already
+  // caught up with does not need them, and injecting it would put rows in the
+  // response that the filter exists to exclude.
   if (
     offset === 0 &&
     conversationType === "standard" &&
-    archiveStatus === "active"
+    archiveStatus === "active" &&
+    !needsAttention
   ) {
     const pinned = listPinnedConversations(archiveStatus);
     const seen = new Set(rows.map((c) => c.id));
@@ -463,6 +479,14 @@ export const ROUTES: RouteDefinition[] = [
         description:
           'Filter by archive state. Defaults to "active" (non-archived rows only). Pass "archived" to list only archived rows (for the Archive page) or "all" to include both.',
         schema: { type: "string", enum: ["active", "archived", "all"] },
+      },
+      {
+        name: "needsAttention",
+        type: "string",
+        required: false,
+        description:
+          'Pass "true" to return only conversations waiting on the user — the assistant has said something the user has not caught up with. Applied in the query, so `nextOffset` and `hasMore` describe the filtered set; filtering client-side cannot page correctly. Pinned rows are not injected in this mode.',
+        schema: { type: "string", enum: ["true", "false"] },
       },
     ],
     responseBody: listConversationsResponseSchema,

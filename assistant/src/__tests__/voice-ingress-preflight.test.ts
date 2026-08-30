@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 let mockLoadConfig: () => unknown;
 let mockGetIsPlatform: () => boolean;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   loadConfig: () => mockLoadConfig(),
 }));
 

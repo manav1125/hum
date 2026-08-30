@@ -62,7 +62,12 @@ let mockWorkspaceDir = "/tmp/mock-workspace-unused";
 
 let mockInvalidateConfigCacheCalls = 0;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../../config/loader.js");
 mock.module("../../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({
     backup: mockBackupConfig,
   }),
@@ -82,7 +87,12 @@ mock.module("../../../permissions/trust-store.js", () => ({
 
 // -- Platform paths mock ---------------------------------------------------
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualPlatform = await import("../../../util/platform.js");
 mock.module("../../../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceDir: () => mockWorkspaceDir,
   getWorkspaceHooksDir: () => join(mockWorkspaceDir, "hooks"),
   getProtectedDir: () => join(mockWorkspaceDir, "protected"),

@@ -31,7 +31,12 @@ const outsideDir = mkdtempSync(join(tmpdir(), "attachment-routes-outside-"));
 const originalHome = process.env.HOME;
 process.env.HOME = testHomeDir;
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualPlatform = await import("../../util/platform.js");
 mock.module("../../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceDir: () => testWorkspaceDir,
 }));
 

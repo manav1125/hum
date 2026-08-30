@@ -21,7 +21,12 @@ const testConfig = {
   skills: { load: { extraDirs: [] as string[] } },
 };
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../config/loader.js");
 mock.module("../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => testConfig,
   loadConfig: () => testConfig,
   invalidateConfigCache: () => {},
@@ -68,7 +73,12 @@ mock.module("../config/env-registry.js", () => ({
 
 // Mock platform utilities.
 const mockWorkspaceDir = "/mock/workspace";
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualPlatform = await import("../util/platform.js");
 mock.module("../util/platform.js", () => ({
+  ...actualPlatform,
   getWorkspaceDir: () => mockWorkspaceDir,
   getProtectedDir: () => "/mock/protected",
   getWorkspaceHooksDir: () => "/mock/workspace/hooks",

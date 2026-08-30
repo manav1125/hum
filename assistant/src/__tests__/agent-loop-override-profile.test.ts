@@ -371,7 +371,12 @@ describe("SubagentManager.spawn — overrideProfile inheritance", () => {
 // conversations regardless. Without preferring the in-memory context, the
 // inheritance chain breaks at the second nesting level.
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConversationCrud = await import("../memory/conversation-crud.js");
 mock.module("../memory/conversation-crud.js", () => ({
+  ...actualConversationCrud,
   // Always return undefined for the row read so the test fails fast unless
   // executeSubagentSpawn reads from context.overrideProfile first.
   getConversationOverrideProfile: () => undefined,

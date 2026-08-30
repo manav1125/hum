@@ -17,7 +17,12 @@ import type { ToolContext } from "../types.js";
 // This test exercises v1 PKB re-index enqueue. `config.memory.v2.enabled`
 // (default `true`) makes the enqueue path skipped — force it off so the
 // v1 PKB index path stays under test.
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../config/loader.js");
 mock.module("../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({ memory: { v2: { enabled: false } } }),
   loadConfig: () => ({ memory: { v2: { enabled: false } } }),
 }));

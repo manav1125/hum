@@ -52,7 +52,12 @@ mock.module("../providers/inference/connections.js", () => ({
   seedCanonicalConnections: () => {},
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualDbConnection = await import("../memory/db-connection.js");
 mock.module("../memory/db-connection.js", () => ({
+  ...actualDbConnection,
   getDb: () => ({
     select: () => ({
       from: () => ({

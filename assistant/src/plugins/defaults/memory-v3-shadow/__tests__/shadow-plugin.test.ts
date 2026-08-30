@@ -182,7 +182,12 @@ mock.module("../../../../config/assistant-feature-flags.js", () => ({
         : false,
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualConfigLoader = await import("../../../../config/loader.js");
 mock.module("../../../../config/loader.js", () => ({
+  ...actualConfigLoader,
   getConfig: () => ({
     memory: {
       enabled: memoryEnabled,
@@ -235,7 +240,12 @@ mock.module("../../../../memory/conversation-crud.js", () => ({
   getMessages: () => messages.map((m, i) => ({ ...m, id: `m${i}` })),
 }));
 
+// Spread the real module: an exhaustive factory deletes every export it
+// does not name, for this file's own import graph and every file that
+// runs after it in the same process.
+const actualDbConnection = await import("../../../../memory/db-connection.js");
 mock.module("../../../../memory/db-connection.js", () => ({
+  ...actualDbConnection,
   getDb: () => testDb,
   getSqliteFrom: () => testSqlite,
 }));
