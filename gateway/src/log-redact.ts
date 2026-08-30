@@ -8,30 +8,32 @@
  * adding a cross-package import.
  */
 
+import { PREFIX_PATTERNS } from "@vellumai/service-contracts/secret-patterns";
+
 // ---------------------------------------------------------------------------
 // Sensitive-value patterns
 // ---------------------------------------------------------------------------
 
 const BEARER_RE = /Bearer [A-Za-z0-9._\-]+/g;
 
-const API_KEY_PATTERNS: RegExp[] = [
-  /AKIA[0-9A-Z]{16}/g,
-  /gh[pousr]_[A-Za-z0-9_]{36,255}/g,
-  /github_pat_[A-Za-z0-9_]{22,255}/g,
-  /glpat-[A-Za-z0-9\-_]{20,}/g,
-  /sk_live_[A-Za-z0-9]{24,}/g,
-  /rk_live_[A-Za-z0-9]{24,}/g,
-  /xoxb-[0-9]{10,}-[0-9]{10,}-[A-Za-z0-9]{24,}/g,
-  /xoxp-[0-9]{10,}-[0-9]{10,}-[0-9]{10,}-[a-f0-9]{32}/g,
-  /sk-ant-[A-Za-z0-9\-_]{80,}/g,
-  /sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}/g,
-  /sk-proj-[A-Za-z0-9\-_]{40,}/g,
-  /AIza[A-Za-z0-9\-_]{35}/g,
-  /GOCSPX-[A-Za-z0-9\-_]{28}/g,
-  /SG\.[A-Za-z0-9\-_]{22}\.[A-Za-z0-9\-_]{43}/g,
-  /[0-9]{8,10}:[A-Za-z0-9_-]{35}/g,
-  /npm_[A-Za-z0-9]{36}/g,
-];
+/**
+ * Every prefix-based secret pattern we know, sourced from the one list.
+ *
+ * This module used to keep its own copy, which drifted: the canonical list had
+ * grown OpenRouter, Fireworks, Slack app tokens, Linear, Notion, PyPI,
+ * Perplexity, Tavily and PEM private keys, and none of them were redacted in
+ * gateway logs. An OpenRouter key is this product's production brain
+ * credential, so the copy was silently leaking the most important one.
+ *
+ * The list lives in service-contracts precisely so both sides can read it.
+ * Add new integrations there, not here.
+ *
+ * The canonical patterns carry no `g` flag by contract; `replaceAll` needs
+ * one, so each is recompiled global at module load.
+ */
+const API_KEY_PATTERNS: RegExp[] = PREFIX_PATTERNS.map(
+  (p) => new RegExp(p.regex.source, "g"),
+);
 
 const SENSITIVE_HEADERS = new Set([
   "authorization",
@@ -46,6 +48,17 @@ const SENSITIVE_HEADERS = new Set([
 // ---------------------------------------------------------------------------
 // String redaction
 // ---------------------------------------------------------------------------
+
+/**
+ * Redact known secret formats out of a log string.
+ *
+ * Exported so the coverage test can assert the gateway keeps pace with the
+ * canonical pattern list — the drift this module used to have was invisible
+ * precisely because nothing checked it.
+ */
+export function redactSecretsInString(value: string): string {
+  return redactString(value);
+}
 
 function redactString(value: string): string {
   let result = value;
