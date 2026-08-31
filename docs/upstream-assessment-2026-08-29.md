@@ -341,3 +341,49 @@ watcher-created items are candidates.
 correctly excluded as user-touched or non-watcher. At 8 considered per
 five-minute sweep the backlog is fully triaged in under a day, with at most 12
 promotions in any 24 hours.
+
+## Verification of the judge, done read-only against production
+
+The claim that only a live run could tell whether the model honours the gate's
+bar was wrong — it only needed a provider, and production has one.
+`assistant inference send` routes through it and only prints, so the exact
+prompt was evaluated against real production rows without deploying anything,
+writing anything, or handling a key.
+
+**Pass 1 — 8 real candidates, newest first.** All 8 refused. Well-formed JSON,
+valid ids, and it survives the real parser (which tolerates prose around the
+array). The items were a phishing investigation, a banking thread, five
+calendar conflicts and an acquisition review — all correctly not Cue's to do
+unasked.
+
+**Pass 2 — calibration, because a one-sided result proves nothing.** 8/8 false
+is indistinguishable from a bar so high the feature is inert. Re-run with four
+real must-refuse items and four obviously actionable ones:
+
+| item | verdict |
+|---|---|
+| Approve/reject payment request AR-5266 | refused |
+| Verify Cathay account security alert | refused |
+| Reply to Morgan about meeting in Hong Kong | refused |
+| Temu "Secret Reward" marketing | refused |
+| Summarise 6 property listings into a shortlist | **promoted** |
+| Find the CX784 boarding pass and save it offline | **promoted** |
+| Compile the AEF folder into a one-page summary | **promoted** |
+| Draft (do not send) a brief on an app listing | **promoted** |
+
+8/8 correct. The gate both refuses and fires, and the line falls where the
+prompt says it should: money, security, replies on the owner's behalf and
+marketing on one side; concrete, self-contained, reversible work on the other.
+
+## Two findings upstream of anything built here
+
+Of the 1,298 candidates, **136 are bulk marketing** (Temu, beehiiv,
+newsletters, "free access") that the relevance gate should have filed rather
+than surfaced, and **611 are raw `Email from …` passthroughs** with no task
+extracted from them. The action gate refuses all of these correctly, but they
+are a large share of the pile the owner is asked to look at, and that is the
+relevance gate's problem, not this one's.
+
+Separately, one candidate is `Email from Cue: Your sign-in link` — a magic
+link that became a work item. The gate refuses it, but a sign-in link
+reaching the task lane at all is worth closing off at the source.
