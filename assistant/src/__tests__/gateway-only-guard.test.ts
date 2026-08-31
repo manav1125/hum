@@ -29,6 +29,14 @@ const ALLOWLIST = new Set([
   "clients/macos/vellum-assistant/Features/Settings/SettingsConnectTab.swift",
   "apps/macos/src/main/bundle-flow.ts", // Electron main calls the local gateway (gatewayPort) with a Guardian token to scan bundles
   ".claude/skills/update/SKILL.md", // daemon health check script
+  // Hardware bench harness for the Halo prototype. It drives a daemon on the
+  // developer's own machine over USB/BLE while measuring capture latency, so
+  // the gateway is not in the path by design and routing through it would
+  // measure the wrong thing. Never ships: `hardware/` is not copied by
+  // assistant/Dockerfile. The `--daemon` flag and CUE_DAEMON override the
+  // default for anyone pointing it elsewhere.
+  "hardware/halo-bench/bench.py",
+  "hardware/halo-bench/README.md",
 
   // --- Test fixtures that poll the daemon directly (gateway may require auth) ---
   "playwright/agent/fixtures.ts", // daemon health-check during test setup
