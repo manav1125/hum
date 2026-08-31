@@ -29,13 +29,16 @@
  * changed — that is what "blocked" means. Creating an item per cycle would put
  * 68 identical rows in the lane the fix exists to make useful, which is worse
  * than the silence it replaces. So there is at most ONE open item per
- * (mission, reason): a repeat touches the existing row's activity timestamp
- * and progress note instead of adding another.
+ * (mission, KIND): a repeat refreshes that row's wording and progress note
+ * instead of adding another.
  *
- * The reason is keyed by a hash of its own text, not by the cycle, so a
- * mission that becomes blocked for a genuinely different reason does surface
- * again — and a mission that gets unblocked and re-blocked the same way
- * re-opens the same conversation rather than starting a new one.
+ * The key deliberately ignores the reason's TEXT. Keying on the wording was
+ * the obvious first design and it is wrong: the planner rephrases the same
+ * obstacle every cycle, so a paraphrase would mint a fresh row daily and
+ * rebuild the flood this exists to prevent. A mission is blocked in a way, not
+ * in twelve ways. The cost is that two genuinely different obstacles of the
+ * same kind share a row — acceptable, because the row always carries the
+ * latest wording, so nothing is hidden, only merged.
  */
 
 import { createTask } from "../tasks/task-store.js";
