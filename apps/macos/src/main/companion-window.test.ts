@@ -199,9 +199,16 @@ mock.module("./logger", () => ({
 
 const menuPopups: Array<Electron.MenuItemConstructorOptions[]> = [];
 
+const openedExternally: string[] = [];
 mock.module("electron", () => ({
   app: appState,
   powerMonitor: { getSystemIdleTime: () => idleSeconds },
+  shell: {
+    openExternal: (url: string) => {
+      openedExternally.push(url);
+      return Promise.resolve();
+    },
+  },
   Menu: {
     buildFromTemplate: (template: Electron.MenuItemConstructorOptions[]) => {
       menuPopups.push(template);
@@ -377,6 +384,8 @@ describe("installCompanionWindow", () => {
       "vellum:companion:dropChoose",
       "vellum:companion:dropRelease",
       "vellum:companion:ask",
+      "vellum:companion:openLink",
+      "vellum:companion:publishTurns",
       "vellum:companion:keepAsNote",
       "vellum:companion:openCard",
       "vellum:companion:listening",
@@ -1229,7 +1238,11 @@ describe("the summon, and the card's two verbs (C12, C2)", () => {
     expect(created).toHaveLength(0);
   });
 
-  test("↵ hands the question to the app and closes the card", async () => {
+  test("↵ asks into the conversation, and the card stays open", async () => {
+    // It used to close the card and raise the app on a NEW draft conversation
+    // for every message, which is what made a second exchange impossible: the
+    // answer landed in a window you had just been thrown into, and the card
+    // that asked was gone.
     flagOn();
     settingsState["companionIntroSeen"] = true;
     installCompanionWindow();
@@ -1238,11 +1251,67 @@ describe("the summon, and the card's two verbs (C12, C2)", () => {
     await ipcHandlers.get("vellum:companion:ask")?.(["when does Acme renew?"]);
 
     expect(dispatchToMainMock).toHaveBeenLastCalledWith({
-      kind: "quickInputSubmit",
+      kind: "companionAsk",
       message: "when does Acme renew?",
     });
+    // Still the card, and now visibly waiting for the reply.
     expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
-      phase: "resting",
+      phase: "typing",
+      thinking: true,
+    });
+  });
+
+  test("a link the card drew opens in the browser, http(s) only", async () => {
+    /**
+     * The address came out of an ANSWER, so it is untrusted. Two things keep
+     * following one safe: it opens in the user's browser rather than in any
+     * Cue window, and only `http(s)` is honoured — a `file:` or `javascript:`
+     * link would be model output choosing what the app opens.
+     */
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+
+    openedExternally.length = 0;
+    await ipcHandlers.get("vellum:companion:openLink")?.([
+      "https://example.com/report",
+    ]);
+    expect(openedExternally).toEqual(["https://example.com/report"]);
+
+    for (const hostile of [
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "vellum-assistant://run",
+      "data:text/html,<script>alert(1)</script>",
+      "not a url at all",
+    ]) {
+      openedExternally.length = 0;
+      await ipcHandlers.get("vellum:companion:openLink")?.([hostile]);
+      expect(openedExternally).toEqual([]);
+    }
+  });
+
+  test("the app's window publishes the conversation tail through main", async () => {
+    // Only that window owns a conversation and only main may publish to the
+    // companion, so this relay is the seam between them.
+    flagOn();
+    settingsState["companionIntroSeen"] = true;
+    installCompanionWindow();
+    summonCompanionCard();
+
+    await ipcHandlers.get("vellum:companion:publishTurns")?.([
+      [
+        { role: "user", text: "what did I miss" },
+        { role: "assistant", text: "two things from Priya" },
+      ],
+      false,
+    ]);
+
+    expect(ipcHandlers.get("vellum:companion:getState")?.([])).toMatchObject({
+      turns: [
+        { role: "user", text: "what did I miss" },
+        { role: "assistant", text: "two things from Priya" },
+      ],
     });
   });
 

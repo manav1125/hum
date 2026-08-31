@@ -54,6 +54,7 @@ import { useChatDebugRegistration } from "@/domains/chat/hooks/use-chat-debug-re
 import { useDeepLinkApp } from "@/domains/chat/hooks/use-deep-link-app";
 import { lifecycleService } from "@/assistant/lifecycle-service";
 import { isSending, useTurnStore } from "@/domains/chat/turn-store";
+import { usePublishCompanionTurns } from "@/hooks/use-publish-companion-turns";
 import { Button } from "@vellumai/design-library/components/button";
 
 const AddCreditsModal = lazy(() =>
@@ -295,6 +296,15 @@ export function ActiveChatView() {
     cancelReconciliation,
     refreshConversations,
   });
+
+  /**
+   * Keep the companion card's copy of the conversation current.
+   *
+   * This window is the only one that owns a conversation, so the tail crosses
+   * to the floating card from here. Without it the card can show an answer but
+   * never the question, which is what made it one exchange and done.
+   */
+  usePublishCompanionTurns(messages, turnPhase !== "idle");
 
   // Auto-send: URL ?prompt=, pre-chat reachability probe, onboarding message.
   useAutoSendEffects({

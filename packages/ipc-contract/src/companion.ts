@@ -83,8 +83,41 @@ export function outrankPhase(
  * reasons and a renderer holding half of an update is a creature drawn at one
  * scale inside a canvas sized for another.
  */
+/**
+ * One side of one exchange, condensed for the card.
+ *
+ * Upstream's type, kept: the rows are published by the app's window — which is
+ * the only side that owns a conversation — and pushed through main to get
+ * here. A second declaration of what a turn is, is how the two ends come to
+ * disagree about it.
+ */
+export interface CompanionTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
 export interface CompanionStatePayload {
   phase: CompanionPhase;
+  /**
+   * The tail of the conversation, most recent last.
+   *
+   * **The card is a glance, not a chat window.** Only the last few turns are
+   * drawn and the app is where the thread lives — but there IS a thread, and
+   * the card shows enough of it to have a second exchange without leaving what
+   * you were doing. This surface shipped without it: the retired corner's rule
+   * ("one exchange, then done") was applied to the companion, which is a
+   * different surface with a different job, and the result was a card that
+   * threw the answer into the app and forgot the question.
+   */
+  turns?: CompanionTurn[];
+  /**
+   * Whether a turn is in flight right now.
+   *
+   * The card has the tail of the conversation but no way to tell whether it is
+   * still being written: the last turn of a finished exchange and the last
+   * turn so far of an unfinished one look identical.
+   */
+  thinking?: boolean;
   /** The creature's box in points — the whole of the surface's scale. */
   avatarBox: number;
   /** Which way the pill unfurls. Only main knows the display. */

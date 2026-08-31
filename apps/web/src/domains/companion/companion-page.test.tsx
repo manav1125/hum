@@ -57,6 +57,7 @@ const keepSpy = mock((_m: string) => undefined);
 const closeCardSpy = mock(() => undefined);
 const nudgeDismissSpy = mock(() => undefined);
 const listeningSpy = mock((_on: boolean) => undefined);
+const openLinkSpy = mock((_href: string) => undefined);
 
 mock.module("@/domains/companion/companion-bridge", () => ({
   companionTalk: talkSpy,
@@ -87,6 +88,7 @@ mock.module("@/domains/companion/companion-bridge", () => ({
   companionCloseCard: closeCardSpy,
   companionNudgeDismiss: nudgeDismissSpy,
   companionListening: listeningSpy,
+  companionOpenLink: openLinkSpy,
   subscribeCompanionStatus: (callback: (status: AssistantStatus) => void) => {
     statusListeners.push(callback);
     return () => {
@@ -155,6 +157,7 @@ beforeEach(() => {
   getUserMediaSpy.mockClear();
   listeningSpy.mockClear();
   localStorage.removeItem("vellum:selectedAssistantId");
+  localStorage.removeItem("cue:selfHost");
   Object.assign(HTMLElement.prototype, {
     setPointerCapture(id: number) {
       captured.add(id);
@@ -961,5 +964,158 @@ describe("the card can be spoken into (C2)", () => {
       });
     });
     expect(screen.getByLabelText("Release to stop")).toBeDefined();
+  });
+});
+
+/**
+ * Whose mic it is, on the install this actually shipped to.
+ *
+ * A self-host deploy has exactly one assistant and nobody ever selects it —
+ * the lifecycle resolves it from the gateway — so `vellum:selectedAssistantId`
+ * is never written. The window read that key, found nothing, and fell back to
+ * opening the voice surface on every press. "Hold to talk does nothing" was
+ * that fallback, firing every time.
+ */
+describe("the mic finds its assistant (self-host)", () => {
+  test("REGRESSION: self-host records instead of falling back to the voice surface", async () => {
+    localStorage.setItem("cue:selfHost", "1");
+    // Deliberately NO `vellum:selectedAssistantId` — that is the shipped state.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "hover" });
+
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByText("◎ Hold to talk"), {
+        pointerId: 1,
+      });
+    });
+
+    expect(getUserMediaSpy).toHaveBeenCalledTimes(1);
+    expect(talkSpy).not.toHaveBeenCalled();
+  });
+
+  test("with neither an id nor self-host, the press still goes somewhere", async () => {
+    // A press that records into nothing and apologises later is worse than
+    // one that hands off to the surface which can resolve an assistant.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "hover" });
+
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByText("◎ Hold to talk"), {
+        pointerId: 1,
+      });
+    });
+
+    expect(getUserMediaSpy).not.toHaveBeenCalled();
+    expect(talkSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The card holds a conversation — the thing this surface shipped without.
+ *
+ * The retired corner's rule ("one exchange, then done") was applied to the
+ * companion, a different surface with a different job, so every question went
+ * into a brand-new conversation in the app and the answer arrived somewhere
+ * the owner was not looking.
+ */
+describe("the card carries the exchange (C2)", () => {
+  test("turns are drawn, most recent last", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "typing",
+      turns: [
+        { role: "user", text: "what did I miss" },
+        { role: "assistant", text: "two things from Priya" },
+      ],
+    });
+
+    expect(screen.getByText("what did I miss")).toBeDefined();
+    expect(screen.getByText("two things from Priya")).toBeDefined();
+  });
+
+  test("REGRESSION: sending does not close the card", async () => {
+    // It used to close on send and raise the app, which is what made a second
+    // exchange impossible: the reply landed in a window you had been thrown
+    // into, and the card was gone.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "typing", turns: [{ role: "user", text: "hello" }] });
+
+    const input = screen.getByLabelText("Ask Cue") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "and then?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(askSpy).toHaveBeenCalledWith("and then?");
+    // The card is still here, and so is the exchange.
+    expect(screen.getByLabelText("Ask Cue")).toBeDefined();
+    expect(screen.getByText("hello")).toBeDefined();
+  });
+
+  test("the footer no longer claims one exchange", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({ phase: "typing" });
+
+    expect(screen.queryByText(/One exchange, then done/)).toBeNull();
+    expect(screen.getByText("Open in Cue ›")).toBeDefined();
+  });
+});
+
+/**
+ * Saying that it is working, and drawing what came back as prose.
+ */
+describe("the card says what it is doing (C2)", () => {
+  test("REGRESSION: a working turn says so, rather than showing three dots", async () => {
+    // It was a bare "…", which is indistinguishable from an answer that
+    // trailed off — you ask, and nothing tells you whether it is composing or
+    // has already finished badly.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "typing",
+      turns: [{ role: "user", text: "what's the weather" }],
+      thinking: true,
+    });
+
+    expect(screen.getByText("Working on it…")).toBeDefined();
+  });
+
+  test("it stops saying so once the answer lands", async () => {
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "typing",
+      turns: [
+        { role: "user", text: "what's the weather" },
+        { role: "assistant", text: "Mostly cloudy." },
+      ],
+      thinking: false,
+    });
+
+    expect(screen.queryByText("Working on it…")).toBeNull();
+    expect(screen.getByText("Mostly cloudy.")).toBeDefined();
+  });
+
+  test("REGRESSION: an answer is drawn as prose, not as its punctuation", async () => {
+    // The card drew raw model output, so a real reply arrived carrying its
+    // asterisks and a URL longer than the sentence around it.
+    render(<CompanionPage />);
+    await flushMicrotasks();
+    pushState({
+      phase: "typing",
+      turns: [
+        {
+          role: "assistant",
+          text: "**Hong Kong** — per the [Observatory](https://example.com/hk).",
+        },
+      ],
+    });
+
+    expect(screen.getByText("Hong Kong")).toBeDefined();
+    expect(screen.getByText("Observatory")).toBeDefined();
+    expect(screen.queryByText(/https:\/\/example\.com/)).toBeNull();
   });
 });

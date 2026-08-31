@@ -5,6 +5,7 @@ import {
   companionDragEnd,
   companionListening,
   companionOpenCard,
+  companionOpenLink,
   companionTalk,
   companionOpenCue,
   companionIntroDismiss,
@@ -27,6 +28,7 @@ import {
 } from "@/domains/companion/companion-bridge";
 
 import { readSelectedAssistantId } from "@/assistant/selected-assistant-storage";
+import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { useTalkRecorder } from "@/hooks/use-talk-recorder";
 
 import { CompanionSurface, turnAnnouncement } from "./companion-surface";
@@ -34,6 +36,7 @@ import type {
   CompanionIntroBeat,
   CompanionPhase,
 } from "./companion-surface";
+import type { CompanionTurn } from "@vellumai/ipc-contract";
 
 /**
  * The always-on companion, rendered inside its Electron canvas.
@@ -72,6 +75,10 @@ const NEAR_EDGE = BASE_AVATAR_BOX / 2 + BASE_CANVAS_PAD;
 
 interface CompanionState {
   phase: CompanionPhase;
+  /** The tail of the conversation the card is talking into. */
+  turns?: CompanionTurn[];
+  /** A turn is in flight right now. */
+  thinking?: boolean;
   avatarBox: number;
   growth: "right" | "left";
   cardGrowth: "up" | "down";
@@ -151,19 +158,31 @@ export function CompanionPage(): React.ReactElement {
    * written by the app in the *other* window of the same origin, which is why
    * reading it here works at all, and why the `storage` event keeps it live
    * if the owner switches assistants while the companion is up.
+   *
+   * **On a self-host install that key is never written, and `self` is the
+   * answer.** There is one assistant and nobody ever *selects* it — the
+   * lifecycle resolves it from the gateway — so the slot stays empty for ever
+   * and the mic fell back to opening the voice surface on every press. That
+   * fallback is what "hold to talk does nothing" actually was. `self` is not
+   * a guess: it is the id this app already addresses every daemon route with
+   * on a self-host install (`assistant/api.ts`, `lifecycle-service.ts`), and
+   * the gateway rewrites `/v1/assistants/:id/...` to a flat daemon path, so
+   * the id is the app's own name for "the instance I am talking to".
    */
-  const [assistantId, setAssistantId] = useState(
-    () => readSelectedAssistantId() ?? "",
+  const resolveAssistantId = useCallback(
+    () => readSelectedAssistantId() ?? (isSelfHostMode() ? "self" : ""),
+    [],
   );
+  const [assistantId, setAssistantId] = useState(resolveAssistantId);
   useEffect(() => {
-    const reread = () => setAssistantId(readSelectedAssistantId() ?? "");
+    const reread = () => setAssistantId(resolveAssistantId());
     window.addEventListener("storage", reread);
     window.addEventListener("vellum:pref-changed", reread);
     return () => {
       window.removeEventListener("storage", reread);
       window.removeEventListener("vellum:pref-changed", reread);
     };
-  }, []);
+  }, [resolveAssistantId]);
 
   /**
    * `◎ Hold to talk`, held right here (`C2`).
@@ -313,6 +332,18 @@ export function CompanionPage(): React.ReactElement {
    */
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    /**
+     * The drag handle is the creature and its pill, never the controls on it.
+     *
+     * Every button here used to begin a drag as well as its own action, which
+     * was harmless only while a click did nothing. Now that a click that never
+     * moved opens the card, a press on `✎ Type` would open it twice — once
+     * from the button and once from the click — and the summon toggles, so
+     * two opens is a card that never appears.
+     */
+    if ((e.target as HTMLElement | null)?.closest("button, input, textarea")) {
+      return;
+    }
     e.currentTarget.setPointerCapture?.(e.pointerId);
     companionDragBegin();
   }, []);
@@ -475,6 +506,9 @@ export function CompanionPage(): React.ReactElement {
           cardGrowth={state.cardGrowth}
           {...(state.line !== undefined ? { line: state.line } : {})}
           {...(state.detail !== undefined ? { detail: state.detail } : {})}
+          {...(state.turns !== undefined ? { turns: state.turns } : {})}
+          {...(state.thinking !== undefined ? { thinking: state.thinking } : {})}
+          onOpenLink={companionOpenLink}
           {...(state.answer !== undefined ? { answer: state.answer } : {})}
           {...(state.source !== undefined ? { source: state.source } : {})}
           {...(state.quiet !== undefined ? { quiet: state.quiet } : {})}

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import type { CompanionPhase } from "@vellumai/ipc-contract";
+import type { CompanionPhase, CompanionTurn } from "@vellumai/ipc-contract";
 
+import { renderCompanionMarkdown } from "./companion-markdown";
 import { CompanionCreature, CompanionCreatureKeyframes } from "./companion-creature";
 import type { CreatureTone } from "./companion-creature";
 
@@ -167,6 +168,19 @@ export interface CompanionSurfaceProps {
   line?: string;
   /** A second, quieter line — the consequence, or the source. */
   detail?: string;
+  /**
+   * The tail of the conversation, most recent last (`C2`, upstream's shape).
+   *
+   * The card is a glance, not a chat window — only the last few are drawn and
+   * the app holds the thread — but there IS a thread, and this is what lets
+   * the card carry a second exchange instead of throwing each answer into the
+   * app and forgetting the question.
+   */
+  turns?: CompanionTurn[];
+  /** A turn is in flight. The last row and an unfinished one look identical. */
+  thinking?: boolean;
+  /** Follow a link a turn drew. The window itself may not navigate. */
+  onOpenLink?: (href: string) => void;
   /** The answer in the typing card. */
   answer?: string;
   /** Where the answer came from. An unsourced answer never renders. */
@@ -468,8 +482,18 @@ function AffordanceButton({
               // mic must not also start walking the creature across the
               // desktop.
               event.stopPropagation();
-              event.currentTarget.setPointerCapture(event.pointerId);
+              // **Start first, then capture.** Capture is what lets a finger
+              // that drifts off the button still deliver its release here —
+              // an improvement on the gesture, not a precondition for it. It
+              // was called first, so anything that made it throw took the
+              // whole recording with it and the press did nothing at all.
               onPressStart?.();
+              try {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              } catch {
+                // No capture: the release still arrives as this button's own
+                // `pointerup`, and the blur/hide stops remain behind that.
+              }
             },
             onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => {
               event.stopPropagation();
@@ -557,7 +581,13 @@ function TypingCard(
         gap: 10,
       }}
     >
-      {answer ? (
+      {props.turns && props.turns.length > 0 ? (
+        <Turns
+          turns={props.turns}
+          thinking={props.thinking ?? false}
+          {...(props.onOpenLink ? { onOpenLink: props.onOpenLink } : {})}
+        />
+      ) : answer ? (
         <p style={{ margin: 0, color: T1, fontSize: 14, lineHeight: 1.5 }}>{answer}</p>
       ) : null}
 
@@ -591,7 +621,9 @@ function TypingCard(
       />
 
       <p style={{ margin: 0, color: T2, fontSize: 11 }}>
-        One exchange, then done ·{" "}
+        {/* It is not one exchange any more, and saying so was the surface
+            describing a limitation rather than a rule. The handoff stays: the
+            app is still where the thread lives. */}
         <TextButton onClick={props.onOpen}>Open in Cue ›</TextButton>
       </p>
     </div>
@@ -768,6 +800,126 @@ function CaughtChip({
 }
 
 /**
+ * The exchange so far, most recent last.
+ *
+ * Scrolls rather than grows past `TURNS_MAX_HEIGHT`: the card is still a card,
+ * and a surface that grew with every reply would run off the top of the
+ * display. Pinned to the bottom, because the newest turn is the one being
+ * read.
+ */
+const TURNS_MAX_HEIGHT = 220;
+
+function Turns({
+  turns,
+  thinking,
+  onOpenLink,
+}: {
+  turns: CompanionTurn[];
+  thinking: boolean;
+  onOpenLink?: (href: string) => void;
+}): React.ReactElement {
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setScrolled(el.scrollTop > 0);
+  }, [turns, thinking]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      {/* There is more above, and the card says so.
+          Pinned to the newest turn, the one before it is cut by the top edge —
+          which reads as a message that broke rather than a conversation that
+          continues. A fade is the difference between the two. */}
+      {scrolled ? (
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 18,
+            background: `linear-gradient(${INK}, transparent)`,
+            pointerEvents: "none",
+            zIndex: 1,
+          }}
+        />
+      ) : null}
+      <div
+        ref={scroller}
+        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+        style={{
+          maxHeight: TURNS_MAX_HEIGHT,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+        {turns.map((turn, i) => (
+          <p
+            key={`${turn.role}-${i}`}
+            style={{
+              margin: 0,
+              fontSize: 13,
+              lineHeight: 1.5,
+              // Yours is quieter and indented; Cue's is the thing being read.
+              color: turn.role === "user" ? T2 : T1,
+              paddingLeft: turn.role === "user" ? 14 : 0,
+            }}
+          >
+            {renderCompanionMarkdown(turn.text, onOpenLink)}
+          </p>
+        ))}
+        {thinking ? <Working /> : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * That Cue is working on it — said, not implied.
+ *
+ * It was a bare `…`, which is indistinguishable from an answer that trailed
+ * off: you ask, the card shows three dots, and nothing tells you whether it is
+ * composing or has already finished badly. The creature cannot help here —
+ * the typing card outranks every phase that would have animated it — so this
+ * row is the only thing that can say it.
+ */
+function Working(): React.ReactElement {
+  return (
+    <p
+      style={{
+        margin: 0,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        fontSize: 12.5,
+        color: T2,
+      }}
+      aria-live="polite"
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: ACCENT,
+          animation: "cue-companion-working 1200ms ease-in-out infinite",
+          flex: "0 0 auto",
+        }}
+        aria-hidden
+      />
+      Working on it…
+    </p>
+  );
+}
+
+/**
  * The card's composer — `C2`, and the corner's two verbs kept intact (`Q1`).
  *
  * `↵` asks and `⌘↵` keeps it as a note; `esc` closes and cancels nothing,
@@ -877,8 +1029,14 @@ function Composer({
           type="button"
           onPointerDown={(event) => {
             event.preventDefault();
-            event.currentTarget.setPointerCapture(event.pointerId);
+            // Start first, then capture — see `AffordanceButton`. A capture
+            // that throws must never be able to swallow the recording.
             onTalkStart();
+            try {
+              event.currentTarget.setPointerCapture(event.pointerId);
+            } catch {
+              // No capture; this button still receives its own `pointerup`.
+            }
           }}
           onPointerUp={() => onTalkEnd?.()}
           onPointerCancel={() => onTalkEnd?.()}

@@ -206,6 +206,18 @@ export function companionListening(on: boolean): void {
   void window.vellum?.companion?.listening?.(on);
 }
 
+/**
+ * Follow a link the card drew.
+ *
+ * The card renders links from an answer, and this window may not navigate —
+ * so following one means handing the address to main, which opens it in the
+ * browser and honours only `http(s)`.
+ */
+export function companionOpenLink(href: string): void {
+  if (!isElectron()) return;
+  void window.vellum?.companion?.openLink?.(href);
+}
+
 /** `esc`. Closes the card; cancels nothing in flight. */
 export function companionCloseCard(): void {
   if (!isElectron()) return;
