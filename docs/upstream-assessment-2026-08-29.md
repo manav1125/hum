@@ -271,3 +271,73 @@ correctly somewhere, and a second path that did not use it.**
 That is not a coincidence, it is what divergence looks like from the inside. The
 cheapest way to find the next one is to look for a correct predicate with fewer
 callers than it should have.
+
+
+---
+
+# The automation loop — Option A, 2026-08-31
+
+Measured on production first (read-only): 1,839 work items, **18 ever
+completed**, 1,330 queued, 1,759 `parked` with zero eligible, 1,827 of 1,839
+assigned to `cue`, and all 73 agent acts belonging to `cue` rather than to any
+of the four named agents. Four systems, each terminating one step short.
+
+## Built
+
+**A consumer for arrivals** (`work-items/arrival-action-gate.ts`). The framing
+in the review was too broad: a relevance gate already exists and works, filing
+66% of 6,381 arrivals. The real gap was the *next* question — of the things
+worth showing you, which are Cue's to do? — which nothing asked, so every
+surfaced arrival stayed parked. The gate only ever PROMOTES: filing belongs to
+the relevance gate, and a second component making that judgement would drift
+against it. Being wrong makes an item eligible, not started; every existing
+floor still applies.
+
+**Routing to a named agent** (`work-item-triage.ts`). Triage now offers the
+roster and takes back a validated assignee, dropped if invented. `cue` counts
+as unclaimed — it is the creation default, not a decision, which is why 1,827
+rows carry it and why treating it as claimed would leave routing a permanent
+no-op. The deterministic fallback deliberately does not route.
+
+**Durable surfacing when blocked** (`missions/mission-blocked-surface.ts`).
+Three blocked shapes become a work item. Deduped by (mission, KIND), not by
+the reason text — the planner rewords the same obstacle every cycle, so keying
+on words would mint a row a day.
+
+**Planner parse robustness.** The old first-`{`-to-last-`}` slice breaks when a
+reasoning model emits braces while thinking. Now scans balanced spans and takes
+the last plan-shaped object.
+
+## Not built, and why the review was wrong about it
+
+**The agent heartbeat** was called the single largest behavioural gap. That was
+written before establishing two things: missions already enqueue to named
+agents on their cadence, with the assignee validated against the roster, and
+the queue drainer already dispatches with the agent's tier, pause, tool scopes
+and model pin applied. Agents never acted because nothing gave them work — not
+because they lacked a clock. That cause is now fixed.
+
+A proactive per-agent cadence (Paperclip's "Copywriter every 4h") is a real and
+different capability: agents generating work rather than receiving it. It needs
+a cadence column, a scheduler, a per-agent "what should I do now" prompt, and
+dedupe against existing work — and it can generate work nobody asked for. That
+is Option B's first feature, not Option A's last mile.
+
+## Two things caught by arithmetic, not by tests
+
+**My own promotion cap was 864 a day.** Three per sweep sounded conservative
+until multiplied by the drainer's 288 daily ticks. There is no backstop behind
+it: `capCents` is null on all four production agents. Replaced with a rolling
+24-hour cap of 12, counted from durable labels so a restart cannot reset it.
+
+**`parked` means two different things** — "the owner parked this" (its
+documented purpose) and "the watcher had no opinion" — in one column. Promoting
+the first would override an instruction. Resolved by provenance: only
+watcher-created items are candidates.
+
+## Expected effect on production
+
+1,298 items qualify as candidates (1,238 from Gmail); 28 queued items are
+correctly excluded as user-touched or non-watcher. At 8 considered per
+five-minute sweep the backlog is fully triaged in under a day, with at most 12
+promotions in any 24 hours.
