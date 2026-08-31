@@ -32,6 +32,7 @@
  */
 
 import { getLogger } from "../util/logger.js";
+import { sweepArrivalActionGate } from "./arrival-action-gate.js";
 import { MAX_WORK_ITEM_RECOVERY_ATTEMPTS } from "./work-item-recovery.js";
 import { broadcastWorkItemStatus } from "./work-item-runner.js";
 import {
@@ -258,6 +259,26 @@ export function startWorkItemQueueDrainer(): DrainerController {
   );
 
   const timer = setInterval(() => {
+    // The action gate runs FIRST, and its promotions are picked up by the
+    // drain that follows on the next tick rather than this one. Ordering them
+    // this way keeps the two steps independent: the gate decides eligibility,
+    // the drainer decides dispatch, and neither needs to know the other ran.
+    //
+    // Without the gate the drainer had nothing to do — every captured item is
+    // created parked, so every sweep returned `user_parked` for all of them
+    // and 1,692 items sat in the queue.
+    void sweepArrivalActionGate()
+      .then((r) => {
+        if (r.promoted > 0) {
+          log.info(
+            { considered: r.considered, promoted: r.promoted },
+            "action gate promoted captured items to auto-run eligible",
+          );
+        }
+      })
+      .catch((err) => {
+        log.warn({ err: String(err) }, "action gate sweep failed (ignored)");
+      });
     // sweepWorkItemQueue never rejects, but a belt-and-suspenders catch keeps
     // an unforeseen sync throw from becoming an unhandled rejection.
     void sweepWorkItemQueue().catch((err) => {
