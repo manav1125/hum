@@ -15,8 +15,11 @@ import { describe, expect, test } from "bun:test";
 
 import {
   ACTION_GATE_LABEL,
+  ACTION_GATE_PROMOTED_LABEL,
   buildActionPrompt,
   isActionGateCandidate,
+  MAX_PROMOTIONS_PER_DAY,
+  MAX_PROMOTIONS_PER_SWEEP,
   parseActionVerdicts,
 } from "./arrival-action-gate.js";
 import type { WorkItem } from "./work-item-store.js";
@@ -138,5 +141,26 @@ describe("the prompt puts the bar in the right place", () => {
     expect(p).toContain("wi-9");
     expect(p).toContain("Renew the domain");
     expect(p).toContain("watcher:gmail");
+  });
+});
+
+describe("the rolling cap is the bound that matters", () => {
+  test("a per-sweep cap alone would permit hundreds of runs a day", () => {
+    // The arithmetic that motivated the daily cap, kept as an assertion so
+    // nobody raises the per-sweep number thinking it is the safety limit.
+    // Sweeps ride the drainer's 5-minute tick: 288 a day.
+    const sweepsPerDay = (24 * 60) / 5;
+    expect(MAX_PROMOTIONS_PER_SWEEP * sweepsPerDay).toBeGreaterThan(800);
+    // The real bound is two orders of magnitude tighter.
+    expect(MAX_PROMOTIONS_PER_DAY).toBeLessThan(
+      (MAX_PROMOTIONS_PER_SWEEP * sweepsPerDay) / 50,
+    );
+  });
+
+  test("the cap counts durable state, so a restart cannot reset it", () => {
+    // An in-process tally would make a crash loop a way to promote without
+    // limit. The count comes from labels on the items themselves.
+    expect(ACTION_GATE_PROMOTED_LABEL).toBe("action-gate:promoted");
+    expect(ACTION_GATE_PROMOTED_LABEL).not.toBe(ACTION_GATE_LABEL);
   });
 });

@@ -84,16 +84,36 @@ export const ACTION_GATE_LABEL = "action-gate:considered";
 export const MAX_ACTION_BATCH = 8;
 
 /**
- * Items promoted per sweep, across all batches.
+ * Items promoted in one sweep.
  *
- * A deliberately small number. The queue holds a backlog measured in
- * thousands, and a gate that promoted even a tenth of it in one pass would
- * hand the runner more concurrent work than the owner has ever seen it do —
- * which is alarming regardless of whether each individual call was right.
- * The backlog drains over days, visibly, and the cap is the thing that makes
- * a mistake recoverable rather than a flood.
+ * Small on purpose, but note that this alone bounds nothing useful: sweeps run
+ * on the drainer's five-minute tick, so a per-sweep cap of three still permits
+ * 864 promotions a day. The rolling cap below is the one that matters.
  */
 export const MAX_PROMOTIONS_PER_SWEEP = 3;
+
+/**
+ * Items promoted in any rolling 24 hours.
+ *
+ * This is the real bound, and it exists because the per-sweep cap multiplied
+ * by the sweep rate is not a limit anyone would accept: 3 × 288 sweeps a day
+ * is 864 unattended runs, each costing money. There is no backstop behind
+ * that — an agent's `capCents` is null unless someone set one, and on
+ * production none of the four had.
+ *
+ * Twelve is chosen against the observed shape of the backlog rather than as a
+ * round number. Of ~1,300 captured items, the genuinely actionable share is a
+ * small fraction; twelve a day drains that fraction over days while keeping a
+ * miscalibrated judge — or a prompt regression — to something the owner can
+ * notice and stop before it has done much. A gate that can only be wrong
+ * twelve times a day is recoverable; one that can be wrong 864 times is not.
+ */
+export const MAX_PROMOTIONS_PER_DAY = 12;
+
+/** Label stamped when an item is actually promoted, so the rolling cap can count. */
+export const ACTION_GATE_PROMOTED_LABEL = "action-gate:promoted";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** `sourceType` prefixes that mark an item as watcher-created. */
 const WATCHER_SOURCE_PREFIX = "watcher:";
@@ -223,21 +243,32 @@ async function judge(items: WorkItem[]): Promise<Map<string, boolean>> {
   return parseActionVerdicts(result.text, new Set(items.map((i) => i.id)));
 }
 
-/** Stamp the considered label without disturbing labels already present. */
-function markConsidered(item: WorkItem): void {
-  const labels = parseLabels(item.labels);
-  if (labels.includes(ACTION_GATE_LABEL)) return;
-  labels.push(ACTION_GATE_LABEL);
-  updateWorkItem(
-    item.id,
-    { labels: JSON.stringify(labels) },
-    { actor: "action-gate" },
-  );
+/**
+ * Promotions in the last 24 hours, counted from the items themselves.
+ *
+ * Deliberately derived from durable state rather than an in-process counter: a
+ * daemon restart must not reset the budget, or a crash loop becomes a way to
+ * promote without limit.
+ */
+export function promotionsInLastDay(now = Date.now()): number {
+  try {
+    return listWorkItems({ includeUnComprehended: true }).filter(
+      (i) =>
+        parseLabels(i.labels).includes(ACTION_GATE_PROMOTED_LABEL) &&
+        i.updatedAt > now - DAY_MS,
+    ).length;
+  } catch {
+    // Unreadable queue: assume the budget is spent. Failing toward inaction
+    // is the same choice made everywhere else in this module.
+    return MAX_PROMOTIONS_PER_DAY;
+  }
 }
 
 export interface ActionGateSweepResult {
   considered: number;
   promoted: number;
+  /** True when the sweep stopped early because the daily budget was spent. */
+  dailyCapReached?: boolean;
 }
 
 /**
@@ -263,6 +294,17 @@ export async function sweepArrivalActionGate(): Promise<ActionGateSweepResult> {
   }
   if (candidates.length === 0) return result;
 
+  // Spend the daily budget before paying for a judgement it cannot act on.
+  const alreadyPromoted = promotionsInLastDay();
+  const remainingToday = MAX_PROMOTIONS_PER_DAY - alreadyPromoted;
+  if (remainingToday <= 0) {
+    log.info(
+      { alreadyPromoted },
+      "action gate daily promotion cap reached; considering nothing this sweep",
+    );
+    return { ...result, dailyCapReached: true };
+  }
+
   let verdicts: Map<string, boolean>;
   try {
     verdicts = await judge(candidates);
@@ -280,25 +322,43 @@ export async function sweepArrivalActionGate(): Promise<ActionGateSweepResult> {
     // An item the judge did not mention is not actionable — an omission is
     // not consent.
     const actionable = verdicts.get(item.id) === true;
+    const budgetLeft =
+      result.promoted < MAX_PROMOTIONS_PER_SWEEP &&
+      result.promoted < remainingToday;
+    if (actionable && !budgetLeft) result.dailyCapReached = true;
+    const promoting = actionable && budgetLeft;
+
     try {
-      markConsidered(item);
-      result.considered++;
-      if (!actionable) continue;
-      if (result.promoted >= MAX_PROMOTIONS_PER_SWEEP) continue;
+      // One write per item, carrying every label it should end up with.
+      // Stamping "considered" separately and then writing again would read
+      // `item.labels` from the stale in-memory row and drop it.
+      const labels = parseLabels(item.labels);
+      if (!labels.includes(ACTION_GATE_LABEL)) labels.push(ACTION_GATE_LABEL);
+      if (promoting && !labels.includes(ACTION_GATE_PROMOTED_LABEL)) {
+        // The promoted label is how the rolling cap counts, so it has to be
+        // durable rather than an in-process tally.
+        labels.push(ACTION_GATE_PROMOTED_LABEL);
+      }
 
       // Clearing the marker makes the item ELIGIBLE, not started. The
       // existing auto-run gate still decides whether anything runs, and every
       // floor it enforces is untouched by this.
       updateWorkItem(
         item.id,
-        { autoRunEligibility: null },
+        {
+          labels: JSON.stringify(labels),
+          ...(promoting ? { autoRunEligibility: null } : {}),
+        },
         { actor: "action-gate" },
       );
-      result.promoted++;
-      log.info(
-        { workItemId: item.id, sourceType: item.sourceType },
-        "action gate promoted a captured item to auto-run eligible",
-      );
+      result.considered++;
+      if (promoting) {
+        result.promoted++;
+        log.info(
+          { workItemId: item.id, sourceType: item.sourceType },
+          "action gate promoted a captured item to auto-run eligible",
+        );
+      }
     } catch (err) {
       log.warn(
         { err, workItemId: item.id },
