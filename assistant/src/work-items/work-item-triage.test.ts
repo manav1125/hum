@@ -715,12 +715,24 @@ describe("parseTriageResponse", () => {
 
   test("still parses plain urgency/tier responses (fields absent)", () => {
     const r = parseTriageResponse('{"urgency": 55, "tier": 1}', ids);
-    expect(r).toEqual({ urgency: 55, tier: 1, projectId: null, dueAt: null });
+    expect(r).toEqual({
+      urgency: 55,
+      tier: 1,
+      projectId: null,
+      dueAt: null,
+      assignee: null,
+    });
   });
 
   test("clamps out-of-range values and rejects non-JSON", () => {
     const r = parseTriageResponse('{"urgency": 300, "tier": 9}', ids);
-    expect(r).toEqual({ urgency: 100, tier: 2, projectId: null, dueAt: null });
+    expect(r).toEqual({
+      urgency: 100,
+      tier: 2,
+      projectId: null,
+      dueAt: null,
+      assignee: null,
+    });
     expect(parseTriageResponse("no json here", ids)).toBeNull();
   });
 });

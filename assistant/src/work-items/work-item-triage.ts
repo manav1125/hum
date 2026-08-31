@@ -42,6 +42,7 @@ import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
 import { getLogger } from "../util/logger.js";
 import { resolveAgent } from "./agent-binding.js";
+import { type Agent, listAgents } from "./agent-store.js";
 import { listProjects, type Project } from "./project-store.js";
 import { findAuthorizingStandingRule } from "./standing-rules-store.js";
 import {
@@ -83,6 +84,15 @@ interface TriageScore {
   projectId: string | null;
   /** Explicit deadline extracted from the text, epoch ms, else null. */
   dueAt: number | null;
+  /**
+   * The name of an EXISTING roster agent this work belongs to, else null.
+   *
+   * Null means "leave it with the house assistant" — the same answer as an
+   * unrecognised name. There is no partial routing: an item either reaches a
+   * named agent, with that agent's charter, tool scopes and model pin, or it
+   * runs unrestricted as before.
+   */
+  assignee: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,9 +117,15 @@ const SENDER_PROVENANCE_RE =
 /** Urgency points added when {@link SENDER_PROVENANCE_RE} matches the notes. */
 const SENDER_PROVENANCE_URGENCY_BUMP = 15;
 
+/**
+ * Deterministic fallback used when the scorer is unavailable. It does not
+ * route: picking the right agent is a judgement about the work, and a keyword
+ * guess that lands an item on the wrong specialist is worse than leaving it
+ * with the house assistant, which at least behaves as it always has.
+ */
 function heuristicScore(item: WorkItem): TriageScore {
   const text = `${item.title} ${item.notes ?? ""}`;
-  const base = { projectId: null, dueAt: null };
+  const base = { projectId: null, dueAt: null, assignee: null };
   const score: TriageScore = HIGH_URGENCY_RE.test(text)
     ? { urgency: 85, tier: 0, ...base }
     : LOW_URGENCY_RE.test(text)
@@ -156,7 +172,23 @@ export function buildSourceContext(item: WorkItem): string {
 // ---------------------------------------------------------------------------
 
 /** Exported for tests; production callers go through {@link triageWorkItem}. */
-export function buildTriagePrompt(item: WorkItem, projects: Project[]): string {
+/**
+ * Whether nobody has deliberately taken this item yet.
+ *
+ * `createWorkItem` defaults `assignee` to "cue", so the overwhelming majority
+ * of rows carry it as a default rather than as a choice — on production, 1,827
+ * of 1,839. Treating that as claimed would make routing a no-op forever, which
+ * is exactly the state the roster has been in.
+ */
+export function isUnclaimed(assignee: string | null | undefined): boolean {
+  return !assignee || assignee.trim().toLowerCase() === "cue";
+}
+
+export function buildTriagePrompt(
+  item: WorkItem,
+  projects: Project[],
+  agents: Pick<Agent, "name" | "domain" | "charter">[] = [],
+): string {
   const source = item.sourceType ? ` (captured from ${item.sourceType})` : "";
   const projectLines = projects
     .slice(0, 20)
@@ -175,13 +207,29 @@ export function buildTriagePrompt(item: WorkItem, projects: Project[]): string {
     projectLines.length > 0
       ? `Existing projects:\n${projectLines.join("\n")}`
       : "",
+    agents.length > 0
+      ? `Team available to take this on:\n${agents
+          .slice(0, 12)
+          .map(
+            (a) =>
+              `  - ${a.name}${a.domain ? ` (${a.domain})` : ""}${a.charter ? `: ${a.charter.slice(0, 160)}` : ""}`,
+          )
+          .join("\n")}`
+      : "",
     "",
     "Triage this task for a busy professional. Reply with ONLY a JSON object, no prose:",
-    '{"urgency": <0-100>, "tier": <0|1|2>, "projectId": <string|null>, "dueAt": <"YYYY-MM-DDTHH:MM"|null>}.',
+    // The assignee field is only requested when there is a roster to pick
+    // from. Asking for a field with no valid value invites an invented one.
+    agents.length > 0
+      ? '{"urgency": <0-100>, "tier": <0|1|2>, "projectId": <string|null>, "dueAt": <"YYYY-MM-DDTHH:MM"|null>, "assignee": <string|null>}.'
+      : '{"urgency": <0-100>, "tier": <0|1|2>, "projectId": <string|null>, "dueAt": <"YYYY-MM-DDTHH:MM"|null>}.',
     "tier 0 = must happen soon (hard deadline, time-sensitive, blocking someone). tier 1 = normal. tier 2 = whenever.",
     'Sender identity: when the details carry a message from a real named person addressed to the user (e.g. a "From: <name> via <channel>" line, or a channel source like email/slack/whatsapp with a named sender), default to HIGHER urgency than a self-captured note — a person is waiting on a response. When the sender is clearly a VIP or frequent correspondent (boss, investor, client, close collaborator, an ongoing thread), boost the tier one level as well. Items with no sender are self-notes and score normally.',
     "projectId: the id of the ONE existing project this clearly belongs to, else null. Never invent an id.",
     'dueAt: only when the text states an explicit deadline ("by Friday", "before the flight tomorrow") — resolve it to a local date-time; else null. When only a day is given, use 17:00.',
+    agents.length > 0
+      ? "assignee: the EXACT name of the ONE team member above whose remit clearly covers this work, else null. Never invent a name. Prefer null over a loose fit — an item on the wrong specialist is worse than one left with the general assistant, because it inherits the wrong tools and the wrong standing instructions."
+      : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -191,6 +239,12 @@ export function parseTriageResponse(
   text: string,
   validProjectIds: ReadonlySet<string>,
   now = Date.now(),
+  /**
+   * Agent names the scorer was shown, lower-cased. A name outside this set is
+   * dropped exactly like a hallucinated project id — the scorer may only pick
+   * from what it was given, never mint one.
+   */
+  validAssignees: ReadonlySet<string> = new Set(),
 ): TriageScore | null {
   const match = text.match(/\{[^{}]*\}/);
   if (!match) return null;
@@ -200,6 +254,7 @@ export function parseTriageResponse(
       tier?: unknown;
       projectId?: unknown;
       dueAt?: unknown;
+      assignee?: unknown;
     };
     const urgency = Number(parsed.urgency);
     const tier = Number(parsed.tier);
@@ -219,11 +274,23 @@ export function parseTriageResponse(
       const t = Date.parse(parsed.dueAt);
       if (Number.isFinite(t) && t > now - 24 * 3600_000) dueAt = t;
     }
+    // Matched case-insensitively because the roster's own lookup is
+    // case-insensitive, so "ops" and "Ops" must not resolve differently here
+    // than they do at run time. The stored value is the scorer's spelling;
+    // `getAgentByAssignee` normalizes on read.
+    const assigneeRaw =
+      typeof parsed.assignee === "string" ? parsed.assignee.trim() : "";
+    const assignee =
+      assigneeRaw && validAssignees.has(assigneeRaw.toLowerCase())
+        ? assigneeRaw
+        : null;
+
     return {
       urgency: Math.min(100, Math.max(0, Math.round(urgency))),
       tier: clampedTier,
       projectId,
       dueAt,
+      assignee,
     };
   } catch {
     return null;
@@ -233,6 +300,7 @@ export function parseTriageResponse(
 async function scoreWithFlashLlm(
   item: WorkItem,
   projects: Project[],
+  agents: Agent[],
 ): Promise<TriageScore | null> {
   try {
     const provider = await getConfiguredProvider("conversationTitle");
@@ -240,7 +308,7 @@ async function scoreWithFlashLlm(
     const config = getConfig();
     const resolved = resolveCallSiteConfig("conversationTitle", config.llm);
     const result = await runBtwSidechain({
-      content: buildTriagePrompt(item, projects),
+      content: buildTriagePrompt(item, projects, agents),
       provider,
       systemPrompt:
         "You are a triage scorer. Reply with ONLY the requested JSON object.",
@@ -250,7 +318,12 @@ async function scoreWithFlashLlm(
       maxTokens: resolved.maxTokens,
       timeoutMs: TRIAGE_TIMEOUT_MS,
     });
-    return parseTriageResponse(result.text, new Set(projects.map((p) => p.id)));
+    return parseTriageResponse(
+      result.text,
+      new Set(projects.map((p) => p.id)),
+      Date.now(),
+      new Set(agents.map((a) => a.name.toLowerCase())),
+    );
   } catch (err) {
     log.debug({ err: String(err) }, "flash triage failed; using heuristic");
     return null;
@@ -490,8 +563,14 @@ export async function triageWorkItem(
   if (!item || TRIAGE_SKIP_STATUSES.includes(item.status)) return;
 
   const projects = listProjects();
+  // Paused agents are still offered: pausing stops an agent RUNNING, it does
+  // not mean work in its domain belongs to someone else. The pause gate in
+  // `maybeAutoRunWorkItem` holds the item, which is the intended behaviour —
+  // routing it to the house assistant instead would quietly launder work past
+  // the pause the owner set.
+  const agents = listAgents();
   const score =
-    (await scoreWithFlashLlm(item, projects)) ?? heuristicScore(item);
+    (await scoreWithFlashLlm(item, projects, agents)) ?? heuristicScore(item);
 
   const updates: {
     priorityTier?: number;
@@ -499,6 +578,7 @@ export async function triageWorkItem(
     projectId?: string;
     dueAt?: number;
     sourceContext?: string;
+    assignee?: string;
   } = {};
   if (!opts.callerSetPriority) updates.priorityTier = score.tier;
   // Stamp where this task came from — the creating channel/origin plus a
@@ -515,6 +595,13 @@ export async function triageWorkItem(
     updates.projectId = score.projectId;
   }
   if (item.dueAt == null && score.dueAt) updates.dueAt = score.dueAt;
+  // Route to a named agent only while the item is still unclaimed. "cue" is
+  // the creation default rather than a decision, so it counts as unclaimed;
+  // any other value is somebody's deliberate choice — a human's, or an
+  // earlier routing pass's — and triage does not overrule it.
+  if (isUnclaimed(item.assignee) && score.assignee) {
+    updates.assignee = score.assignee;
+  }
 
   // Re-check state right before writing — the item may have started running
   // or been edited while the LLM call was in flight. Priority re-scoring only
@@ -529,6 +616,7 @@ export async function triageWorkItem(
   if (fresh.sortIndex != null) delete updates.sortIndex;
   if (fresh.projectId != null) delete updates.projectId;
   if (fresh.dueAt != null) delete updates.dueAt;
+  if (!isUnclaimed(fresh.assignee)) delete updates.assignee;
   if (fresh.sourceContext != null) delete updates.sourceContext;
 
   if (Object.keys(updates).length === 0) return;
