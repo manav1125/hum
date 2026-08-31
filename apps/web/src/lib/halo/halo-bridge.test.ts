@@ -13,7 +13,7 @@ import {
   isHaloAvailable,
   openHalo,
   resolveHalo,
-} from "./halo-bridge.js";
+} from "./halo-bridge";
 
 type Capacitor = {
   isNativePlatform?: () => boolean;
@@ -95,23 +95,24 @@ describe("opening a surface", () => {
     // A second copy of auth could disagree about which instance somebody is
     // signed into, and "my Halo is showing someone else's day" is not a bug
     // worth risking to save a parameter.
-    let received: { baseURL: string; token: string } | null = null;
+    // Collected rather than assigned: TS narrows a `let x = null` to `null`
+    // when the only write happens inside a closure it cannot follow.
+    const received: Array<{ baseURL: string; token: string }> = [];
     setCapacitor({
       isNativePlatform: () => true,
       Plugins: {
         Halo: {
           openDay: async () => ({}),
           configure: async (o: { baseURL: string; token: string }) => {
-            received = o;
+            received.push(o);
           },
         },
       },
     });
 
     expect(await configureHalo("https://manav.justcue.app", "tok")).toBe(true);
-    expect(received).toEqual({
-      baseURL: "https://manav.justcue.app",
-      token: "tok",
-    });
+    expect(received).toEqual([
+      { baseURL: "https://manav.justcue.app", token: "tok" },
+    ]);
   });
 });

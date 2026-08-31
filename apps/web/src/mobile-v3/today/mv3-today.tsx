@@ -71,8 +71,10 @@ import {
   usePausedRuns,
 } from "./mv3-paused-run";
 import { capDeck, isCapped, needsYouLabel } from "./needs-you-deck";
+import { Mv3HaloSlot } from "./mv3-halo-slot";
 import { Mv3RitualSlot } from "./mv3-ritual-slot";
 import { useRitualSlot } from "./use-ritual-slot";
+import { useHaloSlot } from "./use-halo-slot";
 import type { PausedRun } from "../approval-sheet";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -1116,6 +1118,7 @@ export function Mv3Today({
    */
   const [ritualNow] = useState(() => new Date());
   const ritual = useRitualSlot(assistantId, ritualNow);
+  const halo = useHaloSlot(assistantId);
   // Ticks per minute, and feeds ONLY the day strip. The rail's bounds don't
   // move, but "is that free block still ahead of me?" does, and a session left
   // open across the gap would otherwise keep offering time that had gone.
@@ -1302,6 +1305,7 @@ export function Mv3Today({
             }}
           >
             <Mv3RitualSlot face={ritual} />
+            {halo ? <Mv3HaloSlot face={halo} /> : null}
           </div>
           {/* The takeover keeps the rest of the screen; it centres its own
               content inside whatever height is left, so the card above it
@@ -1581,6 +1585,7 @@ export function Mv3Today({
         */}
         <div style={{ padding: "6px 16px 0" }}>
           <Mv3RitualSlot face={ritual} style={rise(0.04)} />
+          {halo ? <Mv3HaloSlot face={halo} style={rise(0.05)} /> : null}
         </div>
 
         <CueRingHero
