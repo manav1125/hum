@@ -64,6 +64,7 @@ import {
   conservativeRequiredToolsForCapture,
   triageAndMaybeAutoRunWorkItem,
 } from "../work-items/work-item-triage.js";
+import { surfaceBlockedMission } from "./mission-blocked-surface.js";
 import {
   claimMissionPlanFingerprint,
   type CompanyProfile,
@@ -158,16 +159,89 @@ export interface MissionCycleResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse the planner's JSON reply. Tolerates prose around the object by
- * slicing from the first `{` to the last `}` (plans contain nested arrays,
- * so the flat single-object regex triage uses is not enough here).
+ * Every balanced `{...}` span in `text`, outermost first, in source order.
+ *
+ * Written as a brace scan rather than "first `{` to last `}`" because that
+ * span is not the object when the reply contains more than one. A reasoning
+ * model emits its thinking before the answer, and any brace in that prose —
+ * a code sketch, a quoted payload, an aside — becomes the start of the slice
+ * while the real plan supplies the end, producing a span that spans both and
+ * parses as nothing. That is the shape of most planner parse failures.
+ *
+ * String literals are tracked so a brace inside `"…"` cannot open or close a
+ * span, and escapes are honoured so `"\""` does not end the string early.
+ */
+function balancedJsonSpans(text: string): string[] {
+  const spans: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          spans.push(text.slice(start, i + 1));
+          start = -1;
+        }
+      }
+    }
+  }
+  return spans;
+}
+
+/** Whether a parsed object carries any field a plan is supposed to have. */
+function looksLikePlan(v: unknown): boolean {
+  if (typeof v !== "object" || v == null) return false;
+  const o = v as Record<string, unknown>;
+  return "assessment" in o || "items" in o || "report" in o;
+}
+
+/**
+ * Parse the planner's JSON reply.
+ *
+ * Tolerant on purpose: this runs against an open-weight model, and a cycle
+ * that is discarded for phrasing costs a real planning pass and leaves the
+ * mission looking idle. Prod recorded 12 of 80 cycles ending in "planner
+ * produced no parseable plan" — the same failure class as a strict sentinel
+ * match, and the same fix: read the shape, not the exact bytes.
+ *
+ * Of the candidate objects in the reply, the LAST plan-shaped one wins. When
+ * a model reasons before answering, its answer comes last; an object quoted
+ * mid-thought is a draft, not the conclusion.
  */
 export function parseMissionPlan(text: string): MissionPlan | null {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
+  // Fenced blocks are unwrapped first so ```json ... ``` cannot leave the
+  // fence markers inside a candidate span.
+  const unfenced = text.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "");
+  const candidates = balancedJsonSpans(unfenced);
+  let chosen: unknown;
+  for (const span of candidates) {
+    try {
+      const value: unknown = JSON.parse(span);
+      if (looksLikePlan(value)) chosen = value;
+    } catch {
+      // Not JSON, or a fragment — try the next span.
+    }
+  }
+  if (chosen === undefined) return null;
   try {
-    const parsed = JSON.parse(text.slice(start, end + 1)) as {
+    const parsed = chosen as {
       assessment?: unknown;
       items?: unknown;
       report?: unknown;
@@ -751,6 +825,16 @@ export class MissionOrchestrator {
         cycleId,
         payload: { error: "planner produced no parseable plan" },
       });
+      // A planner that cannot answer looks identical, from outside, to a
+      // mission with nothing to do. Say which it is, once, in the lane the
+      // owner reads — repeats fold into the same row.
+      surfaceBlockedMission({
+        missionId: mission.id,
+        missionTitle: mission.title,
+        kind: "planner_failing",
+        reason:
+          "The planner could not produce a usable plan for this mission. Recent cycles have run and cost money without producing work. Check the mission brief and the model behind the planner call site.",
+      });
       // The failed call still cost money and the cycle still happened —
       // account for both so a wedged planner can't loop for free.
       this.finalizeSpendAndCadence(mission, cycleId, costCents);
@@ -781,6 +865,26 @@ export class MissionOrchestrator {
         .map((p) => p.id),
     );
 
+    // A plan with no items is the normal shape of a blocked mission, not an
+    // idle one: production ran 68 planning cycles and enqueued four items,
+    // while the assessments said plainly what was in the way. Surface the
+    // planner's own words — they are more specific and more actionable than
+    // anything synthesized here ("create a 'Seed Fundraising' project and
+    // link it"). Deduped by (mission, kind), so a daily repeat refreshes one
+    // row rather than adding one.
+    if (
+      state.mode !== "observe" &&
+      plan.items.length === 0 &&
+      plan.assessment
+    ) {
+      surfaceBlockedMission({
+        missionId: mission.id,
+        missionTitle: mission.title,
+        kind: "awaiting_owner",
+        reason: plan.assessment,
+      });
+    }
+
     if (state.mode !== "observe" && plan.items.length > 0) {
       if (validProjectIds.size === 0) {
         recordMissionEvent({
@@ -790,6 +894,18 @@ export class MissionOrchestrator {
           payload: {
             note: "plan produced items but the mission has no active linked projects — nothing enqueued",
           },
+        });
+        // The most common way a mission stalls, and the most fixable: it
+        // planned real work and had nowhere to put it. As a checkpoint event
+        // this was invisible, so the mission looked idle rather than blocked
+        // on a one-time setup step.
+        surfaceBlockedMission({
+          missionId: mission.id,
+          missionTitle: mission.title,
+          kind: "no_linked_project",
+          reason:
+            plan.assessment ||
+            "This mission planned work but has no active linked project, so nothing could be enqueued. Link a project to the mission and the plan will run on the next cycle.",
         });
       } else {
         const planHash = computePlanHash(plan.items);
