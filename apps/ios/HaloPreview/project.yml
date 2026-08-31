@@ -1,0 +1,24 @@
+name: HaloPreview
+options:
+  deploymentTarget: {iOS: "16.0"}
+  createIntermediateGroups: true
+packages:
+  HaloKit:
+    path: ../HaloKit
+targets:
+  HaloPreview:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: HaloKit
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleShortVersionString: "1.0"
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: ai.justcue.halopreview
+      GENERATE_INFOPLIST_FILE: NO
+      TARGETED_DEVICE_FAMILY: "1"
+      CODE_SIGNING_ALLOWED: NO

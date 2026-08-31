@@ -326,6 +326,7 @@ export { migrateRitualSnapshots } from "./330-ritual-snapshots.js";
 export { migrateScheduleScriptEnv } from "./331-schedule-script-env.js";
 export { migrateNotes } from "./332-notes.js";
 export { migrateConversationAgentBinding } from "./333-conversation-agent-binding.js";
+export { migrateHaloDays } from "./334-halo-days.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

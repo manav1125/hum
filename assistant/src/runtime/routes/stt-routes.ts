@@ -330,7 +330,14 @@ async function handleTranscribe({ body }: RouteHandlerArgs) {
   }
 }
 
-async function handleTranscribeFile({ body }: RouteHandlerArgs) {
+/**
+ * Exported so the OpenAI-compatible front door
+ * (`openai-compat-routes.ts`) can reuse it verbatim after spooling an
+ * uploaded part to disk. It owns ffmpeg conversion, large-file chunking and
+ * the provider-error → HTTP-status mapping; a second copy of that in the
+ * compat route would drift from this one the first time either changed.
+ */
+export async function handleTranscribeFile({ body }: RouteHandlerArgs) {
   const filePath = body?.filePath;
   if (typeof filePath !== "string" || !filePath) {
     throw new BadRequestError("filePath is required");

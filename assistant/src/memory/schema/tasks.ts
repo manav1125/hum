@@ -135,6 +135,18 @@ export const workItems = sqliteTable("work_items", {
   // your HQ. Null on every item captured any other way and on every pre-332
   // row.
   noteId: text("note_id"),
+  /**
+   * The Halo episode this work came out of, and the provenance pill that
+   * proves it — `{quote, at, place, speaker}` as JSON.
+   *
+   * Denormalised rather than joined because the pill has to survive the
+   * episode being forgotten: the design carries the same `◉ heard` object
+   * into HQ, missions, chat and People as both proof-of-magic and audit
+   * trail, and an audit trail that vanishes with its source is not one.
+   * Points one way, like `noteId` — forgetting a day never deletes work.
+   */
+  haloEpisodeId: text("halo_episode_id"),
+  haloHeard: text("halo_heard"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

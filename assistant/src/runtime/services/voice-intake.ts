@@ -68,6 +68,24 @@ export interface VoiceIntakeError {
   };
 }
 
+/**
+ * Per-caller overrides. Everything about the intake is identical whatever
+ * spoke it — the same extraction, the same bridge into work items — so the
+ * only thing a second caller needs is its own provenance, and the default
+ * keeps every existing call site on `"voice"`.
+ */
+export interface VoiceIntakeOptions {
+  /**
+   * Provenance for the conversation and the work items minted from it.
+   * Halo passes `"halo"` so a day captured by the wearable is separable from
+   * a dictated brain-dump — in the Activity lane, and in the idempotency key
+   * that stops one source's re-extraction from colliding with another's.
+   */
+  sourceType?: string;
+  /** Title when the transcript is empty of anything titleable. */
+  fallbackTitle?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Tool schema + prompt
 // ---------------------------------------------------------------------------
@@ -163,9 +181,9 @@ function parseVoiceIntakeInput(input: Record<string, unknown>): ParsedIntake {
 // ---------------------------------------------------------------------------
 
 /** A short, human thread title derived from the transcript's opening words. */
-function deriveTitle(transcript: string): string {
+function deriveTitle(transcript: string, fallback = "Voice note"): string {
   const oneLine = transcript.replace(/\s+/g, " ").trim();
-  if (oneLine.length <= 48) return oneLine || "Voice note";
+  if (oneLine.length <= 48) return oneLine || fallback;
   return `${oneLine.slice(0, 48).trimEnd()}…`;
 }
 
@@ -215,7 +233,9 @@ function composeAssistantMessage(
 
 export async function generateVoiceIntake(
   transcript: string,
+  options: VoiceIntakeOptions = {},
 ): Promise<VoiceIntakeResult | VoiceIntakeError> {
+  const sourceType = options.sourceType ?? VOICE_SOURCE_TYPE;
   const trimmed = transcript.trim();
   if (trimmed.length === 0) {
     return {
@@ -229,8 +249,8 @@ export async function generateVoiceIntake(
 
   // 1. Create the voice thread and persist the transcript as the first message.
   const conversation = createConversation({
-    title: deriveTitle(trimmed),
-    source: VOICE_SOURCE_TYPE,
+    title: deriveTitle(trimmed, options.fallbackTitle),
+    source: sourceType,
   });
   const conversationId = conversation.id;
   await addMessage(
@@ -293,7 +313,7 @@ export async function generateVoiceIntake(
   //    ⟡ project/mission tag.
   const workItems = await actionItemsToWorkItems(
     parsed.actionItems,
-    VOICE_SOURCE_TYPE,
+    sourceType,
     conversationId,
   );
 

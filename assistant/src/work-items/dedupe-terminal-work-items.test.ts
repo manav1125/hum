@@ -57,6 +57,8 @@ function wi(overrides: Partial<WorkItem> & { id: string }): WorkItem {
     lastChasedAt: null,
     arrivalId: null,
     noteId: null,
+    haloEpisodeId: null,
+    haloHeard: null,
     createdAt: 1_000,
     updatedAt: 1_000,
     ...overrides,

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="a6a8b70e-2ef0-4cc7-8a20-38ebceb8b325"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<style>/* latin-ext */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("d92c858c-26a0-4d81-9c78-967b10521f66") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("36d910ce-ca68-4780-bf5f-40f6120eb6b8") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("d9626b21-c354-4ff9-a146-3aca84453dbf") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("741ab953-dace-4922-8f3f-353eaf52e713") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("05fd0021-0427-4ced-8dbc-f67a057265ad") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("c6d5afc5-e886-4663-a360-cb2a28ac52e8") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("b4af7e92-7513-4967-8374-421833a45a3d") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("55ae3849-6938-4a18-969e-132dd227ca77") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+@keyframes hv2Pulse{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes hv2Ring{0%{transform:scale(.9);opacity:.5}80%,100%{transform:scale(1.6);opacity:0}}
+@keyframes hv2Dash{to{stroke-dashoffset:-14}}
+@keyframes hv2Float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+a{color:#7FA3F2}a:hover{color:#9DB9F5}
+</style>
+
+</helmet>
+
+<div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;background:#08080C;min-height:100vh;padding:46px clamp(22px,4vw,52px);color:#F4F4F6">
+
+  <div style="max-width:1030px;margin-bottom:26px">
+    <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:#9A9AA8;margin-bottom:12px">Halo mobile v2 · the visual layer · benchmarked against Bee (Amazon)</div>
+    <h1 style="font-size:37px;font-weight:700;letter-spacing:-.9px;line-height:1.08;margin:0 0 11px">The day should feel like a<br>place you want to return to.</h1>
+    <p style="font-size:14.5px;color:#9A9AA8;max-width:920px;margin:0;line-height:1.65">What Bee gets right: the day opens as a <b style="color:#F4F4F6">story</b> — prose summary, the map of where you went, how many conversations, how you felt. An automatic journal people open for pleasure, not duty. V2 takes that bar and keeps our spine Bee doesn't have: <b style="color:#F4F4F6">every insight has a ✓/✕, every claim has provenance, and the day becomes <i>work</i>, not just memory.</b> H1–H5 rules (lag honesty, states, bond warning) all still apply underneath.</p>
+  </div>
+
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-bottom:16px">
+
+    <!-- V1 · DAY COVER -->
+    <div style="width:310px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">V1 · The Day, opened</b> · cover first, timeline under it</div>
+      <div style="box-sizing:border-box;width:310px;height:660px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;overflow:hidden;display:flex;flex-direction:column">
+        <!-- cover -->
+        <div style="position:relative;height:300px;background:linear-gradient(165deg,#16244A 0%,#1B2E5C 40%,#0F1830 100%);overflow:hidden;flex-shrink:0">
+          <div style="position:absolute;inset:0;background:radial-gradient(70% 50% at 75% 20%,rgba(224,166,75,.25),transparent 60%),radial-gradient(60% 45% at 20% 80%,rgba(61,110,232,.3),transparent 65%)"></div>
+          <!-- journey line -->
+          <svg width="310" height="300" sc-camel-view-box="0 0 310 300" style="position:absolute;inset:0">
+            <path d="M70 175 C 105 150, 135 165, 165 135 S 225 95, 258 72" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-dasharray="1 9" stroke-linecap="round" style="animation:hv2Dash 1.6s linear infinite"></path>
+            <circle cx="70" cy="175" r="7" fill="#6FD69A"></circle>
+            <circle cx="165" cy="135" r="5.5" fill="#7FA3F2"></circle>
+            <circle cx="258" cy="72" r="7" fill="#E0A64B"></circle>
+          </svg>
+          <span style="position:absolute;left:58px;top:187px;font-size:9px;color:rgba(255,255,255,.75);font-family:'DM Mono',monospace">HOME</span>
+          <span style="position:absolute;left:143px;top:147px;font-size:9px;color:rgba(255,255,255,.75);font-family:'DM Mono',monospace">VERVE ☕</span>
+          <span style="position:absolute;left:212px;top:54px;font-size:9px;color:rgba(255,255,255,.75);font-family:'DM Mono',monospace">OFFICE</span>
+          <div style="position:absolute;left:0;bottom:0;right:0;height:110px;background:linear-gradient(transparent,rgba(10,12,18,.85))"></div>
+          <div style="position:absolute;left:20px;bottom:18px;right:20px">
+            <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;color:rgba(255,255,255,.6)">SATURDAY · AUG 30</div>
+            <div style="font-family:'Instrument Serif',serif;font-size:23px;line-height:1.22;margin-top:6px">A deal found its number,<br>and the afternoon went quiet.</div>
+          </div>
+          <div style="position:absolute;top:16px;right:16px;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.35);backdrop-filter:blur(8px);border-radius:99px;padding:4px 10px"><span style="width:5px;height:5px;border-radius:50%;background:#6FD69A"></span><span style="font-size:10px;color:rgba(255,255,255,.85)">synced to 3 min ago</span></div>
+        </div>
+        <!-- stat orbs -->
+        <div style="display:flex;gap:8px;padding:14px 16px 4px">
+          <div style="flex:1;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px 6px;text-align:center"><div style="font-size:19px;font-weight:700">7</div><div style="font-size:9px;color:#9A9AA8;margin-top:1px">conversations</div></div>
+          <div style="flex:1;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px 6px;text-align:center"><div style="font-size:19px;font-weight:700">3</div><div style="font-size:9px;color:#9A9AA8;margin-top:1px">places</div></div>
+          <div style="flex:1;background:rgba(224,166,75,.09);border:1px solid rgba(224,166,75,.3);border-radius:14px;padding:10px 6px;text-align:center"><div style="font-size:19px;font-weight:700;color:#E0A64B">1</div><div style="font-size:9px;color:#E0A64B;margin-top:1px">⚑ marked</div></div>
+          <div style="flex:1;background:rgba(61,110,232,.09);border:1px solid rgba(61,110,232,.3);border-radius:14px;padding:10px 6px;text-align:center"><div style="font-size:19px;font-weight:700;color:#7FA3F2">2</div><div style="font-size:9px;color:#7FA3F2;margin-top:1px">proposals</div></div>
+        </div>
+        <!-- story blocks -->
+        <div style="flex:1;overflow:hidden;position:relative;padding:10px 16px 0">
+          <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:12px 13px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="display:flex"><span style="width:24px;height:24px;border-radius:50%;background:#611F69;color:#fff;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;border:2px solid #0A0C12">D</span></span><span style="font-size:11px;color:#9A9AA8">10:12 · Verve ☕ · 40 min</span></div>
+            <div style="font-size:13.5px;font-weight:600;margin-top:6px;line-height:1.35">Acme landed on 24 months</div>
+            <div style="font-size:11px;color:#9A9AA8;margin-top:3px;line-height:1.5">Dana takes it to her side this week — the floor held.</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:9px;background:rgba(61,110,232,.09);border:1px solid rgba(61,110,232,.3);border-radius:11px;padding:8px 10px"><span style="font-size:9.5px;color:#7FA3F2;font-weight:700">○</span><span style="font-size:11px;color:#C9C9D4;flex:1">One-pager by Thu → Renew Acme</span><span style="width:26px;height:26px;border-radius:9px;background:#6FD69A;color:#0A1F14;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">✓</span><span style="width:26px;height:26px;border-radius:9px;background:rgba(255,255,255,.07);color:#9A9AA8;display:flex;align-items:center;justify-content:center;font-size:11px">✕</span></div>
+          </div>
+          <div style="background:rgba(255,255,255,.045);border:1px solid rgba(224,166,75,.45);border-radius:16px;padding:12px 13px;margin-top:9px;box-shadow:0 0 22px -8px rgba(224,166,75,.35)">
+            <div style="display:flex;align-items:center;gap:7px"><span style="width:20px;height:20px;border-radius:7px;background:#E0A64B;color:#211E16;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;animation:hv2Float 3s ease-in-out infinite">⚑</span><span style="font-family:'DM Mono',monospace;font-size:9px;color:#E0A64B">1:47 · YOU MARKED THIS</span></div>
+            <div style="font-size:13px;font-weight:600;margin-top:6px;font-style:italic">"Check whether the Vercel bill doubled"</div>
+          </div>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:30px;background:linear-gradient(transparent,#0A0C12)"></div>
+        </div>
+        <div style="padding:10px 16px 18px"><div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.11);border-radius:14px;padding:11px 14px"><span style="font-size:12px">✦</span><span style="font-size:12px;color:#9A9AA8;flex:1">Ask about your day…</span><span style="font-size:11px;color:#7FA3F2">◎</span></div></div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55"><b style="color:#F4F4F6">The cover is Bee's move, done our way:</b> a serif headline Cue wrote, the journey as a drawn arc (places, not surveillance — coarse labels only), stat orbs that are all tappable filters. The sync pill stays on the cover — beauty never hides the lag.</div>
+    </div>
+
+    <!-- V2 · ASK YOUR DAY -->
+    <div style="width:310px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">V2 · Ask your day</b> · the chat Bee charges for, grounded in provenance</div>
+      <div style="box-sizing:border-box;width:310px;height:660px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;padding:24px 16px 18px;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:9px;padding:0 4px"><span style="font-size:15px;color:#9A9AA8">‹</span><div style="flex:1"><div style="font-size:15px;font-weight:700">Ask your day</div><div style="font-size:10px;color:#9A9AA8">answers cite the moment they came from</div></div></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:10px;margin-top:16px;overflow:hidden">
+          <div style="align-self:flex-end;max-width:82%;background:#3D6EE8;color:#fff;border-radius:16px 16px 5px 16px;padding:10px 13px;font-size:12.5px;line-height:1.5">what did Dana and I actually agree on pricing?</div>
+          <div style="align-self:flex-start;max-width:90%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:16px 16px 16px 5px;padding:11px 13px">
+            <div style="font-size:12.5px;line-height:1.55;color:#F4F4F6">$47 a seat on a 24-month term — she takes it to her side this week. You owe her the one-pager by Thursday.</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:9px;background:rgba(0,0,0,.25);border-radius:10px;padding:7px 10px"><span style="width:18px;height:18px;border-radius:6px;background:#16244A;display:flex;align-items:center;justify-content:center;font-size:9px">☕</span><div style="flex:1;min-width:0"><div style="font-size:10px;color:#C9C9D4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">"If the floor holds at 47 I can take 24 months…"</div><div style="font-size:9px;color:#9A9AA8">Dana · 10:31 · tap to open the moment</div></div><span style="font-size:10px;color:#7FA3F2">›</span></div>
+          </div>
+          <div style="align-self:flex-end;max-width:82%;background:#3D6EE8;color:#fff;border-radius:16px 16px 5px 16px;padding:10px 13px;font-size:12.5px;line-height:1.5">did I promise anyone anything else today?</div>
+          <div style="align-self:flex-start;max-width:90%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:16px 16px 16px 5px;padding:11px 13px">
+            <div style="font-size:12.5px;line-height:1.55;color:#F4F4F6">Two things:</div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:7px">
+              <div style="display:flex;gap:8px;font-size:11.5px;color:#C9C9D4;line-height:1.45"><span style="color:#6FD69A">✓</span><span>Aanya — pickup Tuesday <span style="color:#9A9AA8">(already on your calendar)</span></span></div>
+              <div style="display:flex;gap:8px;font-size:11.5px;color:#C9C9D4;line-height:1.45"><span style="color:#7FA3F2">○</span><span>Tom — "I'll look at the Airtel deck this weekend" <span style="color:#9A9AA8">· not filed yet</span> <span style="color:#7FA3F2;font-weight:600">File it ›</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:10.5px;color:#C9C9D4;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:99px;padding:5px 10px">What did I decide?</span><span style="font-size:10.5px;color:#C9C9D4;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:99px;padding:5px 10px">Who's waiting on me?</span></div>
+        <div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.05);border:1px solid rgba(61,110,232,.35);border-radius:14px;padding:11px 14px"><span style="font-size:12px;color:#9A9AA8;flex:1">Ask anything about today…</span><span style="width:26px;height:26px;border-radius:9px;background:#3D6EE8;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">↑</span></div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">Every answer carries <b style="color:#F4F4F6">the moment it came from</b> — quote, speaker, time, tappable. And an unfiled promise surfaced in chat gets a "File it ›" right there — <b style="color:#F4F4F6">the answer is also a door into work</b>, which is the thing Bee's chat doesn't do.</div>
+    </div>
+
+    <!-- V3 · PATTERNS -->
+    <div style="width:310px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">V3 · The week's shape</b> · patterns with receipts, never vibes</div>
+      <div style="box-sizing:border-box;width:310px;height:660px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;padding:24px 16px 18px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:9px;padding:0 4px"><span style="font-size:15px;color:#9A9AA8">‹</span><div style="flex:1"><div style="font-size:15px;font-weight:700">This week</div><div style="font-size:10px;color:#9A9AA8">Aug 24–30 · worn 6 of 7 days</div></div></div>
+        <!-- rhythm bars -->
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:13px 14px;margin-top:14px">
+          <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#9A9AA8;margin-bottom:10px">CONVERSATION RHYTHM</div>
+          <div style="display:flex;gap:5px;align-items:flex-end;height:64px">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:100%;height:38%;background:linear-gradient(180deg,#3D6EE8,#2B53C4);border-radius:5px"></div><span style="font-size:8.5px;color:#9A9AA8">M</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:100%;height:70%;background:linear-gradient(180deg,#3D6EE8,#2B53C4);border-radius:5px"></div><span style="font-size:8.5px;color:#9A9AA8">T</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:100%;height:92%;background:linear-gradient(180deg,#7FA3F2,#3D6EE8);border-radius:5px;box-shadow:0 0 12px -2px rgba(127,163,242,.6)"></div><span style="font-size:8.5px;color:#F4F4F6;font-weight:600">W</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:100%;height:60%;background:linear-gradient(180deg,#3D6EE8,#2B53C4);border-radius:5px"></div><span style="font-size:8.5px;color:#9A9AA8">T</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:100%;height:48%;background:linear-gradient(180deg,#3D6EE8,#2B53C4);border-radius:5px"></div><span style="font-size:8.5px;color:#9A9AA8">F</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:100%;height:30%;background:linear-gradient(180deg,#3D6EE8,#2B53C4);border-radius:5px"></div><span style="font-size:8.5px;color:#9A9AA8">S</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:100%;height:6%;background:rgba(255,255,255,.14);border-radius:5px"></div><span style="font-size:8.5px;color:#5A6672">S</span></div>
+          </div>
+          <div style="font-size:10.5px;color:#9A9AA8;margin-top:9px;line-height:1.5">Wednesday was the loud one — 11 conversations, 3 filed.</div>
+        </div>
+        <!-- insight cards -->
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:12px 14px;margin-top:9px">
+          <div style="display:flex;gap:9px;align-items:flex-start"><span style="width:26px;height:26px;border-radius:9px;background:rgba(111,214,154,.12);color:#6FD69A;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">↗</span><div style="flex:1"><div style="font-size:12.5px;font-weight:600;line-height:1.4">You keep your promises fast</div><div style="font-size:10.5px;color:#9A9AA8;margin-top:2px;line-height:1.5">9 of 11 things you said you'd do this week were done within a day. <span style="color:#7FA3F2">the 2 open ›</span></div></div></div>
+        </div>
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:12px 14px;margin-top:8px">
+          <div style="display:flex;gap:9px;align-items:flex-start"><span style="width:26px;height:26px;border-radius:9px;background:rgba(224,166,75,.12);color:#E0A64B;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">◔</span><div style="flex:1"><div style="font-size:12.5px;font-weight:600;line-height:1.4">Thursday afternoons vanish</div><div style="font-size:10.5px;color:#9A9AA8;margin-top:2px;line-height:1.5">Three weeks running, 2–5pm Thursday is back-to-back and nothing gets filed. Protect it? <span style="color:#7FA3F2">Block it weekly ›</span></div></div></div>
+        </div>
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:12px 14px;margin-top:8px">
+          <div style="display:flex;gap:9px;align-items:flex-start"><span style="width:26px;height:26px;border-radius:9px;background:rgba(127,163,242,.12);color:#7FA3F2;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">👤</span><div style="flex:1"><div style="font-size:12.5px;font-weight:600;line-height:1.4">Sarah's gone quiet on you</div><div style="font-size:10.5px;color:#9A9AA8;margin-top:2px;line-height:1.5">You mentioned the data room twice in person — still no reply sent. <span style="color:#7FA3F2">Draft it ›</span></div></div></div>
+        </div>
+        <div style="flex:1"></div>
+        <div style="font-size:10px;color:#5A6672;text-align:center;line-height:1.5">Patterns come from your filed days only.<br>Nothing here is a mood guess.</div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">Bee shows sentiment; <b style="color:#F4F4F6">we show behaviour with receipts</b> — every insight is countable ("9 of 11"), sourced, and ends in a verb (Block it · Draft it). No mood inference, which is both more honest and more useful.</div>
+    </div>
+
+  </div>
+
+  <!-- second row: live capture + what we took / kept -->
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+    <!-- V4 · WEARING NOW -->
+    <div style="width:310px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">V4 · Wearing it, mid-day</b> · Today with Halo alive in it</div>
+      <div style="box-sizing:border-box;width:310px;height:660px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;padding:24px 16px 18px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:0 4px"><div style="font-size:20px;font-weight:700;letter-spacing:-.4px">Saturday</div><div style="font-size:11px;color:#9A9AA8;margin-top:2px">Nothing needs you right now</div></div>
+        <!-- halo live tile -->
+        <div style="position:relative;background:linear-gradient(150deg,#16244A,#0F1830);border:1px solid rgba(61,110,232,.35);border-radius:20px;padding:15px 16px;margin-top:16px;overflow:hidden">
+          <div style="position:absolute;inset:0;background:radial-gradient(60% 60% at 85% 15%,rgba(229,103,91,.14),transparent 60%)"></div>
+          <div style="position:relative;display:flex;align-items:center;gap:12px">
+            <div style="position:relative;width:44px;height:44px;flex-shrink:0">
+              <span style="position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(229,103,91,.45);animation:hv2Ring 2.4s ease-out infinite"></span>
+              <span style="position:absolute;inset:6px;border-radius:50%;background:#1A2233;border:1px solid #2A3245;display:flex;align-items:center;justify-content:center;font-size:16px">◉</span>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-size:14px;font-weight:700">Halo</span><span style="width:6px;height:6px;border-radius:50%;background:#E5675B;animation:hv2Pulse 1.4s ease-in-out infinite"></span><span style="font-size:11px;color:#E5675B;font-weight:600">recording</span></div>
+              <div style="font-size:10.5px;color:#9DB0C8;margin-top:2px">synced to 2 min ago · 64% · ~9h</div>
+            </div>
+            <button style="background:rgba(255,255,255,.1);color:#F4F4F6;border:1px solid rgba(255,255,255,.18);border-radius:11px;padding:9px 14px;font-size:12px;font-weight:600;font-family:inherit">‖</button>
+          </div>
+          <div style="position:relative;display:flex;gap:7px;margin-top:12px">
+            <div style="flex:1;background:rgba(0,0,0,.28);border-radius:12px;padding:8px 10px"><div style="font-size:15px;font-weight:700">4</div><div style="font-size:8.5px;color:#9DB0C8">episodes today</div></div>
+            <div style="flex:1;background:rgba(0,0,0,.28);border-radius:12px;padding:8px 10px"><div style="font-size:15px;font-weight:700;color:#E0A64B">⚑ 1</div><div style="font-size:8.5px;color:#9DB0C8">marked</div></div>
+            <div style="flex:1;background:rgba(0,0,0,.28);border-radius:12px;padding:8px 10px"><div style="font-size:15px;font-weight:700;color:#7FA3F2">○ 2</div><div style="font-size:8.5px;color:#9DB0C8">to review</div></div>
+          </div>
+          <div style="position:relative;display:flex;align-items:center;gap:8px;margin-top:11px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)">
+            <span style="font-size:11px;color:#9DB0C8;flex:1">Latest: <span style="color:#F4F4F6">Acme landed on 24 months</span> · 10:52</span>
+            <span style="font-size:11px;color:#7FA3F2;font-weight:600">Open the Day ›</span>
+          </div>
+        </div>
+        <!-- proposals inline on Today -->
+        <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.12em;color:#9A9AA8;margin:16px 4px 8px">FROM YOUR DAY · TAP ✓ TO MAKE IT REAL</div>
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:12px 13px">
+          <div style="display:flex;align-items:center;gap:9px"><span style="width:24px;height:24px;border-radius:8px;background:rgba(61,110,232,.14);color:#7FA3F2;display:flex;align-items:center;justify-content:center;font-size:11px">○</span><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">One-pager by Thu</div><div style="font-size:10px;color:#9A9AA8">heard at Verve · 10:31 · → Renew Acme</div></div><span style="width:28px;height:28px;border-radius:10px;background:#6FD69A;color:#0A1F14;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">✓</span><span style="width:28px;height:28px;border-radius:10px;background:rgba(255,255,255,.07);color:#9A9AA8;display:flex;align-items:center;justify-content:center;font-size:12px;margin-left:5px">✕</span></div>
+        </div>
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(224,166,75,.4);border-radius:16px;padding:12px 13px;margin-top:8px">
+          <div style="display:flex;align-items:center;gap:9px"><span style="width:24px;height:24px;border-radius:8px;background:#E0A64B;color:#211E16;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">⚑</span><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">Check the Vercel bill</div><div style="font-size:10px;color:#9A9AA8">you marked this · 1:47</div></div><span style="width:28px;height:28px;border-radius:10px;background:#6FD69A;color:#0A1F14;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">✓</span><span style="width:28px;height:28px;border-radius:10px;background:rgba(255,255,255,.07);color:#9A9AA8;display:flex;align-items:center;justify-content:center;font-size:12px;margin-left:5px">✕</span></div>
+        </div>
+        <div style="flex:1"></div>
+        <!-- tab bar -->
+        <div style="display:flex;align-items:center;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:7px 8px">
+          <span style="flex:1;text-align:center;font-size:10px;color:#F4F4F6;font-weight:600">Today</span><span style="flex:1;text-align:center;font-size:10px;color:#9A9AA8">Projects</span><span style="width:38px;height:38px;border-radius:13px;background:#3D6EE8;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;margin:0 6px">＋</span><span style="flex:1;text-align:center;font-size:10px;color:#9A9AA8">Voice</span><span style="flex:1;text-align:center;font-size:10px;color:#9A9AA8">You</span>
+        </div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">Halo doesn't get a tab — it gets <b style="color:#F4F4F6">the richest tile on Today</b> when it's alive: aurora ground, breathing ring, today's counts, latest episode. Proposals surface right on Today with big thumb-reach ✓/✕ — <b style="color:#F4F4F6">accept without leaving the home screen.</b></div>
+    </div>
+
+    <!-- comparison panel -->
+    <div style="flex:1;min-width:400px;background:#14141A;border:1px solid #24242E;border-radius:16px;padding:22px 26px;align-self:flex-start">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;color:#6FD69A;margin-bottom:13px">TAKEN FROM BEE · KEPT FROM US · THE UPGRADE RULES</div>
+      <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px;color:#C9C9D4;line-height:1.62">
+        <div><b style="color:#F4F4F6">Taken from Bee</b> — the day as a story: cover headline in prose, the journey drawn, count orbs, ask-your-day chat, weekly patterns. The reason people open Bee daily is the journal payoff, not the task list. V1 gives us that payoff.</div>
+        <div><b style="color:#F4F4F6">Kept from us (Bee has none of these)</b> — the sync-lag pill on the cover · ○→✓ acceptance before anything files · provenance chips on every chat answer ("Dana · 10:31 · tap to open") · insights that are counts with receipts, never sentiment guesses · the bookmark as the loudest object · one-tap pause on every surface that shows "recording".</div>
+        <div><b style="color:#F4F4F6">The location line:</b> coarse place labels (HOME · VERVE · OFFICE) on a stylised arc — a memory aid, not a tracking map. No street map, no coordinates, and Places can be turned off in You → Devices → Halo without losing the rest of the Day.</div>
+        <div><b style="color:#F4F4F6">Where each frame lands:</b> V1/V2/V3 are the Day surface (cover → timeline → ask · This-week reached from the cover's date row) · V4 replaces H2's plain card whenever Halo is actively recording; H2's compact form remains the paused/idle/attention state · H1 onboarding, H4 detail and H5's ten states are unchanged underneath.</div>
+        <div><b style="color:#F4F4F6">Motion budget:</b> the breathing ring, the drifting journey dash, and the floating ⚑ — three live elements max per screen, all ≤3s loops, all frozen under Reduced Motion. Engagement comes from the content's warmth (serif headlines, aurora grounds, real quotes), not from things wiggling.</div>
+      </div>
+      <div style="border-top:1px solid #24242E;margin-top:14px;padding-top:13px;font-size:12.5px;color:#9A9AA8;line-height:1.62"><b style="color:#F4F4F6">The one-line brief to code:</b> the Day is the retention surface — it must feel like opening a journal someone wrote about you, and every beautiful thing on it must still pass the honesty rules. Beauty is the hook; the ✓ is the product.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+
+</body></html>

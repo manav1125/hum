@@ -4572,6 +4572,41 @@ paths:
           required: true
           schema:
             type: string
+  /v1/audio/transcriptions:
+    post:
+      operationId: audio_transcriptions_post
+      summary: OpenAI-compatible audio transcription
+      description:
+        Transcribe an uploaded audio file with Cue's configured STT provider, answering in OpenAI's Whisper shape.
+        Send multipart/form-data with a `file` part; `response_format` accepts json (default), text, or verbose_json.
+        Set a client's STT base URL to the instance root so it resolves /v1/audio/transcriptions.
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                file:
+                  description: The audio file part (multipart)
+                model:
+                  description: Accepted and ignored — Cue uses its configured provider
+                  type: string
+                language:
+                  description: Echoed in verbose_json; the provider is not re-pinned
+                  type: string
+                response_format:
+                  description: json (default) | text | verbose_json
+                  type: string
+              required:
+                - file
+              additionalProperties: false
+              description: multipart/form-data
   /v1/audit:
     get:
       operationId: audit_get
@@ -8336,6 +8371,57 @@ paths:
       responses:
         "200":
           description: Successful response
+  /v1/chat/completions:
+    post:
+      operationId: chat_completions_post
+      summary: OpenAI-compatible chat completions (Halo ingest)
+      description:
+        "Accepts an OpenAI chat-completions request and ingests the user turns as a Halo capture: a thread is
+        created, action items are extracted, and work items are queued for review. Returns the summary as a chat
+        completion so OpenAI-shaped clients render it unchanged. Set a client's base URL to `<instance>/v1` to point it
+        here."
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role:
+                        type: string
+                        description: OpenAI role — only `user` turns are read
+                      content:
+                        description: String, or an array of typed content parts
+                    required:
+                      - role
+                      - content
+                    additionalProperties: false
+                  description: Conversation turns; user turns are the transcript
+                model:
+                  description: Accepted and ignored — Cue picks its own model
+                  type: string
+                stream:
+                  description: When true, replay the answer as SSE chunks
+                  type: boolean
+                temperature:
+                  description: Accepted and ignored
+                  type: number
+                max_tokens:
+                  description: Accepted and ignored
+                  type: number
+              required:
+                - messages
+              additionalProperties: false
   /v1/clients:
     get:
       operationId: clients_get
@@ -12752,6 +12838,18 @@ paths:
           description:
             Filter by archive state. Defaults to "active" (non-archived rows only). Pass "archived" to list only
             archived rows (for the Archive page) or "all" to include both.
+        - name: needsAttention
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+          description:
+            Pass "true" to return only conversations waiting on the user — the assistant has said something the user
+            has not caught up with. Applied in the query, so `nextOffset` and `hasMore` describe the filtered set;
+            filtering client-side cannot page correctly. Pinned rows are not injected in this mode.
     post:
       operationId: conversations_post
       summary: Create a conversation
@@ -21008,6 +21106,285 @@ paths:
                 enabled:
                   type: boolean
               additionalProperties: false
+  /v1/halo/days/{date}:
+    get:
+      operationId: halo_days_by_date_get
+      summary: One Day, with its chapters and its absences
+      description:
+        "Everything the Day cover and its arc draw: verdict, counts, episodes with their marks and takeaways, and
+        the gaps with the reason each is drawn by."
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/halo/marks:
+    post:
+      operationId: halo_marks_post
+      summary: Record a ⚑ bookmark or ✦ note from the device
+      description:
+        Accepted before the audio around it has arrived; segmentation attaches it to a chapter later. The button
+        registering is the promise.
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  markedAt:
+                    type: number
+                required:
+                  - id
+                  - kind
+                  - markedAt
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                markedAt:
+                  description: Epoch ms; defaults to now
+                  type: number
+                kind:
+                  description: bookmark (default) | note
+                  type: string
+                words:
+                  description: What was being said, verbatim
+                  type: string
+              additionalProperties: false
+  /v1/halo/proposals:
+    get:
+      operationId: halo_proposals_get
+      summary: Open proposals, confident before the fold
+      description: The 'From your days' queue. Each item carries its ◉ heard provenance and the destination its accept chip names.
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        owner:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        verb:
+                          type: string
+                        destinationLabel:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        confidenceTier:
+                          type: string
+                        episodeId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        heard:
+                          type: object
+                          properties:
+                            quote:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            at:
+                              anyOf:
+                                - type: number
+                                - type: "null"
+                            place:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            speaker:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                          required:
+                            - quote
+                            - at
+                            - place
+                            - speaker
+                          additionalProperties: false
+                      required:
+                        - id
+                        - title
+                        - owner
+                        - verb
+                        - destinationLabel
+                        - confidenceTier
+                        - episodeId
+                        - heard
+                      additionalProperties: false
+                  ledger:
+                    type: object
+                    properties:
+                      proposed:
+                        type: number
+                      accepted:
+                        type: number
+                      dismissed:
+                        type: number
+                    required:
+                      - proposed
+                      - accepted
+                      - dismissed
+                    additionalProperties: false
+                required:
+                  - proposals
+                  - ledger
+                additionalProperties: false
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Max items (1–200, default 50)
+  /v1/halo/proposals/accept:
+    post:
+      operationId: halo_proposals_accept_post
+      summary: Accept a proposal (the ✓)
+      description:
+        The only route that turns a Halo proposal into work. Files it parked, carrying the ◉ heard pill onto the
+        work item. Idempotent — a double-tap returns the first work item.
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                proposalId:
+                  type: string
+              required:
+                - proposalId
+              additionalProperties: false
+  /v1/halo/proposals/dismiss:
+    post:
+      operationId: halo_proposals_dismiss_post
+      summary: Dismiss a proposal (the ✕)
+      description: Records the dismissal rather than dropping it — the queue's trust ledger is how ✕ teaches.
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                proposalId:
+                  type: string
+              required:
+                - proposalId
+              additionalProperties: false
+  /v1/halo/status:
+    get:
+      operationId: halo_status_get
+      summary: Halo sync state and trust ledger
+      description:
+        "The card and Island read: how far behind the room Cue is, the last synced snippet, and the
+        accepted/dismissed counts."
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sync:
+                    type: object
+                    properties:
+                      state:
+                        type: string
+                        description: unknown | up_to_date | behind
+                      behindSeconds:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description: Null when nothing has arrived — render the state, never a 0
+                      snippet:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                    required:
+                      - state
+                      - behindSeconds
+                      - snippet
+                    additionalProperties: false
+                  coveredThrough:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                  ledger:
+                    type: object
+                    properties:
+                      proposed:
+                        type: number
+                      accepted:
+                        type: number
+                      dismissed:
+                        type: number
+                    required:
+                      - proposed
+                      - accepted
+                      - dismissed
+                    additionalProperties: false
+                required:
+                  - sync
+                  - coveredThrough
+                  - ledger
+                additionalProperties: false
+  /v1/halo/today:
+    get:
+      operationId: halo_today_get
+      summary: Today's Day
+      description: The Day cover for the owner's current local date.
+      tags:
+        - halo
+      responses:
+        "200":
+          description: Successful response
   /v1/health:
     get:
       operationId: health_get

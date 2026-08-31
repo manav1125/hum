@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="30a83756-655f-4621-954d-46c8fdf07ad3"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<style>/* latin-ext */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("7bc7ba0e-9656-48a8-8de9-6872a97176f4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("1bfb8f54-347e-431f-a611-2fa6e163414c") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fedb8444-21f5-4ce9-a3ee-ec144631cf49") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("8b2360ca-9c34-4b00-8cdb-77a5a48ddfe5") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("d3e79251-083f-4139-ac65-baaea09be8dd") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("ed2d3a93-bbae-4b13-87fc-f35064d97277") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("f59a124e-de6f-4d3a-8706-73c25600b160") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("414b4b05-cab2-4eab-8932-e31c9b632d38") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+@keyframes heGlow{0%,100%{opacity:.5}50%{opacity:1}}
+@keyframes heRing{0%{transform:scale(.9);opacity:.5}80%,100%{transform:scale(1.55);opacity:0}}
+@keyframes heDash{to{stroke-dashoffset:-14}}
+@keyframes heFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes heSun{0%{stroke-dashoffset:220}100%{stroke-dashoffset:66}}
+a{color:#7FA3F2}a:hover{color:#9DB9F5}
+</style>
+
+</helmet>
+
+<div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;background:#08080C;min-height:100vh;padding:46px clamp(22px,4vw,52px);color:#F4F4F6">
+
+  <div style="max-width:1040px;margin-bottom:26px">
+    <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:#9A9AA8;margin-bottom:12px">Halo experience · the premium layer · supersedes V2's covers, keeps its rules</div>
+    <h1 style="font-size:37px;font-weight:700;letter-spacing:-.9px;line-height:1.08;margin:0 0 11px">The day has hours.<br>The app should feel like them.</h1>
+    <p style="font-size:14.5px;color:#9A9AA8;max-width:930px;margin:0;line-height:1.65">Three ideas carry the uplift. <b style="color:#F4F4F6">The sky clock</b> — every Halo surface is lit by the time of day it describes, so the app has weather instead of a theme. <b style="color:#F4F4F6">The sun path</b> — your day drawn as an arc that fills as it's lived, the one visual that scales from Island to cover to recap. <b style="color:#F4F4F6">The dock</b> — accepting a proposal visibly <i>flies it into</i> its mission, so "Halo flows into Cue" is something you watch happen, not something we claim. Frames <a href="#E1">E1</a>–<a href="#E5">E5</a>; the motion + gesture contract closes it out.</p>
+  </div>
+
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-bottom:16px">
+
+    <!-- E1 · MORNING COVER -->
+    <div style="width:310px" id="E1">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">E1 · The Day, morning light</b> · sky clock + sun path</div>
+      <div style="box-sizing:border-box;width:310px;height:660px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;overflow:hidden;display:flex;flex-direction:column">
+        <div style="position:relative;height:360px;background:linear-gradient(178deg,#2A3B6E 0%,#4A5CA0 34%,#C08A5A 78%,#3A2E42 100%);overflow:hidden;flex-shrink:0">
+          <div style="position:absolute;inset:0;background:radial-gradient(80% 45% at 50% 92%,rgba(240,178,120,.5),transparent 62%)"></div>
+          <!-- sun path -->
+          <svg width="310" height="360" sc-camel-view-box="0 0 310 360" style="position:absolute;inset:0">
+            <path d="M30 250 A 132 132 0 0 1 280 250" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="3 7"></path>
+            <path d="M30 250 A 132 132 0 0 1 280 250" fill="none" stroke="rgba(255,223,170,.95)" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="220" stroke-dashoffset="66" style="filter:drop-shadow(0 0 6px rgba(255,210,140,.8))"></path>
+            <circle cx="216" cy="140" r="9" fill="#FFF3DC" style="filter:drop-shadow(0 0 12px rgba(255,220,150,.9))"></circle>
+            <!-- episode beads on the lived arc -->
+            <circle cx="63" cy="192" r="5" fill="#6FD69A" stroke="rgba(0,0,0,.25)" stroke-width="1"></circle>
+            <circle cx="118" cy="136" r="6.5" fill="#7FA3F2" stroke="rgba(0,0,0,.25)" stroke-width="1"></circle>
+            <circle cx="172" cy="120" r="5" fill="#E0A64B" stroke="rgba(0,0,0,.25)" stroke-width="1"></circle>
+          </svg>
+          <div style="position:absolute;top:18px;left:20px;right:20px;display:flex;align-items:center;justify-content:space-between">
+            <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;color:rgba(255,255,255,.75)">SAT · AUG 30 · 2:12 PM</div>
+            <div style="display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.32);backdrop-filter:blur(8px);border-radius:99px;padding:4px 10px"><span style="width:5px;height:5px;border-radius:50%;background:#6FD69A"></span><span style="font-size:10px;color:rgba(255,255,255,.85)">3 min behind</span></div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:0;height:150px;background:linear-gradient(transparent,rgba(10,12,18,.92))"></div>
+          <div style="position:absolute;left:22px;right:22px;bottom:20px">
+            <div style="font-family:'Instrument Serif',serif;font-size:26px;line-height:1.18">The morning found<br>Acme its number.</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+              <span style="display:flex"><span style="width:22px;height:22px;border-radius:50%;background:#611F69;color:#fff;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid rgba(255,255,255,.4)">D</span><span style="width:22px;height:22px;border-radius:50%;background:#8A5A08;color:#fff;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid rgba(255,255,255,.4);margin-left:-7px">T</span><span style="width:22px;height:22px;border-radius:50%;background:#453C9E;color:#fff;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1.5px solid rgba(255,255,255,.4);margin-left:-7px">A</span></span>
+              <span style="font-size:11px;color:rgba(255,255,255,.8)">7 conversations · 3 places · <span style="color:#FFE1A6">⚑ 1</span></span>
+            </div>
+          </div>
+        </div>
+        <!-- live strip (Bee pattern, honest form) -->
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06)">
+          <div style="position:relative;width:26px;height:26px;flex-shrink:0"><span style="position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(229,103,91,.45);animation:heRing 2.4s ease-out infinite"></span><span style="position:absolute;inset:4px;border-radius:50%;background:#1A2233;display:flex;align-items:center;justify-content:center;font-size:10px">◉</span></div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span style="font-size:12px;font-weight:600">Hearing something now</span><span style="font-family:'DM Mono',monospace;font-size:9.5px;color:#E5675B;background:rgba(229,103,91,.12);border-radius:99px;padding:1.5px 8px">⏺ 14:12</span></div>
+            <div style="font-size:10.5px;color:#9A9AA8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:italic">"…so if the floor holds we can still make Thursday…" · as of 3 min ago</div>
+          </div>
+          <span style="font-size:11.5px;color:#9A9AA8;background:rgba(255,255,255,.06);border-radius:9px;padding:6px 11px;flex-shrink:0">‖</span>
+        </div>
+        <!-- chapters -->
+        <div style="flex:1;overflow:hidden;position:relative;padding:12px 16px 0">
+          <div style="display:flex;gap:11px">
+            <div style="display:flex;flex-direction:column;align-items:center;padding-top:4px"><span style="width:8px;height:8px;border-radius:50%;background:#7FA3F2"></span><span style="flex:1;width:2px;background:linear-gradient(#7FA3F2,rgba(255,255,255,.08));border-radius:2px;margin-top:4px"></span></div>
+            <div style="flex:1;padding-bottom:12px">
+              <div style="font-family:'DM Mono',monospace;font-size:9px;color:#9A9AA8">CHAPTER 2 · 10:12 · VERVE ☕ · 40 MIN</div>
+              <div style="font-size:14.5px;font-weight:700;margin-top:4px;letter-spacing:-.2px">Acme landed on 24 months</div>
+              <div style="font-size:11.5px;color:#9A9AA8;margin-top:3px;line-height:1.5">The floor held at $47. Dana takes it to her side this week.</div>
+              <div style="background:rgba(61,110,232,.09);border:1px solid rgba(61,110,232,.3);border-radius:12px;padding:9px 11px;margin-top:9px">
+                <div style="display:flex;align-items:center;gap:7px"><span style="font-size:10px;color:#7FA3F2;font-weight:700">○</span><span style="font-size:11.5px;color:#C9C9D4;flex:1">One-pager by Thu</span><span style="width:28px;height:28px;border-radius:10px;background:#6FD69A;color:#0A1F14;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">✓</span></div>
+                <div style="display:flex;gap:6px;margin-top:8px">
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#C9C9D4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:99px;padding:4px 10px"><span style="color:#7FA3F2">▤</span>File to Renew Acme</span>
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#C9C9D4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:99px;padding:4px 10px"><span style="color:#6FD69A">✉</span>Draft it for Dana</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:11px">
+            <div style="display:flex;flex-direction:column;align-items:center;padding-top:4px"><span style="width:8px;height:8px;border-radius:50%;background:#E0A64B;box-shadow:0 0 10px rgba(224,166,75,.7)"></span></div>
+            <div style="flex:1">
+              <div style="font-family:'DM Mono',monospace;font-size:9px;color:#E0A64B">⚑ 1:47 · YOU MARKED THIS</div>
+              <div style="font-size:13.5px;font-weight:600;margin-top:4px;font-style:italic;line-height:1.4">"Check whether the Vercel bill doubled"</div>
+            </div>
+          </div>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:28px;background:linear-gradient(transparent,#0A0C12)"></div>
+        </div>
+        <div style="padding:10px 16px 16px"><div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.11);border-radius:14px;padding:11px 14px"><span style="font-size:12px">✦</span><span style="font-size:12px;color:#9A9AA8;flex:1">Ask about your day…</span><span style="font-size:11px;color:#7FA3F2">◎</span></div></div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55"><b style="color:#F4F4F6">The sun path is the day's signature:</b> a dawn-to-dusk arc, filled to <i>now</i>, with episodes as beads you tap. The sky gradient is computed from the clock (real dawn/dusk when location is on) — <b style="color:#F4F4F6">the app is lit by your actual day.</b> Chapters read as a story rail, and the ▤ chip on a proposal names its destination <i>before</i> you accept.</div>
+    </div>
+
+    <!-- E2 · THE DOCK -->
+    <div style="width:310px" id="E2">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">E2 · The dock</b> · the accept moment, mid-flight</div>
+      <div style="box-sizing:border-box;width:310px;height:660px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;padding:24px 16px 18px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:0 4px;opacity:.35"><div style="font-size:20px;font-weight:700">Saturday</div></div>
+        <!-- flying card -->
+        <div style="position:relative;flex:1;margin-top:8px">
+          <div style="position:absolute;left:8px;top:26px;right:8px;background:rgba(255,255,255,.05);border:1px dashed rgba(255,255,255,.14);border-radius:16px;height:58px"></div>
+          <div style="position:absolute;left:22px;top:88px;width:230px;transform:rotate(-2deg);background:#161B28;border:1px solid rgba(111,214,154,.5);border-radius:16px;padding:12px 14px;box-shadow:0 30px 60px -18px rgba(0,0,0,.7),0 0 0 4px rgba(111,214,154,.1);animation:heFloat 2.6s ease-in-out infinite">
+            <div style="display:flex;align-items:center;gap:8px"><span style="width:22px;height:22px;border-radius:8px;background:#6FD69A;color:#0A1F14;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">✓</span><span style="font-size:12.5px;font-weight:600">One-pager by Thu</span></div>
+            <div style="font-size:10px;color:#9A9AA8;margin-top:4px">from your 10:12 with Dana · heading to its mission</div>
+          </div>
+          <svg width="278" height="240" sc-camel-view-box="0 0 278 240" style="position:absolute;left:0;top:100px">
+            <path d="M140 40 C 200 90, 220 130, 190 185" fill="none" stroke="rgba(111,214,154,.6)" stroke-width="2" stroke-dasharray="2 8" stroke-linecap="round" style="animation:heDash 1.2s linear infinite"></path>
+          </svg>
+          <!-- mission dock -->
+          <div style="position:absolute;left:16px;right:16px;bottom:96px;background:linear-gradient(150deg,#12203E,#0E1526);border:1.5px solid rgba(111,214,154,.55);border-radius:20px;padding:15px 16px;box-shadow:0 0 34px -8px rgba(111,214,154,.35)">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="position:relative;width:38px;height:38px;flex-shrink:0">
+                <svg width="38" height="38" sc-camel-view-box="0 0 38 38"><circle cx="19" cy="19" r="15.5" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="3.5"></circle><circle cx="19" cy="19" r="15.5" fill="none" stroke="#6FD69A" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="97" stroke-dashoffset="34" transform="rotate(-90 19 19)"></circle></svg>
+                <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700">65%</span>
+              </div>
+              <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700">▤ Renew Acme</div><div style="font-size:10px;color:#9DB0C8;margin-top:1px">mission · 3 open → <b style="color:#6FD69A">4</b> · Ops is on two of them</div></div>
+              <span style="width:26px;height:26px;border-radius:50%;background:rgba(111,214,154,.15);border:1.5px solid #6FD69A;display:flex;align-items:center;justify-content:center;font-size:11px;color:#6FD69A;animation:heGlow 1.2s ease-in-out infinite">↓</span>
+            </div>
+          </div>
+          <!-- undo pill -->
+          <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:30px;display:flex;align-items:center;gap:9px;background:rgba(22,27,40,.95);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.13);border-radius:99px;padding:8px 8px 8px 14px;box-shadow:0 14px 34px -12px rgba(0,0,0,.7)">
+            <span style="font-size:11.5px;color:#C9C9D4">Filed to Renew Acme</span><span style="font-size:11.5px;color:#7FA3F2;font-weight:600;background:rgba(127,163,242,.12);border-radius:99px;padding:5px 12px">Undo</span>
+          </div>
+        </div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55"><b style="color:#F4F4F6">The signature interaction, drawn mid-flight.</b> ✓ lifts the card (scale 1.03, −2°), flies it along a spring path into the mission dock, whose count ticks 3→4 and ring pulses once. 520ms total, `.medium` haptic at the catch, undo pill for 5s. <b style="color:#F4F4F6">You watch Halo become Cue.</b> Decline is the mirror: the card sinks and fades, `.light` tick, "✕ teaches" toast on the third dismissal of a kind.</div>
+    </div>
+
+    <!-- E3 · EVENING RECAP -->
+    <div style="width:310px" id="E3">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">E3 · Day close</b> · the 9pm ritual, evening light</div>
+      <div style="box-sizing:border-box;width:310px;height:660px;background:linear-gradient(178deg,#101B38 0%,#1B1E44 45%,#3A2342 78%,#0C0A14 100%);border-radius:32px;border:1px solid #1D1D26;padding:26px 20px 18px;display:flex;flex-direction:column;overflow:hidden;position:relative">
+        <div style="position:absolute;inset:0;background:radial-gradient(70% 40% at 50% 18%,rgba(127,119,221,.22),transparent 65%)"></div>
+        <div style="position:relative;text-align:center;margin-top:8px">
+          <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;color:rgba(255,255,255,.6)">SATURDAY, CLOSED</div>
+          <!-- completed sun path -->
+          <div style="display:flex;justify-content:center;margin-top:16px">
+            <svg width="190" height="110" sc-camel-view-box="0 0 190 110">
+              <path d="M15 100 A 80 80 0 0 1 175 100" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="3"></path>
+              <path d="M15 100 A 80 80 0 0 1 175 100" fill="none" stroke="url(#heG)" stroke-width="4" stroke-linecap="round" style="filter:drop-shadow(0 0 8px rgba(224,166,75,.6))"></path>
+              <defs><linearGradient id="heG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6FD69A"></stop><stop offset=".5" stop-color="#FFE1A6"></stop><stop offset="1" stop-color="#7F77DD"></stop></linearGradient></defs>
+              <circle cx="49" cy="45" r="4.5" fill="#6FD69A"></circle><circle cx="95" cy="21" r="6" fill="#7FA3F2"></circle><circle cx="130" cy="31" r="4.5" fill="#E0A64B"></circle><circle cx="160" cy="70" r="4.5" fill="#7F77DD"></circle>
+            </svg>
+          </div>
+          <div style="font-family:'Instrument Serif',serif;font-size:24px;line-height:1.22;margin-top:10px">Seven conversations.<br>One deal. Nothing dropped.</div>
+        </div>
+        <div style="position:relative;display:flex;flex-direction:column;gap:8px;margin-top:20px">
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.06);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:11px 14px"><span style="font-size:13px;color:#6FD69A">✓</span><span style="font-size:12px;color:#F4F4F6;flex:1">2 filed to missions — both already moving</span><span style="font-size:10px;color:#9DB0C8">Ops picked one up ›</span></div>
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.06);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:11px 14px"><span style="font-size:13px;color:#E0A64B">⚑</span><span style="font-size:12px;color:#F4F4F6;flex:1">Your Vercel flag → tomorrow's brief</span><span style="font-size:10px;color:#9DB0C8">7:30 ›</span></div>
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.06);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:11px 14px"><span style="font-size:13px;color:#7FA3F2">👤</span><span style="font-size:12px;color:#F4F4F6;flex:1">Dana's page grew — pricing stance saved</span><span style="font-size:10px;color:#9DB0C8">view ›</span></div>
+        </div>
+        <div style="flex:1;position:relative"></div>
+        <div style="position:relative;text-align:center;font-size:11px;color:rgba(255,255,255,.55);line-height:1.6;margin-bottom:12px">Worn 11h · synced fully · audio discarded<br><span style="color:rgba(255,255,255,.75)">Tomorrow, Cue starts already knowing this.</span></div>
+        <button style="position:relative;background:rgba(255,255,255,.94);color:#12141C;border:none;border-radius:14px;padding:14px;font-size:14.5px;font-weight:600;font-family:inherit">Good night</button>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">The recap is <b style="color:#F4F4F6">the ritual that justifies the purchase</b> — the completed sun path, a serif verdict, and three receipt rows that each link into Cue (mission · brief · People). The footer line is the retention promise said honestly: <i>tomorrow, Cue starts already knowing this.</i> Arrives as the day's last push (shared budget), never before 8:30pm, never during a conversation Halo can hear.</div>
+    </div>
+
+  </div>
+
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+
+    <!-- E4 · EPISODE IMMERSIVE -->
+    <div style="width:310px" id="E4">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">E4 · An episode, opened</b> · story page, not transcript dump</div>
+      <div style="box-sizing:border-box;width:310px;height:660px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;overflow:hidden;display:flex;flex-direction:column">
+        <div style="position:relative;height:170px;background:linear-gradient(165deg,#3A4E8C 0%,#C08A5A 100%);flex-shrink:0;overflow:hidden">
+          <div style="position:absolute;inset:0;background:radial-gradient(60% 55% at 80% 25%,rgba(255,225,166,.4),transparent 60%)"></div>
+          <div style="position:absolute;top:16px;left:16px;font-size:14px;color:rgba(255,255,255,.85)">‹</div>
+          <div style="position:absolute;left:20px;bottom:16px;right:20px">
+            <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.14em;color:rgba(255,255,255,.75)">10:12 · VERVE ☕ · 40 MIN · WITH <span style="color:#fff">DANA</span></div>
+            <div style="font-family:'Instrument Serif',serif;font-size:21px;line-height:1.2;margin-top:5px">Acme landed on 24 months</div>
+          </div>
+          <div style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,.3);backdrop-filter:blur(6px);border-radius:99px;padding:4px 10px;font-size:10px;color:rgba(255,255,255,.85)">audio discarded ✓</div>
+        </div>
+        <div style="flex:1;overflow:hidden;position:relative;padding:14px 18px 0">
+          <!-- pull quote -->
+          <div style="border-left:3px solid #E0A64B;padding:2px 0 2px 13px;margin-top:2px">
+            <div style="font-family:'Instrument Serif',serif;font-size:16.5px;line-height:1.35;font-style:italic">"If the floor holds at 47, I can take 24 months to my side this week."</div>
+            <div style="font-size:10px;color:#9A9AA8;margin-top:5px">Dana · 10:31 · <span style="color:#7FA3F2">hear the moment in text ›</span></div>
+          </div>
+          <!-- takeaways (Bee's two-block rhythm) -->
+          <div style="background:rgba(127,119,221,.08);border:1px solid rgba(127,119,221,.25);border-radius:13px;padding:11px 13px;margin-top:14px">
+            <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.12em;color:#A79FF0;margin-bottom:7px">KEY TAKEAWAYS</div>
+            <div style="display:flex;flex-direction:column;gap:5px;font-size:11px;color:#C9C9D4;line-height:1.5">
+              <div>· <b style="color:#F4F4F6">Price:</b> floor holds at $47/seat</div>
+              <div>· <b style="color:#F4F4F6">Term:</b> 24 months, her side signs this week</div>
+              <div>· <b style="color:#F4F4F6">You owe:</b> the one-pager before Thursday</div>
+            </div>
+          </div>
+          <!-- what happened -->
+          <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.12em;color:#9A9AA8;margin:14px 0 8px">WHAT CAME OUT OF IT</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:center;gap:9px;background:rgba(111,214,154,.07);border:1px solid rgba(111,214,154,.25);border-radius:13px;padding:10px 12px"><span style="font-size:11px;color:#6FD69A">✓</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600">One-pager by Thu</div><div style="font-size:9.5px;color:#9A9AA8">filed → ▤ Renew Acme · Ops drafting</div></div><span style="font-size:10px;color:#7FA3F2">›</span></div>
+            <div style="display:flex;align-items:center;gap:9px;background:rgba(61,110,232,.07);border:1px solid rgba(61,110,232,.28);border-radius:13px;padding:10px 12px"><span style="font-size:11px;color:#7FA3F2">○</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600">Memory: "Dana — pricing via email only"</div><div style="font-size:9.5px;color:#9A9AA8">proposed · adds to her People page</div></div><span style="width:24px;height:24px;border-radius:8px;background:#6FD69A;color:#0A1F14;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">✓</span><span style="width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.07);color:#9A9AA8;display:flex;align-items:center;justify-content:center;font-size:10px;margin-left:4px">✕</span></div>
+          </div>
+          <!-- the words -->
+          <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.12em;color:#9A9AA8;margin:16px 0 8px">THE WORDS · 10:12–10:52</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="font-size:11.5px;line-height:1.55;color:#C9C9D4"><b style="color:#7FA3F2">Dana</b> — So where did legal land on the term?</div>
+            <div style="font-size:11.5px;line-height:1.55;color:#C9C9D4"><b style="color:#6FD69A">You</b> — Rachel cleared it yesterday. It's the price that's open.</div>
+          </div>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:34px;background:linear-gradient(transparent,#0A0C12)"></div>
+        </div>
+        <div style="display:flex;gap:8px;padding:10px 16px 16px">
+          <div style="flex:1;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:10px 13px"><span style="font-size:11px">✦</span><span style="font-size:11.5px;color:#9A9AA8">Ask about this moment…</span></div>
+          <span style="display:inline-flex;align-items:center;gap:5px;height:40px;border-radius:13px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);padding:0 12px;font-size:11px;color:#C9C9D4">☰ Meeting ▾</span>
+        </div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">An episode opens like <b style="color:#F4F4F6">a page written about you</b>: scene header in the hour's light, pull-quote, then <b style="color:#F4F4F6">Key Takeaways</b> (Bee's two-block rhythm — narrative then scannable), then outcomes with live status. The <b style="color:#F4F4F6">☰ Meeting ▾ template chip</b> reshapes the summary (Meeting · Lecture · Client call · Default) — per-episode, remembered per context. "Audio discarded ✓" rides the header.</div>
+    </div>
+
+    <!-- E5 · MOTION + CONNECTION CONTRACT -->
+    <div style="flex:1;min-width:420px;background:#14141A;border:1px solid #24242E;border-radius:16px;padding:22px 26px;align-self:flex-start" id="E5">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;color:#4FC7C7;margin-bottom:13px">E5 · THE CONTRACT THAT MAKES IT FEEL NATIVE</div>
+      <div style="display:flex;flex-direction:column;gap:12px;font-size:12.5px;color:#C9C9D4;line-height:1.62">
+        <div><b style="color:#F4F4F6">One hero, everywhere — the sun path.</b> Island minimal: a 12px arc stub. Today tile: the arc across the tile's top edge. Day cover: full sky. Recap: completed with the gradient of the whole day. Watch face later: the same arc. One drawing, five sizes — that's how the product becomes recognisable at a glance.</div>
+        <div><b style="color:#F4F4F6">Shared-element transitions, not pushes.</b> Today tile → Day: the tile's arc <i>expands into</i> the cover sky (spring, 420ms, damping .82). Chapter row → episode: the row's headline is the shared element; the scene header inflates behind it. Bead on the arc → episode: the bead grows into the header. Back always reverses the same path — <b style="color:#F4F4F6">nothing ever just appears.</b></div>
+        <div><b style="color:#F4F4F6">The gesture grammar (three verbs only):</b> swipe down anywhere on the Day = back to Today (cover deflates into the tile) · swipe left/right on the cover = previous/next day (sky cross-fades through the dates' own light) · long-press an episode = peek card with ✓/✕/share. No hidden fourth gesture; everything else is a visible tap.</div>
+        <div><b style="color:#F4F4F6">Haptics map</b> — `.light`: bead tap, chapter open · `.medium`: the dock catch, bookmark landing · `.success`: day-close "Good night" · `.error`: never for Halo (nothing here fails loudly; failures are quiet amber cards). The clip's own buzz remains the only confirmation the hardware ever gives.</div>
+        <div><b style="color:#F4F4F6">Adopted from Bee (2026-08-30 review), honest form:</b> the <b style="color:#F4F4F6">live strip</b> — last-synced snippet in italics + segment timer + "as of 3 min ago"; the timer counts recorded segments, never claims a live mic · <b style="color:#F4F4F6">verb+destination chips</b> on proposals ("▤ File to Renew Acme · ✉ Draft it for Dana") so accepting has a named outcome, with the dock animation unchanged · <b style="color:#F4F4F6">Key Takeaways block</b> on episodes · <b style="color:#F4F4F6">summary templates</b> via the ☰ chip · insight cards keep their verbs and gain "Ask about this ›". Rejected from Bee: street maps with pins, sentiment prose, acceptance-free filing, logo-of-Google branding on chips (we name our own destinations).</div>
+        <div><b style="color:#F4F4F6">The connection tissue, named:</b> every filed thing carries the same provenance pill — <span style="font-family:'DM Mono',monospace;font-size:11px;color:#9A9AA8">◉ heard · 10:31 · Verve</span> — in HQ, in the mission, in chat, on Dana's People page. Tapping it anywhere reopens the moment. <b style="color:#F4F4F6">That pill is the product's proof-of-magic and its audit trail — same object.</b></div>
+        <div><b style="color:#F4F4F6">Premium is the experience, not a gate:</b> nothing in these frames is a paywall. Halo owners get the Day; the frames never show a locked feature — the purchase already happened. What they're paying for is that this surface exists and is this good.</div>
+      </div>
+      <div style="border-top:1px solid #24242E;margin-top:15px;padding-top:13px;font-size:12.5px;color:#9A9AA8;line-height:1.62"><b style="color:#F4F4F6">Honesty spine, unchanged and load-bearing:</b> the lag pill lives on every sky · sky gradients come from the clock, never from inferred mood · beads = real episodes only · the dock only animates what a ✓ actually did · "audio discarded ✓" is a claim the retention setting makes true. <b style="color:#F4F4F6">Supersedes:</b> V2's V1 cover and V4 tile (E1's grammar wins); V2's V2/V3 chat + patterns stand; H1–H5 states and onboarding stand.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+
+</body></html>

@@ -631,6 +631,78 @@ export function mintAndRecordDeviceBoundTokenPair(params: {
   };
 }
 
+/**
+ * The device id every Halo bridge token is bound to.
+ *
+ * Fixed rather than random so the binding is a slot, not a collection:
+ * issuing a new bridge token revokes the previous one, and the existing
+ * per-device revocation path is already the kill switch. One credential can
+ * be outstanding at a time, which is the property you want for something
+ * pasted into somebody else's application.
+ */
+export const HALO_BRIDGE_DEVICE_ID = "halo-bridge";
+
+/** One year. Long by design; see {@link issueHaloBridgeToken}. */
+export const HALO_BRIDGE_TTL_SECONDS = 365 * 24 * 60 * 60;
+
+/**
+ * Issue the long-lived token the Halo bridge pastes into a third-party app.
+ *
+ * ## Why this is a separate issuance path
+ *
+ * Ordinary actor tokens last 30 days and are kept alive by a refresh token
+ * the client holds. The Halo bridge is a field in somebody else's settings
+ * screen — Seeed's SenseCraft Voice app — which cannot refresh anything and
+ * cannot be redeployed by us. A 30-day credential there does not expire so
+ * much as silently stop capturing the wearer's day, a month later, with no
+ * error the wearer would recognise. So this trades rotation for a credential
+ * that survives, and buys the safety back three other ways:
+ *
+ *  · **No refresh token is minted.** The bridge holds one bearer credential
+ *    and no means of extending it. When it expires it expires.
+ *  · **One slot.** Bound to a fixed device id, so issuing again revokes the
+ *    previous token rather than accumulating live credentials.
+ *  · **Revocable on its own.** {@link revokeHaloBridgeTokens} kills it
+ *    without touching the owner's phone, desktop or web sessions.
+ *
+ * The token carries the ordinary `actor_client_v1` profile — it is the
+ * owner's own authority, not a new one — so it can reach exactly what the
+ * owner can reach and nothing more.
+ *
+ * The signing key lives in the gateway's security directory, so this only
+ * runs in the gateway process, on the machine that holds the key.
+ */
+export function issueHaloBridgeToken(params: {
+  guardianPrincipalId: string;
+  ttlSeconds?: number;
+}): { token: string; expiresAt: number } {
+  const hashedDeviceId = hashToken(HALO_BRIDGE_DEVICE_ID);
+
+  // Rotate: whatever was pasted into the app before this stops working now.
+  revokeActorTokensByDevice(params.guardianPrincipalId, hashedDeviceId);
+
+  return mintAccessToken(
+    params.guardianPrincipalId,
+    hashedDeviceId,
+    "halo-bridge",
+    params.ttlSeconds ?? HALO_BRIDGE_TTL_SECONDS,
+  );
+}
+
+/**
+ * Kill the bridge credential, and only it.
+ *
+ * The owner's other sessions are bound to their own device ids and are not
+ * touched — pulling the Halo bridge must never sign somebody out of their
+ * phone.
+ */
+export function revokeHaloBridgeTokens(guardianPrincipalId: string): void {
+  revokeActorTokensByDevice(
+    guardianPrincipalId,
+    hashToken(HALO_BRIDGE_DEVICE_ID),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Public: guardian bootstrap
 // ---------------------------------------------------------------------------

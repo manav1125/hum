@@ -206,6 +206,10 @@ export interface WorkItem {
    * infrastructure by accident.
    */
   noteId: string | null;
+  /** The `halo_episodes` row this item was accepted out of. */
+  haloEpisodeId: string | null;
+  /** The `◉ heard` provenance pill as JSON: `{quote, at, place, speaker}`. */
+  haloHeard: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -249,6 +253,10 @@ export function createWorkItem(opts: {
   arrivalId?: string;
   /** The `notes` row this item was accepted out of (see {@link WorkItem}). */
   noteId?: string;
+  /** The `halo_episodes` row this item was accepted out of. */
+  haloEpisodeId?: string;
+  /** The `◉ heard` provenance pill as JSON, carried whole. */
+  haloHeard?: string;
   /** Audit-trail attribution for the created event (default "system"). */
   actor?: string;
 }): WorkItem {
@@ -306,6 +314,8 @@ export function createWorkItem(opts: {
     lastChasedAt: opts.lastChasedAt ?? null,
     arrivalId: opts.arrivalId ?? null,
     noteId: opts.noteId ?? null,
+    haloEpisodeId: opts.haloEpisodeId ?? null,
+    haloHeard: opts.haloHeard ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -337,6 +347,10 @@ export function createWorkItemWithPermissions(opts: {
   requiredTools?: string;
   /** The `notes` row this item was accepted out of (see {@link WorkItem}). */
   noteId?: string;
+  /** The `halo_episodes` row this item was accepted out of. */
+  haloEpisodeId?: string;
+  /** The `◉ heard` provenance pill as JSON, carried whole. */
+  haloHeard?: string;
   /** 'parked' = user parked this task; it must never auto-run (see WorkItem). */
   autoRunEligibility?: "parked";
 }): WorkItem {

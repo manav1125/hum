@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="97bddb02-a0c1-43ee-be13-527cc3da4eab"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<style>/* latin-ext */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("ade64e4f-287e-43d5-a94c-4ebbfa703ee9") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("7e1daeee-80a4-4405-a368-813da8846bb5") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("88fc4ea4-ec5d-4917-9bae-614c51ca16ba") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("74bd97f8-e8fb-47f5-8c14-9c341be0ebf7") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("143922be-9156-43b5-9ed0-14b1c24c8bb1") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("30623e88-0675-4f51-9ab4-e08c4999ba52") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("613eccad-581b-446a-832e-7087d47cf496") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("7c461eb1-3f6e-4418-a45f-50d9fa303b68") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+@keyframes hfPulse{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes hfRing{0%{transform:scale(.9);opacity:.5}80%,100%{transform:scale(1.55);opacity:0}}
+a{color:#7FA3F2}a:hover{color:#9DB9F5}
+</style>
+
+</helmet>
+
+<div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;background:#08080C;min-height:100vh;padding:46px clamp(22px,4vw,52px);color:#F4F4F6">
+
+  <div style="max-width:1040px;margin-bottom:26px">
+    <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:#9A9AA8;margin-bottom:12px">Halo · final round · the player, forgetting, etiquette, gaps, languages</div>
+    <h1 style="font-size:37px;font-weight:700;letter-spacing:-.9px;line-height:1.08;margin:0 0 11px">The payoff, and the<br>promises that make it wearable.</h1>
+    <p style="font-size:14.5px;color:#9A9AA8;max-width:930px;margin:0;line-height:1.65"><a href="#S1">S1</a> the 90-second relive player · <a href="#S2">S2</a> forgetting (delete · off-the-record · retention) · <a href="#S3">S3</a> the etiquette layer · <a href="#S4">S4</a> the partial day · <a href="#S5">S5</a> multilingual days + the closing rulings. With this, the Halo program is complete: H onboarding · V core · E experience · F Bee-parity · G standalone · R retention · S trust &amp; payoff.</p>
+  </div>
+
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-bottom:16px">
+
+    <!-- S1 · RELIVE PLAYER -->
+    <div style="width:310px" id="S1">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">S1 · Relive it</b> · 90 seconds, five pages, full-bleed</div>
+      <div style="box-sizing:border-box;width:310px;height:640px;background:linear-gradient(175deg,#2A1E3E 0%,#B45A3C 60%,#3A2334 100%);border-radius:32px;border:1px solid #1D1D26;padding:22px 16px 18px;display:flex;flex-direction:column;overflow:hidden;position:relative">
+        <!-- progress segments -->
+        <div style="display:flex;gap:4px"><span style="flex:1;height:2.5px;border-radius:99px;background:rgba(255,255,255,.9)"></span><span style="flex:1;height:2.5px;border-radius:99px;background:rgba(255,255,255,.9)"></span><span style="flex:1;height:2.5px;border-radius:99px;background:rgba(255,255,255,.45)"></span><span style="flex:1;height:2.5px;border-radius:99px;background:rgba(255,255,255,.2)"></span><span style="flex:1;height:2.5px;border-radius:99px;background:rgba(255,255,255,.2)"></span></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:12px"><span style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.13em;color:rgba(255,255,255,.7)">SATURDAY · PAGE 3 OF 5</span><span style="flex:1"></span><span style="font-size:12px;color:rgba(255,255,255,.6)">✕</span></div>
+        <!-- page: the quote -->
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center">
+          <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.13em;color:rgba(255,255,255,.65)">THE MOMENT OF THE DAY</div>
+          <div style="font-family:'Instrument Serif',serif;font-size:27px;line-height:1.22;margin-top:12px">"If the floor holds at 47, I can take twenty-four months to my side this week."</div>
+          <div style="display:flex;align-items:center;gap:9px;margin-top:16px"><span style="width:30px;height:30px;border-radius:50%;background:#611F69;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center">D</span><div><div style="font-size:11.5px;color:#fff;font-weight:600">Dana said yes, in her own way</div><div style="font-size:9.5px;color:rgba(255,255,255,.65)">10:31 · Verve · 47 minutes together</div></div></div>
+          <div style="display:inline-flex;align-items:center;gap:7px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.2);border-radius:99px;padding:7px 13px;margin-top:14px;align-self:flex-start"><span style="font-size:10px">▸</span><span style="font-size:10.5px;color:#fff">hear the 12 seconds</span><span style="font-size:8.5px;color:rgba(255,255,255,.55)">still on device · discards at sync</span></div>
+        </div>
+        <!-- footer -->
+        <div style="display:flex;align-items:center;gap:10px"><span style="font-size:9.5px;color:rgba(255,255,255,.6)">‹ tap sides to move · hold to pause</span><span style="flex:1"></span><span style="font-size:10px;color:rgba(255,255,255,.85);background:rgba(0,0,0,.3);border-radius:99px;padding:5px 11px">↗ share</span></div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">Story grammar (tap sides, hold to pause, segment bar) because everyone's thumbs already know it. Five fixed pages: <b style="color:#F4F4F6">sky</b> (the arc draws itself) → <b style="color:#F4F4F6">chapters</b> (episodes as beads) → <b style="color:#F4F4F6">the moment</b> (best quote; audio playable only while the clip still exists on device) → <b style="color:#F4F4F6">kept &amp; owed</b> (promises closed/opened) → <b style="color:#F4F4F6">tomorrow's seed</b> ("the one-pager — want it on the morning brief?"). Page 5 is the only one with a button; share uses R3's redaction pipeline.</div>
+    </div>
+
+    <!-- S2 · FORGETTING -->
+    <div style="width:310px" id="S2">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">S2 · Forgetting</b> · delete, off-the-record, retention windows</div>
+      <div style="box-sizing:border-box;width:310px;height:640px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;padding:24px 16px 18px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:9px;padding:0 4px"><span style="font-size:15px;color:#9A9AA8">‹</span><div style="flex:1"><div style="font-size:16px;font-weight:700">What Halo keeps</div><div style="font-size:10.5px;color:#9A9AA8">and every way to make it forget</div></div></div>
+        <!-- off the record -->
+        <div style="background:linear-gradient(150deg,#1E1420,#14100D);border:1px solid rgba(229,103,91,.35);border-radius:16px;padding:13px 14px;margin-top:12px">
+          <div style="display:flex;align-items:center;gap:9px"><div style="position:relative;width:30px;height:30px;flex-shrink:0"><span style="position:absolute;inset:0;border-radius:50%;border:1.5px dashed rgba(229,103,91,.6)"></span><span style="position:absolute;inset:5px;border-radius:50%;background:#1A1216;display:flex;align-items:center;justify-content:center;font-size:10px">🤫</span></div><div style="flex:1"><div style="font-size:12.5px;font-weight:600">Off the record</div><div style="font-size:10px;color:#9A9AA8">hold the button 3s · LED goes dark · Island shows ◌</div></div></div>
+          <div style="display:flex;gap:6px;margin-top:10px"><span style="font-size:10px;color:#0A1F14;background:#E5A6A0;border-radius:99px;padding:5px 11px;font-weight:600">30 min</span><span style="font-size:10px;color:#C9C9D4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:99px;padding:5px 11px">2 hours</span><span style="font-size:10px;color:#C9C9D4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:99px;padding:5px 11px">until I say</span></div>
+          <div style="font-size:9.5px;color:#9A9AA8;margin-top:8px;line-height:1.5">Nothing is heard, buffered, or reconstructed. The Day shows the span honestly: <i>"off the record · 30 min"</i> — a fact, not a hole.</div>
+        </div>
+        <!-- delete ladder -->
+        <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.12em;color:#9A9AA8;margin:14px 4px 8px">THE DELETE LADDER</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px 13px"><span style="font-size:11px">💬</span><div style="flex:1"><div style="font-size:11.5px;font-weight:600">A line</div><div style="font-size:9.5px;color:#9A9AA8">swipe in transcript · gone from search too</div></div></div>
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px 13px"><span style="font-size:11px">📖</span><div style="flex:1"><div style="font-size:11.5px;font-weight:600">An episode</div><div style="font-size:9.5px;color:#9A9AA8">⋯ → Forget this · proposals it made are recalled</div></div></div>
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px 13px"><span style="font-size:11px">🌅</span><div style="flex:1"><div style="font-size:11.5px;font-weight:600">A whole day</div><div style="font-size:9.5px;color:#9A9AA8">cover ⋯ → Forget Saturday · tile goes blank, stays blank</div></div></div>
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(229,103,91,.06);border:1px solid rgba(229,103,91,.3);border-radius:12px;padding:10px 13px"><span style="font-size:11px">👤</span><div style="flex:1"><div style="font-size:11.5px;font-weight:600">A person, everywhere</div><div style="font-size:9.5px;color:#9A9AA8">their lines, their page, what was learned — with a count first</div></div></div>
+        </div>
+        <!-- retention -->
+        <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.12em;color:#9A9AA8;margin:14px 4px 8px">WHAT KEEPS ITSELF, HOW LONG</div>
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:4px 13px">
+          <div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)"><span style="font-size:11px;flex:1">Audio</span><span style="font-size:10px;color:#6FD69A">discarded at understanding</span></div>
+          <div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)"><span style="font-size:11px;flex:1">Raw transcripts</span><span style="font-size:10px;color:#C9C9D4">90 days ▾</span></div>
+          <div style="display:flex;align-items:center;padding:8px 0"><span style="font-size:11px;flex:1">Verdicts, takeaways, people</span><span style="font-size:10px;color:#C9C9D4">until you delete ▾</span></div>
+        </div>
+        <div style="flex:1"></div>
+        <div style="font-size:10px;color:#5A6672;text-align:center;line-height:1.5">Forgetting is silent and immediate. Halo never asks<br>"are you sure?" twice — an undo toast, then done.</div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">The trust surface reviewers ask for first. <b style="color:#F4F4F6">Off the record is a device gesture</b> (3s hold — no phone needed), shown dark on LED + Island, and the Day states the span as a fact. The delete ladder runs line → episode → day → person; deleting an episode <b style="color:#F4F4F6">recalls the proposals it generated</b>. Retention: transcripts age out (90-day default), verdicts persist — <i>the diary keeps conclusions, not surveillance.</i></div>
+    </div>
+
+    <!-- S3 · ETIQUETTE -->
+    <div style="width:310px" id="S3">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">S3 · Around others</b> · the awkward question, designed</div>
+      <div style="box-sizing:border-box;width:310px;height:640px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;padding:24px 16px 18px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:9px;padding:0 4px"><span style="font-size:15px;color:#9A9AA8">‹</span><div style="flex:1"><div style="font-size:16px;font-weight:700">Around others</div><div style="font-size:10.5px;color:#9A9AA8">what to say, and what Halo does</div></div></div>
+        <!-- the script card -->
+        <div style="background:linear-gradient(150deg,#16244A,#0F1830);border:1px solid rgba(61,110,232,.3);border-radius:16px;padding:14px 15px;margin-top:12px">
+          <div style="font-family:'DM Mono',monospace;font-size:8px;letter-spacing:.13em;color:#9DB0C8">WHEN SOMEONE ASKS "IS THAT RECORDING?"</div>
+          <div style="font-family:'Instrument Serif',serif;font-size:16.5px;line-height:1.4;margin-top:8px">"It takes notes for me and throws the audio away. Want it to skip you? One tap."</div>
+
+        </div>
+        <!-- guest exclusion in the moment -->
+        <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.12em;color:#9A9AA8;margin:14px 4px 8px">SKIP SOMEONE · IN THE MOMENT</div>
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:13px 14px">
+          <div style="font-size:12px;color:#C9C9D4;line-height:1.55">This conversation has <b style="color:#F4F4F6">2 voices</b>. Skip one?</div>
+          <div style="display:flex;gap:6px;margin-top:9px"><span style="font-size:10.5px;color:#0A1F14;background:#7FA3F2;border-radius:99px;padding:6px 12px;font-weight:600">Skip the other voice</span><span style="font-size:10.5px;color:#C9C9D4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:99px;padding:6px 12px">Skip by name…</span></div>
+          <div style="font-size:9.5px;color:#9A9AA8;margin-top:8px;line-height:1.5">Their words become <i>"[skipped]"</i> from this moment and retroactively for this conversation. Remembered next time the voice appears: <b style="color:#C9C9D4">"Rachel asked to be skipped — still skipping ✓"</b></div>
+        </div>
+        <!-- visible states -->
+        <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.12em;color:#9A9AA8;margin:14px 4px 8px">WHAT OTHERS CAN SEE</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:7px 13px"><span style="width:8px;height:8px;border-radius:50%;background:#E5675B;animation:hfPulse 1.4s ease-in-out infinite;flex-shrink:0"></span><span style="font-size:11px;color:#C9C9D4;flex:1">Hearing — LED breathes red, slow</span></div>
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:7px 13px"><span style="width:8px;height:8px;border-radius:50%;background:#2A2A35;border:1px solid #4A4A55;flex-shrink:0"></span><span style="font-size:11px;color:#C9C9D4;flex:1">Off the record — LED dark, physically shuttered</span></div>
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:7px 13px"><span style="width:8px;height:8px;border-radius:50%;background:#5A6672;flex-shrink:0"></span><span style="font-size:11px;color:#C9C9D4;flex:1">Quiet — grey, nothing worth keeping</span></div>
+        </div>
+        <div style="background:rgba(224,166,75,.06);border:1px solid rgba(224,166,75,.28);border-radius:14px;padding:11px 13px;margin-top:10px"><div style="font-size:10.5px;color:#C9C9D4;line-height:1.55"><b style="color:#F4F4F6">Two-party regions:</b> new voices default to skipped until you confirm — ships on, explained in onboarding.</div></div>
+        <div style="flex:1"></div>
+        <div style="font-size:10px;color:#5A6672;text-align:center;line-height:1.5">The wearer is the ambassador. Give them true sentences<br>and a one-tap demo, and the mic becomes a conversation.</div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">The awkward question turned into the demo: <b style="color:#F4F4F6">a script that's true in both clauses — which is why it works</b>, skip-a-voice in the moment (retroactive for the conversation, remembered forever), LED states others can verify, and the two-party-consent default that makes legal a design feature instead of a footnote.</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+
+    <!-- S4 · PARTIAL DAY -->
+    <div style="width:310px" id="S4">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">S4 · The partial day</b> · holes worn honestly</div>
+      <div style="box-sizing:border-box;width:310px;height:640px;background:linear-gradient(175deg,#2A3B6E 0%,#C08A5A 44%,#0F1420 44.2%,#0A0C12 100%);border-radius:32px;border:1px solid #1D1D26;padding:24px 16px 18px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.12em;color:rgba(255,255,255,.85)">TUESDAY</span><span style="flex:1"></span><span style="font-size:9px;color:rgba(255,255,255,.7);background:rgba(0,0,0,.3);border-radius:99px;padding:4px 10px">worn 5h of 14</span></div>
+        <!-- sun path with gaps -->
+        <div style="position:relative;height:110px;margin-top:8px">
+          <svg width="278" height="110" sc-camel-view-box="0 0 278 110">
+            <path d="M20 96 A 122 122 0 0 1 258 96" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="2.5" stroke-linecap="round"></path>
+            <path d="M76 52 A 122 122 0 0 1 176 40" fill="none" stroke="rgba(255,235,190,.95)" stroke-width="3" stroke-linecap="round"></path>
+            <path d="M204 52 A 122 122 0 0 1 240 78" fill="none" stroke="rgba(255,235,190,.95)" stroke-width="3" stroke-linecap="round"></path>
+            <circle cx="104" cy="40" r="4.5" fill="#7FA3F2"></circle><circle cx="150" cy="36" r="4" fill="#E0A64B"></circle><circle cx="222" cy="62" r="4" fill="#6FD69A"></circle>
+          </svg>
+          <span style="position:absolute;left:6%;bottom:16px;font-size:8.5px;color:rgba(255,255,255,.6)">at home until noon</span>
+          <span style="position:absolute;right:30%;top:26px;font-size:8.5px;color:rgba(255,255,255,.6)">battery · 6:40</span>
+        </div>
+        <div style="font-family:'Instrument Serif',serif;font-size:20px;line-height:1.25">The afternoon it heard<br>was a good one.</div>
+        <div style="background:rgba(255,255,255,.06);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:11px 13px;margin-top:12px">
+          <div style="font-size:10.5px;color:rgba(255,255,255,.85);line-height:1.55"><b>Two gaps today:</b> before noon (not worn) and after 6:40 (battery). Nothing is guessed into them — patterns this week say <i>"based on the 5 hours heard."</i></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px">
+          <div style="background:#0F1420;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:11px 13px"><div style="display:flex;gap:7px"><span style="font-family:'DM Mono',monospace;font-size:8px;color:#9A9AA8">12:40 · LUNCH · WITH TOM</span></div><div style="font-size:11.5px;color:#C9C9D4;margin-top:4px">The Airtel deck, finally — he wants Friday.</div></div>
+          <div style="background:#0F1420;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:11px 13px"><div style="display:flex;gap:7px"><span style="font-family:'DM Mono',monospace;font-size:8px;color:#9A9AA8">4:15 · OFFICE</span></div><div style="font-size:11.5px;color:#C9C9D4;margin-top:4px">Sprint scope cut to eight — Builder's call stood.</div></div>
+          <div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.14);border-radius:12px;padding:9px 12px"><span style="font-size:10px">🔋</span><span style="font-size:10px;color:#9A9AA8;flex:1">Evening not heard — battery died at 6:40. Charge overnight and tomorrow is whole.</span></div>
+        </div>
+        <div style="flex:1"></div>
+        <div style="font-size:10px;color:#5A6672;text-align:center;line-height:1.5">A short day is still a day. The verdict covers what was heard —<br>never scores, never scolds, never extrapolates.</div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">Gaps are drawn as <b style="color:#F4F4F6">missing arc segments with plain captions</b> ("at home until noon", "battery · 6:40") — different from S2's off-the-record span, which is a chosen fact. The verdict line scopes itself to what was heard, and weekly patterns carry the "based on N hours" qualifier automatically.</div>
+    </div>
+
+    <!-- S5 · MULTILINGUAL + CLOSING -->
+    <div style="width:310px" id="S5">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">S5 · Days in two languages</b> · heard as spoken, told in yours</div>
+      <div style="box-sizing:border-box;width:310px;height:640px;background:#0A0C12;border-radius:32px;border:1px solid #1D1D26;padding:24px 16px 18px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:9px;padding:0 4px"><span style="font-size:15px;color:#9A9AA8">‹</span><div style="flex:1"><div style="font-size:16px;font-weight:700">Dinner at home</div><div style="font-size:10px;color:#9A9AA8">7:30 · 40 min · English + हिन्दी</div></div><span style="font-size:10px;color:#C9C9D4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:99px;padding:5px 11px">अ→A translate</span></div>
+        <div style="flex:1;overflow:hidden;position:relative;margin-top:12px">
+          <div style="display:flex;flex-direction:column;gap:9px;padding:0 4px">
+            <div style="font-size:11.5px;line-height:1.6;color:#C9C9D4"><b style="color:#6FD69A">You</b> — Deen's cake — Saturday morning, before the market gets busy?</div>
+            <div style="font-size:11.5px;line-height:1.7;color:#C9C9D4"><b style="color:#E0A64B">Ma</b> — शहद वाला केक वही से लेना, पिछली बार वाला।<div style="font-size:10px;color:#9A9AA8;font-style:italic;margin-top:2px;padding-left:2px">↳ Get the honey cake from the same place — like last time.</div></div>
+            <div style="font-size:11.5px;line-height:1.6;color:#C9C9D4"><b style="color:#6FD69A">You</b> — Same stall, opens at eight. I'll take Deen along.</div>
+            <div style="background:rgba(224,166,75,.08);border-left:2px solid #E0A64B;border-radius:6px;padding:8px 10px;font-size:11.5px;line-height:1.7;color:#C9C9D4"><span style="font-size:8.5px;color:#E0A64B;font-weight:700">⚑ 7:48</span><br><b style="color:#E0A64B">Ma</b> — और रविवार को सब यहीं खाना खाएँगे।<div style="font-size:10px;color:#9A9AA8;font-style:italic;margin-top:2px">↳ And Sunday, everyone eats here.</div></div>
+          </div>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:30px;background:linear-gradient(transparent,#0A0C12)"></div>
+        </div>
+        <!-- verdict + search -->
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:11px 13px;margin-top:10px">
+          <div style="font-family:'DM Mono',monospace;font-size:8px;letter-spacing:.12em;color:#A79FF0;margin-bottom:5px">TAKEAWAYS · ALWAYS IN YOUR LANGUAGE</div>
+          <div style="font-size:11px;color:#C9C9D4;line-height:1.55">· Honey cake: same stall, Saturday 8am, with Deen<br>· Sunday lunch is at Ma's — <b style="color:#F4F4F6">everyone</b></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.05);border:1px solid rgba(61,110,232,.35);border-radius:12px;padding:9px 12px;margin-top:8px"><svg width="11" height="11" sc-camel-view-box="0 0 24 24" fill="none" stroke="#9A9AA8" stroke-width="2.4"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.5-4.5"></path></svg><span style="font-size:10.5px;color:#9A9AA8;flex:1">"honey cake" finds शहद वाला केक too</span></div>
+        <div style="flex:1"></div>
+        <div style="font-size:10px;color:#5A6672;text-align:center;line-height:1.5">Spoken language is identity — never flattened.<br>Understanding is yours — never gated on translation.</div>
+      </div>
+      <div style="width:310px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">The rule in one line: <b style="color:#F4F4F6">transcripts as spoken, takeaways in your language, search across both.</b> Inline ↳ translations toggle per-conversation; ⚑ marks work identically. This is table stakes for every multilingual household — and a differentiator no US-first competitor bothers with.</div>
+    </div>
+
+    <!-- CLOSING RULINGS -->
+    <div style="flex:1;min-width:400px;display:flex;flex-direction:column;gap:16px">
+      <div style="background:#14141A;border:1px solid #24242E;border-radius:16px;padding:20px 24px">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;color:#6FD69A;margin-bottom:12px">CLOSING RULINGS</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:12px;color:#C9C9D4;line-height:1.58">
+          <div><b style="color:#F4F4F6">Before-Halo backfill:</b> onboarding offers calendar import so day one isn't the first day of history — past days render as <b style="color:#F4F4F6">outline-only covers</b> (calendar facts, no verdicts, no quotes). Halo never writes a verdict about a day it didn't hear.</div>
+          <div><b style="color:#F4F4F6">Android parity (R6):</b> Island states map to an ongoing notification (hearing/marked/quiet, same glyphs) + a 1×1 sun-path widget. The settler binds to the Assistant long-press where available. No feature is iOS-gated except the watch face.</div>
+          <div><b style="color:#F4F4F6">Gap grammar, unified:</b> three visually distinct absences — <b style="color:#F4F4F6">not worn</b> (dim arc + caption), <b style="color:#F4F4F6">off the record</b> (dashed span, chosen), <b style="color:#F4F4F6">forgotten</b> (blank, permanent). Never interchangeable, never euphemized.</div>
+          <div><b style="color:#F4F4F6">Button grammar, unified (fixes F5↔S2 conflict):</b> click = ⚑ mark · double-click = ✦ note · <b style="color:#F4F4F6">hold 1s</b> = record on/off (single buzz) · <b style="color:#F4F4F6">hold 3s</b> = off the record (double buzz + LED dark — keep holding through the 1s stop, which previews as the first beat). One button, four verbs, each with a distinct haptic; F5's map updates to match.</div>
+          <div><b style="color:#F4F4F6">Relive audio rule (S1):</b> the "hear the 12 seconds" chip appears only while the clip still exists on-device pre-sync; after sync it's gone and the page shows the quote alone. No exception, including for delight.</div>
+        </div>
+      </div>
+      <div style="background:#14141A;border:1px solid #24242E;border-radius:16px;padding:20px 24px">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;color:#E0A64B;margin-bottom:11px">FOR CODE — NEW IN THIS ROUND</div>
+        <div style="font-size:12px;color:#9A9AA8;line-height:1.62">S1 player: 5 fixed page types, story gestures, share via R3 pipeline · S2: 3s-hold gesture + LED-dark firmware state; delete ladder needs proposal-recall on episode delete; retention windows as settings · S3: two-voice detection already exists (G4 attribution); skip-by-voice retroactive within conversation; two-party default by phone region · S4: gap captions from wear/battery telemetry; "based on N hours" qualifier auto-appends to weekly patterns · S5: language detect per utterance; takeaway generation pinned to owner language; cross-language search via embedding, not literal match.</div>
+      </div>
+      <div style="background:#14141A;border:1px solid #24242E;border-radius:16px;padding:20px 24px" id="S6">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;color:#4FC7C7;margin-bottom:12px">S6 · FOUR RULINGS FROM CODE'S GAP LIST</div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:12px;color:#C9C9D4;line-height:1.6">
+          <div><b style="color:#F4F4F6">1 · The verdict on an unremarkable day — writing rules.</b> The verdict is an <i>observation, never a grade</i>. Four registers, chosen by day shape: <b style="color:#F4F4F6">outcome day</b> → name the outcome ("The morning found Acme its number") · <b style="color:#F4F4F6">texture day</b> (chapters, no outcomes) → name the texture, specifically ("Mostly errands, and a long call with Ma") · <b style="color:#F4F4F6">thin day</b> (≤2 chapters) → name the one true thing, small is fine ("A quiet Tuesday — one good idea on the walk home") · <b style="color:#F4F4F6">gap day</b> (&gt;50% unheard) → scope first, then the fragment ("Of the afternoon I heard: the sprint got its cut"). Banned: scoring words (productive, slow, light), apology, and any sentence that could apply to every day. If no specific true sentence exists, the fallback is inventory, not poetry: "4 conversations, nothing that needed keeping." The verdict may be plain; it may never be generic.</div>
+          <div><b style="color:#F4F4F6">2 · Beads: target 5–9 chapters on a normal day, hard cap 12.</b> Your 3-min silence / 60-sec merge-forward floors are blessed as defaults, but tune to the count, not the constants: if a day exceeds 12, raise the silence threshold for that day until it fits (re-chaptering is per-day, invisible, and never splits a ⚑). Below 3 chapters, never pad — a two-bead day is a two-bead day. Beads under 5 minutes render at 70% size so density reads without crowding.</div>
+          <div><b style="color:#F4F4F6">3 · "Draft it" opens the draft — it never files a ticket.</b> ✓ on a draft-verb chip runs the agent immediately and opens the composer sheet with the draft in it (recipient, subject, body — editable). Send is yours; "Not now" parks the draft on the item with a ✎ badge. The dock animation fires <i>on send or park</i>, not on ✓ — the thing that docks is the real artifact. Rationale: the funnel's whole promise is "done for you, shown to you" — a work item that drafts later is neither. Offline or slow (&gt;4s): the chip becomes "drafting…" with the item parked; the sheet arrives as a notification when ready.</div>
+          <div><b style="color:#F4F4F6">4 · The unfilled arc is dotted; a gap is dim-solid.</b> Three arc treatments, never interchangeable: <b style="color:#F4F4F6">lived</b> = solid warm stroke · <b style="color:#F4F4F6">not yet</b> = fine dotted line at 18% white (the R1 hour-one frame already draws this — "the rest of today is still unwritten") · <b style="color:#F4F4F6">gap</b> = dim solid at 14% with its caption. Dotted reads as promise, dim-solid reads as record. The now-point carries a soft glow head so "filled to now" has an obvious tip, and at 8am a mostly-dotted arc reads as morning, not breakage.</div>
+        </div>
+      </div>
+      <div style="background:linear-gradient(150deg,#16244A,#0F1830);border:1px solid rgba(61,110,232,.3);border-radius:16px;padding:20px 24px">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;color:#9DB0C8;margin-bottom:11px">THE PROGRAM, COMPLETE</div>
+        <div style="font-size:12.5px;color:#C9C9D4;line-height:1.65"><b style="color:#F4F4F6">H</b> onboarding &amp; pairing · <b style="color:#F4F4F6">V</b> core surfaces · <b style="color:#F4F4F6">E</b> the premium layer (sky clock, sun path, dock, rituals) · <b style="color:#F4F4F6">F</b> Bee parity with receipts · <b style="color:#F4F4F6">G</b> the standalone product (people, places, diary, record, funnel) · <b style="color:#F4F4F6">R</b> retention (hour one, two pushes, share, settler, person, Island) · <b style="color:#F4F4F6">S</b> payoff &amp; trust (relive, forgetting, etiquette, partial days, languages). One line for the deck: <i style="color:#F4F4F6">a diary that writes itself, answers questions, forgets on command — and hands the work to Cue.</i></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+
+</body></html>

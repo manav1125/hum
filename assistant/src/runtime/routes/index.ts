@@ -77,6 +77,7 @@ import { ROUTES as GLOBAL_SEARCH_ROUTES } from "./global-search-routes.js";
 import { ROUTES as GROUP_ROUTES } from "./group-routes.js";
 import { ROUTES as GUARDIAN_ACTION_ROUTES } from "./guardian-action-routes.js";
 import { ROUTES as GUARDRAILS_ROUTES } from "./guardrails-routes.js";
+import { ROUTES as HALO_ROUTES } from "./halo-routes.js";
 import { ROUTES as HEARTBEAT_ROUTES } from "./heartbeat-routes.js";
 import { ROUTES as HOME_FEED_ROUTES } from "./home-feed-routes.js";
 import { ROUTES as HOME_STATE_ROUTES } from "./home-state-routes.js";
@@ -126,6 +127,7 @@ import { ROUTES as OAUTH_COMMANDS_ROUTES } from "./oauth-commands-routes.js";
 import { ROUTES as OAUTH_CONNECT_ROUTES } from "./oauth-connect-routes.js";
 import { ROUTES as OAUTH_LIFECYCLE_ROUTES } from "./oauth-lifecycle-routes.js";
 import { ROUTES as OAUTH_PROVIDERS_ROUTES } from "./oauth-providers.js";
+import { ROUTES as OPENAI_COMPAT_ROUTES } from "./openai-compat-routes.js";
 import { ROUTES as ORGANIZER_ROUTES } from "./organizer-routes.js";
 import { ROUTES as PEOPLE_ROUTES } from "./people-routes.js";
 import { ROUTES as PLATFORM_ROUTES } from "./platform-routes.js";
@@ -292,7 +294,9 @@ export const ROUTES: RouteDefinition[] = [
   ...MORNING_BRIEF_ROUTES,
   ...NEXT_MOVE_ROUTES,
   ...VOICE_INTAKE_ROUTES,
+  ...HALO_ROUTES,
   ...NOTES_ROUTES,
+  ...OPENAI_COMPAT_ROUTES,
   ...NOTIFICATION_ROUTES,
   ...OAUTH_APPS_ROUTES,
   ...OAUTH_LIFECYCLE_ROUTES,

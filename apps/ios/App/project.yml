@@ -36,6 +36,12 @@ configFiles:
 packages:
   CapApp-SPM:
     path: CapApp-SPM
+  # Halo's surfaces. A local package rather than files in the app target
+  # because E5's "one drawing, five sizes" spans the app, the widget
+  # extension and (later) a watch app — three binaries that can only share
+  # one sun path if it lives somewhere all of them can import.
+  HaloKit:
+    path: ../HaloKit
 
 targetTemplates:
   AppEnvironment:
@@ -87,6 +93,8 @@ targetTemplates:
     dependencies:
       - package: CapApp-SPM
         product: CapApp-SPM
+      - package: HaloKit
+        product: HaloKit
     # Auto-generate one scheme per target. The whole `App.xcodeproj/`
     # tree is gitignored — schemes, pbxproj, contents.xcworkspacedata,
     # everything inside the bundle is a build-time artifact regenerated

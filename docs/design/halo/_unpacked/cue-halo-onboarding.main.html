@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="bd3204e7-2a0f-4633-8ff1-27b36327058e"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<style>/* latin-ext */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("e1f78b1e-c0a0-41f0-b533-5b2f3657c356") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("462307e6-e372-4fe0-ad2c-27c0b61cb9b0") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("61a1dc7d-86c0-48ca-b581-b156eea7222e") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("df47104a-491b-4944-a7c3-27a273a702ce") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("f91350f8-6f00-4c46-8745-96355badfdc9") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("acf1b9fd-26c6-41d6-81ee-9ab16cf9ca46") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("71717527-733e-47fd-bf92-fae716631a2d") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("5b426be1-1e5b-4029-82c3-2532ba80989e") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+@keyframes haloBar{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
+@keyframes haloPulse{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes haloRing{0%{transform:scale(.9);opacity:.5}80%,100%{transform:scale(1.6);opacity:0}}
+a{color:#7FA3F2}a:hover{color:#9DB9F5}
+</style>
+
+</helmet>
+
+<div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;background:#08080C;min-height:100vh;padding:46px clamp(22px,4vw,52px);color:#F4F4F6">
+
+  <div style="max-width:1030px;margin-bottom:26px">
+    <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:#9A9AA8;margin-bottom:12px">Halo on mobile · onboarding, the card, the Day · design answer</div>
+    <h1 style="font-size:37px;font-weight:700;letter-spacing:-.9px;line-height:1.08;margin:0 0 11px">Always a little behind the room —<br>and honest about it.</h1>
+    <p style="font-size:14.5px;color:#9A9AA8;max-width:920px;margin:0 0 10px;line-height:1.65">The hardware truth that shapes every frame: Halo records, syncs in ~20-second segments, and is <b style="color:#F4F4F6">never live</b>. So the design's one recurring gesture is the <b style="color:#F4F4F6">lag number, worn proudly</b> — "12 min behind" on the card, on the Day, in the Live Activity. Nothing anywhere implies live listening; the three silent questions (is it on · what did it do · can I stop it) each get a permanent home.</p>
+    <p style="font-size:14.5px;color:#9A9AA8;max-width:920px;margin:0;line-height:1.65">Frames: <a href="#H1">H1</a> onboarding's three load-bearing steps · <a href="#H2">H2</a> the card + Live Activity · <a href="#H3">H3</a> the Day · <a href="#H4">H4</a> a capture · <a href="#H5">H5</a> the ten states · rulings at the end. Phase note per frame: everything except onboarding steps 1/3/4 ships identically in Phase A.</p>
+  </div>
+
+  <!-- H1 · ONBOARDING -->
+  <div style="font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#7FA3F2;margin:6px 0 14px" id="H1">H1 · Onboarding — the device proves itself before it asks for anything</div>
+  <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px">
+
+    <!-- step 2 promise -->
+    <div style="width:300px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">Step 2 · The promise</b> · before any permission</div>
+      <div style="box-sizing:border-box;width:300px;height:600px;background:linear-gradient(175deg,#0B0E16 0%,#0D1120 55%,#101321 100%);border-radius:30px;border:1px solid #1D1D26;padding:26px 22px;display:flex;flex-direction:column;position:relative;overflow:hidden">
+        <div style="position:absolute;inset:-30% -20% auto;height:60%;background:radial-gradient(50% 40% at 50% 30%,rgba(61,110,232,.25),transparent 70%);filter:blur(30px)"></div>
+        <div style="position:relative;display:flex;justify-content:center;margin-top:26px">
+          <div style="position:relative;width:88px;height:88px">
+            <span style="position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(61,110,232,.5);animation:haloRing 2.4s ease-out infinite"></span>
+            <span style="position:absolute;inset:14px;border-radius:50%;background:linear-gradient(160deg,#1A2233,#10141F);border:1px solid #2A3245;display:flex;align-items:center;justify-content:center"><svg width="26" height="26" sc-camel-view-box="0 0 512 512"><circle cx="232" cy="256" r="150" fill="none" stroke="#F4F4F6" stroke-width="46" stroke-linecap="round" stroke-dasharray="707 236" transform="rotate(42 232 256)"></circle><circle cx="392" cy="372" r="34" fill="#3D6EE8"></circle></svg></span>
+          </div>
+        </div>
+        <div style="position:relative;font-family:'Instrument Serif',serif;font-size:25px;text-align:center;line-height:1.2;margin-top:22px">Your day, remembered.</div>
+        <div style="position:relative;display:flex;flex-direction:column;gap:11px;margin-top:22px">
+          <div style="display:flex;gap:10px;align-items:flex-start"><span style="width:22px;height:22px;border-radius:7px;background:rgba(61,110,232,.14);color:#7FA3F2;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">◉</span><span style="font-size:12.5px;color:#C9C9D4;line-height:1.5"><b style="color:#F4F4F6">It records while you wear it</b> — then hands what it heard to Cue. Never live, never streamed.</span></div>
+          <div style="display:flex;gap:10px;align-items:flex-start"><span style="width:22px;height:22px;border-radius:7px;background:rgba(61,110,232,.14);color:#7FA3F2;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">🧠</span><span style="font-size:12.5px;color:#C9C9D4;line-height:1.5"><b style="color:#F4F4F6">Cue turns it into your day</b> — decisions, asks, moments. Audio is discarded after it's understood.</span></div>
+          <div style="display:flex;gap:10px;align-items:flex-start"><span style="width:22px;height:22px;border-radius:7px;background:rgba(61,110,232,.14);color:#7FA3F2;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">‖</span><span style="font-size:12.5px;color:#C9C9D4;line-height:1.5"><b style="color:#F4F4F6">One tap pauses it</b> — from the first screen, always. The clip buzzes so you know it heard you.</span></div>
+        </div>
+        <div style="position:relative;font-size:11px;color:#9A9AA8;text-align:center;margin-top:14px">During early access, audio reaches Cue via Seeed's cloud. <span style="color:#7FA3F2">How that works ›</span></div>
+        <div style="flex:1"></div>
+        <button style="position:relative;background:#3D6EE8;color:#fff;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:600;font-family:inherit">Set it up</button>
+        <div style="text-align:center;font-size:12px;color:#9A9AA8;margin-top:10px;position:relative">Not now</div>
+      </div>
+      <div style="width:300px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">The three questions answered in three lines, <b style="color:#F4F4F6">before</b> Bluetooth is requested. The Phase-A cloud fact stated plainly on the trust screen — not papered over.</div>
+    </div>
+
+    <!-- step 4 bond -->
+    <div style="width:300px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">Step 4 · Pairing</b> · the bond warning, dressed as destructive</div>
+      <div style="box-sizing:border-box;width:300px;height:600px;background:linear-gradient(175deg,#0B0E16,#101321);border-radius:30px;border:1px solid #1D1D26;padding:26px 22px;display:flex;flex-direction:column">
+        <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.14em;color:#9A9AA8">STEP 4 OF 7 · PAIRING</div>
+        <div style="font-size:21px;font-weight:700;letter-spacing:-.4px;margin-top:12px;line-height:1.25">Link Halo to this iPhone</div>
+        <div style="display:flex;justify-content:center;margin:26px 0 8px"><div style="width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#232B3E,#12151F);border:1px solid #2A3245;display:flex;align-items:center;justify-content:center"><span style="width:44px;height:44px;border-radius:50%;border:2.5px solid #7FA3F2;display:flex;align-items:center;justify-content:center;font-size:15px;color:#7FA3F2">◉</span></div></div>
+        <div style="text-align:center;font-size:12px;color:#6FD69A;margin-bottom:18px">Halo A7-03 found nearby</div>
+        <div style="background:rgba(224,166,75,.09);border:1px solid rgba(224,166,75,.32);border-radius:14px;padding:13px 15px">
+          <div style="display:flex;gap:9px;align-items:flex-start"><span style="font-size:13px;flex-shrink:0">⚠</span><div style="font-size:12px;color:#C9C9D4;line-height:1.55"><b style="color:#F4F4F6">Halo links to one phone only.</b> Linking here erases anything it hasn't yet sent to its previous phone.</div></div>
+        </div>
+        <div style="flex:1"></div>
+        <button style="background:#3D6EE8;color:#fff;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:600;font-family:inherit">Link to this iPhone</button>
+        <div style="text-align:center;font-size:12px;color:#9A9AA8;margin-top:10px">This is my Halo's first phone — nothing to erase</div>
+      </div>
+      <div style="width:300px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">If a previous bond is detected, the button becomes the red variant and requires the device name typed — <b style="color:#F4F4F6">destructive recovery never hides behind a default-styled button.</b></div>
+    </div>
+
+    <!-- step 5 first capture -->
+    <div style="width:300px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">Step 5 · First capture</b> · the loop closes, the gesture is taught</div>
+      <div style="box-sizing:border-box;width:300px;height:600px;background:linear-gradient(175deg,#0B0E16,#101321);border-radius:30px;border:1px solid #1D1D26;padding:26px 22px;display:flex;flex-direction:column">
+        <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.14em;color:#9A9AA8">STEP 5 OF 7 · TRY IT</div>
+        <div style="font-size:21px;font-weight:700;letter-spacing:-.4px;margin-top:12px;line-height:1.25">Say something real.<br>Then click the button once.</div>
+        <div style="font-size:12.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">Hold the button to record. The single click drops a bookmark — it's how you tell Cue <i>this matters</i>.</div>
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px 15px;margin-top:18px">
+          <div style="display:flex;align-items:center;gap:9px"><span style="width:8px;height:8px;border-radius:50%;background:#E5675B;animation:haloPulse 1.4s ease-in-out infinite"></span><span style="font-size:12px;font-weight:600;flex:1">Recording on Halo</span><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9A9AA8">0:21</span></div>
+          <div style="display:flex;gap:2.5px;align-items:flex-end;height:18px;margin-top:10px;opacity:.55"><span style="flex:1;height:40%;background:#3D6EE8;border-radius:2px"></span><span style="flex:1;height:75%;background:#3D6EE8;border-radius:2px"></span><span style="flex:1;height:55%;background:#3D6EE8;border-radius:2px"></span><span style="flex:1;height:90%;background:#3D6EE8;border-radius:2px"></span><span style="flex:1;height:35%;background:#3D6EE8;border-radius:2px"></span><span style="flex:1;height:60%;background:#3D6EE8;border-radius:2px"></span><span style="flex:1;height:45%;background:#3D6EE8;border-radius:2px"></span></div>
+          <div style="font-size:10px;color:#9A9AA8;margin-top:7px">What it recorded so far — arrives in ~20s pieces, a little behind you</div>
+        </div>
+        <div style="background:rgba(61,110,232,.08);border:1px solid rgba(61,110,232,.3);border-radius:14px;padding:12px 15px;margin-top:10px">
+          <div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:7px;background:#3D6EE8;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">⚑</span><div style="flex:1"><div style="font-size:12px;font-weight:600">Bookmark landed</div><div style="font-size:10.5px;color:#9A9AA8;margin-top:1px">Halo buzzed once — that's the confirmation</div></div><span style="color:#6FD69A;font-size:13px">✓</span></div>
+        </div>
+        <div style="flex:1"></div>
+        <div style="font-size:11px;color:#9A9AA8;text-align:center;margin-bottom:10px;animation:haloPulse 2s ease-in-out infinite">waiting for your words to arrive…</div>
+        <button style="background:rgba(255,255,255,.07);color:#9A9AA8;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px;font-size:15px;font-weight:600;font-family:inherit">Continue</button>
+      </div>
+      <div style="width:300px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">The waveform is labelled <b style="color:#F4F4F6">"what it recorded so far"</b> — history, never a live claim. Continue enables only when the transcript lands: <b style="color:#F4F4F6">the first proof the loop closes.</b></div>
+    </div>
+
+    <!-- steps map -->
+    <div style="flex:1;min-width:330px;background:#14141A;border:1px solid #24242E;border-radius:16px;padding:20px 24px;align-self:flex-start">
+      <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.12em;color:#4FC7C7;margin-bottom:12px">ALL SEVEN, AND WHAT'S STUBBED IN PHASE A</div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:#C9C9D4;line-height:1.55">
+        <div style="display:flex;gap:9px"><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9A9AA8;width:14px">1</span><span><b style="color:#F4F4F6">Recognise</b> — Cue offers setup when a Halo is near. <span style="color:#E0A64B">Phase A: manual entry from You → Devices; same screen, no auto-detect.</span></span></div>
+        <div style="display:flex;gap:9px"><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9A9AA8;width:14px">2</span><span><b style="color:#F4F4F6">The promise</b> — drawn. Identical in both phases; only the cloud footnote disappears in B.</span></div>
+        <div style="display:flex;gap:9px"><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9A9AA8;width:14px">3</span><span><b style="color:#F4F4F6">Bluetooth</b> — reason above the system prompt; denied state is a full screen with the Settings route. <span style="color:#E0A64B">Phase A: replaced by "connect SenseCraft" hand-off.</span></span></div>
+        <div style="display:flex;gap:9px"><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9A9AA8;width:14px">4</span><span><b style="color:#F4F4F6">Pairing + bond warning</b> — drawn. <span style="color:#E0A64B">Phase A: stubbed (Seeed owns the bond).</span></span></div>
+        <div style="display:flex;gap:9px"><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9A9AA8;width:14px">5</span><span><b style="color:#F4F4F6">First capture</b> — drawn. Works in A (the transcript arrives through the door); only the recording tile's source line changes.</span></div>
+        <div style="display:flex;gap:9px"><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9A9AA8;width:14px">6</span><span><b style="color:#F4F4F6">What Cue may do</b> — one choice: <i>proposes</i> (default) or <i>acts on the obvious</i>. Same two-card pattern as the workspace mode dial; changeable in You.</span></div>
+        <div style="display:flex;gap:9px"><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9A9AA8;width:14px">7</span><span><b style="color:#F4F4F6">Wear it</b> — button map, buzz glossary, pause, out-of-range reassurance. Ends on the empty Day, which says what tomorrow will look like.</span></div>
+      </div>
+      <div style="border-top:1px solid #24242E;margin-top:13px;padding-top:12px;font-size:12px;color:#9A9AA8;line-height:1.6"><b style="color:#F4F4F6">The shape protected:</b> promise (2) before permission (3); proof (5) before autonomy (6). The device earns each ask with the previous screen.</div>
+    </div>
+  </div>
+
+  <!-- H2 · CARD -->
+  <div style="font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#7FA3F2;margin:20px 0 14px" id="H2">H2 · The Halo card — is it on, and does Cue have it?</div>
+  <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px">
+    <div style="width:300px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">On Today</b> · one component, also in You → Devices</div>
+      <div style="width:300px;background:#0D0F14;border-radius:22px;border:1px solid #1D1D26;padding:15px 15px">
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:15px;padding:13px 14px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="position:relative;width:34px;height:34px;flex-shrink:0"><span style="position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(229,103,91,.4);animation:haloRing 2.6s ease-out infinite"></span><span style="position:absolute;inset:5px;border-radius:50%;background:#1A2233;border:1px solid #2A3245;display:flex;align-items:center;justify-content:center;font-size:13px">◉</span></div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-size:13px;font-weight:600">Halo</span><span style="width:6px;height:6px;border-radius:50%;background:#E5675B;animation:haloPulse 1.4s ease-in-out infinite"></span><span style="font-size:11px;color:#E5675B;font-weight:500">recording</span></div>
+              <div style="font-size:10.5px;color:#9A9AA8;margin-top:1px">synced to 3 min ago · 🔋 64% · ~9h left</div>
+            </div>
+            <button style="background:rgba(255,255,255,.08);color:#F4F4F6;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:8px 13px;font-size:12px;font-weight:600;font-family:inherit">‖ Pause</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:11px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06)">
+            <span style="font-size:11px;color:#C9C9D4;flex:1">Today so far: <b style="color:#F4F4F6">4 episodes · 2 proposals · 1 ⚑</b></span>
+            <span style="font-size:11px;color:#7FA3F2">Open the Day ›</span>
+          </div>
+        </div>
+      </div>
+      <div style="width:300px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55"><b style="color:#F4F4F6">"Synced to 3 min ago" is the headline honesty</b> — the lag number worn on the card, never hidden. Pause is one tap from the first screen; recording state pulses red (the reserved recording colour).</div>
+    </div>
+    <div style="width:300px">
+      <div style="font-size:12px;color:#9A9AA8;margin-bottom:8px"><b style="color:#F4F4F6">Live Activity</b> · lock screen + Island, participle rule applies</div>
+      <div style="width:300px;background:#000;border-radius:22px;border:1px solid #1D1D26;padding:16px 15px">
+        <div style="background:rgba(28,28,32,.92);border-radius:18px;padding:13px 15px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:28px;height:28px;border-radius:50%;background:#1A2233;display:flex;align-items:center;justify-content:center;font-size:12px">◉</span>
+            <div style="flex:1"><div style="font-size:12.5px;font-weight:600;color:#fff">Halo · wearing</div><div style="font-size:10.5px;color:#98989F">synced to 3 min ago · 64%</div></div>
+            <span style="font-size:11px;color:#98989F;border:1px solid rgba(255,255,255,.18);border-radius:9px;padding:6px 11px">Pause</span>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:center;margin-top:12px"><span style="display:inline-flex;align-items:center;gap:7px;background:#000;border:1px solid #26262C;border-radius:99px;padding:5px 11px"><span style="width:5px;height:5px;border-radius:50%;background:#E5675B"></span><span style="font-size:10px;color:#fff">Halo</span><span style="font-family:'DM Mono',monospace;font-size:9px;color:#98989F">3m behind</span></span></div>
+        <div style="font-size:9.5px;color:#5A5A62;text-align:center;margin-top:8px">Dynamic Island · minimal: phase dot only</div>
+      </div>
+      <div style="width:300px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">Reuses the run Live Activity pattern. Lock-screen copy follows the privacy rule: <b style="color:#F4F4F6">"wearing", never a transcript word, never a person's name.</b> The lag number is the liveness signal — it moves without a push.</div>
+    </div>
+    <div style="flex:1;min-width:330px;background:#14141A;border:1px solid #24242E;border-radius:16px;padding:20px 24px;align-self:flex-start">
+      <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.12em;color:#4FC7C7;margin-bottom:12px">CARD RULES</div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:12px;color:#C9C9D4;line-height:1.6">
+        <div><b style="color:#F4F4F6">One component, two homes</b> (decision 1: both). Today shows it only while paired-and-active or in a state needing attention; You → Devices always shows it. Same markup, a `context` prop.</div>
+        <div><b style="color:#F4F4F6">The sync line has exactly three shapes:</b> "up to date" · "synced to N min ago" (moving) · "N min behind · out of range — still recording" (reassurance form). Silence is never one of the shapes.</div>
+        <div><b style="color:#F4F4F6">Pause is stateful and loud:</b> while paused the card goes slate (no red anywhere), reads "Paused by you · resume when you're ready" — unmistakable, and impossible to leave by accident because resume is the same single button.</div>
+        <div><b style="color:#F4F4F6">Battery speaks early:</b> at 20% the card adds "charge tonight" — before it matters, per the brief's forgotten-states table.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- H3 · THE DAY -->
+  <div style="font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#7FA3F2;margin:20px 0 14px" id="H3">H3 · The Day — episodes, not transcript; a new surface reached from the card</div>
+  <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px">
+    <div style="width:300px">
+      <div style="box-sizing:border-box;width:300px;height:640px;background:#0A0C12;border-radius:30px;border:1px solid #1D1D26;padding:22px 16px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:9px;padding:0 4px"><span style="font-size:15px;color:#9A9AA8">‹</span><div style="flex:1"><div style="font-size:16px;font-weight:700">Saturday</div><div style="font-size:10.5px;color:#9A9AA8">4 episodes · 2 proposals · quiet since 4:10</div></div><span style="font-size:11px;color:#7FA3F2">Today ▾</span></div>
+        <div style="flex:1;overflow:hidden;margin-top:14px;position:relative">
+          <!-- morning compress -->
+          <div style="display:flex;align-items:center;gap:8px;padding:0 4px"><span style="font-family:'DM Mono',monospace;font-size:9px;color:#5A6672;width:34px">7–10</span><span style="flex:1;height:1px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 4px,transparent 4px 9px)"></span><span style="font-size:10px;color:#9A9AA8">quiet morning · worn since 7:04</span></div>
+          <!-- episode -->
+          <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:15px;padding:12px 13px;margin-top:10px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'DM Mono',monospace;font-size:9px;color:#9A9AA8">10:12 · 40 MIN</span><span style="flex:1"></span><span style="font-size:10px;color:#9A9AA8">☕ with Dana</span></div>
+            <div style="font-size:13px;font-weight:600;margin-top:6px;line-height:1.35">Acme renewal — landed on 24 months</div>
+            <div style="font-size:11px;color:#9A9AA8;margin-top:3px;line-height:1.5">You and Dana agreed the floor holds; she wants the one-pager before Thursday.</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:9px;background:rgba(61,110,232,.08);border:1px solid rgba(61,110,232,.28);border-radius:10px;padding:8px 10px">
+              <span style="font-size:10px;color:#7FA3F2;font-weight:700">○ PROPOSED</span><span style="font-size:11px;color:#C9C9D4;flex:1">Task: send one-pager by Thu</span><span style="font-size:11px;color:#6FD69A">✓</span><span style="font-size:11px;color:#9A9AA8;padding-left:6px">✕</span>
+            </div>
+          </div>
+          <!-- bookmark episode -->
+          <div style="background:rgba(255,255,255,.045);border:1px solid rgba(224,166,75,.4);border-radius:15px;padding:12px 13px;margin-top:9px;box-shadow:0 0 0 3px rgba(224,166,75,.06)">
+            <div style="display:flex;align-items:center;gap:8px"><span style="width:20px;height:20px;border-radius:7px;background:#E0A64B;color:#211E16;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">⚑</span><span style="font-family:'DM Mono',monospace;font-size:9px;color:#E0A64B">1:47 · YOU MARKED THIS</span></div>
+            <div style="font-size:13px;font-weight:600;margin-top:6px;line-height:1.35">"Check whether the Vercel bill doubled"</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:8px;background:rgba(61,110,232,.08);border:1px solid rgba(61,110,232,.28);border-radius:10px;padding:8px 10px">
+              <span style="font-size:10px;color:#7FA3F2;font-weight:700">○ PROPOSED</span><span style="font-size:11px;color:#C9C9D4;flex:1">Task: check Vercel invoice</span><span style="font-size:11px;color:#6FD69A">✓</span><span style="font-size:11px;color:#9A9AA8;padding-left:6px">✕</span>
+            </div>
+          </div>
+          <!-- afternoon compress -->
+          <div style="display:flex;align-items:center;gap:8px;padding:0 4px;margin-top:10px"><span style="font-family:'DM Mono',monospace;font-size:9px;color:#5A6672;width:34px">2–4</span><span style="flex:1;height:1px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 4px,transparent 4px 9px)"></span><span style="font-size:10px;color:#9A9AA8">errands · nothing to file</span></div>
+          <div style="background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.12);border-radius:15px;padding:11px 13px;margin-top:10px;display:flex;align-items:center;gap:9px">
+            <span style="font-size:12px">◌</span><span style="font-size:11px;color:#9A9AA8;line-height:1.5;flex:1">Quiet since 4:10 — Halo is on and 3 min behind. A calm day, not a broken one.</span>
+          </div>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:36px;background:linear-gradient(transparent,#0A0C12)"></div>
+        </div>
+      </div>
+      <div style="width:300px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55"><b style="color:#F4F4F6">Silence compresses to a labelled hairline</b> — the hours stay on the clock rail so the day keeps its shape, with a reason on each ("worn since 7:04", "errands"). Absence of episodes ≠ absence of Halo.</div>
+    </div>
+    <div style="flex:1;min-width:340px;background:#14141A;border:1px solid #24242E;border-radius:16px;padding:20px 24px;align-self:flex-start">
+      <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.12em;color:#4FC7C7;margin-bottom:12px">THE FOUR DAY QUESTIONS, RULED</div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:12px;color:#C9C9D4;line-height:1.6">
+        <div><b style="color:#F4F4F6">Empty hours</b> — a dashed hairline with the hour range and a stated reason. Never removed from the rail, never a spinner, never bare. The end-of-day quiet card says the state in words: "on and 3 min behind."</div>
+        <div><b style="color:#F4F4F6">The bookmark is the loudest thing on the surface</b> — amber ⚑ chip, amber border, "YOU MARKED THIS", and the quote is <i>your words verbatim</i>, not Cue's summary. It's the only human signal in the stream, so nothing Cue inferred may outrank it visually.</div>
+        <div><b style="color:#F4F4F6">A proposal reads as a proposal</b> — the ○ PROPOSED chip on a blue-tinted inset, ✓ accepts (files it, chip becomes the filed provenance pill), ✕ dismisses (one gesture, undo toast, and it teaches). Nothing from Halo lands in HQ un-accepted while the default mode is <i>proposes</i>.</div>
+        <div><b style="color:#F4F4F6">Wrong ones</b> — ✕ on the proposal, swipe-archive on the episode; both reuse existing gestures (`swipe-archive-row`, `undo-toast`). Dismissals feed the same sender/pattern learning as the valve's ✕.</div>
+      </div>
+      <div style="border-top:1px solid #24242E;margin-top:13px;padding-top:12px;font-size:12px;color:#9A9AA8;line-height:1.6"><b style="color:#F4F4F6">Decision 2 · a new surface, not a Today mode.</b> A day has a clock-shape Today doesn't; forcing episodes into Today's lane grammar loses the silence, and the silence is half the honesty. Reached from the card ("Open the Day ›") and swipeable between dates. It <i>feeds</i> Today — accepted proposals appear there like any other work.</div>
+    </div>
+  </div>
+
+  <!-- H4 · CAPTURE DETAIL -->
+  <div style="font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#7FA3F2;margin:20px 0 14px" id="H4">H4 · A capture, opened — and where delete means it</div>
+  <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px">
+    <div style="width:300px">
+      <div style="box-sizing:border-box;width:300px;height:640px;background:#0A0C12;border-radius:30px;border:1px solid #1D1D26;padding:22px 16px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:9px;padding:0 4px"><span style="font-size:15px;color:#9A9AA8">‹ Day</span><div style="flex:1"></div><span style="font-size:13px;color:#9A9AA8">⋯</span></div>
+        <div style="padding:0 4px;margin-top:12px">
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:#9A9AA8">10:12–10:52 · ☕ WITH DANA · SYNCED 10:54</div>
+          <div style="font-size:17px;font-weight:700;margin-top:5px;line-height:1.3">Acme renewal — landed on 24 months</div>
+        </div>
+        <!-- what cue took -->
+        <div style="background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:11px 13px;margin-top:12px">
+          <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#4FC7C7;margin-bottom:7px">WHAT CUE TOOK FROM IT</div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#C9C9D4;line-height:1.5">
+            <div>✓ <b style="color:#F4F4F6">Task filed</b> · one-pager by Thu → Renew Acme</div>
+            <div>○ <b style="color:#F4F4F6">Proposed</b> · memory: "Dana wants pricing via email only"　<span style="color:#6FD69A">✓</span> <span style="color:#9A9AA8">✕</span></div>
+            <div style="color:#9A9AA8">👤 Dana's page updated · <span style="color:#7FA3F2">view ›</span></div>
+          </div>
+        </div>
+        <!-- transcript -->
+        <div style="flex:1;overflow:hidden;position:relative;margin-top:12px">
+          <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#9A9AA8;padding:0 4px">TRANSCRIPT</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;padding:0 4px">
+            <div style="font-size:11.5px;line-height:1.55;color:#C9C9D4"><b style="color:#7FA3F2">Dana</b> — If the floor holds at 47 I can take 24 months to my side this week.</div>
+            <div style="font-size:11.5px;line-height:1.55;color:#C9C9D4"><b style="color:#6FD69A">You</b> — It holds. I'll get you the one-pager before Thursday.</div>
+            <div style="background:rgba(224,166,75,.08);border-left:2px solid #E0A64B;border-radius:6px;padding:7px 9px;font-size:11.5px;line-height:1.55;color:#C9C9D4"><span style="font-size:9px;color:#E0A64B;font-weight:700">⚑ 10:31</span><br><b style="color:#6FD69A">You</b> — Also remind me to check whether the Vercel bill doubled.</div>
+            <div style="font-size:11.5px;line-height:1.55;color:#5A6672;font-style:italic">…crosstalk Cue couldn't attribute (2 min) — kept as audio? No: discarded per your retention setting.</div>
+          </div>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:32px;background:linear-gradient(transparent,#0A0C12)"></div>
+        </div>
+        <button style="background:rgba(229,103,91,.1);color:#E5675B;border:1px solid rgba(229,103,91,.3);border-radius:13px;padding:12px;font-size:13px;font-weight:600;font-family:inherit;margin-top:10px">Delete this capture</button>
+      </div>
+      <div style="width:300px;font-size:11.5px;color:#9A9AA8;margin-top:8px;line-height:1.55">Delete confirm states the full blast radius: <b style="color:#F4F4F6">"Removes the transcript and anything not yet accepted. The 2 filed items stay unless you remove them too."</b> Audio is already gone (retention default) — the sheet says so instead of implying there's audio to delete.</div>
+    </div>
+    <div style="flex:1;min-width:340px;background:#14141A;border:1px solid #24242E;border-radius:16px;padding:20px 24px;align-self:flex-start">
+      <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.12em;color:#4FC7C7;margin-bottom:12px">DETAIL RULES</div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:12px;color:#C9C9D4;line-height:1.6">
+        <div><b style="color:#F4F4F6">Extractions above transcript</b> — "what Cue took from it" is the point of the surface; the words are the evidence. Each extraction carries its state (filed ✓ / proposed ○) and its destination, tappable.</div>
+        <div><b style="color:#F4F4F6">No transcript editor</b> (per the brief) — corrections happen on the proposal. The unattributable-crosstalk line is drawn so the surface can say "couldn't attribute" honestly instead of guessing a speaker.</div>
+        <div><b style="color:#F4F4F6">Bookmarks in the transcript</b> use the same amber left-border treatment as the Day — one grammar for "you marked this" everywhere.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- H5 · STATES -->
+  <div style="font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#7FA3F2;margin:20px 0 14px" id="H5">H5 · The ten states — each a card shape, none a toast</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;max-width:1260px;margin-bottom:14px">
+    <div style="background:#0D0F14;border:1px solid #1D1D26;border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#9A9AA8;margin-bottom:6px">NEVER PAIRED</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">"Have a Halo? Set it up in two minutes." — the setup door on the same card slot, dashed border, never an error tint.</div></div>
+    <div style="background:#0D0F14;border:1px solid #1D1D26;border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#7FA3F2;margin-bottom:6px">OUT OF RANGE</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">"Away from your phone — <b style="color:#F4F4F6">still recording.</b> Syncs when you're back." Blue info tint. The buffer is a feature; the copy says so.</div></div>
+    <div style="background:#0D0F14;border:1px solid #1D1D26;border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#7FA3F2;margin-bottom:6px">SYNC BEHIND</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">"38 min behind · catching up" + a moving progress hairline. The number must visibly shrink — movement is the reassurance.</div></div>
+    <div style="background:#0D0F14;border:1px solid rgba(224,166,75,.3);border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#E0A64B;margin-bottom:6px">BONDED ELSEWHERE</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">"This Halo is linked to another phone." Recovery = red button + device name typed + "erases what it hasn't sent." Never a default style.</div></div>
+    <div style="background:#0D0F14;border:1px solid #1D1D26;border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#E0A64B;margin-bottom:6px">BATTERY LOW</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">At 20%, on the card: "~2h left — charge tonight." At 5% a push (counts against the budget). Never first heard at 2%.</div></div>
+    <div style="background:#0D0F14;border:1px solid rgba(224,166,75,.3);border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#E0A64B;margin-bottom:6px">STORAGE FULL</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">"Card is full — oldest <b style="color:#F4F4F6">already-synced</b> audio is removed first. Nothing unsynced is touched." States the deletion rule before it runs.</div></div>
+    <div style="background:#0D0F14;border:1px solid #1D1D26;border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#9A9AA8;margin-bottom:6px">PAUSED BY YOU</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">Whole card goes slate, no red anywhere: "Paused by you." Resume = the same single button. Cannot be left by accident — pausing never expires silently.</div></div>
+    <div style="background:#0D0F14;border:1px solid #1D1D26;border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#E5675B;margin-bottom:6px">BLUETOOTH DENIED</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">Full screen, not a toast: "iOS asks once. Settings → Cue → Bluetooth, then come back." Deep-link button + the manual path in words.</div></div>
+    <div style="background:#0D0F14;border:1px solid #1D1D26;border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#7FA3F2;margin-bottom:6px">TRANSCRIPTION UNAVAILABLE</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">"Your audio is safe on the phone — understanding is delayed." The couldn't-read grammar: a fact about the query, never rendered as an empty day.</div></div>
+    <div style="background:#0D0F14;border:1px solid #1D1D26;border-radius:14px;padding:13px 15px"><div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.1em;color:#6FD69A;margin-bottom:6px">NOTHING WORTH SURFACING</div><div style="font-size:12px;color:#C9C9D4;line-height:1.55">"A quiet one — worn 9h, nothing needed filing." Calm ◌ glyph, green-tinted label. A product position: quiet is success, not failure.</div></div>
+  </div>
+
+  <!-- RULINGS -->
+  <div style="max-width:1260px;background:#14141A;border:1px solid #24242E;border-radius:16px;padding:22px 26px">
+    <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;color:#6FD69A;margin-bottom:13px">THE FIVE DECISIONS OWED</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;font-size:12.5px;color:#9A9AA8;line-height:1.62">
+      <div><b style="color:#F4F4F6">1 · Card lives in both</b> — one component, `context` prop. Today shows it while active or needing attention; You → Devices always. Agreed with the recommendation.</div>
+      <div><b style="color:#F4F4F6">2 · The Day is a new surface</b>, reached from the card and swipeable between dates. A day has a clock-shape Today doesn't, and compressing silence is half the honesty. It feeds Today; it doesn't replace it. No fifth tab.</div>
+      <div><b style="color:#F4F4F6">3 · Parked-and-propose default.</b> Matches screen observation and the valve's fail-open philosophy: the wearer's trust is earned by the ○→✓ loop, not assumed. "Acts on the obvious" is offered at step 6 and honoured per-capture with the same provenance pills.</div>
+      <div><b style="color:#F4F4F6">4 · Transcribe-and-discard default.</b> Matches the frame pipeline. The capture detail says "audio discarded per your retention setting" so delete never over-promises. Keeping audio is an explicit switch in You → Devices → Halo, off by default.</div>
+      <div><b style="color:#F4F4F6">5 · Privacy indicator:</b> in-app the recording state is always visible (card pulse + Live Activity + Island dot). The device's own light is hardware's call — but the phone never claims more privacy than the device delivers, which is why every recording state uses the reserved red and the word "recording", never a euphemism.</div>
+      <div><b style="color:#F4F4F6">Phase A honesty, placed:</b> the cloud-transit fact lives on the promise screen (step 2) and in You → Devices → Halo → "How audio travels", not buried in settings. When B ships, the line disappears and the changelog says why that's better.</div>
+    </div>
+    <div style="border-top:1px solid #24242E;margin-top:16px;padding-top:14px;font-size:12.5px;color:#9A9AA8;line-height:1.65"><b style="color:#F4F4F6">Inherited invariants:</b> never fake a number (the lag is real or absent, never "up to date" as a guess) · nothing files without acceptance while in <i>proposes</i> mode · ✕ teaches · reserved red `#E5675B` = recording only · amber = the bookmark and destructive warnings · push budget shared — Halo battery/sync alerts replace, never double.</div>
+  </div>
+
+</div>
+</x-dc>
+
+
+</body></html>
