@@ -394,6 +394,107 @@ function countRecentNoResponseFailures(missionId: string): number {
   return count;
 }
 
+/**
+ * Words too common to carry meaning when comparing two task titles.
+ *
+ * Kept deliberately small. A long stopword list starts deleting the words that
+ * distinguish tasks ("review" vs "draft" vs "send"), which is the opposite of
+ * what this is for.
+ */
+const TITLE_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "the",
+  "of",
+  "for",
+  "to",
+  "in",
+  "on",
+  "with",
+  "from",
+  "at",
+  "by",
+  "or",
+  "is",
+  "are",
+  "be",
+  "this",
+  "that",
+  "then",
+  "next",
+  "steps",
+]);
+
+/** Significant lowercase word set for a title, punctuation stripped. */
+function titleTokens(title: string): Set<string> {
+  return new Set(
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 1 && !TITLE_STOPWORDS.has(w)),
+  );
+}
+
+/**
+ * Jaccard overlap of two titles' significant words, 0..1.
+ *
+ * Exported so its tests exercise this function rather than a re-declared copy
+ * of the formula, which would drift.
+ */
+export function titleOverlap(a: string, b: string): number {
+  const ta = titleTokens(a);
+  const tb = titleTokens(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let shared = 0;
+  for (const w of ta) if (tb.has(w)) shared++;
+  return shared / (ta.size + tb.size - shared);
+}
+
+/**
+ * Overlap above which two titles are treated as the same piece of work.
+ *
+ * Calibrated against the case that motivated this. Production planned:
+ *   "Review Ghita's shared folders and prepare summary of key documents for
+ *    AEF Fund"                                            (2026-08-10)
+ *   "Review Ghita's shared folders and prepare a concise summary of key
+ *    documents for AEF Fund"                              (2026-08-30)
+ * — the same work, three weeks apart, differing by two words. They score 0.91.
+ * An exact-match check would have missed it entirely, which is why this is a
+ * similarity and not an equality.
+ *
+ * 0.8 is high enough that two genuinely different tasks essentially cannot
+ * reach it: they would have to share four of every five significant words.
+ */
+const DUPLICATE_TITLE_OVERLAP = 0.8;
+
+/**
+ * An existing open item that is already this piece of work, if there is one.
+ *
+ * The planner is TOLD not to re-plan open items, and that instruction is only
+ * as good as the list attached to it — which is capped, so anything past the
+ * cap is invisible to it. A prompt cannot be the only defence against
+ * duplication; this is the one that does not depend on the model reading a
+ * complete list.
+ *
+ * `awaiting_review` counts as open on purpose. That status is what made the
+ * original duplication possible: work that is finished but unreviewed shows no
+ * result, so it reads as never-done from the planner's side.
+ */
+function findExistingEquivalentItem(
+  projectId: string,
+  title: string,
+): WorkItem | undefined {
+  return listWorkItems({ projectId, includeUnComprehended: true }).find(
+    (item) =>
+      (item.status === "queued" ||
+        item.status === "running" ||
+        item.status === "awaiting_review") &&
+      titleOverlap(item.title, title) >= DUPLICATE_TITLE_OVERLAP,
+  );
+}
+
 function assessMission(mission: Mission): AssessedState {
   const profile = getCompanyProfile();
   const mode: MissionMode = mission.mode ?? profile.workspaceMode;
@@ -1067,13 +1168,35 @@ export class MissionOrchestrator {
             listAgents().map((a) => [a.name.toLowerCase(), a.name]),
           );
           for (const planItem of plan.items) {
-            const assignee = planItem.assignee
-              ? rosterByLower.get(planItem.assignee.toLowerCase())
-              : undefined;
-            const projectId =
+            const targetProjectId =
               planItem.projectId && validProjectIds.has(planItem.projectId)
                 ? planItem.projectId
                 : fallbackProjectId;
+            // Structural duplicate check, independent of the prompt. See
+            // `findExistingEquivalentItem` — the planner's "do NOT re-plan
+            // these" list is capped, so the model cannot be the only thing
+            // preventing this.
+            const existing = findExistingEquivalentItem(
+              targetProjectId,
+              planItem.title,
+            );
+            if (existing) {
+              recordMissionEvent({
+                missionId: mission.id,
+                kind: "checkpoint",
+                cycleId,
+                payload: {
+                  note: "skipped an item that duplicates existing open work",
+                  planned: truncate(planItem.title, 200),
+                  existingWorkItemId: existing.id,
+                  existingStatus: existing.status,
+                },
+              });
+              continue;
+            }
+            const assignee = planItem.assignee
+              ? rosterByLower.get(planItem.assignee.toLowerCase())
+              : undefined;
             const template = planItem.notes ?? planItem.title;
             // Mirrors the quick-add route: work_items.taskId needs a real
             // tasks row, so mint a lightweight template per item.
@@ -1094,7 +1217,7 @@ export class MissionOrchestrator {
               ...(planItem.notes ? { notes: planItem.notes } : {}),
               ...(requiredTools ? { requiredTools } : {}),
               ...(assignee ? { assignee } : {}),
-              projectId,
+              projectId: targetProjectId,
               sourceType: "mission",
               sourceId: mission.id,
               sourceContext: JSON.stringify({
@@ -1114,7 +1237,7 @@ export class MissionOrchestrator {
               cycleId,
               payload: {
                 workItemId: item.id,
-                projectId,
+                targetProjectId,
                 title: truncate(planItem.title, 200),
                 mode: state.mode,
               },
