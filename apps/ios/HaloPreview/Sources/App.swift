@@ -5,7 +5,15 @@ import HaloKit
 @main
 struct HaloPreviewApp: App {
     var body: some Scene {
-        WindowGroup { Switcher() }
+        WindowGroup {
+            // HALO_SURFACE=walk opens the guided click-through; anything else
+            // opens the surface switcher for working on one screen at a time.
+            if ProcessInfo.processInfo.environment["HALO_SURFACE"] == "walk" {
+                Walkthrough()
+            } else {
+                Switcher()
+            }
+        }
     }
 }
 
