@@ -48,6 +48,12 @@ export interface Customer {
    * events for this customer's workspace only dispatch when enabled.
    */
   slackEnabled: number;
+  /**
+   * Argon2id hash of a direct sign-in password, or null (the norm — Cue is
+   * magic-link only). Set only for accounts that must sign in without a
+   * mailbox; see migration 9. Never serialized into an HTTP response.
+   */
+  signinPasswordHash: string | null;
 }
 
 /**
@@ -439,6 +445,21 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
       )
     `,
   },
+  {
+    version: 9,
+    name: "signin-password",
+    // Direct password sign-in for accounts that cannot use a mailbox.
+    //
+    // Cue is magic-link only by design and stays that way: this column is
+    // NULL for every ordinary customer, and /signin behaves exactly as
+    // before for them. It exists because App Review rejected the app twice
+    // under Guideline 2.1 — a reviewer has no access to the demo account's
+    // inbox, reads only the User Name / Password fields in App Store
+    // Connect, and (per Apple) will not follow instructions to act outside
+    // the app. An account with a hash set is asked for a password instead
+    // of being emailed a link.
+    sql: `ALTER TABLE customers ADD COLUMN signinPasswordHash TEXT`,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -563,6 +584,7 @@ export class HqDb {
       checkoutSessionId: null,
       checkoutSessionAt: null,
       slackEnabled: 0,
+      signinPasswordHash: null,
     };
     this.db.run(
       "INSERT INTO customers (id, email, name, status, plan, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
@@ -1309,6 +1331,29 @@ export class HqDb {
       )
       .get(code);
     return row?.total ?? 0;
+  }
+
+  // ── Direct password sign-in (migration 9) ─────────────────────────────
+
+  /**
+   * Set or clear a customer's direct sign-in password hash. Pass null to
+   * take the password away and return the account to magic-link only.
+   *
+   * The hash itself is never logged or echoed — the audit event records
+   * only whether a password now exists, which is the operationally useful
+   * fact and the one an operator needs to see in the ledger.
+   */
+  setCustomerSigninPasswordHash(id: string, hash: string | null): Customer {
+    const customer = this.getCustomer(id);
+    if (!customer) throw new Error(`Unknown customer: ${id}`);
+    this.db.run("UPDATE customers SET signinPasswordHash = ? WHERE id = ?", [
+      hash,
+      id,
+    ]);
+    this.recordEvent("customer_signin_password_changed", id, {
+      hasPassword: hash !== null,
+    });
+    return { ...customer, signinPasswordHash: hash };
   }
 
   // ── Slack channel (WS4) ───────────────────────────────────────────────

@@ -446,6 +446,36 @@
         </div>
       </section>
 
+      <!-- A2 · Password — only for accounts that have one (HQ answers
+           "password_required"). No ordinary customer ever reaches this. -->
+      <section class="screen bottom" data-screen="password">
+        <div class="bg-layer" data-par="far" aria-hidden="true"><div class="aurora top"></div></div>
+        <div data-par="near" aria-hidden="true" style="position:absolute;top:22%;left:50%;z-index:0;">
+          <div class="system idle">
+            <span class="orbit-ring" style="top:-78px;left:-78px;width:156px;height:156px"></span>
+            <div class="core" style="top:-44px;left:-44px;width:88px;height:88px">
+              <span class="core-glow" style="inset:-18px;filter:blur(14px)"></span>
+              <svg class="ring-svg" width="88" height="88" viewBox="0 0 512 512" style="position:relative"><circle class="ring-arc" cx="232" cy="256" r="150" transform="rotate(42 232 256)"/><circle class="ring-dot" cx="392" cy="372" r="32"/></svg>
+            </div>
+          </div>
+        </div>
+        <div class="sheet" aria-hidden="true"></div>
+        <div class="card">
+          <div class="rise1">
+            <h1>One more thing.</h1>
+            <p class="sub">This Cue signs in with a password. Enter it and we'll take you straight there.</p>
+          </div>
+          <form class="field rise2" id="password-form" novalidate>
+            <label for="password">Password</label>
+            <input class="input" id="password" type="password" autocomplete="current-password"
+              autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Your password" />
+            <p id="password-error"></p>
+            <button class="btn" id="password-go" type="submit">Sign in<span class="sheen"></span></button>
+            <div class="linkrow"><button type="button" class="link" data-goto="signin">← Back to email sign-in</button></div>
+          </form>
+        </div>
+      </section>
+
       <!-- B · Check email — your link is a comet -->
       <section class="screen" data-screen="check">
         <div class="bg-layer" data-par="far" aria-hidden="true"><div class="aurora mid"></div></div>
@@ -813,11 +843,25 @@
 
         // ---- email sign-in --------------------------------------------
         var lastEmail = "";
-        function sendLink(email) {
+        // POST /signin. Without a password this asks HQ to email a link; HQ
+        // answers `password_required` instead for the rare account that has
+        // a password (one with no reachable mailbox — see hq migration 9),
+        // and `password_ok` + a token once that password checks out. The
+        // token is the same one-time value the email would have carried, so
+        // resolveAndConnect handles it exactly as a tapped link.
+        function postSignin(email, password) {
+          var payload = password ? { email: email, password: password } : { email: email };
           return fetch(HQ + "/signin", {
             method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ email: email }),
-          }).then(function (r) { return r.ok; });
+            body: JSON.stringify(payload),
+          }).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (b) {
+              return { ok: r.ok, status: (b && b.status) || "", token: (b && b.token) || "" };
+            });
+          });
+        }
+        function sendLink(email) {
+          return postSignin(email, "").then(function (res) { return res.ok; });
         }
         // soft tick the moment the typed address first becomes valid
         var emailWasValid = false;
@@ -832,15 +876,48 @@
           el("signin-error").textContent = "";
           if (!isEmail(email)) { el("signin-error").textContent = "Enter a valid email address."; return; }
           var btn = el("signin-go"); btn.disabled = true; btn.firstChild.textContent = "Sending…";
-          sendLink(email).then(function (ok) {
+          postSignin(email, "").then(function (res) {
             btn.disabled = false; btn.firstChild.textContent = "Send sign-in link";
-            if (!ok) { el("signin-error").textContent = "Couldn't send the link. Try again."; return; }
-            lastEmail = email; el("check-email").textContent = email;
+            if (!res.ok) { el("signin-error").textContent = "Couldn't send the link. Try again."; return; }
+            lastEmail = email;
+            // This account uses a password — nothing was emailed, so don't
+            // send the user to a mailbox that will never receive anything.
+            if (res.status === "password_required") {
+              el("password").value = ""; el("password-error").textContent = "";
+              hLight(); show("password");
+              return;
+            }
+            el("check-email").textContent = email;
             hMedium();  // link sent — comet launched
             startResendCooldown(); show("check");
           }).catch(function () {
             btn.disabled = false; btn.firstChild.textContent = "Send sign-in link";
             el("signin-error").textContent = "You appear to be offline.";
+          });
+        });
+
+        // ---- password sign-in -----------------------------------------
+        el("password-form").addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          var pw = el("password").value;
+          el("password-error").textContent = "";
+          if (!pw) { el("password-error").textContent = "Enter your password."; return; }
+          var btn = el("password-go"); btn.disabled = true; btn.firstChild.textContent = "Signing in…";
+          postSignin(lastEmail, pw).then(function (res) {
+            btn.disabled = false; btn.firstChild.textContent = "Sign in";
+            if (res.status === "password_invalid") {
+              el("password-error").textContent = "That password didn't match. Try again.";
+              return;
+            }
+            if (!res.ok || !res.token) {
+              el("password-error").textContent = "Couldn't sign you in. Try again.";
+              return;
+            }
+            hSuccess();
+            resolveAndConnect(res.token);
+          }).catch(function () {
+            btn.disabled = false; btn.firstChild.textContent = "Sign in";
+            el("password-error").textContent = "You appear to be offline.";
           });
         });
 
@@ -878,11 +955,35 @@
             .replace(/\/.*$/, "")
             .replace(/[^a-z0-9-]/gi, "") || null;
         }
+        // What did they paste? Two kinds of sign-in link exist and they
+        // resolve completely differently:
+        //   instance — https://cue-you.justcue.app/?cueToken=<jwt>
+        //              the token is already that instance's; connect direct.
+        //   hq       — https://justcue.ai/auth?token=<one-time>
+        //              means nothing to an instance, and justcue.ai is not
+        //              one. It must be exchanged at HQ first.
+        // Without this split, parseCueSubdomain silently strips an HQ link
+        // down to "justcueai" and connects to justcueai.justcue.app — a host
+        // that does not exist. Anything else is treated as a bare address,
+        // which is what this field is nominally for.
+        function pasteKind(raw) {
+          var s = String(raw || "").trim();
+          if (!s) return "empty";
+          var host = s.replace(/^https?:\/\//i, "").split(/[/?#]/)[0].toLowerCase();
+          if (/(^|\.)justcue\.app$/.test(host)) return "instance";
+          if (tokenFromUrl(s)) return "hq";
+          return "address";
+        }
         el("manual-form").addEventListener("submit", function (ev) {
           ev.preventDefault();
           var raw = el("addr").value;
-          var sub = parseCueSubdomain(raw);
           el("manual-error").textContent = "";
+          // An HQ sign-in link pasted here is exchanged, not parsed as a
+          // host. This is the path App Review takes when handed a link.
+          if (pasteKind(raw) === "hq") {
+            hLight(); resolveAndConnect(tokenFromUrl(raw)); return;
+          }
+          var sub = parseCueSubdomain(raw);
           if (!sub) { el("manual-error").textContent = "Enter your Cue address."; return; }
           hLight();  // address complete
           // A whole sign-in link pasted here carries its own token, and
@@ -896,7 +997,7 @@
 
         // Pure helpers exposed for the regression test (see
         // capacitor-shell/connect-logic.test.ts). Not used by the UI.
-        window.CueShell = { isEmail: isEmail, withoutToken: withoutToken, parseCueSubdomain: parseCueSubdomain, tokenFromUrl: tokenFromUrl, nativePlugin: nativePlugin, syncViewport: syncViewport };
+        window.CueShell = { isEmail: isEmail, withoutToken: withoutToken, parseCueSubdomain: parseCueSubdomain, pasteKind: pasteKind, tokenFromUrl: tokenFromUrl, nativePlugin: nativePlugin, syncViewport: syncViewport };
 
         // ---- nav buttons ----------------------------------------------
         document.querySelectorAll("[data-goto]").forEach(function (b) {

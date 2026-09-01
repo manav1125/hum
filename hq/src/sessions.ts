@@ -1,9 +1,16 @@
 /**
  * Cue HQ — website sessions (the customer-facing /account surface).
  *
- * There are no passwords anywhere in the product: sign-in is an emailed
- * one-time link (`POST /signin` → email → `GET /auth?token=…`), which sets
- * a signed, httpOnly session cookie good for 30 days.
+ * Sign-in is an emailed one-time link (`POST /signin` → email → `GET
+ * /auth?token=…`), which sets a signed, httpOnly session cookie good for
+ * 30 days. That is how every ordinary customer gets in, and the only way
+ * they can: no customer has a password.
+ *
+ * The one exception is an account that cannot reach a mailbox at all —
+ * today that means the App Review demo account. Such an account carries an
+ * argon2id hash in `customers.signinPasswordHash` (migration 9) and is
+ * asked for a password instead of being emailed a link. The hash-verify
+ * helpers for that path are at the bottom of this file.
  *
  * Two token kinds live here:
  *   - one-time sign-in tokens: 32 random bytes, stored as a SHA-256 hash
@@ -42,6 +49,41 @@ export function generateSigninToken(): string {
 /** The stored form of a sign-in token. */
 export function hashSigninToken(rawToken: string): string {
   return createHash("sha256").update(rawToken).digest("hex");
+}
+
+// ── direct sign-in passwords (the mailbox-less exception) ────────────────
+
+/** Shortest password we will store. Long enough that argon2id is not the
+ *  only thing standing between an account and a guess. */
+export const MIN_SIGNIN_PASSWORD_LENGTH = 12;
+
+/**
+ * Hash a direct sign-in password (argon2id, Bun's default parameters).
+ * Throws on a password below the minimum length so a weak one can never be
+ * written by an operator typo.
+ */
+export async function hashSigninPassword(password: string): Promise<string> {
+  if (password.length < MIN_SIGNIN_PASSWORD_LENGTH) {
+    throw new Error(
+      `password must be at least ${MIN_SIGNIN_PASSWORD_LENGTH} characters`,
+    );
+  }
+  return Bun.password.hash(password, { algorithm: "argon2id" });
+}
+
+/**
+ * Verify a password against a stored hash. Never throws: a malformed or
+ * truncated hash returns false rather than 500-ing the sign-in route.
+ */
+export async function verifySigninPassword(
+  password: string,
+  hash: string,
+): Promise<boolean> {
+  try {
+    return await Bun.password.verify(password, hash);
+  } catch {
+    return false;
+  }
 }
 
 // ── stateless signed session cookie ──────────────────────────────────────

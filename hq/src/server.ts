@@ -133,11 +133,13 @@ import {
   SIGNIN_TOKEN_TTL_MS,
   customerIdFromRequest,
   generateSigninToken,
+  hashSigninPassword,
   hashSigninToken,
   isSessionConfigured,
   mintSessionValue,
   originAllowed,
   sessionSetCookieHeader,
+  verifySigninPassword,
 } from "./sessions.js";
 import { canonicalHostRedirect, resolveSiteDir, serveSite } from "./site.js";
 import {
@@ -606,7 +608,7 @@ export function createHandler(
         }
 
         const customerAction = path.match(
-          /^\/admin\/customers\/([^/]+)\/(invite|provision|checkout|magic-link|topup|credits|slack-install-link|slack-toggle)$/,
+          /^\/admin\/customers\/([^/]+)\/(invite|provision|checkout|magic-link|topup|credits|slack-install-link|slack-toggle|signin-password)$/,
         );
         if (customerAction) {
           const [, customerId, action] = customerAction;
@@ -631,6 +633,9 @@ export function createHandler(
           }
           if (action === "slack-toggle") {
             return handleSlackToggle(customer, req);
+          }
+          if (action === "signin-password") {
+            return handleSigninPassword(customer, req);
           }
           return json({ error: "not found" }, 404);
         }
@@ -935,6 +940,41 @@ export function createHandler(
       applied: result.applied,
       balance: result.balance,
     });
+  }
+
+  /**
+   * POST /admin/customers/:id/signin-password — set or clear a direct
+   * sign-in password. Body: `{ password }` to set, `{ password: null }` to
+   * clear and return the account to magic-link only.
+   *
+   * This exists for accounts with no reachable mailbox — the App Store
+   * review account above all. It is deliberately admin-only and has no
+   * self-service counterpart: a customer cannot give themselves a password,
+   * so the passwordless story holds for everyone who signs up.
+   *
+   * The password is never echoed back, not even to the operator who just
+   * set it; the response reports only that one now exists.
+   */
+  async function handleSigninPassword(
+    customer: Customer,
+    req: Request,
+  ): Promise<Response> {
+    const body = await readJsonBody(req);
+    if (body.password === null) {
+      db.setCustomerSigninPasswordHash(customer.id, null);
+      return json({ ok: true, hasPassword: false });
+    }
+    if (typeof body.password !== "string") {
+      return json({ error: "password must be a string, or null to clear" }, 400);
+    }
+    let hash: string;
+    try {
+      hash = await hashSigninPassword(body.password);
+    } catch (err) {
+      return json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+    db.setCustomerSigninPasswordHash(customer.id, hash);
+    return json({ ok: true, hasPassword: true });
   }
 
   async function handleMagicLink(customer: Customer): Promise<Response> {
@@ -1441,7 +1481,43 @@ export function createHandler(
     if (!email || !email.includes("@")) {
       return json({ error: "email is required" }, 400);
     }
+    const password = typeof body.password === "string" ? body.password : "";
     const customer = db.getCustomerByEmail(email);
+
+    // Accounts with a password (migration 9) never get an email: they have
+    // no mailbox to read it in. Answer in two steps so the client can show a
+    // password field only when there is one to satisfy — every other address
+    // falls through to the unchanged link flow below.
+    if (customer?.signinPasswordHash) {
+      if (!password) {
+        db.recordEvent("signin_password_required", customer.id, {});
+        return json({ ok: true, status: "password_required" });
+      }
+      const valid = await verifySigninPassword(
+        password,
+        customer.signinPasswordHash,
+      );
+      if (!valid) {
+        db.recordEvent("signin_password_rejected", customer.id, {});
+        return json(
+          { ok: false, status: "password_invalid", error: "Incorrect password" },
+          401,
+        );
+      }
+      // Same one-time token the email would have carried, handed back
+      // directly instead. The client feeds it to GET /auth exactly as a
+      // link would, so everything downstream is the established path.
+      const raw = generateSigninToken();
+      db.createSigninToken({
+        customerId: customer.id,
+        tokenHash: hashSigninToken(raw),
+        ttlMs: SIGNIN_TOKEN_TTL_MS,
+      });
+      db.purgeExpiredSigninTokens();
+      db.recordEvent("signin_password_accepted", customer.id, {});
+      return json({ ok: true, status: "password_ok", token: raw });
+    }
+
     if (customer) {
       const raw = generateSigninToken();
       db.createSigninToken({

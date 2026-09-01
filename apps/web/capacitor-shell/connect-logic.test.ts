@@ -155,6 +155,38 @@ describe("mobile connect shell — pure logic", () => {
     expect(C.tokenFromUrl("cue-you")).toBeNull();
   });
 
+  test("tells an HQ sign-in link apart from an instance link", () => {
+    // 1.0 was rejected a SECOND time under 2.1. Part of why: the only link
+    // short enough to fit App Store Connect's 100-char password field is an
+    // HQ one (justcue.ai/auth?token=<64 hex>), and pasting that here used to
+    // be silently wrong — parseCueSubdomain strips it to "justcueai" and
+    // connects to justcueai.justcue.app, a host that does not exist. An HQ
+    // link has to be exchanged at HQ, so it must classify as "hq".
+    expect(C.pasteKind("https://justcue.ai/auth?token=" + "a".repeat(64))).toBe(
+      "hq",
+    );
+    expect(C.pasteKind("justcue.ai/auth?token=abc123")).toBe("hq");
+
+    // An instance link still connects straight to the instance.
+    expect(
+      C.pasteKind("https://cue-app-review-1d647c14.justcue.app/?cueToken=a.b.c"),
+    ).toBe("instance");
+    expect(C.pasteKind("cue-you.justcue.app")).toBe("instance");
+
+    // A bare address is still just an address, and empty is empty.
+    expect(C.pasteKind("cue-you")).toBe("address");
+    expect(C.pasteKind("")).toBe("empty");
+    expect(C.pasteKind("   ")).toBe("empty");
+  });
+
+  test("an HQ link never gets mangled into a bogus instance host", () => {
+    // The specific silent failure, pinned: if this ever classifies as
+    // anything but "hq", the shell connects to a host that does not exist.
+    const hq = "https://justcue.ai/auth?token=deadbeef";
+    expect(C.parseCueSubdomain(hq)).toBe("justcueai"); // what it WOULD do
+    expect(C.pasteKind(hq)).toBe("hq"); // why we never let it
+  });
+
   test("strips the one-time token before remembering the instance", () => {
     expect(
       C.withoutToken(
