@@ -85,8 +85,35 @@ const log = getLogger("mission-orchestrator");
 /** How often the scheduler sweeps for due missions. */
 const SWEEP_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
-/** The planning LLM call must not dawdle — a cycle is background work. */
-const PLAN_TIMEOUT_MS = 30_000;
+/**
+ * Wall-clock budget for the planning call.
+ *
+ * This was 30s, on the reasoning that "a cycle is background work" so the call
+ * must not dawdle. That has the asymmetry backwards, and it cost the mission
+ * every cycle it tried to run: background work is precisely what CAN afford to
+ * wait, because nobody is watching a clock. A cycle fires on a daily cadence
+ * and the sweep that starts it runs every 15 minutes.
+ *
+ * Meanwhile the call site is `conversationTitle`, which resolves to a
+ * reasoning model, and the planner hands it up to 20 open work items plus the
+ * brief and the linked projects. The relevance gate measured a comparable
+ * 20-item batch against this same model at 3,147 completion tokens and
+ * **61 seconds** (see MAX_JUDGE_BATCH in arrivals/arrival-gate.ts). So the
+ * budget was under half the measured need.
+ *
+ * Production showed the consequence exactly: cycle_started 08:01:30, error
+ * 08:02:00 — thirty seconds to the millisecond, then "planner produced no
+ * parseable plan". The plan was never unparseable. It was never finished.
+ * No amount of parser tolerance can recover a response that does not exist,
+ * which is why the tolerant parse shipped earlier did not fix this.
+ *
+ * 150s is the measured 61s with room for a slower day, and still an order of
+ * magnitude inside the sweep interval, so a slow cycle cannot collide with the
+ * next one. The gate the relevance judge chose instead — shrinking the batch —
+ * is wrong here: a planner that sees only part of its mission's open work
+ * plans against a picture it knows is incomplete.
+ */
+const PLAN_TIMEOUT_MS = 150_000;
 
 /** Never enqueue more than this many items from one cycle. */
 const MAX_ITEMS_PER_CYCLE = 5;
@@ -424,9 +451,33 @@ export function buildMissionPlanPrompt(state: AssessedState): string {
     }
   }
   if (state.openItems.length > 0) {
+    // The list is capped, and a capped denylist is a trap: everything past
+    // the cap is invisible to "do NOT re-plan these", so the planner re-plans
+    // it in good faith. Production did exactly that — a mission with 35 open
+    // items re-planned "Review Ghita's shared folders" three weeks after the
+    // first one had already run and been sitting in awaiting_review.
+    //
+    // Two changes make the cap honest. Items already awaiting review sort
+    // first, because they are the ones most easily mistaken for undone work:
+    // they carry no visible result, so a planner that cannot see them
+    // concludes nothing has happened. And the count of what was omitted is
+    // stated, so the model knows the list is partial rather than complete.
+    const PROMPT_OPEN_ITEM_LIMIT = 20;
+    const byReviewFirst = [...state.openItems].sort((a, b) => {
+      const aWaiting = a.status === "awaiting_review" ? 0 : 1;
+      const bWaiting = b.status === "awaiting_review" ? 0 : 1;
+      return aWaiting - bWaiting;
+    });
+    const shown = byReviewFirst.slice(0, PROMPT_OPEN_ITEM_LIMIT);
+    const omitted = state.openItems.length - shown.length;
     lines.push("Open work items (do NOT re-plan these):");
-    for (const item of state.openItems.slice(0, 20)) {
+    for (const item of shown) {
       lines.push(`  - [${item.status}] ${truncate(item.title, 120)}`);
+    }
+    if (omitted > 0) {
+      lines.push(
+        `  ...and ${omitted} more open item(s) not listed. This list is PARTIAL — do not treat an absent title as evidence the work has not been done. When in doubt, plan nothing rather than risk duplicating existing work.`,
+      );
     }
   }
   if (state.finishedItems.length > 0) {
