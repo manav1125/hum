@@ -71,7 +71,7 @@ export function blockedItemKey(
   return `mission-blocked:${missionId}:${kind}`;
 }
 
-/** An already-open surfaced item for this exact reason, if there is one. */
+/** An already-open surfaced item for this mission and kind, if there is one. */
 function findOpenSurfaced(sourceId: string): WorkItem | undefined {
   // `includeUnComprehended` is on: this is orchestration reasoning about what
   // exists, not a list being rendered, and a surfaced item must never be
