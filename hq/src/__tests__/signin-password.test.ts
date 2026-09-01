@@ -210,6 +210,52 @@ describe("direct password sign-in", () => {
     expect(s.resendCalls).toHaveLength(1);
   });
 
+  test("repeated wrong guesses are throttled before the hash is even checked", async () => {
+    const s = setup();
+    // A distinct address per run: the throttle map is process-local and
+    // shared across tests in this file.
+    const email = "throttled@example.com";
+    await withPassword(s, email);
+
+    const guess = () =>
+      s.post("/signin", { email, password: "not-the-password" });
+
+    for (let i = 0; i < 5; i++) {
+      expect((await guess()).status).toBe(401);
+    }
+    // Sixth attempt is refused outright.
+    const blocked = await guess();
+    expect(blocked.status).toBe(429);
+    const body = (await blocked.json()) as { status: string };
+    expect(body.status).toBe("password_throttled");
+    expect(Number(blocked.headers.get("Retry-After"))).toBeGreaterThan(0);
+
+    // And the throttle holds even against the CORRECT password — it is a
+    // lockout, not a "wrong answers only" filter.
+    const right = await s.post("/signin", { email, password: PASSWORD });
+    expect(right.status).toBe(429);
+  });
+
+  test("a successful sign-in clears the failure count", async () => {
+    const s = setup();
+    const email = "recovers@example.com";
+    await withPassword(s, email);
+
+    for (let i = 0; i < 4; i++) {
+      await s.post("/signin", { email, password: "wrong" });
+    }
+    // Correct password before the 5th failure: allowed, and resets.
+    expect((await s.post("/signin", { email, password: PASSWORD })).status).toBe(
+      200,
+    );
+    // So four more wrong guesses still do not lock the account out.
+    for (let i = 0; i < 4; i++) {
+      expect((await s.post("/signin", { email, password: "wrong" })).status).toBe(
+        401,
+      );
+    }
+  });
+
   test("a too-short password is refused rather than stored weakly", async () => {
     const s = setup();
     const customer = s.db.createCustomer({

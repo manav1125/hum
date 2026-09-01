@@ -172,8 +172,50 @@ export interface ServerDeps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status });
+function json(
+  body: unknown,
+  status = 200,
+  headers?: Record<string, string>,
+): Response {
+  return Response.json(body, headers ? { status, headers } : { status });
+}
+
+// ── password-attempt throttle ────────────────────────────────────────────
+//
+// In-memory, per-email, and deliberately small. HQ is a single machine, so
+// a process-local map is the honest scope: it is not a distributed rate
+// limiter and does not pretend to be. It exists to stop the one public
+// password-bearing address (the App Review account) from being used to burn
+// argon2id CPU on a process that also serves the marketing site.
+const PASSWORD_MAX_FAILURES = 5;
+const PASSWORD_LOCKOUT_MS = 15 * 60_000;
+const passwordAttempts = new Map<string, { fails: number; until: number }>();
+
+function passwordAttemptCheck(email: string): {
+  allowed: boolean;
+  retryAfterSeconds: number;
+} {
+  const rec = passwordAttempts.get(email.trim().toLowerCase());
+  if (!rec || Date.now() >= rec.until) return { allowed: true, retryAfterSeconds: 0 };
+  return {
+    allowed: false,
+    retryAfterSeconds: Math.ceil((rec.until - Date.now()) / 1000),
+  };
+}
+
+function passwordAttemptFailed(email: string): void {
+  const key = email.trim().toLowerCase();
+  const rec = passwordAttempts.get(key) ?? { fails: 0, until: 0 };
+  rec.fails += 1;
+  if (rec.fails >= PASSWORD_MAX_FAILURES) {
+    rec.fails = 0;
+    rec.until = Date.now() + PASSWORD_LOCKOUT_MS;
+  }
+  passwordAttempts.set(key, rec);
+}
+
+function passwordAttemptSucceeded(email: string): void {
+  passwordAttempts.delete(email.trim().toLowerCase());
 }
 
 // The mobile app's WebView runs at a native origin (capacitor://localhost on
@@ -1493,17 +1535,38 @@ export function createHandler(
         db.recordEvent("signin_password_required", customer.id, {});
         return json({ ok: true, status: "password_required" });
       }
+      // Verifying is argon2id, which is expensive on purpose — and the one
+      // address that has a password is published to Apple, so it is public.
+      // Without a throttle, anyone who knows it can burn HQ's CPU (this
+      // process also serves the marketing site and checkout) by posting
+      // guesses. Note the ordering: the check happens BEFORE the hash
+      // comparison, so a blocked caller costs nothing.
+      const throttle = passwordAttemptCheck(email);
+      if (!throttle.allowed) {
+        db.recordEvent("signin_password_throttled", customer.id, {});
+        return json(
+          {
+            ok: false,
+            status: "password_throttled",
+            error: "Too many attempts. Try again shortly.",
+          },
+          429,
+          { "Retry-After": String(throttle.retryAfterSeconds) },
+        );
+      }
       const valid = await verifySigninPassword(
         password,
         customer.signinPasswordHash,
       );
       if (!valid) {
+        passwordAttemptFailed(email);
         db.recordEvent("signin_password_rejected", customer.id, {});
         return json(
           { ok: false, status: "password_invalid", error: "Incorrect password" },
           401,
         );
       }
+      passwordAttemptSucceeded(email);
       // Same one-time token the email would have carried, handed back
       // directly instead. The client feeds it to GET /auth exactly as a
       // link would, so everything downstream is the established path.
