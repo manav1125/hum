@@ -12,6 +12,8 @@ import {
   configureHalo,
   isHaloAvailable,
   openHalo,
+  _setHaloSessionForTests,
+  resetHaloConfiguration,
   resolveHalo,
 } from "./halo-bridge";
 
@@ -24,7 +26,18 @@ function setCapacitor(value: Capacitor | undefined): void {
   (globalThis as { Capacitor?: Capacitor }).Capacitor = value;
 }
 
-afterEach(() => setCapacitor(undefined));
+/** Stand in for the SPA's session. `null` means signed out or expired. */
+function setToken(token: string | null): void {
+  _setHaloSessionForTests(() =>
+    token === null ? null : { baseURL: "https://manav.justcue.app", token },
+  );
+}
+
+afterEach(() => {
+  setCapacitor(undefined);
+  _setHaloSessionForTests(null);
+  resetHaloConfiguration();
+});
 
 describe("resolveHalo", () => {
   test("is null on the web, so callers never branch on platform", () => {
@@ -67,16 +80,61 @@ describe("opening a surface", () => {
     expect(await configureHalo("https://x", "t")).toBe(false);
   });
 
+  test("configures itself before opening, so a caller cannot forget", async () => {
+    // The failure this prevents is silent: the row opens to "Halo is not
+    // configured" and reads as a broken feature rather than a missing call.
+    const configures: Array<{ baseURL: string; token: string }> = [];
+    setToken("session-token");
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: {
+        Halo: {
+          openDay: async () => ({}),
+          openQueue: async () => ({}),
+          configure: async (o: { baseURL: string; token: string }) => {
+            configures.push(o);
+          },
+        },
+      },
+    });
+
+    expect(await openHalo("day")).toBe(true);
+    expect(configures).toHaveLength(1);
+    expect(configures[0].token).toBe("session-token");
+    // The instance is wherever the SPA is served from — never a second guess
+    // at which instance the person is signed into.
+    expect(configures[0].baseURL).toBe("https://manav.justcue.app");
+
+    // And only once per page, not per tap.
+    expect(await openHalo("queue")).toBe(true);
+    expect(configures).toHaveLength(1);
+  });
+
+  test("refuses to open with no usable session rather than opening empty", async () => {
+    // getGatewayToken returns null for an expired token too, so this is the
+    // expired case as well as the signed-out one.
+    setToken(null);
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: {
+        Halo: { openDay: async () => ({}), configure: async () => {} },
+      },
+    });
+    expect(await openHalo("day")).toBe(false);
+  });
+
   test("routes each surface to its own native method", async () => {
     const calls: string[] = [];
     const record = (name: string) => async () => {
       calls.push(name);
       return {};
     };
+    setToken("t");
     setCapacitor({
       isNativePlatform: () => true,
       Plugins: {
         Halo: {
+          configure: async () => {},
           openDay: record("day"),
           openQueue: record("queue"),
           openRecap: record("recap"),

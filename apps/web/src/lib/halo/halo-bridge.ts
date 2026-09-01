@@ -1,3 +1,5 @@
+import { getGatewayToken } from "@/lib/auth/gateway-session";
+
 /**
  * The web side of the Halo bridge.
  *
@@ -68,6 +70,72 @@ export async function configureHalo(
   return true;
 }
 
+/**
+ * Configure once per page, lazily, from the session the SPA is already using.
+ *
+ * The native side needs an instance URL and a token before it can open
+ * anything. Leaving that to callers is how the door ends up doing nothing on a
+ * real device: every call site has to remember, and the one that forgets fails
+ * silently with "Halo is not configured" — which is exactly the state this
+ * shipped in before a device ever ran it.
+ *
+ * `location.origin` is the instance, because the SPA is served by it. Taking
+ * the base URL from anywhere else would risk the native surfaces reading a
+ * different instance than the app around them.
+ */
+let configured: Promise<boolean> | null = null;
+
+export interface HaloSession {
+  baseURL: string;
+  token: string;
+}
+
+/**
+ * Where the session comes from. Overridable because the default reads
+ * `localStorage`, which does not exist outside a browser — and a bridge whose
+ * central behaviour can only be exercised in a DOM is a bridge whose central
+ * behaviour goes untested.
+ */
+let resolveSession: () => HaloSession | null = () => {
+  const token = getGatewayToken();
+  if (!token) return null;
+  return { baseURL: globalThis.location.origin, token };
+};
+
+/** Test-only override. Pass `null` to restore the real resolver. */
+export function _setHaloSessionForTests(
+  resolver: (() => HaloSession | null) | null,
+): void {
+  resolveSession =
+    resolver ??
+    (() => {
+      const token = getGatewayToken();
+      if (!token) return null;
+      return { baseURL: globalThis.location.origin, token };
+    });
+  configured = null;
+}
+
+async function ensureConfigured(): Promise<boolean> {
+  if (configured) return configured;
+  configured = (async () => {
+    const halo = resolveHalo();
+    if (!halo) return false;
+    const session = resolveSession();
+    // No usable session — an expired token must not configure Halo, and an
+    // unconfigured surface must not open.
+    if (!session) return false;
+    await halo.configure(session);
+    return true;
+  })();
+  return configured;
+}
+
+/** Forget the cached configuration — used when the session changes. */
+export function resetHaloConfiguration(): void {
+  configured = null;
+}
+
 export type HaloSurface = "day" | "queue" | "recap" | "onboarding";
 
 /**
@@ -77,6 +145,9 @@ export type HaloSurface = "day" | "queue" | "recap" | "onboarding";
 export async function openHalo(surface: HaloSurface): Promise<boolean> {
   const halo = resolveHalo();
   if (!halo) return false;
+  // Self-configuring: a surface that opens to "not configured" is worse than
+  // one that never opened, because it looks like the feature is broken.
+  if (!(await ensureConfigured())) return false;
 
   switch (surface) {
     case "day":
