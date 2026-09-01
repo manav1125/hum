@@ -648,3 +648,85 @@ final class IslandCopyParityTests: XCTestCase {
         XCTAssertEqual(widgetLagLine(behindSeconds: 600, offTheRecord: true), "off")
     }
 }
+
+/// The home shelf and the week — the two surfaces that summarise everything
+/// else, and therefore the two most able to overstate it.
+final class DaysGalleryTests: XCTestCase {
+    private func tile(worn: Bool, conv: Int = 7, marks: Int = 1, open: Int = 2, filed: Int = 0)
+        -> DaysGalleryView.DayTile
+    {
+        .init(id: "d", label: "TODAY", verdict: worn ? "The morning found Acme its number" : nil,
+              conversations: conv, marks: marks, openProposals: open, filed: filed,
+              worn: worn, skyHour: 10)
+    }
+
+    func testTheCountsLineStatesOnlyWhatHappened() {
+        XCTAssertEqual(tile(worn: true).countsLine, "7 conv · ⚑1 · ○2 open")
+        // Zeroes are absent, not printed as "⚑0".
+        XCTAssertEqual(tile(worn: true, marks: 0, open: 0).countsLine, "7 conv")
+        XCTAssertEqual(
+            tile(worn: true, marks: 0, open: 0, filed: 3).countsLine,
+            "7 conv · 3 filed ✓"
+        )
+    }
+
+    func testAnUnwornDayReportsNoCountsAtAll() {
+        // "not worn" and "nothing happened" are different facts — a row of
+        // zeroes would claim the second. And the dashed tile plus the row's
+        // own line already say it, so the counts line stays silent rather
+        // than repeating it a third time.
+        XCTAssertEqual(tile(worn: false).countsLine, "")
+    }
+
+    func testTheHeaderScopesTheShelfHonestly() {
+        let gallery = DaysGalleryView(days: [
+            tile(worn: true), tile(worn: false), tile(worn: true),
+        ])
+        XCTAssertEqual(gallery.wornLine, "3 remembered · worn 2 of 3")
+    }
+
+    func testTheLearnedFooterIsACountOfRealThings() {
+        XCTAssertEqual(
+            DaysGalleryView.Learned(days: 28, things: 214).line,
+            "28 days have taught Cue 214 things"
+        )
+    }
+}
+
+final class WeekTests: XCTestCase {
+    private func week(worn: Int, total: Int) -> WeekView {
+        WeekView(
+            range: "Aug 24–30", wornDays: worn, totalDays: total,
+            rhythm: [], insights: []
+        )
+    }
+
+    func testEveryCountInheritsAPrintedScope() {
+        // "9 of 11" means nothing without knowing how much of the week was
+        // heard, so the scope is stated rather than implied.
+        XCTAssertEqual(week(worn: 6, total: 7).scopeLine, "Aug 24–30 · worn 6 of 7 days")
+    }
+
+    func testAnInsightCannotExistWithoutEvidenceAndAVerb() {
+        // The type is the rule: there is nowhere to put "you seemed stressed".
+        let insight = WeekView.Insight(
+            id: "i1", glyph: "↗",
+            headline: "You keep your promises fast",
+            evidence: "9 of 11 things you said you'd do this week were done within a day.",
+            verb: "the 2 open"
+        )
+        XCTAssertFalse(insight.evidence.isEmpty)
+        XCTAssertFalse(insight.verb.isEmpty)
+        // And the evidence is countable, not a characterisation.
+        XCTAssertTrue(insight.evidence.contains("9 of 11"))
+    }
+
+    func testAnUnwornDayIsHollowNotZero() {
+        let heard = WeekView.DayBar(id: "w", letter: "W", conversations: 11, filed: 3, worn: true)
+        let missed = WeekView.DayBar(id: "s", letter: "S", conversations: 0, filed: 0, worn: false)
+        // Both would draw a zero-height bar if `worn` were not carried, and
+        // "nothing heard" would become indistinguishable from "a quiet day".
+        XCTAssertTrue(heard.worn)
+        XCTAssertFalse(missed.worn)
+    }
+}

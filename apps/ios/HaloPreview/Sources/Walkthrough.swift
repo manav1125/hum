@@ -24,7 +24,7 @@ struct Walkthrough: View {
 
     /// Onboarding's seven steps, then the five surfaces they lead to.
     private var onboardingCount: Int { HaloOnboardingStep.allCases.count }
-    private var totalSteps: Int { onboardingCount + 5 }
+    private var totalSteps: Int { onboardingCount + 7 }
 
     var body: some View {
         content
@@ -50,6 +50,14 @@ struct Walkthrough: View {
             case 1: DayCoverView(day: Demo.day, now: Demo.now)
             case 2: EpisodeView(episode: Demo.acme, proposals: Array(Demo.proposals.prefix(1)))
             case 3: QueueView(proposals: Demo.proposals, ledger: Demo.ledger)
+            case 4: DaysGalleryView(days: Demo.shelf, learned: Demo.learned)
+            case 5:
+                WeekView(
+                    range: "Aug 24–30", wornDays: 6, totalDays: 7,
+                    rhythm: Demo.weekRhythm,
+                    rhythmNote: "Wednesday was the loud one — 11 conversations, 3 filed.",
+                    insights: Demo.weekInsights
+                )
             default: DayCloseView(day: Demo.day, receipts: Demo.receipts)
             }
         }
@@ -88,6 +96,8 @@ struct Walkthrough: View {
         case 1: return "Your day, as it filled in"
         case 2: return "One conversation, opened"
         case 3: return "What came out of it — tap ✓ to watch it file"
+        case 4: return "Your days — the home shelf"
+        case 5: return "This week — patterns with receipts"
         default: return "9pm — the day closes"
         }
     }

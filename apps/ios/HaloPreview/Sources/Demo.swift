@@ -164,3 +164,69 @@ enum Demo {
         ]
     }
 }
+
+// MARK: - The home shelf and the week
+
+extension Demo {
+    /// A fortnight, including two days nobody wore — the shelf only reads as
+    /// a record of a life if it can show the days you didn't.
+    static var shelf: [DaysGalleryView.DayTile] {
+        [
+            .init(id: "s1", label: "TODAY",
+                  verdict: "The morning found Acme its number",
+                  conversations: 4, marks: 1, openProposals: 2, filed: 0,
+                  worn: true, skyHour: 10),
+            .init(id: "s2", label: "MON",
+                  verdict: "Board prep, and Tom called twice",
+                  conversations: 9, marks: 0, openProposals: 0, filed: 3,
+                  worn: true, skyHour: 15),
+            .init(id: "s3", label: "SUN", verdict: nil,
+                  conversations: 0, marks: 0, openProposals: 0, filed: 0,
+                  worn: false, skyHour: 12),
+            .init(id: "s4", label: "SAT",
+                  verdict: "A quiet Saturday — one good idea on the walk home",
+                  conversations: 2, marks: 1, openProposals: 1, filed: 0,
+                  worn: true, skyHour: 18),
+            .init(id: "s5", label: "FRI",
+                  verdict: "The sprint got its cut before lunch",
+                  conversations: 7, marks: 0, openProposals: 0, filed: 2,
+                  worn: true, skyHour: 9),
+            .init(id: "s6", label: "THU", verdict: nil,
+                  conversations: 0, marks: 0, openProposals: 0, filed: 0,
+                  worn: false, skyHour: 21),
+        ]
+    }
+
+    static var learned: DaysGalleryView.Learned {
+        .init(days: 28, things: 214)
+    }
+
+    static var weekRhythm: [WeekView.DayBar] {
+        [
+            .init(id: "m", letter: "M", conversations: 6, filed: 2, worn: true),
+            .init(id: "t", letter: "T", conversations: 4, filed: 1, worn: true),
+            .init(id: "w", letter: "W", conversations: 11, filed: 3, worn: true),
+            .init(id: "t2", letter: "T", conversations: 5, filed: 0, worn: true),
+            .init(id: "f", letter: "F", conversations: 7, filed: 2, worn: true),
+            .init(id: "s", letter: "S", conversations: 2, filed: 1, worn: true),
+            .init(id: "s2", letter: "S", conversations: 0, filed: 0, worn: false),
+        ]
+    }
+
+    static var weekInsights: [WeekView.Insight] {
+        [
+            .init(id: "w1", glyph: "↗",
+                  headline: "You keep your promises fast",
+                  evidence: "9 of 11 things you said you'd do this week were done within a day.",
+                  verb: "See the 2 open"),
+            .init(id: "w2", glyph: "◔",
+                  headline: "Thursday afternoons vanish",
+                  evidence: "Three weeks running, 2–5pm Thursday is back-to-back and nothing gets filed.",
+                  verb: "Block it weekly"),
+            .init(id: "w3", glyph: "👤",
+                  headline: "Sarah's gone quiet on you",
+                  evidence: "You mentioned the data room twice in person — still no reply sent.",
+                  verb: "Draft it"),
+        ]
+    }
+}
