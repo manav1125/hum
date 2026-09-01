@@ -71,6 +71,7 @@ import {
   CONTINUATION_SUMMARY_MAX_CHARS,
   getCompanyProfile,
   getMission,
+  listMissionEvents,
   listMissionProjects,
   listMissions,
   maybeEmitMissionDrift,
@@ -114,6 +115,17 @@ const SWEEP_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
  * plans against a picture it knows is incomplete.
  */
 const PLAN_TIMEOUT_MS = 150_000;
+
+/**
+ * Consecutive "planner returned nothing" failures tolerated before the
+ * mission's daily slot is burned anyway.
+ *
+ * The retry exists so one timeout does not cost a day. The bound exists so a
+ * genuinely wedged planner cannot retry every fifteen minutes indefinitely,
+ * spending money each time. Three converts an outage into at most one lost
+ * day.
+ */
+const MAX_CONSECUTIVE_NO_RESPONSE = 3;
 
 /** Never enqueue more than this many items from one cycle. */
 const MAX_ITEMS_PER_CYCLE = 5;
@@ -348,6 +360,38 @@ interface AssessedState {
   inboundItems: WorkItem[];
   /** Items finished since the last cycle. */
   finishedItems: WorkItem[];
+}
+
+/**
+ * How many times in a row the planner has returned nothing, counting back from
+ * the most recent event.
+ *
+ * Counts CONSECUTIVE failures rather than failures in a window: a mission that
+ * planned successfully in between is not in an outage, and its earlier
+ * timeouts should not count against the next one. Scanning stops at the first
+ * event that is not a no-response error.
+ *
+ * `listMissionEvents` returns its window in ASCENDING order, so the walk is
+ * reversed — counting from the wrong end would tally the oldest events and
+ * make the bound fire on history rather than on the current run of failures.
+ */
+function countRecentNoResponseFailures(missionId: string): number {
+  let count = 0;
+  const events = listMissionEvents(missionId, { limit: 20 });
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!;
+    if (event.kind !== "error") break;
+    let failure: unknown;
+    try {
+      failure = (JSON.parse(event.payload ?? "{}") as { failure?: unknown })
+        .failure;
+    } catch {
+      break;
+    }
+    if (failure !== "no_response") break;
+    count++;
+  }
+  return count;
 }
 
 function assessMission(mission: Mission): AssessedState {
@@ -870,11 +914,24 @@ export class MissionOrchestrator {
     const costCents = plannerResult?.costCents ?? 0;
 
     if (!plan) {
+      // Two very different failures used to report the same sentence, and the
+      // sentence was a lie in one of them. A call that TIMED OUT or threw
+      // produced nothing to parse; only a call that returned text can be
+      // "unparseable". Conflating them made a transient network failure read
+      // as a broken planner, which is why production showed 'no parseable
+      // plan' for what was actually a 30-second abort.
+      const gotAnswer = (plannerResult?.text ?? "").trim().length > 0;
+      const failure = gotAnswer ? "unparseable" : "no_response";
       recordMissionEvent({
         missionId: mission.id,
         kind: "error",
         cycleId,
-        payload: { error: "planner produced no parseable plan" },
+        payload: {
+          error: gotAnswer
+            ? "planner returned a reply that could not be parsed as a plan"
+            : "planner returned nothing (timed out, aborted, or unavailable)",
+          failure,
+        },
       });
       // A planner that cannot answer looks identical, from outside, to a
       // mission with nothing to do. Say which it is, once, in the lane the
@@ -886,9 +943,34 @@ export class MissionOrchestrator {
         reason:
           "The planner could not produce a usable plan for this mission. Recent cycles have run and cost money without producing work. Check the mission brief and the model behind the planner call site.",
       });
-      // The failed call still cost money and the cycle still happened —
-      // account for both so a wedged planner can't loop for free.
-      this.finalizeSpendAndCadence(mission, cycleId, costCents);
+      // Spend is always recorded — a failed call still cost money.
+      //
+      // The CADENCE is different, and this is the part that mattered most in
+      // production. Stamping `lastCycleAt` consumes the mission's slot for the
+      // day, so a single transient timeout used to cost a full day of
+      // planning. An infrastructure failure is not the mission's turn taken;
+      // it is a turn that never happened, and it should be retried on the next
+      // 15-minute sweep rather than tomorrow.
+      //
+      // Bounded, because the original concern was real: a wedged planner must
+      // not retry every fifteen minutes forever. After
+      // MAX_CONSECUTIVE_NO_RESPONSE failures the slot is burned anyway, which
+      // turns an outage into one lost day rather than an endless spend loop.
+      //
+      // An UNPARSEABLE reply still burns the slot: the model answered, and
+      // re-asking the same question of the same model within the hour is not
+      // likely to answer differently.
+      const retryable =
+        failure === "no_response" &&
+        countRecentNoResponseFailures(mission.id) < MAX_CONSECUTIVE_NO_RESPONSE;
+      if (retryable) {
+        // Spend only. The mission stays due, so the next sweep tries again.
+        updateMission(mission.id, {
+          spentCents: mission.spentCents + Math.max(0, costCents),
+        });
+      } else {
+        this.finalizeSpendAndCadence(mission, cycleId, costCents);
+      }
       return { ran: true, reason: "plan_failed", enqueued: 0, cycleId };
     }
 
