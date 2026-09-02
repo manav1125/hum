@@ -1,1 +1,0 @@
-import{i as e}from"./routes-BCcSfFM6.js";var t=[e.hq,e.home,e.projects,e.conversations];function n(e){return t.some(t=>t===e)}var r=38;function i(e,t){return n(e)?{"data-corner-chrome":t,style:t===`band`?{paddingTop:34}:{minHeight:34,paddingLeft:r,paddingRight:r}}:{style:{}}}export{i as n,n as r,r as t};
