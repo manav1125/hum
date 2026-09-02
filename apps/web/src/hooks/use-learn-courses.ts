@@ -22,6 +22,8 @@ export interface LearnCourse {
   sceneCount: number;
   createdAt: number;
   updatedAt: number;
+  /** Present only when the course creator stamped provenance (e.g. the chat skill). */
+  source?: { kind: string; conversationId?: string };
 }
 
 export function useLearnCourses(): {
@@ -44,6 +46,23 @@ export function useLearnCourses(): {
         stages?: unknown;
       } | null;
       if (!body || !Array.isArray(body.stages)) return [];
+      // Provenance sidecar — best-effort; courses render fine without it.
+      const sources = await fetch("/api/classroom-sources", {
+        credentials: "include",
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then(
+          (b2: { data?: { sources?: unknown }; sources?: unknown } | null) => {
+            const raw = (b2?.data ?? b2)?.sources;
+            return raw && typeof raw === "object"
+              ? (raw as Record<
+                  string,
+                  { kind: string; conversationId?: string }
+                >)
+              : {};
+          },
+        )
+        .catch(() => ({}) as Record<string, { kind: string }>);
       return (body.stages as Array<Record<string, unknown>>)
         .filter((s) => typeof s.id === "string" && typeof s.name === "string")
         .map((s) => ({
@@ -52,6 +71,9 @@ export function useLearnCourses(): {
           sceneCount: typeof s.sceneCount === "number" ? s.sceneCount : 0,
           createdAt: typeof s.createdAt === "number" ? s.createdAt : 0,
           updatedAt: typeof s.updatedAt === "number" ? s.updatedAt : 0,
+          ...(sources[s.id as string]
+            ? { source: sources[s.id as string] }
+            : {}),
         }))
         .sort((a, b) => b.updatedAt - a.updatedAt);
     },

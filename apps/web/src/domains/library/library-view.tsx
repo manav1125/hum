@@ -599,6 +599,11 @@ export function LibraryView({
                   kind="Course"
                   title={course.name}
                   dateLabel={monoDate(course.updatedAt || course.createdAt)}
+                  provenance={
+                    course.source?.kind === "cue-chat"
+                      ? "From your chat"
+                      : undefined
+                  }
                   onOpen={() => openCourse(course.id)}
                 />
               ))}
@@ -665,6 +670,11 @@ export function LibraryView({
                       kind="Course"
                       title={course.name}
                       dateLabel={monoDate(course.updatedAt || course.createdAt)}
+                      provenance={
+                        course.source?.kind === "cue-chat"
+                          ? "From your chat"
+                          : undefined
+                      }
                       onOpen={() => openCourse(course.id)}
                     />
                   ))}

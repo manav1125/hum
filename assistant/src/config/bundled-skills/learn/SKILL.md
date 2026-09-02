@@ -45,12 +45,16 @@ Learn isn't set up on this Cue yet and stop — do not guess a URL.
    ```bash
    curl -s -X POST "$LEARN_UPSTREAM_URL/learn/api/generate-classroom" \
      -H 'content-type: application/json' \
-     -d '{"requirement": "<the brief>", "enableTTS": true, "enableImageGeneration": true}'
+     -d '{"requirement": "<the brief>", "enableTTS": true, "enableImageGeneration": true,
+          "source": {"kind": "cue-chat", "conversationId": "'"$__CONVERSATION_ID"'"}}'
    ```
 
-   Add `"pdfContent": "<material text>"` when you have materials (JSON-escape
-   it — write the payload to a temp file with a heredoc and `-d @file` rather
-   than inlining). The response is `{ data: { jobId, pollUrl, ... } }` (or the
+   The `source` block stamps provenance on the course so its Library card can
+   link back to this chat — `$__CONVERSATION_ID` is already in your bash env;
+   omit the block only if that variable is empty. Add materials as
+   `"pdfContent": {"text": "<material text>", "images": []}` — an OBJECT, not
+   a bare string (JSON-escape by writing the payload to a temp file with a
+   heredoc and `-d @file` rather than inlining). The response is `{ data: { jobId, pollUrl, ... } }` (or the
    same fields at the top level). A course takes **2–6 minutes**; tell the
    user generation has started and roughly how long it takes.
 
