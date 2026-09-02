@@ -33,6 +33,13 @@
     store is the one allowed external frame if the web inline embed ships
     (today's VV embed uses a native top-level view, not an iframe).
 
+    *.justcue.app is the Cue Design surface (design.<instance-host>, a
+    sibling subdomain — same-site but cross-origin, so 'self' does not cover
+    it). Every justcue.app subdomain is Cue-owned infrastructure, so the
+    ATL-1197 egress property (no navigation to attacker-controlled origins)
+    is preserved. Self-host instances on custom domains need a serve-time
+    injected entry instead — a known Phase 1 gap for Design there.
+
     This is deliberately a single directive rather than a whole policy. A full
     CSP for the SPA is worth having, but it is a much larger change with real
     breakage surface (Google Fonts, Sentry, gateway websockets) and belongs in
@@ -41,7 +48,7 @@
     comment makes no claim about.
   -->
   <meta http-equiv="Content-Security-Policy"
-        content="frame-src 'self' https://www.ventureverse.com https://*.ventureverse.com" />
+        content="frame-src 'self' https://www.ventureverse.com https://*.ventureverse.com https://*.justcue.app" />
 
   <link rel="icon" href="/favicon.svg" />
   <link rel="apple-touch-icon" href="/favicon.svg" />

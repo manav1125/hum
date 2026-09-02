@@ -21,11 +21,14 @@ import { session } from "electron";
 // Only the DIRECT child frame needs listing here — the per-app frames the
 // VentureVerse shell nests inside itself are governed by ITS policy, not
 // this one.
+// *.justcue.app is the Cue Design surface (design.<instance-host> — a
+// sibling subdomain, cross-origin so 'self' does not cover it); kept in
+// step with apps/web/index.html's meta frame-src per ATL-1197.
 export const CSP_POLICY = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "frame-src 'self' https://www.ventureverse.com https://*.ventureverse.com",
+  "frame-src 'self' https://www.ventureverse.com https://*.ventureverse.com https://*.justcue.app",
   "connect-src 'self' blob: data: https://*.vellum.ai wss://*.vellum.ai https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://api.elevenlabs.io https://api.deepgram.com ws://localhost:* ws://127.0.0.1:*",
   "img-src 'self' https: data: blob:",
   "media-src 'self' blob:",
