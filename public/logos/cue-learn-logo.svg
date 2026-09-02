@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 478 128" role="img" aria-label="Cue Learn">
+  <title>Cue Learn</title>
+  <!-- Ring glyph: the Cue ring at wordmark scale, Learn's mortarboard
+       diamond + violet tassel where Cue's dot sits. Accent colors read on
+       light and dark grounds, so the lockup needs no theme variants. -->
+  <g>
+    <circle cx="60" cy="60" r="38" fill="none" stroke="#3D6EE8" stroke-width="11" stroke-linecap="round" stroke-dasharray="179 60" transform="rotate(42 60 60)"/>
+    <rect x="93" y="82" width="17" height="17" rx="3" fill="#3D6EE8" transform="rotate(45 101.5 90.5)"/>
+    <circle cx="106" cy="105" r="4" fill="#7F77DD"/>
+  </g>
+  <text x="136" y="83" font-family="'Inter Variable', Inter, system-ui, -apple-system, sans-serif" font-size="62" font-weight="700" letter-spacing="-1.5" fill="#3D6EE8">cue</text>
+  <text x="252" y="83" font-family="'Inter Variable', Inter, system-ui, -apple-system, sans-serif" font-size="62" font-weight="500" letter-spacing="-1" fill="#7F77DD">learn</text>
+</svg>
