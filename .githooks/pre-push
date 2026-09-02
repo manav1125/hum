@@ -68,7 +68,30 @@ _debug_log "bun resolved: $BUN"
 REMOTE_SHA=""
 while read -r _ local_sha _ remote_sha; do
     if [[ "$remote_sha" =~ ^0+$ ]]; then
-        candidate="$(git merge-base "$local_sha" origin/main 2>/dev/null || echo "")"
+        # New branch. origin/main alone is the WRONG base when the live
+        # lineage runs ahead of main (this repo's release branches do): the
+        # diff then contains months of already-pushed drift, and the Swift
+        # check rebuilds the retired clients/ tree that no commit being
+        # pushed touched (observed 2026-09-02: every new-branch push failed
+        # on a clients/ build the push had nothing to do with). Diff against
+        # the NEAREST ref the remote already has instead: compute the
+        # merge-base with every origin ref and keep the newest independent
+        # one. Falls back to origin/main when that comes up empty.
+        _origin_refs="$(git for-each-ref --format='%(objectname)' refs/remotes/origin 2>/dev/null | head -200)"
+        _bases=""
+        for _ref in $_origin_refs; do
+            _b="$(git merge-base "$local_sha" "$_ref" 2>/dev/null || true)"
+            [ -n "$_b" ] && _bases="$_bases $_b"
+        done
+        if [ -n "$_bases" ]; then
+            # shellcheck disable=SC2086
+            candidate="$(git merge-base --independent $_bases 2>/dev/null | head -1)"
+        else
+            candidate=""
+        fi
+        if [ -z "$candidate" ]; then
+            candidate="$(git merge-base "$local_sha" origin/main 2>/dev/null || echo "")"
+        fi
     else
         candidate="$remote_sha"
     fi

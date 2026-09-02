@@ -129,6 +129,8 @@ export interface Instance {
    * and on each successful image update (null on legacy/pre-migration rows).
    */
   imageRef: string | null;
+  /** Learn sidecar app name (provider-side), or null when none exists. */
+  learnAppName: string | null;
   createdAt: number;
 }
 
@@ -459,6 +461,14 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
     // the app. An account with a hash set is asked for a password instead
     // of being emailed a link.
     sql: `ALTER TABLE customers ADD COLUMN signinPasswordHash TEXT`,
+  },
+  {
+    version: 10,
+    name: "instances-learn-app",
+    // Per-customer Learn sidecar (private Fly app the instance's gateway
+    // proxies at /learn). NULL = no sidecar; teardown and sweeps must check
+    // it so the second app neither leaks nor goes unwatched.
+    sql: `ALTER TABLE instances ADD COLUMN learnAppName TEXT`,
   },
 ];
 
@@ -899,6 +909,7 @@ export class HqDb {
     secretsJson?: string;
     state?: InstanceState;
     imageRef?: string | null;
+    learnAppName?: string | null;
   }): Instance {
     const instance: Instance = {
       id: randomUUID(),
@@ -912,10 +923,11 @@ export class HqDb {
       openrouterKeyHash: null,
       usageSyncedCents: 0,
       imageRef: params.imageRef ?? null,
+      learnAppName: params.learnAppName ?? null,
       createdAt: Date.now(),
     };
     this.db.run(
-      "INSERT INTO instances (id, customerId, driver, externalId, url, flyUrl, state, secretsJson, imageRef, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO instances (id, customerId, driver, externalId, url, flyUrl, state, secretsJson, imageRef, learnAppName, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         instance.id,
         instance.customerId,
@@ -926,6 +938,7 @@ export class HqDb {
         instance.state,
         instance.secretsJson,
         instance.imageRef,
+        instance.learnAppName,
         instance.createdAt,
       ],
     );

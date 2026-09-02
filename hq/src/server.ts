@@ -2125,6 +2125,17 @@ export function createHandler(
       });
     }
     await driver.destroy(instance.externalId);
+    // The Learn sidecar is a second app — it does not die with the instance.
+    if (instance.learnAppName && driver.destroyLearnSidecar) {
+      try {
+        await driver.destroyLearnSidecar(instance.learnAppName);
+      } catch (err) {
+        db.recordEvent("learn_sidecar_destroy_failed", instance.customerId, {
+          appName: instance.learnAppName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
     await revokeComposioProject(instance);
     return json({
       ok: true,

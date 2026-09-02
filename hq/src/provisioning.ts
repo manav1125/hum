@@ -59,6 +59,7 @@ import {
   keyCanProxyExecute,
 } from "./composio-projects.js";
 import { grantProvisioningCredits, syncKeyLimitsToBalance } from "./credits.js";
+import { learnSidecarConfig } from "./learn-sidecar.js";
 import { sendEmail, welcomeEmail } from "./email.js";
 import type { Customer, HqDb, Instance } from "./db.js";
 import { firstNameOf, trackEvent } from "./klaviyo.js";
@@ -177,11 +178,53 @@ export async function provisionCustomer(
     });
   }
 
+  // Learn sidecar (optional): a private second app the instance's gateway
+  // proxies at /learn. Provisioned FIRST so the instance's env can carry the
+  // final sidecar address (unique-name retries can change it). Best-effort
+  // with a loud audit trail — a customer without Learn is a customer, a
+  // failed provision is not.
+  let learnAppName: string | null = null;
+  const learnCfg = learnSidecarConfig();
+  if (learnCfg && driver.provisionLearnSidecar) {
+    try {
+      const sidecar = await driver.provisionLearnSidecar({
+        appName: `cue-learn-${slugify(customer.name)}-${customer.id.slice(0, 8)}`,
+        image: learnCfg.image,
+        env: {
+          ...learnCfg.env,
+          // The customer's own child key, so alt-model spend in Learn is
+          // metered per customer like everything else.
+          ...(llmKey.apiKey ? { OPENROUTER_API_KEY: llmKey.apiKey } : {}),
+        },
+        region: opts.region,
+      });
+      learnAppName = sidecar.appName;
+      db.recordEvent("learn_sidecar_provisioned", customer.id, {
+        appName: sidecar.appName,
+        image: learnCfg.image,
+      });
+    } catch (err) {
+      db.recordEvent("learn_sidecar_failed", customer.id, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  } else if (learnCfg) {
+    db.recordEvent("learn_sidecar_skipped", customer.id, {
+      reason: "driver does not support sidecars",
+    });
+  }
+
   const provisioned = await driver.provision({
     customerId: customer.id,
     name: `cue-${slugify(customer.name)}-${customer.id.slice(0, 8)}`,
     env: buildInstanceEnv(secrets, {
       ...(llmKey.apiKey ? { OPENROUTER_API_KEY: llmKey.apiKey } : {}),
+      ...(learnAppName
+        ? {
+            LEARN_UPSTREAM_URL: `http://${learnAppName}.internal:3000`,
+            VELLUM_FLAG_LEARN_APP: "true",
+          }
+        : {}),
       ...providerEnv,
     }),
     region: opts.region,
@@ -203,6 +246,7 @@ export async function provisionCustomer(
     // Track what the instance runs so fleet image rolls know where each
     // machine stands (same default chain the fly driver resolves).
     imageRef: opts.image ?? process.env.CUE_IMAGE_REF ?? null,
+    learnAppName,
   });
   if (llmKey.keyHash) {
     db.setInstanceOpenrouterKeyHash(instance.id, llmKey.keyHash);

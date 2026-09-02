@@ -83,7 +83,7 @@ describe("LearnUsageSync", () => {
     expect(rows[0].request_id).toBe("learn:1756800000000-1");
   });
 
-  test("skips non-LLM records and already-imported ids", async () => {
+  test("prices non-LLM records per unit and dedupes re-served pages", async () => {
     mockSidecar([
       {
         records: [
@@ -92,18 +92,53 @@ describe("LearnUsageSync", () => {
             id: "1756800000001-2",
             createdAt: 1756800000001,
             kind: "tts",
+            providerId: "elevenlabs",
+            modelId: "eleven_multilingual_v2",
+            inputTokens: 0,
+            outputTokens: 0,
+            quantity: 2000,
+            unit: "character",
           }),
         ],
       },
     ]);
     const sync = new LearnUsageSync();
-    expect((await sync.syncOnce())?.imported).toBe(1);
+    expect((await sync.syncOnce())?.imported).toBe(2);
     // Second pass re-serves the same page; dedupe keeps the ledger unchanged.
     expect((await sync.syncOnce())?.imported).toBe(0);
-    const count = getSqlite()
-      .query("SELECT COUNT(*) AS n FROM llm_usage_events")
-      .get() as { n: number };
-    expect(count.n).toBe(1);
+    const rows = getSqlite()
+      .query(
+        "SELECT model, input_tokens, estimated_cost_usd, pricing_status FROM llm_usage_events ORDER BY request_id",
+      )
+      .all() as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(2);
+    const tts = rows.find((r) => String(r.model).includes("(tts)"))!;
+    expect(tts.input_tokens).toBe(0);
+    // 2000 characters at the ElevenLabs estimate ($0.10 / 1k chars).
+    expect(tts.estimated_cost_usd).toBeCloseTo(0.2, 5);
+    expect(tts.pricing_status).toBe("priced");
+  });
+
+  test("records an unknown non-LLM unit as unpriced rather than dropping it", async () => {
+    mockSidecar([
+      {
+        records: [
+          learnRecord({
+            id: "1756800000002-3",
+            createdAt: 1756800000002,
+            kind: "video",
+            quantity: 8,
+            unit: "clip",
+          }),
+        ],
+      },
+    ]);
+    expect((await new LearnUsageSync().syncOnce())?.imported).toBe(1);
+    const row = getSqlite()
+      .query("SELECT estimated_cost_usd, pricing_status FROM llm_usage_events")
+      .get() as Record<string, unknown>;
+    expect(row.estimated_cost_usd).toBeNull();
+    expect(row.pricing_status).toBe("unpriced");
   });
 
   test("cursors from the sidecar timestamp embedded in stored request ids", async () => {

@@ -99,6 +99,24 @@ export interface InstanceDriver {
     relPath: string,
     contents: string,
   ): Promise<void>;
+
+  /**
+   * OPTIONAL: provision a private Learn sidecar app for a customer (the Cue
+   * Learn classroom service the instance's gateway proxies at /learn). No
+   * public exposure — the sidecar is reachable only over the provider's
+   * private network. Returns the final app name (which may differ from the
+   * requested one on a name collision). Drivers without a second-app concept
+   * omit it; callers must treat absence as "unsupported" and record that.
+   */
+  provisionLearnSidecar?(spec: {
+    appName: string;
+    image: string;
+    env: Record<string, string>;
+    region?: string;
+  }): Promise<{ appName: string }>;
+
+  /** OPTIONAL: permanently destroy a Learn sidecar app. Pairs with the above. */
+  destroyLearnSidecar?(appName: string): Promise<void>;
 }
 
 /** Thrown by drivers whose provider has no HQ-driven image-update path. */

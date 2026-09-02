@@ -831,6 +831,60 @@ export class FlyDriver implements InstanceDriver {
     }
   }
 
+  /**
+   * Provision a customer's Learn sidecar: a second, PRIVATE Fly app (no
+   * services, no public IPs, no volume) running the Cue Learn image. The
+   * customer's instance reaches it at `http://<app>.internal:3000`; nothing
+   * else can, except other apps on this org's private network — which is why
+   * the sidecar itself must never hold cross-tenant state (the fleet image
+   * runs browser persistence only, see hq/src/learn-sidecar.ts).
+   *
+   * No volume by design in v1: course data lives in the learner's browser,
+   * and the sidecar's local usage log is read continuously by the instance's
+   * usage bridge, so container churn costs at most the last few minutes of
+   * unpolled usage rows.
+   */
+  async provisionLearnSidecar(spec: {
+    appName: string;
+    image: string;
+    env: Record<string, string>;
+    region?: string;
+  }): Promise<{ appName: string }> {
+    this.requireConfigured();
+    const appName = await this.createAppWithUniqueName(spec.appName);
+    try {
+      const region = spec.region ?? process.env.HQ_FLY_REGION ?? "iad";
+      const guest = parseGuestPreset(
+        process.env.HQ_LEARN_GUEST_PRESET ?? "shared-cpu-2x",
+        envInt("HQ_LEARN_MEMORY_MB", 1024, 512, 8192),
+      );
+      const machine = (await this.api("POST", `/apps/${appName}/machines`, {
+        region,
+        config: {
+          image: spec.image,
+          env: spec.env,
+          guest,
+          restart: { policy: "on-failure", max_retries: 10 },
+        },
+      })) as FlyMachine;
+      if (!machine?.id) {
+        throw new Error("Fly learn-sidecar machine create returned no id");
+      }
+      return { appName };
+    } catch (err) {
+      // Don't leak a half-made app; the caller treats any throw as
+      // "no sidecar" and provisions the instance without Learn.
+      await this.teardown(appName).catch(() => {});
+      throw err;
+    }
+  }
+
+  /** Destroy a Learn sidecar app (machines → app; it has no volumes/DNS). */
+  async destroyLearnSidecar(appName: string): Promise<void> {
+    this.requireConfigured();
+    await this.teardown(appName);
+  }
+
   async destroy(externalId: string): Promise<void> {
     // Best-effort DNS cleanup first (never blocks the teardown); the Fly
     // certificate needs no separate delete — it dies with the app.

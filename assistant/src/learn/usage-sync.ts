@@ -17,9 +17,10 @@
  *   - dedupe  = requestId checked per batch, so a re-poll after a partial
  *     import never double-counts.
  *
- * Non-LLM rows (image/video/tts/asr) are skipped for now: the ledger is
- * token-denominated and pricing those honestly needs per-unit tables. Their
- * counts remain visible in Learn's own Token Plan panel.
+ * Non-LLM rows (tts/asr/image/video) are priced from the per-unit table
+ * below (documented estimates for the providers this deployment locks in)
+ * and land as zero-token rows whose estimated_cost_usd carries the spend —
+ * so voice, images, and video show up in the same Guardrails number.
  *
  * Enabled only when LEARN_UPSTREAM_URL is set (the same env that lights the
  * gateway's /learn proxy — daemon and gateway share the machine env).
@@ -50,6 +51,40 @@ interface LearnUsageRecord {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /** Non-token usage (image count, video seconds, TTS/ASR characters/seconds). */
+  quantity?: number;
+  unit?: string;
+}
+
+/**
+ * Per-unit USD estimates for Learn's non-LLM spend, by usage kind. These are
+ * documented list-price estimates for the providers the deployment locks in
+ * (ElevenLabs voice, Nano Banana images, Veo video) — close enough for an
+ * honest ledger, revisited when providers change. A kind missing here is
+ * recorded unpriced rather than dropped.
+ */
+const NON_LLM_UNIT_PRICE_USD: Record<
+  string,
+  Partial<Record<string, number>>
+> = {
+  tts: { character: 0.1 / 1000 },
+  asr: { second: 0.4 / 3600, character: 0 },
+  image: { image: 0.039 },
+  video: { second: 0.5 },
+};
+
+function priceNonLlm(record: LearnUsageRecord): {
+  estimatedCostUsd: number | null;
+  pricingStatus: "priced" | "unpriced";
+} {
+  const quantity = record.quantity ?? 0;
+  const perUnit = record.unit
+    ? NON_LLM_UNIT_PRICE_USD[record.kind]?.[record.unit]
+    : undefined;
+  if (quantity > 0 && perUnit !== undefined) {
+    return { estimatedCostUsd: quantity * perUnit, pricingStatus: "priced" };
+  }
+  return { estimatedCostUsd: null, pricingStatus: "unpriced" };
 }
 
 function learnUpstreamUrl(): string | undefined {
@@ -145,34 +180,40 @@ export class LearnUsageSync {
         const records = payload.records ?? [];
         if (records.length === 0) return { imported };
 
-        const llmRecords = records.filter((r) => r.kind === "llm");
         const seen = existingRequestIds(
-          llmRecords.map((r) => `${REQUEST_ID_PREFIX}${r.id}`),
+          records.map((r) => `${REQUEST_ID_PREFIX}${r.id}`),
         );
-        for (const r of llmRecords) {
+        for (const r of records) {
           const requestId = `${REQUEST_ID_PREFIX}${r.id}`;
           if (seen.has(requestId)) continue;
-          const pricing = resolveStructuredPricing(
-            r.providerId,
-            r.modelId,
-            buildPricingUsage({
-              providerName: r.providerId,
-              model: r.modelId,
-              inputTokens:
-                r.inputTokens + r.cacheReadTokens + r.cacheCreationTokens,
-              outputTokens: r.outputTokens,
-              cacheCreationInputTokens: r.cacheCreationTokens,
-              cacheReadInputTokens: r.cacheReadTokens,
-            }),
-          );
+          const isLlm = r.kind === "llm";
+          const pricing = isLlm
+            ? resolveStructuredPricing(
+                r.providerId,
+                r.modelId,
+                buildPricingUsage({
+                  providerName: r.providerId,
+                  model: r.modelId,
+                  inputTokens:
+                    r.inputTokens + r.cacheReadTokens + r.cacheCreationTokens,
+                  outputTokens: r.outputTokens,
+                  cacheCreationInputTokens: r.cacheCreationTokens,
+                  cacheReadInputTokens: r.cacheReadTokens,
+                }),
+              )
+            : priceNonLlm(r);
           recordUsageEvent(
             {
               provider: r.providerId,
-              model: r.modelId,
-              inputTokens: r.inputTokens,
-              outputTokens: r.outputTokens,
-              cacheCreationInputTokens: r.cacheCreationTokens || null,
-              cacheReadInputTokens: r.cacheReadTokens || null,
+              // Non-LLM rows carry the kind in the model string so the model
+              // mix reads honestly ("elevenlabs tts", "veo video").
+              model: isLlm ? r.modelId : `${r.modelId} (${r.kind})`,
+              inputTokens: isLlm ? r.inputTokens : 0,
+              outputTokens: isLlm ? r.outputTokens : 0,
+              cacheCreationInputTokens: isLlm
+                ? r.cacheCreationTokens || null
+                : null,
+              cacheReadInputTokens: isLlm ? r.cacheReadTokens || null : null,
               rawUsage: null,
               actor: "learn",
               conversationId: null,
