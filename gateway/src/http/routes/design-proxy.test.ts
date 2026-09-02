@@ -159,6 +159,32 @@ describe("design proxy", () => {
     expect(res.status).toBe(401);
   });
 
+  test("skills list proxies the sidecar catalog", async () => {
+    const handler = createDesignProxyHandler();
+    const res = await handler.handleSkillsList(
+      new Request("https://justcue.test/design/skills"),
+    );
+    expect(res.status).toBe(200);
+    // The mock upstream echoes the path it saw; the real one returns a
+    // catalog, but this proves the request reaches /api/skills.
+    expect(lastUpstreamReq?.path).toBe("/api/skills");
+    expect(lastUpstreamReq?.headers.get("origin")).toBe(
+      "https://design.justcue.test",
+    );
+  });
+
+  test("skills list fails open to an empty list when design is unconfigured", async () => {
+    const savedUrl = process.env.DESIGN_UPSTREAM_URL;
+    delete process.env.DESIGN_UPSTREAM_URL;
+    const handler = createDesignProxyHandler();
+    const res = await handler.handleSkillsList(
+      new Request("https://justcue.test/design/skills"),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ skills: [] });
+    process.env.DESIGN_UPSTREAM_URL = savedUrl;
+  });
+
   test("unconfigured proxy 404s the mint and the host handler", async () => {
     const savedUrl = process.env.DESIGN_UPSTREAM_URL;
     delete process.env.DESIGN_UPSTREAM_URL;

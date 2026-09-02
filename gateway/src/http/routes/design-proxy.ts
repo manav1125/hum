@@ -234,5 +234,43 @@ export function createDesignProxyHandler() {
     });
   }
 
-  return { handleMintSession, handleDesignHost };
+  /**
+   * GET /design/skills — read-only catalog bridge for the Skills tab.
+   *
+   * Unlike the whole-origin host proxy, this lives on the APP origin: the Cue
+   * SPA fetches it same-origin with its Bearer edge token (the route is
+   * edge-authed at registration), and the gateway fetches the sidecar's
+   * design-skill catalog server-side over the private network. Read-only —
+   * the design skills are display cards in Cue's unified Skills tab, never
+   * installed or removed from here. 404s (harmlessly) when design isn't
+   * configured, which the tab treats as "no design skills".
+   */
+  async function handleSkillsList(_req: Request): Promise<Response> {
+    const base = designUpstreamUrl();
+    if (!base) {
+      return Response.json({ skills: [] }, { status: 200 });
+    }
+    let upstream: Response;
+    try {
+      upstream = await fetch(`${base}/api/skills`, {
+        headers: { origin: `https://${designHost()}` },
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch (err) {
+      log.error({ err }, "Design skills upstream failed");
+      // Fail-open to an empty list: a design-side outage must not error the
+      // Skills tab, only omit its Design section.
+      return Response.json({ skills: [] }, { status: 200 });
+    }
+    if (!upstream.ok) {
+      return Response.json({ skills: [] }, { status: 200 });
+    }
+    const body = await upstream.text();
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  return { handleMintSession, handleDesignHost, handleSkillsList };
 }

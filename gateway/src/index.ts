@@ -1683,6 +1683,15 @@ async function main() {
       handler: (req) => designProxy.handleMintSession(req),
     },
     {
+      // Read-only design-skill catalog for Cue's unified Skills tab. Fetched
+      // same-origin by the SPA with its edge token; the gateway reads the
+      // sidecar server-side. Fails open to an empty list.
+      path: "/design/skills",
+      method: "GET",
+      auth: "edge",
+      handler: (req) => designProxy.handleSkillsList(req),
+    },
+    {
       path: /^\/learn(\/.*)?$/,
       auth: "custom",
       handler: (req, params) =>

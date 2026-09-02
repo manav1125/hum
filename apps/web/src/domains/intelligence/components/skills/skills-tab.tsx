@@ -18,6 +18,10 @@ import {
 } from "@/domains/intelligence/skills/types";
 import { useSkillCategories } from "@/domains/intelligence/skills/use-skill-categories";
 import {
+  DESIGN_SKILL_CATEGORY,
+  useDesignSkills,
+} from "@/domains/intelligence/skills/use-design-skills";
+import {
   resolveFilterParams,
   sortSkills,
 } from "@/domains/intelligence/skills/utils";
@@ -134,7 +138,28 @@ function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
     getLocalBool(TIP_STORAGE_KEY, false),
   );
 
-  const { data: categories = [] } = useSkillCategories(assistantId);
+  const { data: daemonCategories = [] } = useSkillCategories(assistantId);
+  const designSkillsQuery = useDesignSkills(Boolean(assistantId));
+  const designSkills = useMemo(
+    () => designSkillsQuery.data ?? [],
+    [designSkillsQuery.data],
+  );
+
+  // One "Design" rail entry for the whole design-sidecar catalog, appended so
+  // Cue's own categories keep their order and the design skills read as part
+  // of the same unified index. Only shown once its skills have loaded.
+  const categories = useMemo(() => {
+    if (designSkills.length === 0) return daemonCategories;
+    return [
+      ...daemonCategories,
+      {
+        slug: DESIGN_SKILL_CATEGORY,
+        label: "Design",
+        description: "Generation skills from the Cue Design studio.",
+        icon: "🎨",
+      },
+    ];
+  }, [daemonCategories, designSkills.length]);
 
   const { origin, kind } = useMemo(() => resolveFilterParams(filter), [filter]);
 
@@ -146,7 +171,11 @@ function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
         origin,
         kind,
         q: debouncedSearch || undefined,
-        category: category ?? undefined,
+        // The synthetic "design" category is not a Cue daemon category, so
+        // never send it to the daemon — the design skills come from their own
+        // source, and this view shows only them.
+        category:
+          category === DESIGN_SKILL_CATEGORY ? undefined : (category ?? undefined),
       },
     }),
     select: (
@@ -160,7 +189,9 @@ function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
       categoryCounts: data.categoryCounts,
       totalCount: data.totalCount,
     }),
-    enabled: Boolean(assistantId),
+    // Disabled while viewing the Design category: daemonSkills must be empty
+    // there so only the design catalog renders.
+    enabled: Boolean(assistantId) && category !== DESIGN_SKILL_CATEGORY,
   });
 
   // Unfiltered-by-category query: keeps the category index counts + the hero
@@ -241,17 +272,45 @@ function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
     setLocalBool(TIP_STORAGE_KEY, true);
   }, []);
 
-  const allSkills = useMemo(
+  const daemonSkills = useMemo(
     () => skillsQuery.data?.skills ?? [],
     [skillsQuery.data?.skills],
   );
 
+  // Design skills filtered to the current view: shown under "All" (no
+  // category) and their own "Design" category, and narrowed by the search
+  // box client-side (the daemon search never sees them). Any Cue-category
+  // selection excludes them.
+  const designSkillsForView = useMemo(() => {
+    if (category !== null && category !== DESIGN_SKILL_CATEGORY) return [];
+    const q = debouncedSearch.toLowerCase();
+    if (!q) return designSkills;
+    return designSkills.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.description.toLowerCase().includes(q),
+    );
+  }, [designSkills, category, debouncedSearch]);
+
+  const allSkills = useMemo(
+    () => [...daemonSkills, ...designSkillsForView],
+    [daemonSkills, designSkillsForView],
+  );
+
   const countsSource = category !== null ? countsQuery.data : skillsQuery.data;
-  const { counts, totalCount } = useDerivedCounts(
-    countsSource?.skills ?? allSkills,
+  const { counts: daemonCounts, totalCount: daemonTotal } = useDerivedCounts(
+    countsSource?.skills ?? daemonSkills,
     countsSource?.categoryCounts,
     countsSource?.totalCount,
   );
+
+  // The rail count and hero total always reflect the full design catalog
+  // (global), independent of the current filter — like Cue's own counts.
+  const counts = useMemo(() => {
+    if (designSkills.length === 0) return daemonCounts;
+    return { ...daemonCounts, [DESIGN_SKILL_CATEGORY]: designSkills.length };
+  }, [daemonCounts, designSkills.length]);
+  const totalCount = daemonTotal + designSkills.length;
 
   // Active count for the hero sub-line — installed/bundled skills (anything
   // that isn't a not-yet-installed catalog entry).
@@ -525,7 +584,15 @@ function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
                 <SkillCard
                   key={skill.id}
                   skill={skill}
-                  onSelect={() => setSelectedSkillId(skill.id)}
+                  onSelect={() =>
+                    // Design skills execute in the Cue Design runtime, not
+                    // Cue's daemon, so the daemon-backed detail can't load
+                    // them. Selecting one opens the studio where it's used —
+                    // reinforcing that this is one connected system.
+                    skill.origin === "design"
+                      ? void navigate(routes.design)
+                      : setSelectedSkillId(skill.id)
+                  }
                   onInstall={() => handleInstall(skill)}
                   onRemove={() => handleRemove(skill)}
                   isInstalling={installingSkillId === (skill.slug ?? skill.id)}

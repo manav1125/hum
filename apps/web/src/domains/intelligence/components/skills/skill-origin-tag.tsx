@@ -10,6 +10,7 @@ const ORIGIN_META: Record<SkillOrigin, { label: string; glyph: string }> = {
   clawhub: { label: "Clawhub", glyph: "🌐" },
   skillssh: { label: "skills.sh", glyph: "⌘" },
   custom: { label: "Custom", glyph: "✦" },
+  design: { label: "Design", glyph: "🎨" },
 };
 
 /**

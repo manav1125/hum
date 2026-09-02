@@ -3,7 +3,15 @@ import type {
   SkillsGetResponses,
 } from "@/generated/daemon/types.gen";
 
-export type SkillOrigin = "vellum" | "clawhub" | "skillssh" | "custom";
+export type SkillOrigin =
+  | "vellum"
+  | "clawhub"
+  | "skillssh"
+  | "custom"
+  // Skills that live in the Cue Design sidecar (OpenDesign fork), surfaced
+  // read-only in the unified Skills tab. They execute in the design runtime,
+  // not Cue's daemon, so they are never installed/removed from here.
+  | "design";
 
 export type SkillKind = "bundled" | "installed" | "catalog";
 
