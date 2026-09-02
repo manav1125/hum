@@ -1,0 +1,24 @@
+# Cue Learn sidecar — private service, reached ONLY from the Cue gateway's
+# /learn proxy over Fly private networking (no public IPs are allocated to
+# this app; do not add them — the app itself has no user auth beyond the
+# optional ACCESS_CODE, the Cue gateway's learn-session cookie is the gate).
+app = "cue-learn-manav"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[build.args]
+  OPENMAIC_BASE_PATH = "/learn"
+
+[env]
+  OPENMAIC_BASE_PATH = "/learn"
+  DEFAULT_MODEL = "google:gemini-3-flash-preview"
+
+# No [[services]] / [http_service]: nothing is exposed through fly-proxy.
+# The gateway dials the machine directly at cue-learn-manav.internal:3000,
+# which requires the machine to stay running (no autostop).
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"

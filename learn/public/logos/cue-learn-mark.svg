@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cue Learn icon">
+  <title>Cue Learn</title>
+  <!-- The Cue ring tile (see apps/web/public/favicon.svg in the Cue repo);
+       Learn's variant turns the dot into a mortarboard diamond with a
+       violet tassel. -->
+  <rect width="512" height="512" rx="114" fill="#1A2230"/>
+  <circle cx="232" cy="256" r="150" fill="none" stroke="#EEF2F7" stroke-width="40" stroke-linecap="round" stroke-dasharray="707 236" transform="rotate(42 232 256)"/>
+  <rect x="362" y="342" width="60" height="60" rx="10" fill="#3D6EE8" transform="rotate(45 392 372)"/>
+  <circle cx="410" cy="424" r="13" fill="#7F77DD"/>
+</svg>
