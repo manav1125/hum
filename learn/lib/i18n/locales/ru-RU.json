@@ -52,6 +52,7 @@
     "resourcePackDesc": "PPTX + интерактивные страницы",
     "exporting": "Экспорт...",
     "exportSuccess": "Экспорт успешен",
+    "exportSuccessSlideSubset": "Экспортировано {{count}} из {{total}} сцен — PowerPoint содержит только слайды; для полного курса используйте Resource Pack",
     "exportFailed": "Ошибка экспорта",
     "classroomZip": "Экспорт ZIP класса",
     "classroomZipDesc": "Структура курса + медиафайлы",

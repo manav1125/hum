@@ -52,6 +52,7 @@
     "resourcePackDesc": "PPTX＋インタラクティブページ",
     "exporting": "エクスポート中...",
     "exportSuccess": "エクスポートが完了しました",
+    "exportSuccessSlideSubset": "{{total}}シーン中{{count}}シーンをエクスポート — PowerPointはスライドのみ対応。完全なコースはリソースパックをご利用ください",
     "exportFailed": "エクスポートに失敗しました",
     "classroomZip": "教室ZIPをエクスポート",
     "classroomZipDesc": "コース構造 + メディアファイル",

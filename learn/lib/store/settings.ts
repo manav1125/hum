@@ -1678,12 +1678,25 @@ export const useSettingsStore = create<SettingsState>()(
                 );
                 if (serverManaged) validTTSProvider = serverManaged;
               }
-              const validASRProvider = validateProvider(
+              let validASRProvider = validateProvider(
                 state.asrProviderId,
                 newASRConfig,
                 asrFallback,
                 'browser-native' as ASRProviderId,
               );
+              // Cue Learn: browser-native speech recognition does not exist in
+              // the Electron desktop shell (and is unreliable outside Chrome),
+              // so when the deployment configures a real ASR provider
+              // server-side, promote it over a still-on-default selection —
+              // the same rule as the TTS promotion above.
+              if (validASRProvider === ('browser-native' as ASRProviderId)) {
+                const serverManaged = asrFallback.find(
+                  (pid) =>
+                    newASRConfig[pid]?.isServerConfigured &&
+                    !newASRConfig[pid]?.serverDisabled,
+                );
+                if (serverManaged) validASRProvider = serverManaged;
+              }
               const validPDFProvider = validateProvider(
                 state.pdfProviderId,
                 newPDFConfig,

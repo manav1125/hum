@@ -52,6 +52,7 @@
     "resourcePackDesc": "PPTX + 交互式页面",
     "exporting": "正在导出...",
     "exportSuccess": "导出成功",
+    "exportSuccessSlideSubset": "已导出 {{count}}/{{total}} 个场景 — PPT 仅包含幻灯片场景；完整互动课程请使用资源包导出",
     "exportFailed": "导出失败",
     "classroomZip": "导出课堂 ZIP",
     "classroomZipDesc": "课程结构 + 媒体文件",

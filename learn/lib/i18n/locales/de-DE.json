@@ -52,6 +52,7 @@
     "resourcePackDesc": "PPTX + interaktive Seiten",
     "exporting": "Wird exportiert...",
     "exportSuccess": "Export erfolgreich",
+    "exportSuccessSlideSubset": "{{count}} von {{total}} Szenen exportiert — PowerPoint enthält nur Folien; für den vollständigen Kurs Resource Pack nutzen",
     "exportFailed": "Export fehlgeschlagen",
     "classroomZip": "Kurs-ZIP exportieren",
     "classroomZipDesc": "Kursstruktur + Mediendateien",

@@ -52,6 +52,7 @@
     "resourcePackDesc": "PPTX + 互動式頁面",
     "exporting": "正在匯出...",
     "exportSuccess": "匯出成功",
+    "exportSuccessSlideSubset": "已匯出 {{count}}/{{total}} 個場景 — PPT 僅包含投影片場景；完整互動課程請使用資源包匯出",
     "exportFailed": "匯出失敗",
     "classroomZip": "匯出課堂 ZIP",
     "classroomZipDesc": "課程結構 + 媒體檔案",

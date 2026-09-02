@@ -52,6 +52,7 @@
     "resourcePackDesc": "PPTX + interactive pages",
     "exporting": "Exporting...",
     "exportSuccess": "Export successful",
+    "exportSuccessSlideSubset": "Exported {{count}} of {{total}} scenes — PowerPoint carries the slide scenes; use Resource Pack for the full interactive course",
     "exportFailed": "Export failed",
     "classroomZip": "Export Classroom ZIP",
     "classroomZipDesc": "Course structure + media files",

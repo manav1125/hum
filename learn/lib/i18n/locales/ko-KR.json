@@ -52,6 +52,7 @@
     "resourcePackDesc": "PPTX + 인터랙티브 페이지",
     "exporting": "내보내는 중...",
     "exportSuccess": "내보내기 완료",
+    "exportSuccessSlideSubset": "{{total}}개 장면 중 {{count}}개 내보냄 — PowerPoint는 슬라이드 장면만 포함합니다. 전체 과정은 리소스 팩을 이용하세요",
     "exportFailed": "내보내기 실패",
     "classroomZip": "교실 ZIP 내보내기",
     "classroomZipDesc": "강좌 구조 + 미디어 파일",
