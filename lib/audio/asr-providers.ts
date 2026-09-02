@@ -179,6 +179,9 @@ export async function transcribeAudio(
     case 'browser-native':
       throw new Error('Browser Native ASR must be handled client-side using useBrowserASR hook');
 
+    case 'elevenlabs-asr':
+      return await transcribeElevenLabsASR(config, audioBuffer);
+
     case 'qwen-asr':
       return await transcribeQwenASR(config, audioBuffer);
 
@@ -202,6 +205,50 @@ export async function transcribeAudio(
       }
       throw new Error(`Unsupported ASR provider: ${config.providerId}`);
   }
+}
+
+/**
+ * ElevenLabs Scribe speech-to-text.
+ *
+ * Multipart POST to /speech-to-text with the recording as-is (Scribe accepts
+ * webm/wav/mp3), authenticated with the xi-api-key header — the same key the
+ * ElevenLabs TTS provider uses. Response carries the transcript in `text`.
+ */
+async function transcribeElevenLabsASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const providerDef = ASR_PROVIDERS['elevenlabs-asr']!;
+  const baseUrl = (
+    config.baseUrl ||
+    providerDef.defaultBaseUrl ||
+    'https://api.elevenlabs.io/v1'
+  ).replace(/\/$/, '');
+  const blob =
+    audioBuffer instanceof Blob
+      ? audioBuffer
+      : new Blob([new Uint8Array(audioBuffer)], { type: 'audio/webm' });
+
+  const formData = new FormData();
+  formData.append('file', blob, 'recording.webm');
+  formData.append('model_id', config.modelId || providerDef.defaultModelId);
+  if (config.language && config.language !== 'auto') {
+    formData.append('language_code', config.language);
+  }
+
+  const response = await fetch(`${baseUrl}/speech-to-text`, {
+    method: 'POST',
+    headers: { 'xi-api-key': config.apiKey ?? '' },
+    body: formData,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(
+      `ElevenLabs Scribe transcription failed: ${response.status} ${response.statusText}${detail ? ` — ${detail.slice(0, 200)}` : ''}`,
+    );
+  }
+  const result = (await response.json()) as { text?: string };
+  return { text: result.text ?? '' };
 }
 
 /**

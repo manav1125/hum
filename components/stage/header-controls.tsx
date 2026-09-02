@@ -7,6 +7,7 @@ import {
   FileDown,
   Film,
   Loader2,
+  MessageCircleQuestion,
   Monitor,
   Moon,
   NotebookText,
@@ -146,6 +147,30 @@ export function HeaderControls({
             : 'bg-white/60 dark:bg-gray-800/60 border border-gray-100/50 dark:border-gray-700/50 px-2 py-1.5',
         )}
       >
+        {/* Ask Cue — only when running embedded inside the Cue shell. Posts
+            the course context to the parent, which forwards it into a Cue
+            conversation (see Cue's learn-page Ask-Cue bridge). Same-origin by
+            deployment (the /learn proxy mounts this app on the Cue origin). */}
+        {typeof window !== 'undefined' && window.self !== window.top && (
+          <button
+            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all flex items-center gap-1.5"
+            aria-label="Ask Cue about this course"
+            title="Ask Cue about this course"
+            onClick={() => {
+              const stageName = useStageStore.getState().stage?.name;
+              const prompt = stageName
+                ? `I'm taking my Cue Learn course "${stageName}" — help me go deeper: answer questions about it, quiz me, or suggest what to explore next.`
+                : `I'm in a Cue Learn course — help me go deeper on what it covers.`;
+              window.parent.postMessage(
+                { type: 'cue-learn:ask', prompt },
+                window.location.origin,
+              );
+            }}
+          >
+            <MessageCircleQuestion className="w-4 h-4" />
+          </button>
+        )}
+
         {/* Language — Radix DropdownMenu so its menu portals to body
             and never gets clipped by an ancestor's overflow-hidden. */}
         <LanguageSwitcher />

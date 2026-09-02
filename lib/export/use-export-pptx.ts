@@ -1355,7 +1355,19 @@ export function useExportPPTX() {
         stage?.id,
       );
       saveAs(blob, `${fileName}.pptx`);
-      toast.success(t('export.exportSuccess'));
+      // PPTX carries only slide-type scenes by design; when the course also
+      // has quiz/interactive/whiteboard scenes, say so instead of letting the
+      // smaller deck read as a truncated export.
+      if (slideScenes.length < scenes.length) {
+        toast.success(
+          t('export.exportSuccessSlideSubset', {
+            count: slideScenes.length,
+            total: scenes.length,
+          }),
+        );
+      } else {
+        toast.success(t('export.exportSuccess'));
+      }
     });
   }, [
     withExportGuard,

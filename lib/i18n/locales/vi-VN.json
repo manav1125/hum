@@ -52,6 +52,7 @@
     "resourcePackDesc": "PPTX + các trang tương tác",
     "exporting": "Đang xuất…",
     "exportSuccess": "Xuất thành công",
+    "exportSuccessSlideSubset": "Đã xuất {{count}}/{{total}} cảnh — PowerPoint chỉ chứa cảnh slide; dùng Resource Pack cho khóa học đầy đủ",
     "exportFailed": "Xuất không thành công",
     "classroomZip": "Xuất lớp học dạng ZIP",
     "classroomZipDesc": "Cấu trúc bài học + tệp phương tiện",
