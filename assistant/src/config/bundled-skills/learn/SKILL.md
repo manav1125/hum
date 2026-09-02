@@ -1,6 +1,6 @@
 ---
 name: learn
-description: "Generate a Cue Learn interactive course — an AI-taught classroom with narrated slides, quizzes, and simulations — whenever the user asks to LEARN or BE TAUGHT something, wants a course/lesson/class/tutorial built, or wants course material generated from their documents. The classroom is a durable surface the user revisits under Learn in the sidebar; for a quick factual answer in chat, just answer — this skill is for when a real lesson is the deliverable."
+description: "ALWAYS use when the user says 'teach me …', 'make me a course/lesson/class/tutorial', 'I want to learn …', or asks to turn documents into a course: generates a Cue Learn interactive course — an AI-taught classroom with narrated slides, quizzes, and simulations — and links to it. 'Teach me X' means BUILD THE COURSE (optionally with a short chat primer alongside), not a chat lecture. Skip only for quick factual questions where a course would be overkill."
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🎓"
@@ -9,7 +9,8 @@ metadata:
     category: "apps"
     feature-flag: "learn-app"
     activation-hints:
-      - "User says 'teach me X', 'I want to learn X', 'make me a course/lesson/class/tutorial on X', or asks to turn a document into a course"
+      - "User says 'teach me X' — this IS the course trigger; do not turn it into a chat lecture"
+      - "User says 'I want to learn X', 'make me a course/lesson/class/tutorial on X', or asks to turn a document into a course"
       - "User asks to explain a big topic 'properly', 'step by step', or 'like a class' — offer a Learn course alongside your chat answer"
       - "User references an earlier Cue Learn course and wants another one"
     avoid-when:
@@ -53,19 +54,28 @@ Learn isn't set up on this Cue yet and stop — do not guess a URL.
    same fields at the top level). A course takes **2–6 minutes**; tell the
    user generation has started and roughly how long it takes.
 
-4. **Poll until done** (bash; note `pollUrl` may carry an internal host —
-   rebuild it from `$LEARN_UPSTREAM_URL` and the jobId):
+4. **Poll in SHORT bursts** — never one long-running command (the bash tool
+   times out around 10 minutes and a timed-out poll strands the user with no
+   verdict). Each poll call checks for at most ~2 minutes, then RETURNS, and
+   you call it again — up to 4 bursts (~8 minutes total). `pollUrl` may carry
+   an internal host, so rebuild it from `$LEARN_UPSTREAM_URL` and the jobId:
 
    ```bash
-   for i in $(seq 1 40); do
+   for i in $(seq 1 8); do
      R=$(curl -s "$LEARN_UPSTREAM_URL/learn/api/generate-classroom/$JOB_ID")
      echo "$R" | grep -qE '"status":"(succeeded|failed)"' && break
-     sleep 15
+     sleep 14
    done
    echo "$R"
    ```
 
-   Surface `progress`/`message` once mid-wait if the user is waiting in chat.
+   Between bursts, relay `progress`/`message` in one short line. **If it is
+   still running after ~8 minutes, do NOT keep polling and do NOT end with a
+   question**: the job keeps running server-side and the finished course
+   appears under Learn's Recent list on its own. Give the user the Learn
+   link (step 5's `$BASE/assistant/learn`) with a note that the course is
+   still generating and will appear there in a few minutes. That is a
+   COMPLETE answer.
 
 5. **Deliver the link.** On success the result carries the classroom URL —
    take its **last path segment** as the classroom id. Build the user-facing
