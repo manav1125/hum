@@ -10,15 +10,27 @@ primary_region = "iad"
 
 [build.args]
   OPENMAIC_BASE_PATH = "/learn"
+  NEXT_PUBLIC_PERSISTENCE = "1"
+  # NEXT_PUBLIC_PERSISTENCE_TOKEN is passed as --build-arg at deploy time
+  # (see ~/.cue/learn-persistence-token) so it never lands in git. It is
+  # compiled into the client bundle by design — the bundle itself is only
+  # reachable through the gateway's learn-session cookie, which is the real
+  # gate on this single-user deployment.
+  NEXT_PUBLIC_PRO_WORKBENCH_ENABLED = "true"
 
 [env]
+  HOSTNAME = "::"
   OPENMAIC_BASE_PATH = "/learn"
   DEFAULT_MODEL = "google:gemini-3-flash-preview"
+  PARALLEL_SCENE_CONCURRENCY = "3"
+  NEXT_PUBLIC_PRO_WORKBENCH_ENABLED = "true"
+  OPENMAIC_AGENT_RUNTIME_ENABLED = "true"
+  MODEL_ROUTES = '{"maic-agent-driver":{"model":"openrouter:deepseek/deepseek-v4-pro","api":"openai-completions"}}' 
 
 # No [[services]] / [http_service]: nothing is exposed through fly-proxy.
 # The gateway dials the machine directly at cue-learn-manav.internal:3000,
 # which requires the machine to stay running (no autostop).
 
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "1gb"
+  size = "shared-cpu-4x"
+  memory = "2gb"
