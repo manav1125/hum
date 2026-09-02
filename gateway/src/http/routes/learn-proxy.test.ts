@@ -22,6 +22,17 @@ beforeAll(() => {
         path: url.pathname + url.search,
         headers: req.headers,
       };
+      // Mirror Next's compression: gzip when the client advertises it, so
+      // the compressed-pass-through contract has a real body to check.
+      if (url.pathname === "/learn/gzip-probe") {
+        const body = Bun.gzipSync(Buffer.from("compressed hello"));
+        return new Response(body, {
+          headers: {
+            "content-type": "text/plain",
+            "content-encoding": "gzip",
+          },
+        });
+      }
       return new Response(`upstream saw ${url.pathname}`, {
         headers: { "content-type": "text/plain" },
       });
@@ -166,6 +177,28 @@ describe("learn-proxy", () => {
     );
     expect(res.status).toBe(200);
     expect(lastUpstreamReq?.path).toBe("/learn/avatars/user.png");
+  });
+
+  test("passes compressed bodies through verbatim with their encoding header", async () => {
+    const handler = createLearnProxyHandler();
+    const cookie = mintCookie(handler);
+    const res = await handler.handleLearnPath(
+      new Request("http://gateway.local/learn/gzip-probe", {
+        headers: { cookie, "accept-encoding": "gzip" },
+      }),
+      "/gzip-probe",
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-encoding")).toBe("gzip");
+    // The upstream saw the client's accept-encoding (not a stripped one)…
+    expect(lastUpstreamReq?.headers.get("accept-encoding")).toBe("gzip");
+    // …and the body arrives still gzipped, not transparently decompressed.
+    const bytes = Buffer.from(await res.arrayBuffer());
+    expect(bytes[0]).toBe(0x1f);
+    expect(bytes[1]).toBe(0x8b);
+    expect(Buffer.from(Bun.gunzipSync(bytes)).toString()).toBe(
+      "compressed hello",
+    );
   });
 
   test("answers 404 everywhere when unconfigured", async () => {

@@ -32,9 +32,13 @@ const log = getLogger("learn-proxy");
 const COOKIE_NAME = "cue_learn";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
-/** Hop-by-hop / transport headers that must not be copied across the proxy. */
+/**
+ * Hop-by-hop / transport headers that must not be copied across the proxy.
+ * content-encoding is deliberately NOT here: the upstream fetch runs with
+ * decompress:false, so the body bytes stay compressed and the header must
+ * travel with them.
+ */
 const STRIP_RESPONSE_HEADERS = new Set([
-  "content-encoding",
   "content-length",
   "transfer-encoding",
   "connection",
@@ -150,9 +154,10 @@ export function createLearnProxyHandler() {
     headers.delete("host");
     headers.set("x-forwarded-host", reqUrl.host);
     headers.set("x-forwarded-proto", isSecureRequest(req) ? "https" : "http");
-    // fetch() decompresses transparently; forwarding the original
-    // accept-encoding while re-serving a decompressed body corrupts clients.
-    headers.delete("accept-encoding");
+    // Compressed pass-through: with decompress:false below, upstream bytes
+    // and their content-encoding header cross the proxy verbatim, so the
+    // client's accept-encoding can be forwarded too. Without this every
+    // /_next chunk crossed the public leg uncompressed (slow first load).
     // The session cookie is gateway business, not OpenMAIC's.
     const cookieHeader = req.headers.get("cookie");
     if (cookieHeader) {
@@ -175,9 +180,11 @@ export function createLearnProxyHandler() {
         body:
           req.method === "GET" || req.method === "HEAD" ? undefined : req.body,
         redirect: "manual",
-        // @ts-expect-error duplex is required by undici for streamed bodies
-        // and absent from the lib.dom RequestInit type.
+        // @ts-expect-error duplex is required for streamed bodies and
+        // absent from the lib.dom RequestInit type; decompress is Bun's
+        // switch to hand back raw (still-compressed) upstream bytes.
         duplex: "half",
+        decompress: false,
       });
     } catch (err) {
       log.error({ err, upstreamPath }, "Learn upstream connection failed");
