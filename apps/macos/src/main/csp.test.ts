@@ -60,13 +60,16 @@ describe("CSP_POLICY", () => {
     expect(connectSrc).not.toMatch(/\bhttps:\s/);
   });
 
-  test("frame-src allows self + ventureverse.com and nothing broader", () => {
-    // The VentureVerse Apps surface embeds www.ventureverse.com; every other
-    // external frame stays refused. `https:` alone would be the regression.
+  test("frame-src allows self + ventureverse.com + justcue.app and nothing broader", () => {
+    // The VentureVerse Apps surface embeds www.ventureverse.com, and the Cue
+    // Design surface embeds design.<instance-host> under justcue.app (a
+    // sibling subdomain, so 'self' doesn't cover it); every other external
+    // frame stays refused. `https:` alone would be the regression.
     const frameSrc = directiveValue("frame-src")!;
     expect(frameSrc).toContain("'self'");
     expect(frameSrc).toContain("https://www.ventureverse.com");
     expect(frameSrc).toContain("https://*.ventureverse.com");
+    expect(frameSrc).toContain("https://*.justcue.app");
     expect(frameSrc).not.toMatch(/\bhttps:(\s|$)/);
   });
 
