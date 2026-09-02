@@ -44,6 +44,7 @@ import {
   startGatewayFlagListener,
   stopGatewayFlagListener,
 } from "../ipc/gateway-flag-listener.js";
+import { LearnUsageSync } from "../learn/usage-sync.js";
 import { getMcpServerManager } from "../mcp/manager.js";
 import {
   getAttachmentsByIds,
@@ -1598,6 +1599,12 @@ export async function runDaemon(): Promise<void> {
     const missionOrchestrator = new MissionOrchestrator();
     missionOrchestrator.start();
 
+    // Learn usage bridge — folds the Cue Learn sidecar's LLM spend into the
+    // workspace ledger. No-op unless LEARN_UPSTREAM_URL is set (self-host
+    // machines running the Learn sidecar).
+    const learnUsageSync = new LearnUsageSync();
+    learnUsageSync.start();
+
     // Filing yields to the memory v2 consolidation job when v2 is enabled —
     // both serve the same role (periodic background memory processing) and
     // running both is redundant. The consolidation job runs through the
@@ -1633,6 +1640,7 @@ export async function runDaemon(): Promise<void> {
       workspaceHeartbeat,
       heartbeat,
       missionOrchestrator,
+      learnUsageSync,
       filing,
       runtimeHttp,
       scheduler,

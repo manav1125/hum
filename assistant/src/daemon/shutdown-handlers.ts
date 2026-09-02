@@ -27,6 +27,7 @@ export interface ShutdownDeps {
   workspaceHeartbeat: WorkspaceHeartbeatService;
   heartbeat: HeartbeatService;
   missionOrchestrator: MissionOrchestrator | null;
+  learnUsageSync: { stop(): void } | null;
   filing: FilingService | null;
   runtimeHttp: RuntimeHttpServer | null;
   scheduler: { stop(): void };
@@ -65,6 +66,7 @@ export function installShutdownHandlers(deps: ShutdownDeps): void {
     await deps.workspaceHeartbeat.stop();
     await deps.heartbeat.stop();
     deps.missionOrchestrator?.stop();
+    deps.learnUsageSync?.stop();
     if (deps.filing) await deps.filing.stop();
 
     // Run registered skill shutdown hooks (e.g. meet-join session teardown)

@@ -10,4 +10,7 @@ export type UsageActor =
   | "suggestion_generator"
   | "computer_use_agent"
   | "memory_embedding"
-  | "llm_call_site";
+  | "llm_call_site"
+  // Spend imported from the Cue Learn sidecar's usage log (see
+  // learn/usage-sync.ts) — not a caller inside this process.
+  | "learn";
