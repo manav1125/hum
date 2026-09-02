@@ -295,6 +295,15 @@ export const routes = {
   // gateway-minted HttpOnly learn-session cookie.
   learn: r("/assistant/learn"),
 
+  // Design — the embedded Cue Design studio (a Tier-2 "Design" sidebar row,
+  // gated by the `design-app` assistant feature flag). The page embeds the
+  // instance's Cue Design sidecar (OpenDesign fork) in a same-site iframe on
+  // its own hostname — that frontend has no basePath support, so unlike
+  // Learn it cannot mount under a path on this origin. The only credential
+  // entering the frame is the gateway-minted parent-domain HttpOnly
+  // design-session cookie.
+  design: r("/assistant/design"),
+
   document: (surfaceId: string) => dyn(r("/assistant/documents"), surfaceId),
 
   connect: r("/assistant/connect"),

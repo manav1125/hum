@@ -1511,6 +1511,18 @@ export const routeTree = [
                         },
                       },
                       {
+                        // Design — the embedded Cue Design studio, gated by
+                        // the `design-app` assistant feature flag; the page
+                        // redirects to HQ when the flag is off.
+                        path: "design",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/design/design-page").then(
+                              (m) => m.DesignPage,
+                            ),
+                        },
+                      },
+                      {
                         path: "connect",
                         lazy: {
                           Component: () =>

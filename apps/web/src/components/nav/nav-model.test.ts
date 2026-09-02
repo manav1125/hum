@@ -177,28 +177,31 @@ describe("the sidebar's Tier-2 rows are one column", () => {
   // than in CSS. The SET has grown three times by owner decision over the
   // original accumulation test: Apps (2026-08-10), then Connectors/Skills/
   // Agents (2026-08-11, "key places to understand the breadth of the
-  // product"), then Learn (2026-09-02, the embedded OpenMAIC classroom). Apps
-  // and Learn are flag-gated dark; the other rows are ungated.
-  test("the eight rows, in order — People, Library, Notes, Apps, Learn, Connectors, Skills, Agents", () => {
+  // product"), then Learn (2026-09-02, the embedded OpenMAIC classroom), then
+  // Design (2026-09-02, the embedded Cue Design studio). Apps, Learn and
+  // Design are flag-gated dark; the other rows are ungated.
+  test("the nine rows, in order — People, Library, Notes, Apps, Learn, Design, Connectors, Skills, Agents", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
       "people",
       "library",
       "notes",
       "apps",
       "learn",
+      "design",
       "connectors",
       "skills",
       "agents",
     ]);
   });
 
-  test("only Apps and Learn are flag-gated — every other row is ungated", () => {
+  test("only Apps, Learn and Design are flag-gated — every other row is ungated", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.flag ?? null)).toEqual([
       null,
       null,
       null,
       "ventureverseApps",
       "learnApp",
+      "designApp",
       null,
       null,
       null,
@@ -215,6 +218,7 @@ describe("the sidebar's Tier-2 rows are one column", () => {
       routes.notes,
       routes.ventureverseApps.root,
       routes.learn,
+      routes.design,
       routes.connectors,
       routes.skills,
       routes.hqAgents,
@@ -262,6 +266,7 @@ describe("People is ungated — the owner overruled design", () => {
       "notes",
       "apps",
       "learn",
+      "design",
       "connectors",
       "skills",
       "agents",

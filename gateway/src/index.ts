@@ -39,6 +39,10 @@ import { createRuntimeProxyHandler } from "./http/routes/runtime-proxy.js";
 import { createTelegramWebhookHandler } from "./http/routes/telegram-webhook.js";
 import { createAudioProxyHandler } from "./http/routes/audio-proxy.js";
 import { createLearnProxyHandler } from "./http/routes/learn-proxy.js";
+import {
+  createDesignProxyHandler,
+  isDesignHostRequest,
+} from "./http/routes/design-proxy.js";
 import { createTwilioVoiceWebhookHandler } from "./http/routes/twilio-voice-webhook.js";
 import { createTwilioStatusWebhookHandler } from "./http/routes/twilio-status-webhook.js";
 import { createTwilioConnectActionWebhookHandler } from "./http/routes/twilio-connect-action-webhook.js";
@@ -555,6 +559,7 @@ async function main() {
 
   const audioProxy = createAudioProxyHandler(config);
   const learnProxy = createLearnProxyHandler();
+  const designProxy = createDesignProxyHandler();
 
   const backupDeps = {
     assistantRuntimeBaseUrl: config.assistantRuntimeBaseUrl,
@@ -1669,6 +1674,15 @@ async function main() {
       handler: (req) => learnProxy.handleMintSession(req),
     },
     {
+      // Cue Design session mint — lives on the APP origin so the edge-authed
+      // SPA can obtain the parent-domain cookie before navigating to the
+      // design hostname (see design-proxy.ts).
+      path: "/design/cue-session",
+      method: "POST",
+      auth: "edge",
+      handler: (req) => designProxy.handleMintSession(req),
+    },
+    {
       path: /^\/learn(\/.*)?$/,
       auth: "custom",
       handler: (req, params) =>
@@ -1856,6 +1870,16 @@ async function main() {
     svr: ReturnType<typeof Bun.serve>,
   ): Promise<Response | undefined> {
     const url = new URL(req.url);
+
+    // ── Cue Design host (OpenDesign sidecar) ──
+    // The design surface lives on its own hostname (no basePath support in
+    // its frontend), so host-dispatch runs before the path router: every
+    // request addressed to DESIGN_HOST belongs to the sidecar proxy, which
+    // enforces its own session cookie. No-op unless DESIGN_HOST and
+    // DESIGN_UPSTREAM_URL are both set.
+    if (isDesignHostRequest(req)) {
+      return designProxy.handleDesignHost(req);
+    }
 
     // ── CORS: webview preflight & origin tracking ──
     // The macOS WKWebView loads pages from https://{appId}.vellum.local/

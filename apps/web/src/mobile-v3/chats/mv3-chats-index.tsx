@@ -35,6 +35,7 @@ import {
   GraduationCap,
   LayoutGrid,
   NotebookPen,
+  Palette,
   Plus,
   Search,
   X,
@@ -459,6 +460,14 @@ export function Mv3ChatsIndex({
     onLeaveForSurface?.();
     void navigate(routes.learn);
   };
+  // Design takes the same hydration-paired gate as Learn and Apps.
+  const designAppOn = useAssistantFeatureFlagStore.use.designApp();
+  const designEnabled = flagsHydrated && designAppOn;
+  const openDesign = () => {
+    haptic.light();
+    onLeaveForSurface?.();
+    void navigate(routes.design);
+  };
   const openApps = () => {
     haptic.light();
     // `onLeaveForSurface`, never `onClose` — see the prop's docs. The page's
@@ -875,6 +884,51 @@ export function Mv3ChatsIndex({
                 style={{ flexShrink: 0, color: "var(--mv3-muted)" }}
               />
               <span style={{ fontSize: 14, fontWeight: 600 }}>Learn</span>
+            </div>
+          </GlassCard>
+        </div>
+      ) : null}
+
+      {/* Design — the destination row (see `designEnabled` above). Same
+          shape and hiding rules as Learn. */}
+      {designEnabled && !searching ? (
+        <div
+          style={{
+            padding: "0 16px 10px",
+            flexShrink: 0,
+            position: "relative",
+            zIndex: 2,
+          }}
+        >
+          <GlassCard
+            radius={18}
+            padding="13px 15px"
+            role="button"
+            aria-label="Open Design"
+            tabIndex={0}
+            onClick={openDesign}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openDesign();
+              }
+            }}
+            style={{ cursor: "pointer", minHeight: 44 }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                minWidth: 0,
+              }}
+            >
+              <Palette
+                size={16}
+                aria-hidden
+                style={{ flexShrink: 0, color: "var(--mv3-muted)" }}
+              />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Design</span>
             </div>
           </GlassCard>
         </div>

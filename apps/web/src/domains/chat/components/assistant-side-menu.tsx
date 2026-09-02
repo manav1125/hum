@@ -10,6 +10,7 @@ import {
   GraduationCap,
   MessagesSquare,
   NotebookPen,
+  Palette,
   Pin,
   Plug,
   Rocket,
@@ -243,6 +244,7 @@ const SIDEBAR_ICON: Record<
   | "library"
   | "apps"
   | "learn"
+  | "design"
   | "connectors"
   | "skills"
   | "agents",
@@ -253,6 +255,7 @@ const SIDEBAR_ICON: Record<
   library: LayoutGrid,
   apps: Blocks,
   learn: GraduationCap,
+  design: Palette,
   connectors: Plug,
   skills: Sparkles,
   agents: Bot,
@@ -384,12 +387,14 @@ export function AssistantSideMenu({
   const ventureverseAppsOn =
     useAssistantFeatureFlagStore.use.ventureverseApps();
   const learnAppOn = useAssistantFeatureFlagStore.use.learnApp();
+  const designAppOn = useAssistantFeatureFlagStore.use.designApp();
   const railFlagOn: Record<
     NonNullable<SidebarDestination["flag"]>,
     boolean
   > = {
     ventureverseApps: ventureverseAppsOn,
     learnApp: learnAppOn,
+    designApp: designAppOn,
   };
   const sidebarDestinations = SIDEBAR_DESTINATIONS.filter((d) =>
     d.flag ? flagsHydrated && railFlagOn[d.flag] : true,

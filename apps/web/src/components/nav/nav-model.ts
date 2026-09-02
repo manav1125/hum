@@ -258,6 +258,7 @@ export interface SidebarDestination {
     | "library"
     | "apps"
     | "learn"
+    | "design"
     | "connectors"
     | "skills"
     | "agents";
@@ -270,7 +271,7 @@ export interface SidebarDestination {
    * the flag is off, so a deep link is safe either way — the same contract
    * as {@link ../../domains/intelligence/your-cue-model} leaves.
    */
-  flag?: "ventureverseApps" | "learnApp";
+  flag?: "ventureverseApps" | "learnApp" | "designApp";
   match: (pathname: string) => boolean;
 }
 
@@ -369,6 +370,22 @@ export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
   },
   {
     /**
+     * Design — the embedded Cue Design studio (OpenDesign fork). Same
+     * contract as Learn: a flag-gated destination (`design-app`, default
+     * OFF) that ships dark until the Cue Design sidecar is deployed for the
+     * instance; until the flag flips the rail renders exactly what design
+     * signed off on. The page is a same-site iframe of the design hostname
+     * dispatched by the gateway's design host proxy; its phone door is the
+     * drawer (see {@link MOBILE_DRAWER_DESTINATION_KEYS}).
+     */
+    key: "design",
+    label: "Design",
+    to: routes.design,
+    flag: "designApp",
+    match: (p) => p === routes.design || p.startsWith(`${routes.design}/`),
+  },
+  {
+    /**
      * The integrations surface (Composio connectors + their detail pages).
      * Owner-promoted from a Your Cue leaf — see the block above. Lights on the
      * list and on any `connectors/:slug` detail.
@@ -431,6 +448,9 @@ export const MOBILE_DRAWER_DESTINATION_KEYS: readonly string[] = [
   // Learn, like Apps and Notes, is a rail destination with no Your Cue leaf —
   // the drawer is its phone door.
   "learn",
+  // Design follows the same shape as Learn: rail destination, no leaf, the
+  // drawer is its phone door.
+  "design",
 ];
 
 // --- The door ---------------------------------------------------------------

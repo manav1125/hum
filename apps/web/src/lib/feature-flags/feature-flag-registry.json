@@ -323,6 +323,14 @@
       "defaultEnabled": false
     },
     {
+      "id": "design-app",
+      "scope": "assistant",
+      "key": "design-app",
+      "label": "Design",
+      "description": "Enable the Cue Design surface: a Tier-2 sidebar row that embeds the instance's Cue Design sidecar (OpenDesign fork) in a same-site iframe on its own hostname, dispatched by the gateway's design host proxy. Requires DESIGN_UPSTREAM_URL and DESIGN_HOST on the gateway; without them the embed shows an unavailable state.",
+      "defaultEnabled": false
+    },
+    {
       "id": "external-plugins",
       "scope": "assistant",
       "key": "external-plugins",

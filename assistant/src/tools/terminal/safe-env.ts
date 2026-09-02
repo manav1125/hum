@@ -83,6 +83,9 @@ export const SAFE_ENV_VARS = [
   "CUE_OPENROUTER_BASE_URL",
   // Learn sidecar base URL (non-secret; lights the usage bridge + gateway proxy)
   "LEARN_UPSTREAM_URL",
+  // Cue Design sidecar (non-secret; lights the gateway design host proxy)
+  "DESIGN_UPSTREAM_URL",
+  "DESIGN_HOST",
   "CUE_OPENROUTER_PROVIDER_ORDER",
   "CUE_OPENROUTER_PROVIDER_ALLOW_FALLBACKS",
   "CUE_OPENROUTER_PROVIDER_REQUIRE_PARAMS",
