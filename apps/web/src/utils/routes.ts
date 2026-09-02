@@ -288,6 +288,12 @@ export const routes = {
     root: r("/assistant/apps"),
     app: (slug: string) => dyn(r("/assistant/apps"), slug),
   },
+  // Learn — the embedded OpenMAIC classroom (a Tier-2 "Learn" sidebar row,
+  // gated by the `learn-app` assistant feature flag). The page embeds the
+  // instance's OpenMAIC sidecar in a same-origin iframe at /learn/, served
+  // through the gateway proxy; no Cue credentials enter the frame beyond the
+  // gateway-minted HttpOnly learn-session cookie.
+  learn: r("/assistant/learn"),
 
   document: (surfaceId: string) => dyn(r("/assistant/documents"), surfaceId),
 

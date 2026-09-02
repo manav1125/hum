@@ -1,0 +1,1 @@
+import{r as e}from"./device-settings-B2s7ttPp.js";function t(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone||`UTC`}catch{return`UTC`}}function n(){return e(`timezone`,``).trim()||t()}export{t as n,n as t};

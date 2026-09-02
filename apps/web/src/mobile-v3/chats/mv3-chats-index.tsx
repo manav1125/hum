@@ -31,7 +31,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutGrid, NotebookPen, Plus, Search, X } from "lucide-react";
+import {
+  GraduationCap,
+  LayoutGrid,
+  NotebookPen,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 
 import { workitemsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
@@ -444,6 +451,14 @@ export function Mv3ChatsIndex({
   const ventureverseAppsOn =
     useAssistantFeatureFlagStore.use.ventureverseApps();
   const appsEnabled = flagsHydrated && ventureverseAppsOn;
+  // Learn takes the same hydration-paired gate as Apps, for the same reasons.
+  const learnAppOn = useAssistantFeatureFlagStore.use.learnApp();
+  const learnEnabled = flagsHydrated && learnAppOn;
+  const openLearn = () => {
+    haptic.light();
+    onLeaveForSurface?.();
+    void navigate(routes.learn);
+  };
   const openApps = () => {
     haptic.light();
     // `onLeaveForSurface`, never `onClose` — see the prop's docs. The page's
@@ -815,6 +830,51 @@ export function Mv3ChatsIndex({
                 style={{ flexShrink: 0, color: "var(--mv3-muted)" }}
               />
               <span style={{ fontSize: 14, fontWeight: 600 }}>Apps</span>
+            </div>
+          </GlassCard>
+        </div>
+      ) : null}
+
+      {/* Learn — the destination row (see `learnEnabled` above). Hidden while
+          searching for the same reason as Apps and Bookmarked. */}
+      {learnEnabled && !searching ? (
+        <div
+          style={{
+            padding: "0 16px 10px",
+            flexShrink: 0,
+            position: "relative",
+            zIndex: 2,
+          }}
+        >
+          <GlassCard
+            radius={18}
+            padding="13px 15px"
+            role="button"
+            aria-label="Open Learn"
+            tabIndex={0}
+            onClick={openLearn}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openLearn();
+              }
+            }}
+            style={{ cursor: "pointer", minHeight: 44 }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                minWidth: 0,
+              }}
+            >
+              <GraduationCap
+                size={16}
+                aria-hidden
+                style={{ flexShrink: 0, color: "var(--mv3-muted)" }}
+              />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Learn</span>
             </div>
           </GlassCard>
         </div>

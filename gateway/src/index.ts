@@ -38,6 +38,7 @@ import { createRuntimeProxyHandler } from "./http/routes/runtime-proxy.js";
 
 import { createTelegramWebhookHandler } from "./http/routes/telegram-webhook.js";
 import { createAudioProxyHandler } from "./http/routes/audio-proxy.js";
+import { createLearnProxyHandler } from "./http/routes/learn-proxy.js";
 import { createTwilioVoiceWebhookHandler } from "./http/routes/twilio-voice-webhook.js";
 import { createTwilioStatusWebhookHandler } from "./http/routes/twilio-status-webhook.js";
 import { createTwilioConnectActionWebhookHandler } from "./http/routes/twilio-connect-action-webhook.js";
@@ -553,6 +554,7 @@ async function main() {
   );
 
   const audioProxy = createAudioProxyHandler(config);
+  const learnProxy = createLearnProxyHandler();
 
   const backupDeps = {
     assistantRuntimeBaseUrl: config.assistantRuntimeBaseUrl,
@@ -1653,6 +1655,40 @@ async function main() {
     auth: "custom",
     handler: (req) => handleCreateToken(req, server, config.trustProxy),
   });
+
+  // ── Learn (OpenMAIC) same-origin proxy ──
+  // Mount order matters: the session mint is the most specific, then the two
+  // proxied path families, all ahead of the runtime catch-all. `/api/*` is
+  // OpenMAIC's hardcoded-absolute-path shim and has no other owner on this
+  // origin; every route is a no-op 404 unless LEARN_UPSTREAM_URL is set.
+  routes.push(
+    {
+      path: "/learn/cue-session",
+      method: "POST",
+      auth: "edge",
+      handler: (req) => learnProxy.handleMintSession(req),
+    },
+    {
+      path: /^\/learn(\/.*)?$/,
+      auth: "custom",
+      handler: (req, params) =>
+        learnProxy.handleLearnPath(req, params[0] ?? ""),
+    },
+    {
+      path: /^\/api(\/.*)$/,
+      auth: "custom",
+      handler: (req, params) => learnProxy.handleApiShim(req, params[0] ?? ""),
+    },
+    {
+      // OpenMAIC public/ assets referenced by absolute path — an enumerated
+      // set, kept in sync with the fork's public/ top level.
+      path: /^(\/(?:avatars|logos|vendor)\/.+|\/logo-horizontal\.png|\/openmaic-mark\.png|\/comfyui-workflow\.json)$/,
+      method: "GET",
+      auth: "custom",
+      handler: (req, params) =>
+        learnProxy.handlePublicAssetShim(req, params[0] ?? ""),
+    },
+  );
 
   // Runtime proxy catch-all — must be last so specific routes are checked first.
   routes.push({

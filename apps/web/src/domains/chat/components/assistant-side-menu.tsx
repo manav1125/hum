@@ -7,6 +7,7 @@ import {
   Hash,
   LayoutGrid,
   LayoutList,
+  GraduationCap,
   MessagesSquare,
   NotebookPen,
   Pin,
@@ -61,6 +62,7 @@ import {
   takePeek,
   type PeekSectionKey,
   type PrimaryNavKey,
+  type SidebarDestination,
 } from "@/components/nav/nav-model";
 import { usePeopleCount } from "@/components/nav/use-people-count";
 import { railToggleLabel } from "@/components/nav/rail-collapse";
@@ -236,13 +238,21 @@ const PRIMARY_ICON: Record<PrimaryNavKey, typeof Target> = {
 };
 
 const SIDEBAR_ICON: Record<
-  "notes" | "people" | "library" | "apps" | "connectors" | "skills" | "agents",
+  | "notes"
+  | "people"
+  | "library"
+  | "apps"
+  | "learn"
+  | "connectors"
+  | "skills"
+  | "agents",
   typeof Target
 > = {
   notes: NotebookPen,
   people: Users,
   library: LayoutGrid,
   apps: Blocks,
+  learn: GraduationCap,
   connectors: Plug,
   skills: Sparkles,
   agents: Bot,
@@ -367,14 +377,22 @@ export function AssistantSideMenu({
   // The number beside `👤 People`. Queried, never guessed — `null` while
   // unread, which renders no badge rather than a `0`.
   const peopleCount = usePeopleCount(assistantId);
-  // Flag-gated Tier-2 rows (today: the VentureVerse Apps row). Hidden until
-  // the first real /feature-flags response lands — a defaultEnabled:false
+  // Flag-gated Tier-2 rows (VentureVerse Apps, Learn). Hidden until the
+  // first real /feature-flags response lands — a defaultEnabled:false
   // flag briefly reading as true would flash a row and yank it back.
   const flagsHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
   const ventureverseAppsOn =
     useAssistantFeatureFlagStore.use.ventureverseApps();
+  const learnAppOn = useAssistantFeatureFlagStore.use.learnApp();
+  const railFlagOn: Record<
+    NonNullable<SidebarDestination["flag"]>,
+    boolean
+  > = {
+    ventureverseApps: ventureverseAppsOn,
+    learnApp: learnAppOn,
+  };
   const sidebarDestinations = SIDEBAR_DESTINATIONS.filter((d) =>
-    d.flag === "ventureverseApps" ? flagsHydrated && ventureverseAppsOn : true,
+    d.flag ? flagsHydrated && railFlagOn[d.flag] : true,
   );
   const openSection = useRailPeekStore.use.openSection();
   const togglePeek = useRailPeekStore.use.toggle();

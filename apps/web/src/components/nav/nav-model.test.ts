@@ -174,28 +174,31 @@ describe("the sidebar's Tier-2 rows are one column", () => {
   // The bug: v20 laid these out as a two-column grid and the live app rendered
   // "Watching" as "Wat…". Design's ruling — a grid reads as a keypad, breaks
   // vertical scanning, truncates labels — is enforced here structurally rather
-  // than in CSS. The SET has grown twice by owner decision over the original
-  // accumulation test: Apps (2026-08-10), then Connectors/Skills/Agents
-  // (2026-08-11, "key places to understand the breadth of the product"). Apps
-  // is flag-gated dark; the other three are ungated product-surface rows.
-  test("the seven rows, in order — People, Library, Notes, Apps, Connectors, Skills, Agents", () => {
+  // than in CSS. The SET has grown three times by owner decision over the
+  // original accumulation test: Apps (2026-08-10), then Connectors/Skills/
+  // Agents (2026-08-11, "key places to understand the breadth of the
+  // product"), then Learn (2026-09-02, the embedded OpenMAIC classroom). Apps
+  // and Learn are flag-gated dark; the other rows are ungated.
+  test("the eight rows, in order — People, Library, Notes, Apps, Learn, Connectors, Skills, Agents", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.key)).toEqual([
       "people",
       "library",
       "notes",
       "apps",
+      "learn",
       "connectors",
       "skills",
       "agents",
     ]);
   });
 
-  test("only Apps is flag-gated — every other row is ungated", () => {
+  test("only Apps and Learn are flag-gated — every other row is ungated", () => {
     expect(SIDEBAR_DESTINATIONS.map((d) => d.flag ?? null)).toEqual([
       null,
       null,
       null,
       "ventureverseApps",
+      "learnApp",
       null,
       null,
       null,
@@ -211,6 +214,7 @@ describe("the sidebar's Tier-2 rows are one column", () => {
       routes.library.root,
       routes.notes,
       routes.ventureverseApps.root,
+      routes.learn,
       routes.connectors,
       routes.skills,
       routes.hqAgents,
@@ -257,6 +261,7 @@ describe("People is ungated — the owner overruled design", () => {
       "library",
       "notes",
       "apps",
+      "learn",
       "connectors",
       "skills",
       "agents",

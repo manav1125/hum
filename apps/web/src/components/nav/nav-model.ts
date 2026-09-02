@@ -257,6 +257,7 @@ export interface SidebarDestination {
     | "people"
     | "library"
     | "apps"
+    | "learn"
     | "connectors"
     | "skills"
     | "agents";
@@ -269,7 +270,7 @@ export interface SidebarDestination {
    * the flag is off, so a deep link is safe either way — the same contract
    * as {@link ../../domains/intelligence/your-cue-model} leaves.
    */
-  flag?: "ventureverseApps";
+  flag?: "ventureverseApps" | "learnApp";
   match: (pathname: string) => boolean;
 }
 
@@ -350,6 +351,24 @@ export const SIDEBAR_DESTINATIONS: readonly SidebarDestination[] = [
   },
   {
     /**
+     * Learn — the embedded OpenMAIC interactive classroom (owner decision,
+     * 2026-09-02: "our next big feature will be called learn"). Like Apps it
+     * is a flag-gated destination (`learn-app`, default OFF) rather than
+     * admission-tested: courses the user generates do accumulate, but the
+     * row ships dark until the OpenMAIC sidecar is deployed for the
+     * instance, and until the flag flips the rail renders exactly what
+     * design signed off on. The page is a same-origin iframe of the
+     * gateway's /learn proxy; its phone door is the drawer (see
+     * {@link MOBILE_DRAWER_DESTINATION_KEYS}).
+     */
+    key: "learn",
+    label: "Learn",
+    to: routes.learn,
+    flag: "learnApp",
+    match: (p) => p === routes.learn || p.startsWith(`${routes.learn}/`),
+  },
+  {
+    /**
      * The integrations surface (Composio connectors + their detail pages).
      * Owner-promoted from a Your Cue leaf — see the block above. Lights on the
      * list and on any `connectors/:slug` detail.
@@ -409,6 +428,9 @@ export const MOBILE_DRAWER_DESTINATION_KEYS: readonly string[] = [
   // design specifies: "same three-tab shell, Notes reached from the ⓶ menu."
   "notes",
   "apps",
+  // Learn, like Apps and Notes, is a rail destination with no Your Cue leaf —
+  // the drawer is its phone door.
+  "learn",
 ];
 
 // --- The door ---------------------------------------------------------------

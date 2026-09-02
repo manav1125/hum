@@ -1499,6 +1499,18 @@ export const routeTree = [
                         },
                       },
                       {
+                        // Learn — the embedded OpenMAIC classroom, gated by
+                        // the `learn-app` assistant feature flag; the page
+                        // redirects to HQ when the flag is off.
+                        path: "learn",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/learn/learn-page").then(
+                              (m) => m.LearnPage,
+                            ),
+                        },
+                      },
+                      {
                         path: "connect",
                         lazy: {
                           Component: () =>

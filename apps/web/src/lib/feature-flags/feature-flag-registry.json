@@ -315,6 +315,14 @@
       "defaultEnabled": false
     },
     {
+      "id": "learn-app",
+      "scope": "assistant",
+      "key": "learn-app",
+      "label": "Learn",
+      "description": "Enable the Learn surface: a Tier-2 sidebar row that embeds the instance's OpenMAIC sidecar (multi-agent interactive classroom) in a same-origin iframe served through the gateway's /learn proxy. Requires LEARN_UPSTREAM_URL on the gateway; without it the embed shows an unavailable state.",
+      "defaultEnabled": false
+    },
+    {
       "id": "external-plugins",
       "scope": "assistant",
       "key": "external-plugins",
@@ -479,8 +487,8 @@
       "scope": "client",
       "key": "desktop-corner",
       "label": "Floating corner",
-      "description": "RETIRED as a surface (owner, 2026-08-24): the always-on companion replaces it, and its rules — one exchange, sourced answers, local Undo, selection quoted, never a thread — migrated onto the companion's typing card. Defaults OFF now that the companion is built; left behind the flag so the work stays reachable. Leaving it on also claims ⌥C system-wide for a surface nobody is meant to summon any more.",
-      "defaultEnabled": false
+      "description": "The floating corner: one exchange summoned with \u2325C, reading whatever you have selected, then finished. Replaces the Desktop Companion orb. Claims \u2325C system-wide (rebindable in Keyboard Shortcuts). On from 1.2.1, the first build that can actually load it \u2014 before that the flag reached older apps through the web and claimed \u2325C for a panel that could not render. It replaces the Desktop Companion orb, which stands down whenever this is on.",
+      "defaultEnabled": true
     }
   ]
 }

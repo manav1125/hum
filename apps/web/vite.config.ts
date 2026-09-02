@@ -133,6 +133,18 @@ export default defineConfig(({ mode }) => {
         }),
         "/accounts": { target: apiProxyTarget, changeOrigin: true },
         "/auth": { target: gatewayProxyTarget, changeOrigin: true },
+        // Learn (OpenMAIC) rides the gateway's /learn proxy; /api and the
+        // public-asset prefixes below are the gateway-side shims for
+        // OpenMAIC's hardcoded absolute paths — none of these namespaces has
+        // another owner on the Cue origin.
+        "/learn": { target: gatewayProxyTarget, changeOrigin: true },
+        "/api": { target: gatewayProxyTarget, changeOrigin: true },
+        "/avatars": { target: gatewayProxyTarget, changeOrigin: true },
+        "/logos": { target: gatewayProxyTarget, changeOrigin: true },
+        "/vendor": { target: gatewayProxyTarget, changeOrigin: true },
+        "/logo-horizontal.png": { target: gatewayProxyTarget, changeOrigin: true },
+        "/openmaic-mark.png": { target: gatewayProxyTarget, changeOrigin: true },
+        "/comfyui-workflow.json": { target: gatewayProxyTarget, changeOrigin: true },
       },
     },
     build: {

@@ -315,6 +315,14 @@
       "defaultEnabled": false
     },
     {
+      "id": "learn-app",
+      "scope": "assistant",
+      "key": "learn-app",
+      "label": "Learn",
+      "description": "Enable the Learn surface: a Tier-2 sidebar row that embeds the instance's OpenMAIC sidecar (multi-agent interactive classroom) in a same-origin iframe served through the gateway's /learn proxy. Requires LEARN_UPSTREAM_URL on the gateway; without it the embed shows an unavailable state.",
+      "defaultEnabled": false
+    },
+    {
       "id": "external-plugins",
       "scope": "assistant",
       "key": "external-plugins",
