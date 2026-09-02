@@ -56,6 +56,9 @@ ENV OPENMAIC_BASE_PATH=$OPENMAIC_BASE_PATH
 # production build GCs instead of tripping the container OOM killer (the
 # depot builder killed it silently at ~4 min without this).
 ENV NODE_OPTIONS=--max-old-space-size=6144
+# Cue: the Pro workbench entry is a build-time flag like the persistence pair.
+ARG NEXT_PUBLIC_PRO_WORKBENCH_ENABLED
+ENV NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=$NEXT_PUBLIC_PRO_WORKBENCH_ENABLED
 ARG ALLOWED_FRAME_ANCESTORS
 ARG NEXT_PUBLIC_PERSISTENCE
 ARG NEXT_PUBLIC_PERSISTENCE_TOKEN
