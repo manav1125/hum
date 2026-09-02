@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router";
 
 import { PageShell } from "@/components/page-shell";
-import { buildVellumHeaders } from "@/lib/auth/request-headers";
+import { mintLearnSession } from "@/lib/learn-session";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { routes } from "@/utils/routes";
 
@@ -60,23 +60,7 @@ export function LearnPage() {
 
   const mintSession = useCallback(async () => {
     setSession("minting");
-    try {
-      // The gateway route authenticates the Bearer edge token itself; CSRF
-      // headers are a daemon/platform concern, so the safe-request builder
-      // is the right one here despite the POST.
-      const res = await fetch("/learn/cue-session", {
-        method: "POST",
-        headers: buildVellumHeaders(),
-        credentials: "include",
-      });
-      if (res.status === 404) {
-        setSession("unconfigured");
-        return;
-      }
-      setSession(res.ok ? "ready" : "error");
-    } catch {
-      setSession("error");
-    }
+    setSession(await mintLearnSession());
   }, []);
 
   useEffect(() => {

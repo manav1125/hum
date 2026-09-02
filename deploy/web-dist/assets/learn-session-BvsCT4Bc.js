@@ -1,0 +1,1 @@
+import{t as e}from"./request-headers-DbX-jKWF.js";async function t(){try{let t=await fetch(`/learn/cue-session`,{method:`POST`,headers:e(),credentials:`include`});return t.status===404?`unconfigured`:t.ok?`ready`:`error`}catch{return`error`}}export{t};

@@ -8,6 +8,8 @@
  * and don't involve data-fetching composition).
  */
 
+import { useNavigate } from "react-router";
+
 import { useQueryClient } from "@tanstack/react-query";
 import { Search, Upload } from "lucide-react";
 import {
@@ -32,6 +34,7 @@ import type { MediaSummary } from "@/types/media-types";
 import { LibraryEmptyState } from "@/domains/library/components/library-empty-state";
 import { LibraryGridSection } from "@/domains/library/components/library-grid-section";
 import { useLibraryData } from "@/domains/library/use-library-data";
+import { useLearnCourses } from "@/hooks/use-learn-courses";
 import { usePhoneLayout } from "@/hooks/use-is-mobile";
 import {
   LibraryGrid,
@@ -41,6 +44,7 @@ import { useLibraryOutputs } from "@/mobile-v3/library/use-library-outputs";
 import { useOpenLibraryEntry } from "@/mobile-v3/library/use-open-entry";
 import { useProjects } from "@/pages/projects/use-projects";
 import { formatFriendlyDate } from "@/utils/format-date";
+import { routes } from "@/utils/routes";
 import { appsGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 import { appsByIdDeletePost } from "@/generated/daemon/sdk.gen";
 import { useDeployStore } from "@/stores/deploy-store";
@@ -87,6 +91,7 @@ const LIBRARY_FILTERS = [
   "Sites",
   "Docs",
   "Media",
+  "Courses",
 ] as const;
 type LibraryFilter = (typeof LIBRARY_FILTERS)[number];
 
@@ -203,6 +208,7 @@ export function LibraryView({
 
   // --- Filter tabs (All / Decks / Docs / Dashboards / Sites) ---
   const [activeFilter, setActiveFilter] = useState<LibraryFilter>("All");
+  const navigate = useNavigate();
 
   // --- Delete state ---
   const [appPendingDelete, setAppPendingDelete] = useState<AppSummary | null>(
@@ -301,7 +307,12 @@ export function LibraryView({
   // --- Tab filtering: narrow the search-filtered lists by the active tab. ---
   const tabApps = useMemo(() => {
     if (activeFilter === "All") return filteredApps;
-    if (activeFilter === "Docs" || activeFilter === "Media") return [];
+    if (
+      activeFilter === "Docs" ||
+      activeFilter === "Media" ||
+      activeFilter === "Courses"
+    )
+      return [];
     return filteredApps.filter(
       (a) => inferAppType(a.name, a.icon).filter === activeFilter,
     );
@@ -318,6 +329,24 @@ export function LibraryView({
     () =>
       activeFilter === "All" || activeFilter === "Media" ? filteredMedia : [],
     [filteredMedia, activeFilter],
+  );
+
+  // Cue Learn courses — catalog cards only. The content stays in the Learn
+  // service; a card deep-links into the Learn surface, where the classroom's
+  // own UX takes over (owner decision: courses never open "inside" Library).
+  const { courses: learnCourses } = useLearnCourses();
+  const tabCourses = useMemo(() => {
+    if (activeFilter !== "All" && activeFilter !== "Courses") return [];
+    const q = searchText.trim().toLowerCase();
+    if (!q) return learnCourses;
+    return learnCourses.filter((c) => c.name.toLowerCase().includes(q));
+  }, [learnCourses, activeFilter, searchText]);
+  const openCourse = useCallback(
+    (courseId: string) =>
+      void navigate(
+        `${routes.learn}?p=${encodeURIComponent(`/classroom/${courseId}`)}`,
+      ),
+    [navigate],
   );
 
   const byRecent = (
@@ -381,7 +410,10 @@ export function LibraryView({
 
   // --- Render: main library grid ---
   const noResults =
-    tabApps.length === 0 && tabDocuments.length === 0 && tabMedia.length === 0;
+    tabApps.length === 0 &&
+    tabDocuments.length === 0 &&
+    tabMedia.length === 0 &&
+    tabCourses.length === 0;
   return (
     <div
       className="flex h-full flex-col overflow-hidden"
@@ -561,6 +593,15 @@ export function LibraryView({
                   onOpen={() => onOpenDocument?.(doc.surfaceId)}
                 />
               ))}
+              {tabCourses.map((course) => (
+                <LibraryCoverCard
+                  key={course.id}
+                  kind="Course"
+                  title={course.name}
+                  dateLabel={monoDate(course.updatedAt || course.createdAt)}
+                  onOpen={() => openCourse(course.id)}
+                />
+              ))}
               {tabMedia.map((item) => (
                 <LibraryMediaCard
                   key={item.id}
@@ -607,6 +648,24 @@ export function LibraryView({
                           onOpenDocument(documentSurfaceId);
                         }
                       }}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {tabCourses.length > 0 ? (
+              <section>
+                <h2 className="mb-4" style={sectionLabel}>
+                  Courses
+                </h2>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%-6rem)/5)),1fr))] gap-6">
+                  {tabCourses.map((course) => (
+                    <LibraryCoverCard
+                      key={course.id}
+                      kind="Course"
+                      title={course.name}
+                      dateLabel={monoDate(course.updatedAt || course.createdAt)}
+                      onOpen={() => openCourse(course.id)}
                     />
                   ))}
                 </div>

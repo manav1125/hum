@@ -16,7 +16,14 @@ const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
 
 /** Coarse artifact kinds we can theme a cover for. */
-export type CoverKind = "Deck" | "Doc" | "Dash" | "Site" | "Video" | "App";
+export type CoverKind =
+  | "Deck"
+  | "Doc"
+  | "Dash"
+  | "Site"
+  | "Video"
+  | "App"
+  | "Course";
 
 interface CoverTheme {
   /** Cover background (gradient or solid) — fixed brand color per type. */
@@ -87,6 +94,16 @@ const COVER_THEME: Record<CoverKind, CoverTheme> = {
     badge: "App",
     accent: "#7FA0E6",
     glyph: "▧",
+  },
+  // Cue Learn classrooms — navy ground with the Learn wordmark's blue/violet
+  // pair; the diamond glyph echoes the mortarboard in the Cue Learn mark.
+  Course: {
+    background: "linear-gradient(150deg,#131A2E,#0D1120)",
+    badgeFg: "#0D1120",
+    badgeBg: "#8FA0E8",
+    badge: "Course",
+    accent: "#7F77DD",
+    glyph: "◆",
   },
 };
 
