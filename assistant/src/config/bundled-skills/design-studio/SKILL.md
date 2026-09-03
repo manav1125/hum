@@ -49,3 +49,13 @@ chat can't offer. Your job here is to set the user up for success and hand off.
 Keep it smooth: one good brief, one link, and the user is in the studio ready to
 create. Don't try to produce the deck or page yourself in chat — the studio does
 it better and the user can edit it.
+
+## Bringing work back (closing the loop)
+
+When the user wants to USE something they made in Cue Design — email it, save
+it, share it, send it to someone — call `design_export` to pull the finished
+artifact back into Cue as an attachment. Pass the project id from the earlier
+`design_handoff` (it's in that result), or omit it to grab their most recent
+project. Once it's a Cue attachment you can attach it to an email, and it shows
+in the reply for the user to download or share. Examples: "email me that landing
+page", "send the prototype to the team", "save the page I just designed".

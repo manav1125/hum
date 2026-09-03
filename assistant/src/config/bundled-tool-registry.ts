@@ -57,6 +57,7 @@ import * as contactMerge from "./bundled-skills/contacts/tools/contact-merge.js"
 import * as contactSearch from "./bundled-skills/contacts/tools/contact-search.js";
 import * as googleContacts from "./bundled-skills/contacts/tools/google-contacts.js";
 // ── design-studio ──────────────────────────────────────────────────────────────
+import * as designExport from "./bundled-skills/design-studio/tools/design-export.js";
 import * as designHandoff from "./bundled-skills/design-studio/tools/design-handoff.js";
 // ── document-editor ────────────────────────────────────────────────────────────
 import * as commentList from "./bundled-skills/document-editor/tools/comment-list.js";
@@ -224,6 +225,7 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
 
   // design-studio
   ["design-studio:tools/design-handoff.ts", designHandoff],
+  ["design-studio:tools/design-export.ts", designExport],
 
   // document-editor
   ["document-editor:tools/document-open.ts", documentOpen],

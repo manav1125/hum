@@ -22,6 +22,32 @@
       },
       "executor": "tools/design-handoff.ts",
       "execution_target": "host"
+    },
+    {
+      "name": "design_export",
+      "description": "Bring a Cue Design artifact back INTO Cue as a first-class attachment, so it can be attached to an email, saved, or shared from chat. This is the return half of the loop: design_handoff sends work out to the studio; design_export pulls the finished page/prototype back as a self-contained HTML file and attaches it to the reply. Use when the user wants to use something they made in Cue Design elsewhere — \"email me that landing page\", \"save the page I designed\", \"send the prototype to the team\". Pass the project id from a recent design_handoff, or omit it (or pass \"latest\") to grab the most recently updated project. (Deck/slide PDF export isn't wired server-side yet — this brings back the HTML artifact.)",
+      "category": "content",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "The Cue Design project id (from a design_handoff result). Omit or pass \"latest\" to use the most recently updated project."
+          },
+          "fileName": {
+            "type": "string",
+            "description": "The artifact file to export (default \"index.html\" — the project's main page)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional title for the exported file / attachment."
+          }
+        },
+        "required": []
+      },
+      "executor": "tools/design-export.ts",
+      "execution_target": "host"
     }
   ]
 }
