@@ -37,10 +37,30 @@ type SessionState =
   | { phase: "unconfigured" }
   | { phase: "error" };
 
+/**
+ * `?project=<id>` deep-links straight into a Cue Design project — the target
+ * of the chat → Design handoff. Cue chat creates the project on the sidecar
+ * (with the brief pre-loaded and the Cue brand) and links here; the iframe
+ * opens the project instead of the studio home. The id is validated to the
+ * sidecar's own safe-id shape so it can only ever address a project path.
+ */
+function readProjectParam(): string | null {
+  try {
+    const raw = new URLSearchParams(window.location.search).get("project");
+    if (raw && /^[A-Za-z0-9._-]{1,128}$/.test(raw) && !/^\.+$/.test(raw)) {
+      return raw;
+    }
+  } catch {
+    /* no window / bad search */
+  }
+  return null;
+}
+
 export function DesignPage() {
   const hasHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
   const enabled = useAssistantFeatureFlagStore.use.designApp();
   const [session, setSession] = useState<SessionState>({ phase: "minting" });
+  const [projectId] = useState<string | null>(readProjectParam);
 
   const mintSession = useCallback(async () => {
     setSession({ phase: "minting" });
@@ -63,14 +83,18 @@ export function DesignPage() {
       }
       const body = (await res.json()) as { url?: string };
       if (typeof body.url === "string" && body.url.length > 0) {
-        setSession({ phase: "ready", url: body.url });
+        // Deep-link into a specific project when handed off from chat;
+        // otherwise open the studio home. `body.url` ends in "/".
+        const base = body.url.endsWith("/") ? body.url : `${body.url}/`;
+        const url = projectId ? `${base}projects/${projectId}` : body.url;
+        setSession({ phase: "ready", url });
       } else {
         setSession({ phase: "error" });
       }
     } catch {
       setSession({ phase: "error" });
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     if (hasHydrated && enabled) void mintSession();

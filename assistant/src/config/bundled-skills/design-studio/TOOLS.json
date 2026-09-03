@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "design_handoff",
+      "description": "Open a Cue Design project from chat with the user's brief and the Cue brand already loaded, and return a link that drops them straight into the studio. Use this for design-PROJECT work the studio is built for — a slide deck / pitch deck, a landing or marketing page, a UI prototype or screen flow, a dashboard mockup, a poster/flyer/one-pager, or any multi-artboard visual layout the user will refine visually. It creates the project on the Cue Design sidecar with `brief` pre-loaded into the composer (one click to generate) and the Cue design system attached. Do NOT use it for deterministic motion-graphics video (use hyperframes_render), for AI-generated footage (use video-studio), or for design-quality frontend CODE inside a repo (use frontend-design). After calling, give the user the returned open link.",
+      "category": "content",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short project title (e.g. \"Raise Pitch Deck\", \"Halo Landing Page\"). Shown as the project name in Cue Design."
+          },
+          "brief": {
+            "type": "string",
+            "description": "The full design request to pre-load into the studio composer: what to make, for whom, the key content/sections, and any style direction. Write it as the prompt the user would type — concrete and specific (include real facts from the conversation). Default the brand to the Cue design system unless the user asked for another style."
+          }
+        },
+        "required": ["title", "brief"]
+      },
+      "executor": "tools/design-handoff.ts",
+      "execution_target": "host"
+    }
+  ]
+}
