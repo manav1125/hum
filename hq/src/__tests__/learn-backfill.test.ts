@@ -40,6 +40,11 @@ class BackfillMockDriver extends MockDriver {
   envPatches: { externalId: string; env: Record<string, string> }[] = [];
   destroyedSidecars: string[] = [];
   failEnvPatchFor: string | null = null;
+  liveEnvByExternalId: Record<string, Record<string, string>> = {};
+
+  async getEnv(externalId: string): Promise<Record<string, string>> {
+    return this.liveEnvByExternalId[externalId] ?? {};
+  }
 
   async provisionLearnSidecar(spec: {
     appName: string;
@@ -129,6 +134,47 @@ describe("backfillLearnSidecars", () => {
     if (!again.ok) throw new Error(again.error);
     expect(again.results).toHaveLength(0);
     expect(driver.sidecarSpecs).toHaveLength(1);
+  });
+
+  test("adopts a hand-wired sidecar instead of provisioning a duplicate", async () => {
+    const { db, driver } = setup();
+    const { customer, instance } = makeInstance(db, "manav");
+    driver.liveEnvByExternalId[instance.externalId] = {
+      LEARN_UPSTREAM_URL: "http://cue-learn-manav.internal:3000",
+      VELLUM_FLAG_LEARN_APP: "true",
+    };
+
+    const outcome = await backfillLearnSidecars({ db, driver });
+    if (!outcome.ok) throw new Error(outcome.error);
+    expect(outcome.results).toEqual([
+      {
+        instanceId: instance.id,
+        customerId: customer.id,
+        status: "adopted",
+        appName: "cue-learn-manav",
+      },
+    ]);
+    expect(driver.sidecarSpecs).toHaveLength(0);
+    expect(driver.envPatches).toHaveLength(0);
+    expect(db.getInstance(instance.id)!.learnAppName).toBe("cue-learn-manav");
+    expect(
+      db.findLatestEvent("learn_sidecar_adopted", customer.id),
+    ).toBeTruthy();
+  });
+
+  test("an unparseable existing upstream fails loudly, never overwrites", async () => {
+    const { db, driver } = setup();
+    const { instance } = makeInstance(db, "odd");
+    driver.liveEnvByExternalId[instance.externalId] = {
+      LEARN_UPSTREAM_URL: "https://some-external-host.example.com/learn",
+    };
+
+    const outcome = await backfillLearnSidecars({ db, driver });
+    if (!outcome.ok) throw new Error(outcome.error);
+    expect(outcome.results[0].status).toBe("failed");
+    expect(driver.sidecarSpecs).toHaveLength(0);
+    expect(driver.envPatches).toHaveLength(0);
+    expect(db.getInstance(instance.id)!.learnAppName).toBeNull();
   });
 
   test("skips non-live instances and ones that already have a sidecar", async () => {

@@ -111,9 +111,15 @@ export function parseInstanceSecrets(
 export interface LearnBackfillItem {
   instanceId: string;
   customerId: string;
-  status: "provisioned" | "failed" | "dry-run";
+  status: "provisioned" | "adopted" | "failed" | "dry-run";
   appName?: string;
   error?: string;
+}
+
+/** `http://<app>.internal:<port>` → `<app>`; null for anything else. */
+function sidecarAppFromUpstreamUrl(url: string): string | null {
+  const m = /^http:\/\/([a-z0-9-]+)\.internal:\d+$/.exec(url.trim());
+  return m ? m[1] : null;
 }
 
 /**
@@ -174,6 +180,41 @@ export async function backfillLearnSidecars(
     if (!customer) {
       results.push({ ...base, status: "failed", error: "unknown customer" });
       continue;
+    }
+
+    // A machine whose env ALREADY names a Learn upstream was wired by hand
+    // (HQ just never learned about it). Adopt that sidecar — provisioning a
+    // fresh one and repointing would strand the customer's real course data
+    // on an app nothing references. An upstream we cannot parse is a failure
+    // to look at, never a green light to overwrite.
+    if (driver.getEnv) {
+      let liveEnv: Record<string, string>;
+      try {
+        liveEnv = await driver.getEnv(instance.externalId);
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        results.push({ ...base, status: "failed", error });
+        continue;
+      }
+      const upstream = liveEnv.LEARN_UPSTREAM_URL;
+      if (upstream) {
+        const existing = sidecarAppFromUpstreamUrl(upstream);
+        if (!existing) {
+          results.push({
+            ...base,
+            status: "failed",
+            error: `instance already has LEARN_UPSTREAM_URL but it is not a sidecar address — resolve by hand`,
+          });
+          continue;
+        }
+        db.setInstanceLearnAppName(instance.id, existing);
+        db.recordEvent("learn_sidecar_adopted", customer.id, {
+          instanceId: instance.id,
+          appName: existing,
+        });
+        results.push({ ...base, status: "adopted", appName: existing });
+        continue;
+      }
     }
 
     let appName: string;

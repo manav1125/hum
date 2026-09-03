@@ -879,6 +879,21 @@ export class FlyDriver implements InstanceDriver {
     }
   }
 
+  /** Current env of the app's first machine, from live provider state. */
+  async getEnv(externalId: string): Promise<Record<string, string>> {
+    this.requireConfigured();
+    const machines = await this.listMachines(externalId);
+    if (machines.length === 0) return {};
+    const current = (await this.api(
+      "GET",
+      `/apps/${externalId}/machines/${machines[0].id}`,
+    )) as { config?: FlyMachineConfig } | undefined;
+    const env = current?.config?.env;
+    return env && typeof env === "object"
+      ? (env as Record<string, string>)
+      : {};
+  }
+
   /**
    * Merge env vars into every machine of an app, preserving the rest of the
    * config exactly (same GET-config → POST-config shape as update()). Used

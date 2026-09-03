@@ -121,6 +121,14 @@ export interface InstanceDriver {
    */
   applyEnvPatch?(externalId: string, env: Record<string, string>): Promise<void>;
 
+  /**
+   * OPTIONAL: the instance's CURRENT machine env as the provider reports it.
+   * The Learn backfill uses it to detect hand-wired instances (env already
+   * carries LEARN_UPSTREAM_URL) and adopt their sidecar instead of
+   * provisioning a duplicate and repointing them at an empty one.
+   */
+  getEnv?(externalId: string): Promise<Record<string, string>>;
+
   /** OPTIONAL: permanently destroy a Learn sidecar app. Pairs with the above. */
   destroyLearnSidecar?(appName: string): Promise<void>;
 }
