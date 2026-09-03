@@ -858,18 +858,44 @@ export class FlyDriver implements InstanceDriver {
         process.env.HQ_LEARN_GUEST_PRESET ?? "shared-cpu-2x",
         envInt("HQ_LEARN_MEMORY_MB", 1024, 512, 8192),
       );
+      // Classroom JSONs + generated media live under /app/data — without a
+      // volume every image roll wiped them (the sidecar's Postgres, when
+      // configured, holds only course documents, not media files).
+      const volume = (await this.api("POST", `/apps/${appName}/volumes`, {
+        name: "learn_data",
+        region,
+        size_gb: envInt("HQ_LEARN_VOLUME_SIZE_GB", 3, 1, 50),
+        snapshot_retention: envInt(
+          "HQ_FLY_VOLUME_SNAPSHOT_RETENTION_DAYS",
+          14,
+          5,
+          60,
+        ),
+      })) as FlyVolume;
+      if (!volume?.id) {
+        throw new Error("Fly learn-sidecar volume create returned no id");
+      }
       const machine = (await this.api("POST", `/apps/${appName}/machines`, {
         region,
         config: {
           image: spec.image,
           env: spec.env,
           guest,
+          mounts: [{ volume: volume.id, path: "/app/data" }],
           restart: { policy: "on-failure", max_retries: 10 },
         },
       })) as FlyMachine;
       if (!machine?.id) {
         throw new Error("Fly learn-sidecar machine create returned no id");
       }
+      // A fresh volume mounts root-owned while the image runs as `nextjs`;
+      // chown once via exec (runs as root) — ownership lives on the
+      // filesystem, so it survives every later restart and image roll.
+      await this.waitForMachineState(appName, machine.id, "started");
+      await this.api("POST", `/apps/${appName}/machines/${machine.id}/exec`, {
+        command: ["/bin/sh", "-c", "chown nextjs:nodejs /app/data"],
+        timeout: 30,
+      });
       return { appName };
     } catch (err) {
       // Don't leak a half-made app; the caller treats any throw as
