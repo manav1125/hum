@@ -10,6 +10,7 @@ primary_region = "iad"
 
 [build.args]
   OPENMAIC_BASE_PATH = "/learn"
+  OPENMAIC_FIXED_OWNER_ID = "cue-owner"
   NEXT_PUBLIC_PERSISTENCE = "1"
   # NEXT_PUBLIC_PERSISTENCE_TOKEN is passed as --build-arg at deploy time
   # (see ~/.cue/learn-persistence-token) so it never lands in git. It is
@@ -21,6 +22,7 @@ primary_region = "iad"
 [env]
   HOSTNAME = "::"
   OPENMAIC_BASE_PATH = "/learn"
+  OPENMAIC_FIXED_OWNER_ID = "cue-owner"
   DEFAULT_MODEL = "google:gemini-3-flash-preview"
   PARALLEL_SCENE_CONCURRENCY = "3"
   NEXT_PUBLIC_PRO_WORKBENCH_ENABLED = "true"
