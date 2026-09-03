@@ -73,7 +73,7 @@ describe("LearnUsageSync", () => {
     expect(result?.imported).toBe(1);
     const rows = getSqlite()
       .query(
-        "SELECT actor, provider, model, input_tokens, output_tokens, request_id FROM llm_usage_events",
+        "SELECT actor, provider, model, input_tokens, output_tokens, request_id, call_site, pricing_status, estimated_cost_usd FROM llm_usage_events",
       )
       .all() as Array<Record<string, unknown>>;
     expect(rows).toHaveLength(1);
@@ -81,6 +81,11 @@ describe("LearnUsageSync", () => {
     expect(rows[0].provider).toBe("google");
     expect(rows[0].input_tokens).toBe(1200);
     expect(rows[0].request_id).toBe("learn:1756800000000-1");
+    expect(rows[0].call_site).toBe("learn");
+    // google → gemini pricing map: gemini-3-flash-preview is in the catalog,
+    // so Learn LLM spend must be PRICED, not $0 (the launch-billing bug).
+    expect(rows[0].pricing_status).toBe("priced");
+    expect(rows[0].estimated_cost_usd as number).toBeGreaterThan(0);
   });
 
   test("prices non-LLM records per unit and dedupes re-served pages", async () => {

@@ -24,6 +24,8 @@ export interface LearnCourse {
   updatedAt: number;
   /** Present only when the course creator stamped provenance (e.g. the chat skill). */
   source?: { kind: string; conversationId?: string };
+  /** Same-origin path to the course's first slide image, when it has one. */
+  coverImageUrl?: string;
 }
 
 export function useLearnCourses(): {
@@ -46,23 +48,41 @@ export function useLearnCourses(): {
         stages?: unknown;
       } | null;
       if (!body || !Array.isArray(body.stages)) return [];
-      // Provenance sidecar — best-effort; courses render fine without it.
-      const sources = await fetch("/api/classroom-sources", {
+      // Provenance + cover sidecar — best-effort; courses render fine without.
+      const meta = await fetch("/api/classroom-sources", {
         credentials: "include",
       })
         .then((r) => (r.ok ? r.json() : null))
         .then(
-          (b2: { data?: { sources?: unknown }; sources?: unknown } | null) => {
-            const raw = (b2?.data ?? b2)?.sources;
-            return raw && typeof raw === "object"
-              ? (raw as Record<
-                  string,
-                  { kind: string; conversationId?: string }
-                >)
-              : {};
+          (
+            b2: {
+              data?: { sources?: unknown; covers?: unknown };
+              sources?: unknown;
+              covers?: unknown;
+            } | null,
+          ) => {
+            const payload = b2?.data ?? b2;
+            const rawSources = payload?.sources;
+            const rawCovers = payload?.covers;
+            return {
+              sources:
+                rawSources && typeof rawSources === "object"
+                  ? (rawSources as Record<
+                      string,
+                      { kind: string; conversationId?: string }
+                    >)
+                  : {},
+              covers:
+                rawCovers && typeof rawCovers === "object"
+                  ? (rawCovers as Record<string, string>)
+                  : {},
+            };
           },
         )
-        .catch(() => ({}) as Record<string, { kind: string }>);
+        .catch(() => ({
+          sources: {} as Record<string, { kind: string }>,
+          covers: {} as Record<string, string>,
+        }));
       return (body.stages as Array<Record<string, unknown>>)
         .filter((s) => typeof s.id === "string" && typeof s.name === "string")
         .map((s) => ({
@@ -71,8 +91,11 @@ export function useLearnCourses(): {
           sceneCount: typeof s.sceneCount === "number" ? s.sceneCount : 0,
           createdAt: typeof s.createdAt === "number" ? s.createdAt : 0,
           updatedAt: typeof s.updatedAt === "number" ? s.updatedAt : 0,
-          ...(sources[s.id as string]
-            ? { source: sources[s.id as string] }
+          ...(meta.sources[s.id as string]
+            ? { source: meta.sources[s.id as string] }
+            : {}),
+          ...(typeof meta.covers[s.id as string] === "string"
+            ? { coverImageUrl: meta.covers[s.id as string] }
             : {}),
         }))
         .sort((a, b) => b.updatedAt - a.updatedAt);

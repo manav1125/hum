@@ -348,6 +348,12 @@ export function LibraryView({
       ),
     [navigate],
   );
+  // "From your chat" jumps to the conversation the course was made from.
+  const openCourseSource = useCallback(
+    (conversationId: string) =>
+      void navigate(routes.conversation(conversationId)),
+    [navigate],
+  );
 
   const byRecent = (
     a: { updatedAt: number; createdAt: number },
@@ -590,9 +596,16 @@ export function LibraryView({
                   kind="Course"
                   title={course.name}
                   dateLabel={monoDate(course.updatedAt || course.createdAt)}
+                  coverImageUrl={course.coverImageUrl}
                   provenance={
                     course.source?.kind === "cue-chat"
                       ? "From your chat"
+                      : undefined
+                  }
+                  onOpenProvenance={
+                    course.source?.kind === "cue-chat" &&
+                    course.source.conversationId
+                      ? () => openCourseSource(course.source!.conversationId!)
                       : undefined
                   }
                   onOpen={() => openCourse(course.id)}
@@ -650,9 +663,17 @@ export function LibraryView({
                       kind="Course"
                       title={course.name}
                       dateLabel={monoDate(course.updatedAt || course.createdAt)}
+                      coverImageUrl={course.coverImageUrl}
                       provenance={
                         course.source?.kind === "cue-chat"
                           ? "From your chat"
+                          : undefined
+                      }
+                      onOpenProvenance={
+                        course.source?.kind === "cue-chat" &&
+                        course.source.conversationId
+                          ? () =>
+                              openCourseSource(course.source!.conversationId!)
                           : undefined
                       }
                       onOpen={() => openCourse(course.id)}

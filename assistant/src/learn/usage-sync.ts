@@ -59,18 +59,23 @@ interface LearnUsageRecord {
 /**
  * Per-unit USD estimates for Learn's non-LLM spend, by usage kind. These are
  * documented list-price estimates for the providers the deployment locks in
- * (ElevenLabs voice, Nano Banana images, Veo video) — close enough for an
- * honest ledger, revisited when providers change. A kind missing here is
- * recorded unpriced rather than dropped.
+ * (ElevenLabs voice, Nano Banana images, Veo video), verified against the
+ * providers' published price pages 2026-09 — close enough for an honest
+ * ledger, revisited when providers change. A kind missing here is recorded
+ * unpriced rather than dropped.
  */
 const NON_LLM_UNIT_PRICE_USD: Record<
   string,
   Partial<Record<string, number>>
 > = {
+  // ElevenLabs TTS (Multilingual v2/v3): $0.10 per 1k characters.
   tts: { character: 0.1 / 1000 },
-  asr: { second: 0.4 / 3600, character: 0 },
+  // ElevenLabs Scribe batch transcription: $0.22 per audio hour.
+  asr: { second: 0.22 / 3600, character: 0 },
+  // Gemini Flash Image ("Nano Banana"): $0.039 per image.
   image: { image: 0.039 },
-  video: { second: 0.5 },
+  // Veo standard 1080p with audio: $0.40 per second of generated video.
+  video: { second: 0.4 },
 };
 
 function priceNonLlm(record: LearnUsageRecord): {
@@ -85,6 +90,19 @@ function priceNonLlm(record: LearnUsageRecord): {
     return { estimatedCostUsd: quantity * perUnit, pricingStatus: "priced" };
   }
   return { estimatedCostUsd: null, pricingStatus: "unpriced" };
+}
+
+/**
+ * The sidecar names providers in its own vocabulary; Cue's pricing catalog
+ * keys some of them differently. Map ONLY for the pricing lookup — the
+ * ledger row keeps the sidecar's provider string as reported.
+ */
+const PRICING_PROVIDER_MAP: Record<string, string> = {
+  google: "gemini",
+};
+
+function pricingProviderFor(providerId: string): string {
+  return PRICING_PROVIDER_MAP[providerId] ?? providerId;
 }
 
 function learnUpstreamUrl(): string | undefined {
@@ -189,10 +207,10 @@ export class LearnUsageSync {
           const isLlm = r.kind === "llm";
           const pricing = isLlm
             ? resolveStructuredPricing(
-                r.providerId,
+                pricingProviderFor(r.providerId),
                 r.modelId,
                 buildPricingUsage({
-                  providerName: r.providerId,
+                  providerName: pricingProviderFor(r.providerId),
                   model: r.modelId,
                   inputTokens:
                     r.inputTokens + r.cacheReadTokens + r.cacheCreationTokens,
@@ -216,6 +234,7 @@ export class LearnUsageSync {
               cacheReadInputTokens: isLlm ? r.cacheReadTokens || null : null,
               rawUsage: null,
               actor: "learn",
+              callSite: "learn",
               conversationId: null,
               runId: null,
               requestId,

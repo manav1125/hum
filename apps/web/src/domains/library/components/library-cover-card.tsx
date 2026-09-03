@@ -7,10 +7,19 @@
  * fixed brand colors per type (they read well on both light + dark), while the
  * card chrome (bg / border / title / date) is theme-aware via `--mv1-*` tokens.
  *
+ * A caller may supply `coverImageUrl` (e.g. a course's first slide) — it
+ * replaces the glyph art but keeps the badge and a legibility scrim, and the
+ * themed cover is the fallback if the image never loads. `onOpenProvenance`
+ * makes the ⟡ tag its own click target (e.g. jump to the source chat), which
+ * is why the card root is a div holding two sibling buttons — a button inside
+ * a button is invalid HTML and unreachable to keyboards.
+ *
  * This is the mobile counterpart to `library-app-card` / `library-document-card`
  * — those keep their live-preview thumbnails on desktop; mobile swaps in this
  * compact cover so the grid stays fast (no per-artifact iframes).
  */
+
+import { useState } from "react";
 
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
@@ -114,6 +123,10 @@ export interface LibraryCoverCardProps {
   dateLabel: string;
   /** Optional ⟡ provenance tag text (without the lozenge). */
   provenance?: string;
+  /** Makes the ⟡ provenance tag a click target (e.g. open the source chat). */
+  onOpenProvenance?: () => void;
+  /** Real cover art (e.g. a course's first slide); themed cover on failure. */
+  coverImageUrl?: string;
   onOpen: () => void;
 }
 
@@ -122,139 +135,198 @@ export function LibraryCoverCard({
   title,
   dateLabel,
   provenance,
+  onOpenProvenance,
+  coverImageUrl,
   onOpen,
 }: LibraryCoverCardProps) {
   const theme = COVER_THEME[kind];
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(coverImageUrl) && !imageFailed;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex flex-col overflow-hidden text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+    <div
+      className="flex flex-col overflow-hidden"
       style={{
         background: "var(--mv1-card)",
         border: "1px solid var(--mv1-line)",
         borderRadius: 14,
-        cursor: "pointer",
       }}
     >
-      {/* Branded cover — derived from artifact TYPE, no live iframe. */}
-      <div
-        style={{
-          height: 104,
-          background: theme.background,
-          padding: "12px 13px",
-          position: "relative",
-          overflow: "hidden",
-        }}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        style={{ cursor: "pointer" }}
       >
+        {/* Branded cover — derived from artifact TYPE, no live iframe. */}
         <div
           style={{
-            fontFamily: mono,
-            fontSize: 7.5,
-            letterSpacing: ".14em",
-            textTransform: "uppercase",
-            color: theme.accent,
-          }}
-        >
-          {kind}
-        </div>
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            right: 10,
-            bottom: 6,
-            fontSize: 44,
-            lineHeight: 1,
-            color: theme.accent,
-            opacity: 0.24,
-          }}
-        >
-          {theme.glyph}
-        </div>
-        <div
-          style={{
-            fontFamily: serif,
-            fontSize: 15,
-            color: "#F3EEE4",
-            lineHeight: 1.1,
-            marginTop: 16,
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
+            height: 104,
+            width: "100%",
+            background: theme.background,
+            padding: "12px 13px",
             position: "relative",
-          }}
-        >
-          {title}
-        </div>
-        <span
-          style={{
-            position: "absolute",
-            top: 10,
-            right: 11,
-            fontFamily: mono,
-            fontSize: 7.5,
-            letterSpacing: ".04em",
-            color: theme.badgeFg,
-            background: theme.badgeBg,
-            borderRadius: 5,
-            padding: "3px 6px",
-          }}
-        >
-          {theme.badge}
-        </span>
-      </div>
-
-      {/* Meta — theme-aware chrome. */}
-      <div style={{ padding: "10px 12px", width: "100%" }}>
-        <div
-          style={{
-            fontSize: 12.5,
-            fontWeight: 600,
-            color: "var(--mv1-t1)",
             overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
           }}
         >
-          {title}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 6,
-            marginTop: 3,
-          }}
-        >
-          <span
+          {showImage ? (
+            <>
+              <img
+                src={coverImageUrl}
+                alt=""
+                onError={() => setImageFailed(true)}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
+              {/* Scrim so the eyebrow/title stay legible over any slide. */}
+              <div
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "linear-gradient(180deg,rgba(10,12,18,.55),rgba(10,12,18,.15) 45%,rgba(10,12,18,.6))",
+                }}
+              />
+            </>
+          ) : null}
+          <div
             style={{
               fontFamily: mono,
-              fontSize: 9,
-              letterSpacing: ".04em",
-              color: "var(--mv1-t3)",
+              fontSize: 7.5,
+              letterSpacing: ".14em",
+              textTransform: "uppercase",
+              color: theme.accent,
+              position: "relative",
             }}
           >
-            {dateLabel}
-          </span>
-          {provenance ? (
-            <span
+            {kind}
+          </div>
+          {!showImage ? (
+            <div
+              aria-hidden
               style={{
-                fontSize: 9,
-                color: "var(--mv1-blue-strong)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                maxWidth: "60%",
+                position: "absolute",
+                right: 10,
+                bottom: 6,
+                fontSize: 44,
+                lineHeight: 1,
+                color: theme.accent,
+                opacity: 0.24,
               }}
             >
-              ⟡ {provenance}
-            </span>
+              {theme.glyph}
+            </div>
           ) : null}
+          <div
+            style={{
+              fontFamily: serif,
+              fontSize: 15,
+              color: "#F3EEE4",
+              lineHeight: 1.1,
+              marginTop: 16,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              position: "relative",
+            }}
+          >
+            {title}
+          </div>
+          <span
+            style={{
+              position: "absolute",
+              top: 10,
+              right: 11,
+              fontFamily: mono,
+              fontSize: 7.5,
+              letterSpacing: ".04em",
+              color: theme.badgeFg,
+              background: theme.badgeBg,
+              borderRadius: 5,
+              padding: "3px 6px",
+            }}
+          >
+            {theme.badge}
+          </span>
         </div>
+
+        {/* Meta — theme-aware chrome. */}
+        <div style={{ padding: "10px 12px 0", width: "100%" }}>
+          <div
+            style={{
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: "var(--mv1-t1)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {title}
+          </div>
+        </div>
+      </button>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 6,
+          padding: "3px 12px 10px",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: mono,
+            fontSize: 9,
+            letterSpacing: ".04em",
+            color: "var(--mv1-t3)",
+          }}
+        >
+          {dateLabel}
+        </span>
+        {provenance && onOpenProvenance ? (
+          <button
+            type="button"
+            onClick={onOpenProvenance}
+            className="outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            style={{
+              fontSize: 9,
+              color: "var(--mv1-blue-strong)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: "60%",
+              cursor: "pointer",
+              textDecoration: "underline",
+              textDecorationColor: "color-mix(in srgb, currentColor 40%, transparent)",
+              textUnderlineOffset: 2,
+              borderRadius: 4,
+            }}
+          >
+            ⟡ {provenance}
+          </button>
+        ) : provenance ? (
+          <span
+            style={{
+              fontSize: 9,
+              color: "var(--mv1-blue-strong)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: "60%",
+            }}
+          >
+            ⟡ {provenance}
+          </span>
+        ) : null}
       </div>
-    </button>
+    </div>
   );
 }

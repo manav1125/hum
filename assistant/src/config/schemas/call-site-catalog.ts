@@ -367,6 +367,13 @@ const CATALOG_RECORD: CatalogRecord = {
       "Cue Live's front-model presence layer: decides end-of-turn (mid-thought vs finished) and phrases short spoken acknowledgements while the main brain works. Sits on the end-of-turn hot path — pin a fast, cheap, low-latency model; depth does not matter.",
     domain: "agentLoop",
   },
+  learn: {
+    id: "learn",
+    displayName: "Cue Learn",
+    description:
+      "Course generation, narration, and media spend imported from the Cue Learn sidecar's usage log by the usage bridge. Not a caller in this process; pinning a model here has no effect.",
+    domain: "workspace",
+  },
   voiceFrontDoor: {
     id: "voiceFrontDoor",
     displayName: "Voice front door",

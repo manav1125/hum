@@ -106,6 +106,11 @@ export const LLMCallSiteEnum = z.enum([
   // an answer streams straight to TTS. Sits on the end-of-turn hot path; pin
   // a fast model with thinking off.
   "voiceFrontDoor",
+  // Spend imported from the Cue Learn sidecar's usage log by the usage
+  // bridge (learn/usage-sync.ts). Never a caller inside this process — it
+  // exists so Learn rows group legibly in Usage & spend instead of reading
+  // as "Unknown Task".
+  "learn",
 ]);
 export type LLMCallSite = z.infer<typeof LLMCallSiteEnum>;
 
