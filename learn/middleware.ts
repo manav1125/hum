@@ -57,6 +57,29 @@ export async function middleware(request: NextRequest) {
     return new NextResponse('Not found', { status: 404 });
   }
 
+  // Private-network gate: OPENMAIC_ACCESS_SECRET (runtime env, per
+  // deployment) requires every request this middleware sees to present the
+  // same value in `x-openmaic-access`. Deployments whose sidecar shares a
+  // private network with OTHER tenants set it so only their own fronting
+  // gateway (which injects the header) can reach the app — without it, any
+  // peer on the shared network can read classrooms and spend generation
+  // budget. The health probe stays open: it reveals nothing and keeps
+  // platform checks working.
+  const accessSecret = process.env.OPENMAIC_ACCESS_SECRET;
+  if (accessSecret && pathname !== '/api/health') {
+    const presented = request.headers.get('x-openmaic-access') ?? '';
+    let mismatch = presented.length === accessSecret.length ? 0 : 1;
+    for (let i = 0; i < Math.min(presented.length, accessSecret.length); i++) {
+      mismatch |= presented.charCodeAt(i) ^ accessSecret.charCodeAt(i);
+    }
+    if (mismatch !== 0) {
+      return NextResponse.json(
+        { success: false, errorCode: 'INVALID_REQUEST', error: 'Unauthorized' },
+        { status: 401 },
+      );
+    }
+  }
+
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
     return NextResponse.next();

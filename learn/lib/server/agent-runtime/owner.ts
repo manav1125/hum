@@ -56,6 +56,14 @@ export function resolveRequestOwnerId(
 ): string {
   if (authenticatedOwnerId) return authenticatedOwnerId;
 
+  // Single-user deployments (one sidecar per person, fronted by a trusted
+  // gateway) set OPENMAIC_FIXED_OWNER_ID so the browser, the host gateway,
+  // and the host's assistant daemon all resolve to ONE owner — otherwise the
+  // anonymous cookie partitions the same person's courses per client and the
+  // daemon can never see what the browser created.
+  const fixed = process.env.OPENMAIC_FIXED_OWNER_ID?.trim();
+  if (fixed) return fixed;
+
   const existingId = readCookie(req.headers, ANONYMOUS_COOKIE);
   if (existingId && UUID_V4.test(existingId)) return `anon:${existingId}`;
 
