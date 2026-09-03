@@ -80,13 +80,20 @@ header button. Everything else should track upstream clean.
 2. `flyctl secrets set -a cue-hq HQ_LEARN_GOOGLE_API_KEY=… \
    HQ_LEARN_ELEVENLABS_API_KEY=… HQ_LEARN_TAVILY_API_KEY=…`
 3. New provisions get a sidecar + `LEARN_UPSTREAM_URL` + the flag
-   automatically. Existing customers need a one-off backfill (sidecar app +
-   two env vars on their machine) — there is no backfill sweep yet.
+   automatically. Existing customers: `POST /admin/learn-backfill` (admin
+   token; `{"dryRun":true}` to preview) sweeps live instances without a
+   `learnAppName` — provisions a sidecar, patches the machine env
+   (RESTARTS the machine), records the row. Idempotent; an instance whose
+   env already names a `http://<app>.internal:<port>` upstream is ADOPTED,
+   never re-pointed. Ran clean across the fleet 2026-09-03.
 
 ## Known gaps
 
 - Fleet sidecars have no volume: course data is per-browser there, and a
-  redeploy can lose the last few minutes of unpolled usage rows.
+  redeploy can lose the last few minutes of unpolled usage rows. (Manav's
+  own sidecar `cue-learn-manav` DOES now mount `learn_data` at `/app/data` —
+  without it every deploy wiped classroom JSONs + generated media; the
+  volume was chowned to `nextjs` once via ssh, ownership persists.)
 - Non-LLM ledger pricing uses estimate tables in `usage-sync.ts` — revisit
   when providers change.
 - In-classroom deep links sync to `?p=` by polling; sub-second navigations
