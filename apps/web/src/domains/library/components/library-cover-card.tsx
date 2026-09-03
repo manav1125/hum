@@ -142,6 +142,10 @@ export function LibraryCoverCard({
   const theme = COVER_THEME[kind];
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = Boolean(coverImageUrl) && !imageFailed;
+  // Course covers follow the handoff's cover grammar: the ground is ALWAYS
+  // ink, slide art reads as a rotated paper card anchored lower-right, and
+  // the badge is a violet keyline rather than a filled chip.
+  const courseGrammar = kind === "Course";
   return (
     <div
       className="flex flex-col overflow-hidden"
@@ -168,7 +172,26 @@ export function LibraryCoverCard({
             overflow: "hidden",
           }}
         >
-          {showImage ? (
+          {showImage && courseGrammar ? (
+            /* Slide art as a paper card dropped on the ink desk. */
+            <img
+              src={coverImageUrl}
+              alt=""
+              onError={() => setImageFailed(true)}
+              style={{
+                position: "absolute",
+                right: -6,
+                bottom: -10,
+                width: "58%",
+                aspectRatio: "16 / 9",
+                objectFit: "cover",
+                transform: "rotate(-3deg)",
+                borderRadius: 6,
+                background: "#F3EEE4",
+                boxShadow: "0 14px 28px -14px rgba(0,0,0,.7)",
+              }}
+            />
+          ) : showImage ? (
             <>
               <img
                 src={coverImageUrl}
@@ -194,29 +217,30 @@ export function LibraryCoverCard({
               />
             </>
           ) : null}
-          <div
-            style={{
-              fontFamily: mono,
-              fontSize: 7.5,
-              letterSpacing: ".14em",
-              textTransform: "uppercase",
-              color: theme.accent,
-              position: "relative",
-            }}
-          >
-            {kind}
-          </div>
-          {!showImage ? (
+          {!courseGrammar ? (
+            <div
+              style={{
+                fontFamily: mono,
+                fontSize: 7.5,
+                letterSpacing: ".14em",
+                textTransform: "uppercase",
+                color: theme.accent,
+                position: "relative",
+              }}
+            >
+              {kind}
+            </div>
+          ) : null}
+          {!showImage || courseGrammar ? (
             <div
               aria-hidden
               style={{
                 position: "absolute",
-                right: 10,
-                bottom: 6,
-                fontSize: 44,
+                ...(courseGrammar && showImage
+                  ? { left: 12, bottom: 8, fontSize: 22, opacity: 0.85 }
+                  : { right: 10, bottom: 6, fontSize: 44, opacity: 0.24 }),
                 lineHeight: 1,
                 color: theme.accent,
-                opacity: 0.24,
               }}
             >
               {theme.glyph}
@@ -228,12 +252,13 @@ export function LibraryCoverCard({
               fontSize: 15,
               color: "#F3EEE4",
               lineHeight: 1.1,
-              marginTop: 16,
+              marginTop: courseGrammar ? 26 : 16,
               display: "-webkit-box",
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
               position: "relative",
+              ...(courseGrammar && showImage ? { maxWidth: "50%" } : {}),
             }}
           >
             {title}
@@ -242,12 +267,18 @@ export function LibraryCoverCard({
             style={{
               position: "absolute",
               top: 10,
-              right: 11,
+              ...(courseGrammar ? { left: 12 } : { right: 11 }),
               fontFamily: mono,
               fontSize: 7.5,
-              letterSpacing: ".04em",
-              color: theme.badgeFg,
-              background: theme.badgeBg,
+              letterSpacing: courseGrammar ? ".14em" : ".04em",
+              textTransform: courseGrammar ? "uppercase" : undefined,
+              ...(courseGrammar
+                ? {
+                    color: theme.accent,
+                    background: "transparent",
+                    border: `1px solid ${theme.accent}66`,
+                  }
+                : { color: theme.badgeFg, background: theme.badgeBg }),
               borderRadius: 5,
               padding: "3px 6px",
             }}

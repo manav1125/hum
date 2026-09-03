@@ -366,7 +366,7 @@ export function Mv3OverflowMenu() {
           {
             key: "learn",
             label: "Learn",
-            sub: "Your interactive courses",
+            sub: "Courses that teach you back",
             run: () => void navigate(routes.learn),
           },
         ]

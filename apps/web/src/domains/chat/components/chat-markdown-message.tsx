@@ -52,6 +52,121 @@ function internalAppPath(href: string | undefined): string | null {
   return h;
 }
 
+/**
+ * A Learn course deep link (`…/assistant/learn?p=/classroom/<id>`) renders as
+ * a course chip — the cover grammar's smallest size class — instead of a bare
+ * text link: ink tile with the violet ◆, the course title in the display
+ * face, a mono COURSE label, and the whole chip as one ≥44px tap target.
+ * Absolute links are chipped only when they point at THIS origin; a link to
+ * some other instance's Learn stays an ordinary external link.
+ */
+function learnCoursePath(href: string | undefined): string | null {
+  if (!href) return null;
+  const h = href.trim();
+  try {
+    const isRelative = h.startsWith("/");
+    if (!isRelative && typeof window !== "undefined") {
+      const u = new URL(h);
+      if (u.host !== window.location.host) return null;
+    } else if (!isRelative) {
+      return null;
+    }
+    const u = new URL(h, "http://relative.local");
+    if (!u.pathname.endsWith("/assistant/learn")) return null;
+    const p = u.searchParams.get("p") ?? "";
+    if (!/^\/classroom\/[A-Za-z0-9_-]+$/.test(p)) return null;
+    return `/assistant/learn?p=${encodeURIComponent(p)}`;
+  } catch {
+    return null;
+  }
+}
+
+function CourseChip({
+  path,
+  children,
+  navigate,
+}: {
+  path: string;
+  children: React.ReactNode;
+  navigate: ((to: string) => void) | null;
+}) {
+  return (
+    <a
+      href={path}
+      onClick={(event) => {
+        if (!navigate) return;
+        if (
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey ||
+          event.button !== 0
+        ) {
+          return;
+        }
+        event.preventDefault();
+        navigate(path);
+      }}
+      className="no-underline"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 10,
+        minHeight: 44,
+        padding: "6px 14px 6px 6px",
+        margin: "2px 0",
+        borderRadius: 12,
+        border: "1px solid color-mix(in oklab, #7f77dd 40%, transparent)",
+        background: "color-mix(in oklab, #7f77dd 7%, transparent)",
+        color: "inherit",
+        maxWidth: "100%",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 34,
+          height: 34,
+          borderRadius: 9,
+          background: "#1a2230",
+          color: "#7f77dd",
+          fontSize: 15,
+          flexShrink: 0,
+        }}
+      >
+        ◆
+      </span>
+      <span style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <span
+          style={{
+            fontFamily: "'Instrument Serif', Georgia, serif",
+            fontSize: 15.5,
+            lineHeight: 1.2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {children}
+        </span>
+        <span
+          style={{
+            fontFamily: "'DM Mono', ui-monospace, monospace",
+            fontSize: 8.5,
+            letterSpacing: "0.14em",
+            color: "#7f77dd",
+          }}
+        >
+          COURSE
+        </span>
+      </span>
+    </a>
+  );
+}
+
 function OAuthAwareLink({
   href,
   children,
@@ -90,6 +205,15 @@ function AnchorImpl({
   const opensOAuthPopup = shouldOpenMarkdownLinkInOAuthPopup(href);
   const nonNavigable = isNonNavigableAppLink(href);
   const internalPath = navigate ? internalAppPath(href) : null;
+  const coursePath = learnCoursePath(href);
+
+  if (coursePath) {
+    return (
+      <CourseChip path={coursePath} navigate={navigate}>
+        {children}
+      </CourseChip>
+    );
+  }
 
   return (
     <a
