@@ -89,11 +89,12 @@ header button. Everything else should track upstream clean.
 
 ## Known gaps
 
-- Fleet sidecars have no volume: course data is per-browser there, and a
-  redeploy can lose the last few minutes of unpolled usage rows. (Manav's
-  own sidecar `cue-learn-manav` DOES now mount `learn_data` at `/app/data` —
-  without it every deploy wiped classroom JSONs + generated media; the
-  volume was chowned to `nextjs` once via ssh, ownership persists.)
+- Every Learn sidecar now mounts a `learn_data` volume at `/app/data`
+  (classroom JSONs + generated media survive image rolls; the provisioner
+  chowns it to `nextjs` once via machines exec). Fleet sidecars still run
+  the browser-persistence build, so wizard-made course *documents* remain
+  per-browser there; a redeploy can still lose the last few minutes of
+  unpolled usage rows.
 - Non-LLM ledger pricing uses estimate tables in `usage-sync.ts` — revisit
   when providers change.
 - In-classroom deep links sync to `?p=` by polling; sub-second navigations
