@@ -18,6 +18,20 @@ interface StaticTableProps {
 export function StaticTable({ elementInfo }: StaticTableProps) {
   const { width, data, colWidths, cellMinHeight, rowHeights, outline, theme } = elementInfo;
 
+  // Generated slides are model output: a malformed table (a row that is not
+  // an array, a hole where a cell should be) must degrade to "that row is
+  // skipped", never throw — this component renders inside the home screen's
+  // course-card previews, so one bad slide otherwise takes down the whole
+  // app shell (seen in production: `row.map is not a function`).
+  const safeData = useMemo(
+    () =>
+      (Array.isArray(data) ? data : []).map((row) =>
+        Array.isArray(row) ? row.filter((cell) => cell && typeof cell === 'object') : null,
+      ).filter((row): row is NonNullable<typeof row> => row !== null),
+    [data],
+  );
+  const safeColWidths = Array.isArray(colWidths) ? colWidths : [];
+
   const [subThemeDark, subThemeLight] = useMemo(() => {
     if (!theme) return ['', ''];
     return getTableSubThemeColor(theme.color);
@@ -39,8 +53,8 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
     if (cellBackcolor) return cellBackcolor;
     if (!theme) return undefined;
 
-    const rowCount = data.length;
-    const colCount = data[0]?.length ?? 0;
+    const rowCount = safeData.length;
+    const colCount = safeData[0]?.length ?? 0;
 
     if (theme.rowHeader && rowIdx === 0) return theme.color;
     if (theme.rowFooter && rowIdx === rowCount - 1) return theme.color;
@@ -55,7 +69,7 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
 
   const getHeaderTextColor = (rowIdx: number): string | undefined => {
     if (!theme) return undefined;
-    const rowCount = data.length;
+    const rowCount = safeData.length;
     if (theme.rowHeader && rowIdx === 0) return '#fff';
     if (theme.rowFooter && rowIdx === rowCount - 1) return '#fff';
     return undefined;
@@ -72,12 +86,12 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
       }}
     >
       <colgroup>
-        {colWidths.map((w, i) => (
+        {safeColWidths.map((w, i) => (
           <col key={i} style={{ width: `${w * width}px` }} />
         ))}
       </colgroup>
       <tbody>
-        {data.map((row, rowIdx) => (
+        {safeData.map((row, rowIdx) => (
           <tr key={rowIdx} style={{ height: `${rowHeights?.[rowIdx] ?? cellMinHeight}px` }}>
             {row.map((cell, colIdx) => {
               // parser side (transformParsedToSlides) 已经把 hMerge/vMerge

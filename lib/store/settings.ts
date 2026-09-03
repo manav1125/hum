@@ -1280,7 +1280,7 @@ export const useSettingsStore = create<SettingsState>()(
         setImageGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().imageProvidersConfig;
-            const hasUsable = Object.values(cfg).some((c) => c.isServerConfigured || c.apiKey);
+            const hasUsable = Object.values(cfg).some((c) => c?.isServerConfigured || c?.apiKey);
             if (!hasUsable) return;
           }
           set({ imageGenerationEnabled: enabled });
@@ -1288,7 +1288,7 @@ export const useSettingsStore = create<SettingsState>()(
         setVideoGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().videoProvidersConfig;
-            const hasUsable = Object.values(cfg).some((c) => c.isServerConfigured || c.apiKey);
+            const hasUsable = Object.values(cfg).some((c) => c?.isServerConfigured || c?.apiKey);
             if (!hasUsable) return;
           }
           set({ videoGenerationEnabled: enabled });
@@ -1634,12 +1634,15 @@ export const useSettingsStore = create<SettingsState>()(
                   { isServerConfigured?: boolean; apiKey?: string; serverDisabled?: boolean }
                 >,
               ): T[] => [
-                // Server-disabled providers are never fallback targets.
+                // Server-disabled providers are never fallback targets. Config
+                // values are read null-safely: a persisted store from an older
+                // build can carry entries whose value is missing, and one bad
+                // entry must degrade to "not a fallback", never crash boot.
                 ...Object.entries(config)
-                  .filter(([, c]) => c.isServerConfigured && !c.serverDisabled)
+                  .filter(([, c]) => c?.isServerConfigured && !c?.serverDisabled)
                   .map(([id]) => id as T),
                 ...Object.entries(config)
-                  .filter(([, c]) => !c.isServerConfigured && !c.serverDisabled && !!c.apiKey)
+                  .filter(([, c]) => !c?.isServerConfigured && !c?.serverDisabled && !!c?.apiKey)
                   .map(([id]) => id as T),
               ];
 
