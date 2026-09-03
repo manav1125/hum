@@ -71,7 +71,9 @@ export async function provisionLearnDatabase(
   }
 
   const admin = new URL(adminUrl);
+  // Keep the admin URL's port and params (e.g. Fly Postgres direct port 5433
+  // + sslmode=disable — the 5432 haproxy leg trips some clients' startup).
   return `postgres://${name}:${password}@${admin.hostname}${
     admin.port ? `:${admin.port}` : ""
-  }/${name}`;
+  }/${name}${admin.search}`;
 }

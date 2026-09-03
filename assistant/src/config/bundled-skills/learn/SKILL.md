@@ -106,43 +106,49 @@ directly; the sidecar rejects unauthenticated peers.
 
 When the user asks about a course they already have ("I'm taking my course on
 X — quiz me / answer questions / what next"), do NOT say you can't see the
-course. Chat-created Cue Learn courses are readable:
+course. Every Cue Learn course is readable — chat-generated classrooms and
+wizard-made courses alike:
 
-1. **Find the course** — list the catalog and match the user's title
+1. **Find the course** — list BOTH catalogs and match the user's title
    (case-insensitive, partial match is fine):
 
    ```bash
    curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/classroom-sources"
+   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/stages"
    ```
 
-   The response's `catalog` is `[{id, name, sceneCount, createdAt}]`.
+   The first response's `catalog` is `[{id, name, sceneCount, createdAt}]`
+   (chat-generated classrooms); the second's `stages` is
+   `[{id, name, sceneCount, ...}]` (wizard/workbench courses).
 
-2. **Fetch its content**:
+2. **Fetch its content** — by which catalog matched:
 
    ```bash
+   # classroom catalog match:
    curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/classroom?id=<id>" > /tmp/course.json
-   ```
-
-   The response is `{ success, classroom: { stage, scenes } }`. The teacher's
-   narration lives in each scene's `actions` of `"type": "speech"`:
-
-   ```bash
    jq -r '.classroom.scenes[] | "## " + .title,
+          ([.actions[]? | select(.type=="speech") | .text] | join("\n"))' \
+     /tmp/course.json
+
+   # stages match (whole document: stage + scenes + outline):
+   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/stages/<id>" > /tmp/course.json
+   jq -r '.scenes[]? | "## " + (.title // .name // ""),
           ([.actions[]? | select(.type=="speech") | .text] | join("\n"))' \
      /tmp/course.json
    ```
 
-   Cap what you load into context (~60k chars), then tutor from it: answer
-   questions grounded in what the course actually teaches, quiz scene by
-   scene, or map what to explore next beyond its outline. Link back to the
-   classroom (`$BASE/assistant/learn?p=/classroom/<id>`) when pointing at a
-   specific part.
+   (Inspect the JSON if a shape differs — narration is the `"type":"speech"`
+   action text either way.) Cap what you load into context (~60k chars), then
+   tutor from it: answer questions grounded in what the course actually
+   teaches, quiz scene by scene, or map what to explore next beyond its
+   outline. Both kinds open at the same place — link back with
+   `$BASE/assistant/learn?p=/classroom/<id>` when pointing at a specific
+   part.
 
-3. **If the title isn't in the catalog**, the course was either made in the
-   Learn wizard UI (its content lives in a per-browser store this skill cannot
-   read) or predates server-side storage. Say that honestly, offer to
-   regenerate it as a fresh course ("teach me X" pipeline above), and still
-   help from your own knowledge in the meantime.
+3. **If the title is in neither catalog**, it may predate server-side
+   storage. Say that honestly, offer to regenerate it as a fresh course
+   ("teach me X" pipeline above), and still help from your own knowledge in
+   the meantime.
 
 ## Notes
 
