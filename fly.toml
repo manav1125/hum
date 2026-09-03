@@ -34,3 +34,10 @@ primary_region = "iad"
 [[vm]]
   size = "shared-cpu-4x"
   memory = "2gb"
+
+# Classroom JSON + generated media (slides, audio) live under /app/data —
+# without a volume every deploy wiped them (Postgres holds the course DSL,
+# but the media files and provenance/source maps were ephemeral).
+[[mounts]]
+  source = "learn_data"
+  destination = "/app/data"
