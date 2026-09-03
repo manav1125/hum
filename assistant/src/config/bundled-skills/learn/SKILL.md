@@ -1,6 +1,6 @@
 ---
 name: learn
-description: "ALWAYS use when the user says 'teach me …', 'make me a course/lesson/class/tutorial', 'I want to learn …', or asks to turn documents into a course: generates a Cue Learn interactive course — an AI-taught classroom with narrated slides, quizzes, and simulations — and links to it. 'Teach me X' means BUILD THE COURSE (optionally with a short chat primer alongside), not a chat lecture. Skip only for quick factual questions where a course would be overkill."
+description: "ALWAYS use when the user says 'teach me …', 'make me a course/lesson/class/tutorial', 'I want to learn …', asks to turn documents into a course, OR asks about a Cue Learn course they already have ('my course', 'quiz me on my course', 'help me go deeper on <course>'): generates or READS a Cue Learn interactive course — an AI-taught classroom with narrated slides, quizzes, and simulations. 'Teach me X' means BUILD THE COURSE (optionally with a short chat primer alongside), not a chat lecture; questions about an existing course mean FETCH ITS CONTENT and tutor from it. Skip only for quick factual questions where a course would be overkill."
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🎓"
@@ -13,6 +13,7 @@ metadata:
       - "User says 'I want to learn X', 'make me a course/lesson/class/tutorial on X', or asks to turn a document into a course"
       - "User asks to explain a big topic 'properly', 'step by step', or 'like a class' — offer a Learn course alongside your chat answer"
       - "User references an earlier Cue Learn course and wants another one"
+      - "User asks about a course they are taking — 'my course', 'quiz me on it', 'what should I explore next' — FETCH the course content (see 'Tutoring from an existing course') instead of saying you cannot see it"
     avoid-when:
       - "The user wants a quick factual answer, a summary, or a document — answer in chat; a course is overkill"
       - "LEARN_UPSTREAM_URL is not present in the environment — Learn is not deployed for this Cue; say so instead of erroring"
@@ -97,6 +98,41 @@ Learn isn't set up on this Cue yet and stop — do not guess a URL.
 
 6. **On failure**, relay the job's `error` plainly and suggest retrying or
    narrowing the topic. Never leave the user with a spinner and no verdict.
+
+## Tutoring from an existing course
+
+When the user asks about a course they already have ("I'm taking my course on
+X — quiz me / answer questions / what next"), do NOT say you can't see the
+course. Chat-created Cue Learn courses are readable:
+
+1. **Find the course** — list the catalog and match the user's title
+   (case-insensitive, partial match is fine):
+
+   ```bash
+   curl -s "$LEARN_UPSTREAM_URL/learn/api/classroom-sources"
+   ```
+
+   The response's `catalog` is `[{id, name, sceneCount, createdAt}]`.
+
+2. **Fetch its content**:
+
+   ```bash
+   curl -s "$LEARN_UPSTREAM_URL/learn/api/classroom?id=<id>" > /tmp/course.json
+   ```
+
+   The document is `{ stage, scenes }` — scene narration lives in fields like
+   `subtitles`/`content`/`text` inside each scene. Extract the text (jq or a
+   quick script), cap what you load into context (~60k chars), and tutor from
+   it: answer questions grounded in what the course actually teaches, quiz
+   scene by scene, or map what to explore next beyond its outline. Link back
+   to the classroom (`$BASE/assistant/learn?p=/classroom/<id>`) when pointing
+   at a specific part.
+
+3. **If the title isn't in the catalog**, the course was either made in the
+   Learn wizard UI (its content lives in a per-browser store this skill cannot
+   read) or predates server-side storage. Say that honestly, offer to
+   regenerate it as a fresh course ("teach me X" pipeline above), and still
+   help from your own knowledge in the meantime.
 
 ## Notes
 
