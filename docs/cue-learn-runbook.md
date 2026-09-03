@@ -91,10 +91,19 @@ header button. Everything else should track upstream clean.
 
 - Every Learn sidecar now mounts a `learn_data` volume at `/app/data`
   (classroom JSONs + generated media survive image rolls; the provisioner
-  chowns it to `nextjs` once via machines exec). Fleet sidecars still run
-  the browser-persistence build, so wizard-made course *documents* remain
-  per-browser there; a redeploy can still lose the last few minutes of
-  unpolled usage rows.
+  chowns it to `nextjs` once via machines exec). A redeploy can still lose
+  the last few minutes of unpolled usage rows.
+- Tenant isolation: each sidecar enforces a per-customer access secret
+  (`OPENMAIC_ACCESS_SECRET` middleware) — only the customer's own gateway
+  (which injects `x-openmaic-access`) can reach it across the shared 6PN;
+  the co-located daemon is trusted on the raw loopback socket at the
+  gateway. Fleet server persistence is ON: per-customer database + role on
+  the shared `cue-learn-db` cluster (HQ_LEARN_PG_ADMIN_URL, direct port
+  5433 + sslmode=disable — the 5432 haproxy leg trips Bun.SQL), with
+  `OPENMAIC_TRUST_PROXY_AUTH` so the shared image needs no compiled-in
+  token. `OPENMAIC_FIXED_OWNER_ID=cue-owner` gives browser, gateway, and
+  daemon one course owner (chat can tutor from wizard-made courses).
+  cue-learn-db runs on 1GB — 256MB OOM-killed postgres during the rollout.
 - Non-LLM ledger pricing uses estimate tables in `usage-sync.ts` — revisit
   when providers change.
 - In-classroom deep links sync to `?p=` by polling; sub-second navigations
