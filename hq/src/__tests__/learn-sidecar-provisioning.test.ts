@@ -76,7 +76,7 @@ function setup() {
   const db = new HqDb(":memory:");
   const driver = new SidecarMockDriver();
   const fetchImpl = (async () =>
-    new Response("{}", { status: 200 })) as typeof fetch;
+    new Response("{}", { status: 200 })) as unknown as typeof fetch;
   return {
     db,
     driver,

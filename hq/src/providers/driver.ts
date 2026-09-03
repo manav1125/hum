@@ -115,6 +115,12 @@ export interface InstanceDriver {
     region?: string;
   }): Promise<{ appName: string }>;
 
+  /**
+   * OPTIONAL: merge env vars into a running instance's machine config
+   * (restarts the machine). Used by the Learn backfill.
+   */
+  applyEnvPatch?(externalId: string, env: Record<string, string>): Promise<void>;
+
   /** OPTIONAL: permanently destroy a Learn sidecar app. Pairs with the above. */
   destroyLearnSidecar?(appName: string): Promise<void>;
 }

@@ -879,6 +879,46 @@ export class FlyDriver implements InstanceDriver {
     }
   }
 
+  /**
+   * Merge env vars into every machine of an app, preserving the rest of the
+   * config exactly (same GET-config → POST-config shape as update()). Used
+   * by the Learn backfill to hand an EXISTING instance its sidecar address
+   * and feature flag without a reprovision.
+   */
+  async applyEnvPatch(
+    externalId: string,
+    env: Record<string, string>,
+  ): Promise<void> {
+    this.requireConfigured();
+    const machines = await this.listMachines(externalId);
+    if (machines.length === 0) {
+      throw new Error(`fly-driver: app ${externalId} has no machines to patch`);
+    }
+    for (const machine of machines) {
+      const current = (await this.api(
+        "GET",
+        `/apps/${externalId}/machines/${machine.id}`,
+      )) as { config?: FlyMachineConfig } | undefined;
+      if (!current?.config) {
+        throw new Error(
+          `fly-driver: machine ${machine.id} returned no config to patch`,
+        );
+      }
+      await this.api("POST", `/apps/${externalId}/machines/${machine.id}`, {
+        config: {
+          ...current.config,
+          env: { ...(current.config.env ?? {}), ...env },
+        },
+      });
+      await this.waitForMachineState(externalId, machine.id, "started");
+    }
+    if (!(await this.pollHealthy(`https://${externalId}.fly.dev`))) {
+      throw new Error(
+        `fly-driver: ${externalId} not healthy after env patch — machine restarted with merged env but /healthz did not come back`,
+      );
+    }
+  }
+
   /** Destroy a Learn sidecar app (machines → app; it has no volumes/DNS). */
   async destroyLearnSidecar(appName: string): Promise<void> {
     this.requireConfigured();

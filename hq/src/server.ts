@@ -61,6 +61,8 @@
  *   POST /admin/instances/:id/destroy
  *   POST /admin/instances/:id/update       { image }
  *   POST /admin/fleet/update               { image, batchSize? }
+ *   POST /admin/learn-backfill              { dryRun? } — give pre-Learn live
+ *                                           instances their Learn sidecar
  */
 
 import { randomUUID } from "node:crypto";
@@ -114,6 +116,7 @@ import type { InstanceDriver } from "./providers/driver.js";
 import { UpdateNotSupportedError } from "./providers/driver.js";
 import {
   autoProvisionOnPayment,
+  backfillLearnSidecars,
   mintMagicLinkForCustomer,
   parseInstanceSecrets,
   provisionCustomer,
@@ -693,6 +696,10 @@ export function createHandler(
 
         if (method === "POST" && path === "/admin/fleet/update") {
           return handleFleetUpdate(req);
+        }
+
+        if (method === "POST" && path === "/admin/learn-backfill") {
+          return handleLearnBackfill(req);
         }
 
         return json({ error: "not found" }, 404);
@@ -2101,6 +2108,23 @@ export function createHandler(
       { ok: !outcome.result.halted, ...outcome.result },
       outcome.result.halted ? 502 : 200,
     );
+  }
+
+  /**
+   * Sweep live instances that predate Cue Learn: provision a sidecar for
+   * each and patch its address + feature flag into the machine env. The
+   * heavy lifting (idempotency, teardown-on-patch-failure, audit events)
+   * lives in backfillLearnSidecars.
+   */
+  async function handleLearnBackfill(req: Request): Promise<Response> {
+    const body = await readJsonBody(req);
+    const outcome = await backfillLearnSidecars(
+      { db, driver },
+      { dryRun: body.dryRun === true },
+    );
+    if (!outcome.ok) return json({ error: outcome.error }, outcome.status);
+    const failed = outcome.results.filter((r) => r.status === "failed").length;
+    return json({ ok: failed === 0, results: outcome.results });
   }
 
   async function handleInstanceAction(

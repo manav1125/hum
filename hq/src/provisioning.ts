@@ -106,6 +106,129 @@ export function parseInstanceSecrets(
   }
 }
 
+// ── Learn backfill ───────────────────────────────────────────────────────
+
+export interface LearnBackfillItem {
+  instanceId: string;
+  customerId: string;
+  status: "provisioned" | "failed" | "dry-run";
+  appName?: string;
+  error?: string;
+}
+
+/**
+ * Give every LIVE instance that predates Cue Learn its sidecar: provision a
+ * private Learn app, patch LEARN_UPSTREAM_URL + the learn-app flag into the
+ * instance's machine env (restarts it), and record the app name on the row.
+ * Instances that already have `learnAppName` are untouched, so the sweep is
+ * idempotent and safe to rerun after partial failures.
+ *
+ * One deliberate gap: the customer's per-customer OpenRouter child key was
+ * minted at provision time and only its hash survives, so backfilled sidecars
+ * run WITHOUT OPENROUTER_API_KEY — every route the fleet config sends to
+ * Google (LLM, image, video) plus ElevenLabs/Tavily still works; only
+ * openrouter:* MODEL_ROUTES would not, and the fleet env sets none.
+ *
+ * If the sidecar provisions but the env patch fails, the sidecar is torn back
+ * down and the row left null so a rerun retries cleanly — recording an app
+ * the instance cannot reach would make the failure invisible AND the rerun
+ * skip it.
+ */
+export async function backfillLearnSidecars(
+  deps: { db: HqDb; driver: InstanceDriver },
+  opts: { dryRun?: boolean } = {},
+): Promise<
+  | { ok: false; status: number; error: string }
+  | { ok: true; results: LearnBackfillItem[] }
+> {
+  const { db, driver } = deps;
+  const learnCfg = learnSidecarConfig();
+  if (!learnCfg) {
+    return {
+      ok: false,
+      status: 409,
+      error:
+        "Learn is not enabled on HQ — set HQ_LEARN_IMAGE_REF and HQ_LEARN_GOOGLE_API_KEY",
+    };
+  }
+  if (!driver.provisionLearnSidecar || !driver.applyEnvPatch) {
+    return {
+      ok: false,
+      status: 501,
+      error: `driver ${driver.id} does not support Learn sidecars / env patching`,
+    };
+  }
+
+  const pending = db
+    .listInstancesByState("live")
+    .filter((i) => i.learnAppName === null);
+  const results: LearnBackfillItem[] = [];
+
+  for (const instance of pending) {
+    const base = { instanceId: instance.id, customerId: instance.customerId };
+    if (opts.dryRun) {
+      results.push({ ...base, status: "dry-run" });
+      continue;
+    }
+    const customer = db.getCustomer(instance.customerId);
+    if (!customer) {
+      results.push({ ...base, status: "failed", error: "unknown customer" });
+      continue;
+    }
+
+    let appName: string;
+    try {
+      const sidecar = await driver.provisionLearnSidecar({
+        appName: `cue-learn-${slugify(customer.name)}-${customer.id.slice(0, 8)}`,
+        image: learnCfg.image,
+        env: learnCfg.env,
+      });
+      appName = sidecar.appName;
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      db.recordEvent("learn_sidecar_failed", customer.id, {
+        instanceId: instance.id,
+        backfill: true,
+        error,
+      });
+      results.push({ ...base, status: "failed", error });
+      continue;
+    }
+
+    try {
+      await driver.applyEnvPatch(instance.externalId, {
+        LEARN_UPSTREAM_URL: `http://${appName}.internal:3000`,
+        VELLUM_FLAG_LEARN_APP: "true",
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      try {
+        await driver.destroyLearnSidecar?.(appName);
+      } catch {
+        // teardown is best-effort; the failure below is already loud
+      }
+      db.recordEvent("learn_backfill_env_patch_failed", customer.id, {
+        instanceId: instance.id,
+        appName,
+        error,
+      });
+      results.push({ ...base, status: "failed", error });
+      continue;
+    }
+
+    db.setInstanceLearnAppName(instance.id, appName);
+    db.recordEvent("learn_sidecar_provisioned", customer.id, {
+      instanceId: instance.id,
+      appName,
+      image: learnCfg.image,
+      backfill: true,
+    });
+    results.push({ ...base, status: "provisioned", appName });
+  }
+
+  return { ok: true, results };
+}
+
 // ── provisioning ─────────────────────────────────────────────────────────
 
 export type ProvisionOutcome =

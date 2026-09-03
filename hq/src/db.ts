@@ -1011,6 +1011,13 @@ export class HqDb {
   }
 
   /** Record the container image the instance now runs (provision/update). */
+  setInstanceLearnAppName(id: string, learnAppName: string | null): void {
+    this.db.run("UPDATE instances SET learnAppName = ? WHERE id = ?", [
+      learnAppName,
+      id,
+    ]);
+  }
+
   setInstanceImageRef(id: string, imageRef: string | null): void {
     this.db.run("UPDATE instances SET imageRef = ? WHERE id = ?", [
       imageRef,
