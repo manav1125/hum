@@ -71,6 +71,7 @@ import { useCommandPaletteStore } from "@/stores/command-palette-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
+import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 
 import { openMv3Create } from "@/mobile-v3/create";
 
@@ -303,7 +304,11 @@ function AccountSheet({
 }
 
 export function Mv3OverflowMenu() {
+  const navigate = useNavigate();
   const toggleCommandPalette = useCommandPaletteStore.use.toggle();
+  const flagsHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
+  const learnAppOn = useAssistantFeatureFlagStore.use.learnApp();
+  const learnEnabled = flagsHydrated && learnAppOn;
   // These render outside the ActiveAssistantGate, so read the raw store and
   // only offer assistant-scoped rows once one is actually active.
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
@@ -349,6 +354,20 @@ export function Mv3OverflowMenu() {
             label: "Add tasks",
             sub: "Paste a list; Cue files each one",
             run: () => setAddTasksOpen(true),
+          },
+        ]
+      : []),
+    // Learn — this sheet is the phone's only global drawer, so without this
+    // row the surface simply has no door on mobile (the desktop rail row and
+    // mv3-chats-index card are both unreachable here). Same hydration-paired
+    // flag gate as everywhere else.
+    ...(learnEnabled
+      ? [
+          {
+            key: "learn",
+            label: "Learn",
+            sub: "Your interactive courses",
+            run: () => void navigate(routes.learn),
           },
         ]
       : []),
