@@ -94,3 +94,10 @@ categories:
       GitHub, and Notion. Extend your assistant with powerful
       integrations.
     icon: link-2
+
+  - slug: apps
+    label: Apps
+    description: >-
+      Embedded surfaces and companion apps inside Cue —
+      Learn, VentureVerse, and other in-app experiences.
+    icon: layout-grid

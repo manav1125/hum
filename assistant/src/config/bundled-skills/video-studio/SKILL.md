@@ -14,6 +14,7 @@ metadata:
     avoid-when:
       - "The user only wants ONE raw generated clip with no narration/captions/editing — call replicate_run directly instead"
       - "The user wants to analyze, summarize, or extract clips from an EXISTING video — use the media-processing tools"
+      - "The user wants DETERMINISTIC motion graphics — an animated title card, kinetic typography, animated logo/wordmark, data-viz reveal, or a stylized title treatment (exact, brand-controlled animation, not AI footage) — use the `motion-graphics` skill (Cue Design / HyperFrames) instead"
 ---
 
 Produce finished videos by orchestrating generation (via `replicate_run`) and assembly (via `video_compose`). You are the director: you write the script, plan the scenes, generate each asset, then compose them into one mp4.
