@@ -34,9 +34,18 @@ const FIRST_IMAGE_RE =
  * ever draw provenance the creator actually stated. Server-local files only —
  * small N, read on demand.
  */
+/** One classroom the catalog lists — enough to find a course by title. */
+interface CatalogEntry {
+  id: string;
+  name: string;
+  sceneCount: number;
+  createdAt?: number;
+}
+
 export async function GET() {
   const sources: Record<string, ClassroomSource> = {};
   const covers: Record<string, string> = {};
+  const catalog: CatalogEntry[] = [];
   try {
     const entries = await fs.readdir(CLASSROOMS_DIR).catch(() => [] as string[]);
     for (const entry of entries) {
@@ -48,6 +57,14 @@ export async function GET() {
         if (data.source) sources[data.id] = data.source;
         const cover = FIRST_IMAGE_RE.exec(content)?.[0];
         if (cover) covers[data.id] = cover;
+        catalog.push({
+          id: data.id,
+          name: typeof data.stage?.name === 'string' ? data.stage.name : data.id,
+          sceneCount: Array.isArray(data.scenes) ? data.scenes.length : 0,
+          ...(typeof data.stage?.createdAt === 'number'
+            ? { createdAt: data.stage.createdAt }
+            : {}),
+        });
       } catch {
         // One malformed file must not empty the whole map.
       }
@@ -55,5 +72,5 @@ export async function GET() {
   } catch (error) {
     log.warn('Classroom sources scan failed:', error);
   }
-  return apiSuccess({ sources, covers });
+  return apiSuccess({ sources, covers, catalog });
 }
