@@ -25,7 +25,7 @@
     },
     {
       "name": "design_export",
-      "description": "Bring a Cue Design artifact back INTO Cue as a first-class attachment, so it can be attached to an email, saved, or shared from chat. This is the return half of the loop: design_handoff sends work out to the studio; design_export pulls the finished page/prototype back as a self-contained HTML file and attaches it to the reply. Use when the user wants to use something they made in Cue Design elsewhere — \"email me that landing page\", \"save the page I designed\", \"send the prototype to the team\". Pass the project id from a recent design_handoff, or omit it (or pass \"latest\") to grab the most recently updated project. (Deck/slide PDF export isn't wired server-side yet — this brings back the HTML artifact.)",
+      "description": "Bring a Cue Design artifact back INTO Cue as a first-class attachment (PDF by default, or HTML), so it can be attached to an email, saved, or shared from chat. This is the return half of the loop: design_handoff sends work out to the studio; design_export pulls the finished page/deck/prototype back and attaches it to the reply. Use when the user wants to use something they made in Cue Design elsewhere — \"email me that deck as a PDF\", \"send the landing page to the team\", \"save the prototype\". Pass the project id from a recent design_handoff, or omit it (or pass \"latest\") to grab the most recently updated project.",
       "category": "content",
       "risk": "low",
       "input_schema": {
@@ -34,6 +34,11 @@
           "projectId": {
             "type": "string",
             "description": "The Cue Design project id (from a design_handoff result). Omit or pass \"latest\" to use the most recently updated project."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["pdf", "html"],
+            "description": "Output format. \"pdf\" (default) is best for emailing/sharing a deck or page; \"html\" returns the interactive self-contained page."
           },
           "fileName": {
             "type": "string",

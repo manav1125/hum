@@ -102,10 +102,12 @@ export async function run(
     typeof input.title === "string" && input.title.trim()
       ? input.title.trim()
       : resolved.name;
+  const format = input.format === "html" ? "html" : "pdf"; // default pdf
 
-  let res: Response;
+  // Both formats start from the sidecar's self-contained HTML export.
+  let htmlRes: Response;
   try {
-    res = await fetch(
+    htmlRes = await fetch(
       `${upstream}/api/projects/${encodeURIComponent(resolved.id)}/export/html`,
       {
         method: "POST",
@@ -120,19 +122,59 @@ export async function run(
       isError: true,
     };
   }
-
-  if (!res.ok) {
-    let detail = `status ${res.status}`;
+  if (!htmlRes.ok) {
+    let detail = `status ${htmlRes.status}`;
     try {
-      const body = (await res.json()) as { error?: unknown };
+      const body = (await htmlRes.json()) as { error?: unknown };
       if (body?.error) detail = JSON.stringify(body.error);
     } catch {
       /* non-JSON */
     }
     return { content: `Export failed: ${detail}`, isError: true };
   }
+  const html = await htmlRes.text();
+  if (!html.trim()) {
+    return { content: "The export produced an empty file.", isError: true };
+  }
 
-  const bytes = Buffer.from(await res.arrayBuffer());
+  let bytes: Buffer;
+  let mimeType: string;
+  let ext: string;
+  if (format === "pdf") {
+    // Render the bundled HTML to a PDF in the sidecar (chromium print-to-pdf).
+    let pdfRes: Response;
+    try {
+      pdfRes = await fetch(`${upstream}/api/render/pdf`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: designOrigin() },
+        body: JSON.stringify({ html }),
+        signal: AbortSignal.timeout(90_000),
+      });
+    } catch (err) {
+      return {
+        content: `Couldn't render the PDF: ${(err as Error).message}`,
+        isError: true,
+      };
+    }
+    if (!pdfRes.ok) {
+      let detail = `status ${pdfRes.status}`;
+      try {
+        const body = (await pdfRes.json()) as { error?: unknown };
+        if (body?.error) detail = JSON.stringify(body.error);
+      } catch {
+        /* non-JSON */
+      }
+      return { content: `PDF render failed: ${detail}`, isError: true };
+    }
+    bytes = Buffer.from(await pdfRes.arrayBuffer());
+    mimeType = "application/pdf";
+    ext = "pdf";
+  } else {
+    bytes = Buffer.from(html, "utf8");
+    mimeType = "text/html";
+    ext = "html";
+  }
+
   if (bytes.length === 0) {
     return { content: "The export produced an empty file.", isError: true };
   }
@@ -141,14 +183,14 @@ export async function run(
   await mkdir(dir, { recursive: true });
   const safeTitle =
     title.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 60) || "design";
-  const outName = `${safeTitle}.html`;
+  const outName = `${safeTitle}.${ext}`;
   const outPath = join(dir, outName);
   await writeFile(outPath, bytes);
   const outStat = await stat(outPath);
 
   const attachment = uploadFileBackedAttachment(
     outName,
-    "text/html",
+    mimeType,
     outPath,
     outStat.size,
   );
@@ -162,7 +204,7 @@ export async function run(
         projectId: resolved.id,
         projectName: resolved.name,
         filename: outName,
-        mimeType: "text/html",
+        mimeType,
         sizeBytes: outStat.size,
       },
       null,

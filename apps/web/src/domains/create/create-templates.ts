@@ -8,7 +8,9 @@
  * is actually produced by the backing skill — not a mock.
  *
  * Skill mapping (verified against assistant/src/config/bundled-skills/*):
- *   - app-builder      → dashboards, trackers, calculators, charts, slide decks, simple landing pages
+ *   - app-builder      → dashboards, trackers, calculators, charts (interactive apps)
+ *   - design-studio    → decks, landing pages, prototypes → handed off to the
+ *                        Cue Design studio (design_handoff) to refine visually
  *   - document-editor  → long-form docs (PRDs, reports, articles, meeting notes)
  *   - image-studio     → generate / edit images (also background removal, restyle)
  *   - media-processing → analyze a video, extract clips, query footage
@@ -38,6 +40,9 @@ import {
 /** Canonical Cue skill a template routes to. */
 export type CreateSkill =
   | "app-builder"
+  // Cue Design studio (OpenDesign) — decks, pages, prototypes handed off to
+  // the visual studio via design_handoff, then refined on the canvas.
+  | "design-studio"
   | "document-editor"
   | "image-studio"
   | "media-processing"
@@ -135,17 +140,17 @@ export const CREATE_MODES: CreateMode[] = [
   {
     id: "slides",
     label: "Slides",
-    tagline: "Decks built as interactive apps",
+    tagline: "Designed in the Cue Design studio",
     icon: Presentation,
-    skill: "app-builder",
-    skillLabel: "App Builder",
+    skill: "design-studio",
+    skillLabel: "Cue Design",
     templates: [
       {
         id: "investor-pitch",
         title: "Investor pitch deck",
         description: "Series A deck: problem, market, traction, ask.",
         prompt:
-          "Build me an investor pitch deck as a slide-deck app. Include slides for: problem, solution, market size (TAM/SAM/SOM), product, traction, business model, competition, team, financial projections, and the funding ask. Use a confident, modern visual direction with strong typography and one clear idea per slide. Add placeholder content I can edit and make it presentable as-is.",
+          "Open a Cue Design project for an investor pitch deck. Cover: problem, solution, market size (TAM/SAM/SOM), product, traction, business model, competition, team, financial projections, and the funding ask — one clear idea per slide, confident modern typography. Use my real details where you know them; I'll refine it on the canvas in Cue Design.",
         elicit: [
           {
             question: "Which round are you raising?",
@@ -176,7 +181,7 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Quarterly business review",
         description: "KPIs, wins, risks, and next-quarter priorities.",
         prompt:
-          "Build a quarterly business review slide deck as an app. Cover: executive summary, key KPIs with trend callouts, wins this quarter, what slipped and why, customer/revenue highlights, risks, and priorities for next quarter. Clean, data-forward design with one headline per slide.",
+          "Open a Cue Design project for a quarterly business review deck. Cover: executive summary, key KPIs with trend callouts, wins this quarter, what slipped and why, customer/revenue highlights, risks, and priorities for next quarter — clean, data-forward, one headline per slide. I'll refine it in Cue Design.",
         elicit: [
           {
             question: "Who's the audience?",
@@ -209,7 +214,7 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Product launch deck",
         description: "Positioning, demo flow, and go-to-market plan.",
         prompt:
-          "Build a product launch presentation as a slide-deck app: positioning and value prop, the problem we solve, a demo walkthrough section, pricing/packaging, launch timeline, and the go-to-market plan. Energetic but professional visual direction.",
+          "Open a Cue Design project for a product launch presentation: positioning and value prop, the problem we solve, a demo walkthrough section, pricing/packaging, launch timeline, and the go-to-market plan — energetic but professional. I'll refine it in Cue Design.",
         elicit: [
           {
             question: "What are you launching?",
@@ -244,7 +249,7 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Team offsite agenda",
         description: "Schedule, goals, and breakout sessions.",
         prompt:
-          "Build a team offsite agenda as a slide deck app. Include: offsite goals, a time-blocked agenda, breakout session topics, team-building activities, and a closing/next-steps slide. Warm, inviting visual direction.",
+          "Open a Cue Design project for a team offsite agenda deck. Include: offsite goals, a time-blocked agenda, breakout session topics, team-building activities, and a closing/next-steps slide — warm and inviting. I'll refine it in Cue Design.",
         elicit: [
           {
             question: "How long is the offsite?",
