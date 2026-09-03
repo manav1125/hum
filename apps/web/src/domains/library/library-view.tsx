@@ -584,15 +584,6 @@ export function LibraryView({
                   onOpen={() => onOpenApp(app.id)}
                 />
               ))}
-              {tabDocuments.map((doc) => (
-                <LibraryCoverCard
-                  key={doc.surfaceId}
-                  kind="Doc"
-                  title={doc.title}
-                  dateLabel={monoDate(doc.updatedAt)}
-                  onOpen={() => onOpenDocument?.(doc.surfaceId)}
-                />
-              ))}
               {tabCourses.map((course) => (
                 <LibraryCoverCard
                   key={course.id}
@@ -605,6 +596,15 @@ export function LibraryView({
                       : undefined
                   }
                   onOpen={() => openCourse(course.id)}
+                />
+              ))}
+              {tabDocuments.map((doc) => (
+                <LibraryCoverCard
+                  key={doc.surfaceId}
+                  kind="Doc"
+                  title={doc.title}
+                  dateLabel={monoDate(doc.updatedAt)}
+                  onOpen={() => onOpenDocument?.(doc.surfaceId)}
                 />
               ))}
               {tabMedia.map((item) => (
@@ -638,26 +638,6 @@ export function LibraryView({
               onDelete={setAppPendingDelete}
               onDeploy={handleDeploy}
             />
-            {tabDocuments.length > 0 ? (
-              <section>
-                <h2 className="mb-4" style={sectionLabel}>
-                  Documents
-                </h2>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%-6rem)/5)),1fr))] gap-6">
-                  {tabDocuments.map((doc) => (
-                    <LibraryDocumentCard
-                      key={doc.surfaceId}
-                      document={doc}
-                      onOpen={(documentSurfaceId) => {
-                        if (onOpenDocument) {
-                          onOpenDocument(documentSurfaceId);
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : null}
             {tabCourses.length > 0 ? (
               <section>
                 <h2 className="mb-4" style={sectionLabel}>
@@ -676,6 +656,26 @@ export function LibraryView({
                           : undefined
                       }
                       onOpen={() => openCourse(course.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {tabDocuments.length > 0 ? (
+              <section>
+                <h2 className="mb-4" style={sectionLabel}>
+                  Documents
+                </h2>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%-6rem)/5)),1fr))] gap-6">
+                  {tabDocuments.map((doc) => (
+                    <LibraryDocumentCard
+                      key={doc.surfaceId}
+                      document={doc}
+                      onOpen={(documentSurfaceId) => {
+                        if (onOpenDocument) {
+                          onOpenDocument(documentSurfaceId);
+                        }
+                      }}
                     />
                   ))}
                 </div>
