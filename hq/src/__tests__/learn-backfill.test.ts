@@ -36,7 +36,11 @@ afterEach(() => {
 
 /** MockDriver + the two optional capabilities the backfill needs. */
 class BackfillMockDriver extends MockDriver {
-  sidecarSpecs: { appName: string; image: string }[] = [];
+  sidecarSpecs: {
+    appName: string;
+    image: string;
+    env: Record<string, string>;
+  }[] = [];
   envPatches: { externalId: string; env: Record<string, string> }[] = [];
   destroyedSidecars: string[] = [];
   failEnvPatchFor: string | null = null;
@@ -51,7 +55,11 @@ class BackfillMockDriver extends MockDriver {
     image: string;
     env: Record<string, string>;
   }): Promise<{ appName: string }> {
-    this.sidecarSpecs.push({ appName: spec.appName, image: spec.image });
+    this.sidecarSpecs.push({
+      appName: spec.appName,
+      image: spec.image,
+      env: spec.env,
+    });
     // Collision suffix, so callers must use the RETURNED name.
     return { appName: `${spec.appName}-x1y2` };
   }
@@ -115,15 +123,21 @@ describe("backfillLearnSidecars", () => {
       },
     ]);
     const finalName = `${driver.sidecarSpecs[0].appName}-x1y2`;
-    expect(driver.envPatches).toEqual([
-      {
-        externalId: instance.externalId,
-        env: {
-          LEARN_UPSTREAM_URL: `http://${finalName}.internal:3000`,
-          VELLUM_FLAG_LEARN_APP: "true",
-        },
-      },
-    ]);
+    expect(driver.envPatches).toHaveLength(1);
+    const patch = driver.envPatches[0];
+    expect(patch.externalId).toBe(instance.externalId);
+    expect(patch.env.LEARN_UPSTREAM_URL).toBe(
+      `http://${finalName}.internal:3000`,
+    );
+    expect(patch.env.VELLUM_FLAG_LEARN_APP).toBe("true");
+    // The instance-side secret must be the very one the sidecar enforces.
+    expect(patch.env.LEARN_UPSTREAM_SECRET).toMatch(/^[0-9a-f]{48}$/);
+    expect(driver.sidecarSpecs[0].env.OPENMAIC_ACCESS_SECRET).toBe(
+      patch.env.LEARN_UPSTREAM_SECRET,
+    );
+    expect(driver.sidecarSpecs[0].env.OPENMAIC_FIXED_OWNER_ID).toBe(
+      "cue-owner",
+    );
     expect(db.getInstance(instance.id)!.learnAppName).toBe(finalName);
     expect(
       db.findLatestEvent("learn_sidecar_provisioned", customer.id),

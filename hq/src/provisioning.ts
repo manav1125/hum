@@ -53,6 +53,8 @@
  *                                 cents (default: plan monthly COGS / 4).
  */
 
+import { randomBytes } from "node:crypto";
+
 import {
   composioProjectsConfigured,
   createCustomerProject,
@@ -60,6 +62,7 @@ import {
 } from "./composio-projects.js";
 import { grantProvisioningCredits, syncKeyLimitsToBalance } from "./credits.js";
 import { learnSidecarConfig } from "./learn-sidecar.js";
+import { provisionLearnDatabase } from "./learn-pg.js";
 import { sendEmail, welcomeEmail } from "./email.js";
 import type { Customer, HqDb, Instance } from "./db.js";
 import { firstNameOf, trackEvent } from "./klaviyo.js";
@@ -218,11 +221,22 @@ export async function backfillLearnSidecars(
     }
 
     let appName: string;
+    const secret = randomBytes(24).toString("hex");
     try {
+      const databaseUrl = await provisionLearnDatabase(instance.customerId);
       const sidecar = await driver.provisionLearnSidecar({
         appName: `cue-learn-${slugify(customer.name)}-${customer.id.slice(0, 8)}`,
         image: learnCfg.image,
-        env: learnCfg.env,
+        env: {
+          ...learnCfg.env,
+          OPENMAIC_ACCESS_SECRET: secret,
+          ...(databaseUrl
+            ? {
+                DATABASE_URL: databaseUrl,
+                OPENMAIC_AGENT_RUNTIME_ENABLED: "1",
+              }
+            : {}),
+        },
       });
       appName = sidecar.appName;
     } catch (err) {
@@ -239,6 +253,7 @@ export async function backfillLearnSidecars(
     try {
       await driver.applyEnvPatch(instance.externalId, {
         LEARN_UPSTREAM_URL: `http://${appName}.internal:3000`,
+        LEARN_UPSTREAM_SECRET: secret,
         VELLUM_FLAG_LEARN_APP: "true",
       });
     } catch (err) {
@@ -348,14 +363,32 @@ export async function provisionCustomer(
   // with a loud audit trail — a customer without Learn is a customer, a
   // failed provision is not.
   let learnAppName: string | null = null;
+  // Per-customer credential the sidecar's middleware requires on every
+  // request; the instance's gateway injects it, so only THAT gateway can
+  // reach the sidecar across the shared private network. Never persisted or
+  // logged — it lives only in the two machines' env.
+  let learnSecret: string | null = null;
   const learnCfg = learnSidecarConfig();
   if (learnCfg && driver.provisionLearnSidecar) {
     try {
+      const secret = randomBytes(24).toString("hex");
+      // Server persistence (optional): a real per-customer database on the
+      // shared Learn Postgres cluster. Null when HQ_LEARN_PG_ADMIN_URL is
+      // unset — the sidecar then keeps browser-only persistence.
+      const databaseUrl = await provisionLearnDatabase(customer.id);
       const sidecar = await driver.provisionLearnSidecar({
         appName: `cue-learn-${slugify(customer.name)}-${customer.id.slice(0, 8)}`,
         image: learnCfg.image,
         env: {
           ...learnCfg.env,
+          OPENMAIC_ACCESS_SECRET: secret,
+          ...(databaseUrl
+            ? {
+                DATABASE_URL: databaseUrl,
+                // The stages/document API family gates on the agent runtime.
+                OPENMAIC_AGENT_RUNTIME_ENABLED: "1",
+              }
+            : {}),
           // The customer's own child key, so alt-model spend in Learn is
           // metered per customer like everything else.
           ...(llmKey.apiKey ? { OPENROUTER_API_KEY: llmKey.apiKey } : {}),
@@ -363,6 +396,7 @@ export async function provisionCustomer(
         region: opts.region,
       });
       learnAppName = sidecar.appName;
+      learnSecret = secret;
       db.recordEvent("learn_sidecar_provisioned", customer.id, {
         appName: sidecar.appName,
         image: learnCfg.image,
@@ -387,6 +421,7 @@ export async function provisionCustomer(
         ? {
             LEARN_UPSTREAM_URL: `http://${learnAppName}.internal:3000`,
             VELLUM_FLAG_LEARN_APP: "true",
+            ...(learnSecret ? { LEARN_UPSTREAM_SECRET: learnSecret } : {}),
           }
         : {}),
       ...providerEnv,

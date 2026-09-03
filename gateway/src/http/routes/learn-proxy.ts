@@ -55,6 +55,18 @@ export function isLearnProxyConfigured(): boolean {
   return learnUpstreamUrl() !== undefined;
 }
 
+/**
+ * Per-deployment secret the upstream sidecar requires on every request
+ * (its OPENMAIC_ACCESS_SECRET middleware). The sidecar shares a private
+ * network with other tenants' machines, so the gateway proves it is THE
+ * fronting gateway; without the env the header is simply not sent (a
+ * sidecar that doesn't enforce it doesn't need it).
+ */
+function learnUpstreamSecret(): string | undefined {
+  const raw = process.env.LEARN_UPSTREAM_SECRET?.trim();
+  return raw ? raw : undefined;
+}
+
 export function createLearnProxyHandler() {
   // Per-process secret: cookies die with the process, and the Learn page
   // re-mints one on every mount, so ephemerality costs one extra round trip
@@ -125,13 +137,17 @@ export function createLearnProxyHandler() {
   async function proxyTo(
     req: Request,
     upstreamPath: string,
+    trusted = false,
   ): Promise<Response> {
     const base = learnUpstreamUrl();
     if (!base) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (!isValidSessionCookie(readSessionCookie(req))) {
+    // `trusted` marks a caller the gateway itself vouched for — today the
+    // co-located daemon on the raw loopback socket (the Learn skill's course
+    // reads). Everyone else needs the minted session cookie.
+    if (!trusted && !isValidSessionCookie(readSessionCookie(req))) {
       // A top-level/iframe navigation gets sent back into the app, which
       // mints a fresh session on the Learn page; API calls get a plain 401.
       const wantsHtml = req.headers.get("accept")?.includes("text/html");
@@ -154,6 +170,10 @@ export function createLearnProxyHandler() {
     headers.delete("host");
     headers.set("x-forwarded-host", reqUrl.host);
     headers.set("x-forwarded-proto", isSecureRequest(req) ? "https" : "http");
+    // Never forward a caller-supplied copy of the sidecar's access header.
+    headers.delete("x-openmaic-access");
+    const secret = learnUpstreamSecret();
+    if (secret) headers.set("x-openmaic-access", secret);
     // Compressed pass-through: with decompress:false below, upstream bytes
     // and their content-encoding header cross the proxy verbatim, so the
     // client's accept-encoding can be forwarded too. Without this every
@@ -202,13 +222,21 @@ export function createLearnProxyHandler() {
   }
 
   /** /learn and /learn/* — pages, assets, and basePath-aware API routes. */
-  function handleLearnPath(req: Request, subPath: string): Promise<Response> {
-    return proxyTo(req, `/learn${subPath}`);
+  function handleLearnPath(
+    req: Request,
+    subPath: string,
+    trusted = false,
+  ): Promise<Response> {
+    return proxyTo(req, `/learn${subPath}`, trusted);
   }
 
   /** /api/* — the hardcoded-absolute-path shim (see module doc). */
-  function handleApiShim(req: Request, subPath: string): Promise<Response> {
-    return proxyTo(req, `/learn/api${subPath}`);
+  function handleApiShim(
+    req: Request,
+    subPath: string,
+    trusted = false,
+  ): Promise<Response> {
+    return proxyTo(req, `/learn/api${subPath}`, trusted);
   }
 
   /**

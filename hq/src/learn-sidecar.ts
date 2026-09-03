@@ -35,6 +35,13 @@ export function learnSidecarConfig(): LearnSidecarEnvConfig | null {
     // default binds IPv4 and is unreachable over 6PN.
     HOSTNAME: "::",
     OPENMAIC_BASE_PATH: "/learn",
+    // One owner per deployment: the browser, the gateway, and the daemon all
+    // resolve to the same course owner (the fork's OPENMAIC_FIXED_OWNER_ID).
+    OPENMAIC_FIXED_OWNER_ID: "cue-owner",
+    // Persistence auth happened upstream at the gateway (access-secret
+    // middleware) — the compiled-in dev token is not consulted, which is
+    // what lets one shared image serve many single-tenant sidecars.
+    OPENMAIC_TRUST_PROXY_AUTH: "1",
     DEFAULT_MODEL:
       process.env.HQ_LEARN_DEFAULT_MODEL?.trim() ||
       "google:gemini-3-flash-preview",

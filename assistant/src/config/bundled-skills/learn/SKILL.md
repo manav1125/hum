@@ -25,9 +25,12 @@ opens the finished classroom inside Cue.
 
 ## Preconditions
 
-The Learn service address is in `$LEARN_UPSTREAM_URL` (already present in your
-bash environment on deployments that run Learn). If it is empty, tell the user
-Learn isn't set up on this Cue yet and stop — do not guess a URL.
+`$LEARN_UPSTREAM_URL` being present in your bash environment is the signal
+that Learn is deployed on this Cue. If it is empty, tell the user Learn isn't
+set up yet and stop. Make the actual calls through the local gateway at
+`$INTERNAL_GATEWAY_BASE_URL` (loopback callers are trusted and the gateway
+attaches the sidecar's access credentials) — never call `$LEARN_UPSTREAM_URL`
+directly; the sidecar rejects unauthenticated peers.
 
 ## Pipeline
 
@@ -44,7 +47,7 @@ Learn isn't set up on this Cue yet and stop — do not guess a URL.
 3. **Submit the job** (bash):
 
    ```bash
-   curl -s -X POST "$LEARN_UPSTREAM_URL/learn/api/generate-classroom" \
+   curl -s -X POST "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom" \
      -H 'content-type: application/json' \
      -d '{"requirement": "<the brief>", "enableTTS": true, "enableImageGeneration": true,
           "source": {"kind": "cue-chat", "conversationId": "'"$__CONVERSATION_ID"'"}}'
@@ -63,11 +66,11 @@ Learn isn't set up on this Cue yet and stop — do not guess a URL.
    times out around 10 minutes and a timed-out poll strands the user with no
    verdict). Each poll call checks for at most ~2 minutes, then RETURNS, and
    you call it again — up to 4 bursts (~8 minutes total). `pollUrl` may carry
-   an internal host, so rebuild it from `$LEARN_UPSTREAM_URL` and the jobId:
+   an internal host, so rebuild it from `$INTERNAL_GATEWAY_BASE_URL` and the jobId:
 
    ```bash
    for i in $(seq 1 8); do
-     R=$(curl -s "$LEARN_UPSTREAM_URL/learn/api/generate-classroom/$JOB_ID")
+     R=$(curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom/$JOB_ID")
      echo "$R" | grep -qE '"status":"(succeeded|failed)"' && break
      sleep 14
    done
@@ -109,7 +112,7 @@ course. Chat-created Cue Learn courses are readable:
    (case-insensitive, partial match is fine):
 
    ```bash
-   curl -s "$LEARN_UPSTREAM_URL/learn/api/classroom-sources"
+   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/classroom-sources"
    ```
 
    The response's `catalog` is `[{id, name, sceneCount, createdAt}]`.
@@ -117,7 +120,7 @@ course. Chat-created Cue Learn courses are readable:
 2. **Fetch its content**:
 
    ```bash
-   curl -s "$LEARN_UPSTREAM_URL/learn/api/classroom?id=<id>" > /tmp/course.json
+   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/classroom?id=<id>" > /tmp/course.json
    ```
 
    The response is `{ success, classroom: { stage, scenes } }`. The teacher's

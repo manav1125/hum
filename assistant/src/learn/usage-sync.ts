@@ -176,9 +176,16 @@ export class LearnUsageSync {
       let imported = 0;
       // Page until drained; bounded by the sidecar's own record volume.
       for (let page = 0; page < 20; page++) {
+        // The sidecar's OPENMAIC_ACCESS_SECRET middleware (set on shared-6PN
+        // deployments) requires the per-customer secret on every request; the
+        // daemon holds it as LEARN_UPSTREAM_SECRET. Absent env = no header.
+        const secret = process.env.LEARN_UPSTREAM_SECRET?.trim();
         const res = await fetch(
           `${base}/learn/api/usage/records?since=${since}&limit=${BATCH_LIMIT}`,
-          { signal: AbortSignal.timeout(20_000) },
+          {
+            signal: AbortSignal.timeout(20_000),
+            ...(secret ? { headers: { "x-openmaic-access": secret } } : {}),
+          },
         );
         if (!res.ok) {
           log.warn({ status: res.status }, "Learn usage poll failed");

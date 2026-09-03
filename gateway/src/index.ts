@@ -1666,6 +1666,18 @@ async function main() {
   // proxied path families, all ahead of the runtime catch-all. `/api/*` is
   // OpenMAIC's hardcoded-absolute-path shim and has no other owner on this
   // origin; every route is a no-op 404 unless LEARN_UPSTREAM_URL is set.
+  //
+  // The co-located daemon (Learn skill, usage bridge) calls these routes on
+  // the RAW loopback socket and is trusted without a session cookie. The
+  // check deliberately ignores x-forwarded-for — that header is
+  // caller-supplied, and trusting it would let any remote client claim
+  // 127.0.0.1; server.requestIP is the socket's real peer address.
+  const isLoopbackSocket = (req: Request): boolean => {
+    const addr = server.requestIP(req)?.address;
+    return (
+      addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1"
+    );
+  };
   routes.push(
     {
       path: "/learn/cue-session",
@@ -1695,12 +1707,13 @@ async function main() {
       path: /^\/learn(\/.*)?$/,
       auth: "custom",
       handler: (req, params) =>
-        learnProxy.handleLearnPath(req, params[0] ?? ""),
+        learnProxy.handleLearnPath(req, params[0] ?? "", isLoopbackSocket(req)),
     },
     {
       path: /^\/api(\/.*)$/,
       auth: "custom",
-      handler: (req, params) => learnProxy.handleApiShim(req, params[0] ?? ""),
+      handler: (req, params) =>
+        learnProxy.handleApiShim(req, params[0] ?? "", isLoopbackSocket(req)),
     },
     {
       // OpenMAIC public/ assets referenced by absolute path — an enumerated

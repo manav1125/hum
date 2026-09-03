@@ -201,6 +201,48 @@ describe("learn-proxy", () => {
     );
   });
 
+  test("a trusted (loopback-daemon) request needs no cookie", async () => {
+    const handler = createLearnProxyHandler();
+    const res = await handler.handleApiShim(
+      new Request("http://gateway.local/api/classroom-sources"),
+      "/classroom-sources",
+      true,
+    );
+    expect(res.status).toBe(200);
+    expect(lastUpstreamReq!.path).toBe("/learn/api/classroom-sources");
+  });
+
+  test("injects the upstream access secret and strips a forged copy", async () => {
+    process.env.LEARN_UPSTREAM_SECRET = "s3cret";
+    try {
+      const handler = createLearnProxyHandler();
+      const cookie = mintCookie(handler);
+      const res = await handler.handleLearnPath(
+        new Request("http://gateway.local/learn/api/stages", {
+          headers: { cookie, "x-openmaic-access": "attacker-guess" },
+        }),
+        "/api/stages",
+      );
+      expect(res.status).toBe(200);
+      expect(lastUpstreamReq!.headers.get("x-openmaic-access")).toBe("s3cret");
+    } finally {
+      delete process.env.LEARN_UPSTREAM_SECRET;
+    }
+  });
+
+  test("a forged access header is stripped even with no secret configured", async () => {
+    const handler = createLearnProxyHandler();
+    const cookie = mintCookie(handler);
+    const res = await handler.handleLearnPath(
+      new Request("http://gateway.local/learn/api/stages", {
+        headers: { cookie, "x-openmaic-access": "attacker-guess" },
+      }),
+      "/api/stages",
+    );
+    expect(res.status).toBe(200);
+    expect(lastUpstreamReq!.headers.get("x-openmaic-access")).toBeNull();
+  });
+
   test("answers 404 everywhere when unconfigured", async () => {
     const saved = process.env.LEARN_UPSTREAM_URL;
     delete process.env.LEARN_UPSTREAM_URL;

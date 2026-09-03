@@ -5,12 +5,12 @@ set -euo pipefail
 # registry (same build-once-deploy-many model as fly-release.sh). Built from
 # the monorepo's `learn/` tree (the Cue Learn fork subtree).
 #
-# The fleet image is deliberately built WITHOUT the server-persistence build
-# flags: server persistence compiles a bearer token into the client bundle,
-# and one shared fleet image would share that token across every customer on
-# the org's private network. Fleet sidecars run browser persistence until
-# sidecar builds are per-customer. (Manav's own sidecar app, cue-learn-manav,
-# is built separately from ~/OpenMAIC WITH persistence.)
+# The fleet image enables server persistence WITHOUT a compiled-in token:
+# the sidecar's runtime OPENMAIC_TRUST_PROXY_AUTH accepts requests that the
+# per-customer OPENMAIC_ACCESS_SECRET middleware already gated, so the
+# per-tenant credential lives in runtime env (HQ mints it per customer), not
+# in the shared client bundle. (Manav's own sidecar app, cue-learn-manav, is
+# still built separately from ~/OpenMAIC with its own token.)
 #
 # Usage:
 #   FLY_ORG_SLUG=<org> hq/scripts/learn-release.sh [label]
@@ -46,7 +46,8 @@ echo "▶ building ${IMAGE_REF} from ${LEARN_DIR} (remote builder)"
   --app "${APP}" \
   --build-only --push --remote-only --depot=false \
   --image-label "${LABEL}" \
-  --build-arg OPENMAIC_BASE_PATH=/learn)
+  --build-arg OPENMAIC_BASE_PATH=/learn \
+  --build-arg NEXT_PUBLIC_PERSISTENCE=1)
 
 echo "✅ pushed ${IMAGE_REF}"
 
