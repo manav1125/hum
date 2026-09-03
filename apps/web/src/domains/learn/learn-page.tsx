@@ -117,6 +117,21 @@ export function LearnPage() {
 
   return (
     <PageShell className="max-md:px-0 max-md:py-0 md:px-0 md:py-0">
+      <style>{`
+        @keyframes cueLearnDoorway {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .cue-learn-doorway {
+          animation: cueLearnDoorway 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .cue-learn-doorway {
+            animation: cueLearnDoorway 80ms linear;
+            transform: none;
+          }
+        }
+      `}</style>
       {session === "ready" ? (
         <iframe
           ref={iframeRef}
@@ -124,7 +139,10 @@ export function LearnPage() {
           // `/learn/` → `/learn` with a 308, so skip the redirect hop.
           src={initialPath ? `/learn${initialPath}` : "/learn"}
           title="Learn"
-          className="min-h-0 w-full flex-1 border-0"
+          // The doorway (design R2-1): entering Learn rises 12px and fades in
+          // over 240ms; under prefers-reduced-motion the keyframes collapse to
+          // a quick crossfade via the media query in the style tag below.
+          className="cue-learn-doorway min-h-0 w-full flex-1 border-0"
           // Full app surface: Cue Learn uses mic input (talk to the teacher),
           // audio playback, and downloads (PPTX/HTML export).
           allow="microphone; autoplay; clipboard-write; fullscreen"
