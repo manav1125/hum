@@ -39,6 +39,15 @@ function authenticatePersistenceCredentials(
   authorization: string | undefined,
   learnerKey: string | undefined,
 ): PersistencePrincipal | undefined {
+  // OPENMAIC_TRUST_PROXY_AUTH=1: authentication happened upstream — the
+  // deployment's fronting gateway already gated the request (see the
+  // OPENMAIC_ACCESS_SECRET middleware), so the compiled-in bearer token is
+  // not consulted. This is what lets ONE shared image serve many
+  // single-tenant deployments: the per-tenant secret lives in runtime env at
+  // the middleware, not in the client bundle.
+  if (process.env.OPENMAIC_TRUST_PROXY_AUTH === '1') {
+    return { key: SHARED_ASSET_PRINCIPAL, ...(learnerKey ? { learnerKey } : {}) };
+  }
   const token = process.env.PERSISTENCE_DEV_TOKEN;
   if (!token || !authorization || !secureEqual(authorization, `Bearer ${token}`)) return undefined;
 
