@@ -99,6 +99,8 @@ import * as messagingRead from "./bundled-skills/messaging/tools/messaging-read.
 import * as messagingSearch from "./bundled-skills/messaging/tools/messaging-search.js";
 import * as messagingSend from "./bundled-skills/messaging/tools/messaging-send.js";
 import * as messagingSenderDigest from "./bundled-skills/messaging/tools/messaging-sender-digest.js";
+// ── motion-graphics ────────────────────────────────────────────────────────────
+import * as hyperframesRender from "./bundled-skills/motion-graphics/tools/hyperframes-render.js";
 // ── personal-page ──────────────────────────────────────────────────────────────
 import * as personalPage_appRefresh from "./bundled-skills/personal-page/tools/app-refresh.js";
 // ── phone-calls ────────────────────────────────────────────────────────────────
@@ -134,7 +136,7 @@ import * as voiceConfigUpdate from "./bundled-skills/settings/tools/voice-config
 // ── skill-management ───────────────────────────────────────────────────────────
 import * as deleteManaged from "./bundled-skills/skill-management/tools/delete-managed.js";
 import * as scaffoldManaged from "./bundled-skills/skill-management/tools/scaffold-managed.js";
-import * as teachSkill from "./bundled-skills/skill-management/tools/teach.js";
+import * as teach from "./bundled-skills/skill-management/tools/teach.js";
 // ── spreadsheet-studio ─────────────────────────────────────────────────────────
 import * as spreadsheetCreate from "./bundled-skills/spreadsheet-studio/tools/spreadsheet-create.js";
 // ── subagent ───────────────────────────────────────────────────────────────────
@@ -143,8 +145,8 @@ import * as subagentMessage from "./bundled-skills/subagent/tools/subagent-messa
 import * as subagentRead from "./bundled-skills/subagent/tools/subagent-read.js";
 import * as subagentSpawn from "./bundled-skills/subagent/tools/subagent-spawn.js";
 import * as subagentStatus from "./bundled-skills/subagent/tools/subagent-status.js";
-import * as agentRoster from "./bundled-skills/tasks/tools/agent-roster.js";
 // ── tasks ──────────────────────────────────────────────────────────────────────
+import * as agentRoster from "./bundled-skills/tasks/tools/agent-roster.js";
 import * as taskListAdd from "./bundled-skills/tasks/tools/task-list-add.js";
 import * as taskListRemove from "./bundled-skills/tasks/tools/task-list-remove.js";
 import * as taskListShow from "./bundled-skills/tasks/tools/task-list-show.js";
@@ -269,6 +271,9 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["messaging:tools/messaging-mark-important.ts", messagingMarkImportant],
   ["messaging:tools/inbox-run-report.ts", inboxRunReport],
 
+  // motion-graphics
+  ["motion-graphics:tools/hyperframes-render.ts", hyperframesRender],
+
   // personal-page
   ["personal-page:tools/app-refresh.ts", personalPage_appRefresh],
 
@@ -309,8 +314,8 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["settings:tools/navigate-settings-tab.ts", navigateSettingsTab],
 
   // skill-management
+  ["skill-management:tools/teach.ts", teach],
   ["skill-management:tools/scaffold-managed.ts", scaffoldManaged],
-  ["skill-management:tools/teach.ts", teachSkill],
   ["skill-management:tools/delete-managed.ts", deleteManaged],
 
   // spreadsheet-studio
@@ -325,11 +330,11 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
 
   // tasks
   ["tasks:tools/task-list-add.ts", taskListAdd],
-  ["tasks:tools/agent-roster.ts", agentRoster],
   ["tasks:tools/task-list-show.ts", taskListShow],
   ["tasks:tools/task-list-update.ts", taskListUpdate],
   ["tasks:tools/task-list-remove.ts", taskListRemove],
   ["tasks:tools/task-queue-run.ts", taskQueueRun],
+  ["tasks:tools/agent-roster.ts", agentRoster],
 
   // transcribe
   ["transcribe:tools/transcribe-media.ts", transcribeMedia],

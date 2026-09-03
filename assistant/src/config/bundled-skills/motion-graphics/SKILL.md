@@ -40,18 +40,62 @@ HyperFrames renderer and 15 curated motion templates:
    that's `video-studio` — hand off there instead. Motion graphics is for
    designed, animated *graphics*.
 
-2. **Route the user into Cue Design.** Tell them this is a Cue Design job and
-   point them to the **Design** surface in the rail (or the Motion Graphics /
-   HyperFrames templates that now appear in the Skills tab — selecting one
-   opens Cue Design). Cue Design's agent authors the composition from the
-   chosen template with the user's real content and renders the MP4.
+2. **Render it inline with `hyperframes_render`.** You author a complete
+   HyperFrames composition (HTML + GSAP) and call the tool once; it renders in
+   Cue Design's engine and returns the finished MP4 as a chat attachment — the
+   user never has to leave the conversation. This is the default path.
 
-3. **Give a strong starting brief.** When you hand off, summarize what the user
-   wants so they can paste it straight into Cue Design: the exact text/wordmark,
-   brand colors and fonts (default to the Cue brand system unless they specify),
-   aspect ratio (1920×1080 unless stated), duration, and the template or style
-   that fits (e.g. "Glitch Title for a cyberpunk hero", "Logo Outro for the end
-   card").
+3. **Or send them to the studio for the template gallery.** When the user wants
+   to browse and tweak visually, or start from a specific template (Glitch
+   Title, Logo Outro, Light-Leak Cinema, animated data chart…), point them to
+   the **Design** surface — those templates also appear in the Skills tab, and
+   selecting one opens Cue Design.
+
+## Composition contract (for `hyperframes_render`)
+
+Author `html` as a COMPLETE document. The renderer drives a GSAP timeline you
+register on `window.__timelines` and captures frames for the root's declared
+duration. Minimum shape:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0b0b0c; }
+      /* your scene styles */
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0"
+         data-duration="4" data-width="1920" data-height="1080" data-fps="30">
+      <!-- your scene elements, using the user's REAL content -->
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      // build the animation on `tl` — e.g. tl.from("#title", { y: 40, opacity: 0, duration: 0.8, ease: "power3.out" });
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
+```
+
+Rules:
+- **`data-duration`** (seconds) on the root sets the video length; keep the
+  GSAP timeline within it. Set `data-fps` (default 30). For 9:16 or 1:1, change
+  `data-width`/`data-height` and the body size to match.
+- **Real content, brand-accurate.** Use the user's exact text/wordmark and the
+  Cue brand system by default — paper `#f6f5f4`, ink `#1a2230`, accent
+  `#3d6ee8`, DM Sans / Instrument Serif — unless they specify otherwise.
+- **Self-contained.** Inline your CSS and SVG/data; GSAP loads from the CDN
+  shown above. Keep the whole document under ~2MB.
+- Tell the user the render takes tens of seconds; call `hyperframes_render`
+  once and attach the result.
 
 Do **not** try to approximate motion graphics with `replicate_run` or
 `video-studio` — a text-to-video model cannot produce exact typography, precise

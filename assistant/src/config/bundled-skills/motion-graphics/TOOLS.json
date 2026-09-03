@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "hyperframes_render",
+      "description": "Render a deterministic motion-graphics video (an animated title card, kinetic typography, an animated logo/wordmark, a data-viz reveal, a glitch/CRT title, a light-leak or liquid-gradient hero) from an agent-authored HyperFrames composition, and return the finished MP4 as an in-chat attachment. You write a complete HTML document that loads GSAP and registers timelines on `window.__timelines`; the Cue Design renderer captures it frame-by-frame in headless Chromium and encodes an MP4 (1920x1080 by default). Use this for exact, brand-controlled, repeatable animation — NOT for AI-generated cinematic footage (that is the video-studio skill). Author the composition per the motion-graphics skill's composition contract before calling. Call once per video; the render takes tens of seconds.",
+      "category": "media",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "html": {
+            "type": "string",
+            "description": "A COMPLETE HTML document for the HyperFrames composition: a 1920x1080 (or the requested aspect) page that loads GSAP (from the bundled CDN or inline), lays out the scene with real content (the user's exact text/wordmark, brand colors and fonts — default to the Cue brand system unless told otherwise), and registers its GSAP timeline(s) on `window.__timelines` with a total duration. Follow the composition contract in the motion-graphics skill. No lorem ipsum or placeholder images."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional short title used for the output filename (e.g. \"cue-logo-outro\")."
+          }
+        },
+        "required": ["html"]
+      },
+      "executor": "tools/hyperframes-render.ts",
+      "execution_target": "host"
+    }
+  ]
+}
