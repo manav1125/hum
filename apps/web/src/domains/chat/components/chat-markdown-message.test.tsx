@@ -9,6 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { MemoryRouter } from "react-router";
 import { shouldOpenMarkdownLinkInOAuthPopup } from "@/domains/chat/utils/oauth-popup-links";
 
 import { ChatMarkdownMessage } from "@/domains/chat/components/chat-markdown-message";
@@ -49,5 +50,34 @@ describe("ChatMarkdownMessage (OAuth link handling)", () => {
 
     expect(html).toContain('target="_blank"');
     expect(html).not.toContain('rel="noopener noreferrer"');
+  });
+
+  test("internal /assistant links stay in-tab (no target=_blank) inside a router", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(ChatMarkdownMessage, {
+          content:
+            "[Open in Cue Design](/assistant/design?project=cue-abc123)",
+        }),
+      ),
+    );
+    // Same-tab SPA navigation — not a new tab.
+    expect(html).toContain('href="/assistant/design?project=cue-abc123"');
+    expect(html).not.toContain('target="_blank"');
+  });
+
+  test("external links still open a new tab even inside a router", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(ChatMarkdownMessage, {
+          content: "[Docs](https://example.com/docs)",
+        }),
+      ),
+    );
+    expect(html).toContain('target="_blank"');
   });
 });
