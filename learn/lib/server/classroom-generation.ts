@@ -57,6 +57,8 @@ export interface GenerateClassroomInput {
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
   agentMode?: 'default' | 'generate';
+  /** Optional provenance stamped onto the persisted classroom (see ClassroomSource). */
+  source?: import('./classroom-storage').ClassroomSource;
 }
 
 export type ClassroomGenerationStep =
@@ -713,6 +715,7 @@ export async function generateClassroom(
       id: stageId,
       stage,
       scenes,
+      ...(input.source ? { source: input.source } : {}),
     },
     options.baseUrl,
   );

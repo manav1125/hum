@@ -734,6 +734,35 @@ async function performStageDeletion(stageId: string): Promise<void> {
  * device-local (Dexie), so the same membership overlay the local path applies
  * keeps courses filed in this browser grouped.
  */
+/**
+ * One-shot background migration of legacy browser courses into the server
+ * store. Listing merges legacy-only rows so they are VISIBLE (see below);
+ * this makes them DURABLE without requiring the user to open each one:
+ * `accessDocument` is the same lazy-migration entry an open uses, run
+ * sequentially so a large library doesn't stampede the persistence API.
+ * Fire-and-forget with a singleton guard; failures leave a course in the
+ * legacy store, still listed, picked up again next visit.
+ */
+let legacyMigrationStarted = false;
+function migrateLegacyStagesInBackground(stageIds: string[]): void {
+  if (legacyMigrationStarted || stageIds.length === 0) return;
+  legacyMigrationStarted = true;
+  void (async () => {
+    let migrated = 0;
+    for (const stageId of stageIds) {
+      try {
+        await accessDocument(stageId);
+        migrated += 1;
+      } catch (error) {
+        log.warn(`Legacy course migration failed for ${stageId}:`, error);
+      }
+    }
+    if (migrated > 0) {
+      log.info(`Migrated ${migrated} legacy course(s) to the server store`);
+    }
+  })();
+}
+
 async function listOwnerStagesFromServer(): Promise<StageListItem[]> {
   const res = await fetch('/api/stages', { credentials: 'include' });
   if (!res.ok) {
@@ -772,7 +801,49 @@ export async function listStages(): Promise<StageListItem[]> {
       // Server persistence is on: the generic document listing answers 403 by
       // design, so the home/workspace library lists through the owner-scoped
       // workbench surface instead.
-      return await listOwnerStagesFromServer();
+      const serverList = await listOwnerStagesFromServer();
+      // Courses created BEFORE server persistence was enabled still live in
+      // this browser's legacy store. They migrate lazily on ACCESS — but a
+      // course can only be accessed if it is LISTED, so an unmerged list
+      // would strand every pre-cutover course invisibly (observed on the Cue
+      // deployment the day persistence went live). Merge legacy-only rows in;
+      // the first open of each migrates it into the server store, after which
+      // it lists everywhere. Best-effort: a legacy-store failure must never
+      // take down the server-backed list.
+      try {
+        const ids = new Set(serverList.map((summary) => summary.id));
+        const legacy = await getLegacyDocumentStore().listStages();
+        const legacyOnly = await Promise.all(
+          legacy
+            .filter((stage) => !ids.has(stage.id))
+            .map(async (stage) => {
+              const snapshot = await getLegacyDocumentStore().read(stage.id);
+              return snapshot ? { ...stage, sceneCount: snapshot.scenes.length } : null;
+            }),
+        );
+        // Make the stragglers durable, not just visible.
+        migrateLegacyStagesInBackground(
+          legacyOnly.filter((stage) => stage !== null).map((stage) => stage.id),
+        );
+        return [
+          ...serverList,
+          ...legacyOnly
+            .filter((stage) => stage !== null)
+            .map((stage) => ({
+              id: stage.id,
+              name: stage.name,
+              description: stage.description,
+              sceneCount: stage.sceneCount,
+              createdAt: stage.createdAt,
+              updatedAt: stage.updatedAt,
+              interactiveMode: stage.interactiveMode,
+              taskEngineMode: stage.taskEngineMode,
+            })),
+        ].sort((a, b) => b.updatedAt - a.updatedAt);
+      } catch (legacyError) {
+        log.warn('Legacy course merge failed — listing server courses only:', legacyError);
+        return serverList;
+      }
     }
     const summaries = await getDocumentStore().listDocuments();
     const ids = new Set(summaries.map((summary) => summary.id));

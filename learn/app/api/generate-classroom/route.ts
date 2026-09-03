@@ -9,6 +9,31 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerateClassroom API');
 
+/**
+ * Provenance is caller-supplied text; keep only a known shape with bounded,
+ * pattern-checked fields so nothing unexpected lands in the classroom JSON.
+ */
+function sanitizeSource(raw: unknown): GenerateClassroomInput['source'] | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const kind = typeof o.kind === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(o.kind) ? o.kind : null;
+  if (!kind) return null;
+  const conversationId =
+    typeof o.conversationId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(o.conversationId)
+      ? o.conversationId
+      : undefined;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 200) : undefined;
+  const createdAt =
+    typeof o.createdAt === 'number' && Number.isFinite(o.createdAt) ? o.createdAt : undefined;
+  return {
+    kind,
+    ...(conversationId ? { conversationId } : {}),
+    ...(label ? { label } : {}),
+    ...(createdAt !== undefined ? { createdAt } : {}),
+  };
+}
+
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
@@ -33,6 +58,9 @@ export async function POST(req: NextRequest) {
         : {}),
       ...(rawBody.enableTTS != null ? { enableTTS: rawBody.enableTTS } : {}),
       ...(rawBody.agentMode ? { agentMode: rawBody.agentMode } : {}),
+      ...(sanitizeSource(rawBody.source)
+        ? { source: sanitizeSource(rawBody.source)! }
+        : {}),
     };
     const { requirement } = body;
 

@@ -34,11 +34,26 @@ export function buildRequestOrigin(req: NextRequest): string {
     : req.nextUrl.origin;
 }
 
+/**
+ * Where a generated classroom came from, when the creator said so — e.g. the
+ * Cue chat conversation whose skill submitted the generation job. Server-local
+ * provenance: it lives only in the classroom JSON (never enters the DSL or
+ * the document store), and /api/classroom-sources serves it so an embedding
+ * shell can draw "from your chat on …" cards.
+ */
+export interface ClassroomSource {
+  kind: string;
+  conversationId?: string;
+  label?: string;
+  createdAt?: number;
+}
+
 export interface PersistedClassroomData {
   id: string;
   stage: Stage;
   scenes: Scene[];
   createdAt: string;
+  source?: ClassroomSource;
 }
 
 export function isValidClassroomId(id: string): boolean {
@@ -63,6 +78,7 @@ export async function persistClassroom(
     id: string;
     stage: Stage;
     scenes: Scene[];
+    source?: ClassroomSource;
   },
   baseUrl: string,
 ): Promise<PersistedClassroomData & { url: string }> {
@@ -71,6 +87,7 @@ export async function persistClassroom(
     stage: data.stage,
     scenes: data.scenes,
     createdAt: new Date().toISOString(),
+    ...(data.source ? { source: data.source } : {}),
   };
 
   await ensureClassroomsDir();
