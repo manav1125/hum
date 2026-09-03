@@ -120,13 +120,20 @@ course. Chat-created Cue Learn courses are readable:
    curl -s "$LEARN_UPSTREAM_URL/learn/api/classroom?id=<id>" > /tmp/course.json
    ```
 
-   The document is `{ stage, scenes }` — scene narration lives in fields like
-   `subtitles`/`content`/`text` inside each scene. Extract the text (jq or a
-   quick script), cap what you load into context (~60k chars), and tutor from
-   it: answer questions grounded in what the course actually teaches, quiz
-   scene by scene, or map what to explore next beyond its outline. Link back
-   to the classroom (`$BASE/assistant/learn?p=/classroom/<id>`) when pointing
-   at a specific part.
+   The response is `{ success, classroom: { stage, scenes } }`. The teacher's
+   narration lives in each scene's `actions` of `"type": "speech"`:
+
+   ```bash
+   jq -r '.classroom.scenes[] | "## " + .title,
+          ([.actions[]? | select(.type=="speech") | .text] | join("\n"))' \
+     /tmp/course.json
+   ```
+
+   Cap what you load into context (~60k chars), then tutor from it: answer
+   questions grounded in what the course actually teaches, quiz scene by
+   scene, or map what to explore next beyond its outline. Link back to the
+   classroom (`$BASE/assistant/learn?p=/classroom/<id>`) when pointing at a
+   specific part.
 
 3. **If the title isn't in the catalog**, the course was either made in the
    Learn wizard UI (its content lives in a per-browser store this skill cannot
