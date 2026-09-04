@@ -45,33 +45,50 @@ directly; the sidecar rejects unauthenticated peers.
    and truncate to ~80,000 characters. Pass it as `pdfContent`. Skip this
    entirely for topic-only courses.
 
-3. **Submit the job** (bash):
+3. **Submit the job — the payload write and the POST are ONE bash call.**
+   Temp files do NOT survive from one bash call to the next (calls can run in
+   fresh contexts, and an approval pause can sit between them) — a
+   `curl -d @file` issued in a later call than the file's write fails with
+   `curl: option -d: error encountered when reading a file`. So the heredoc
+   AND the curl below are a single command block in a single bash invocation;
+   NEVER split them into separate calls. Do not inline the JSON with
+   `-d '{...}'` either — a single-quoted inline body breaks on any apostrophe
+   in the brief. Always POST through `$INTERNAL_GATEWAY_BASE_URL`:
 
    ```bash
+   cat > /tmp/learn-payload.json <<'EOF'
+   {"requirement": "<the brief>", "enableTTS": true, "enableImageGeneration": true}
+   EOF
+   jq --arg cid "${__CONVERSATION_ID:-}" \
+      'if $cid == "" then . else . + {"source":{"kind":"cue-chat","conversationId":$cid}} end' \
+      /tmp/learn-payload.json |
    curl -s -X POST "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom" \
-     -H 'content-type: application/json' \
-     -d '{"requirement": "<the brief>", "enableTTS": true, "enableImageGeneration": true,
-          "source": {"kind": "cue-chat", "conversationId": "'"$__CONVERSATION_ID"'"}}'
+     -H 'content-type: application/json' -d @-
    ```
 
-   The `source` block stamps provenance on the course so its Library card can
-   link back to this chat — `$__CONVERSATION_ID` is already in your bash env;
-   omit the block only if that variable is empty. Add materials as
-   `"pdfContent": {"text": "<material text>", "images": []}` — an OBJECT, not
-   a bare string (JSON-escape by writing the payload to a temp file with a
-   heredoc and `-d @file` rather than inlining). The response is `{ data: { jobId, pollUrl, ... } }` (or the
-   same fields at the top level). A course takes **2–6 minutes**; tell the
-   user generation has started and roughly how long it takes.
+   The quoted `<<'EOF'` delimiter means nothing in the payload is
+   shell-expanded — your only job inside the heredoc is valid JSON (escape
+   quotes and newlines in the brief and material text). The `jq` step stamps
+   provenance (`source`) from `$__CONVERSATION_ID` — already in your bash
+   env — so the course's Library card can link back to this chat, and it
+   cleanly omits the block when the variable is empty. Add materials inside
+   the heredoc as `"pdfContent": {"text": "<material text>", "images": []}` —
+   an OBJECT, not a bare string. The response is
+   `{ data: { jobId, pollUrl, ... } }` (or the same fields at the top level).
+   A course takes **2–6 minutes**; tell the user generation has started and
+   roughly how long it takes.
 
 4. **Poll in SHORT bursts** — never one long-running command (the bash tool
    times out around 10 minutes and a timed-out poll strands the user with no
    verdict). Each poll call checks for at most ~2 minutes, then RETURNS, and
    you call it again — up to 4 bursts (~8 minutes total). `pollUrl` may carry
-   an internal host, so rebuild it from `$INTERNAL_GATEWAY_BASE_URL` and the jobId:
+   an internal host, so rebuild it from `$INTERNAL_GATEWAY_BASE_URL` and the
+   jobId (write the literal jobId into the command — shell variables, like
+   temp files, do not survive between bash calls):
 
    ```bash
    for i in $(seq 1 8); do
-     R=$(curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom/$JOB_ID")
+     R=$(curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom/<jobId>")
      echo "$R" | grep -qE '"status":"(succeeded|failed)"' && break
      sleep 14
    done
@@ -129,17 +146,19 @@ wizard-made courses alike:
    (chat-generated classrooms); the second's `stages` is
    `[{id, name, sceneCount, ...}]` (wizard/workbench courses).
 
-2. **Fetch its content** — by which catalog matched:
+2. **Fetch its content** — by which catalog matched. Each fetch+parse below
+   is ONE bash call (the temp file does not survive between calls — same rule
+   as step 3):
 
    ```bash
    # classroom catalog match:
-   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/classroom?id=<id>" > /tmp/course.json
+   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/classroom?id=<id>" > /tmp/course.json &&
    jq -r '.classroom.scenes[] | "## " + .title,
           ([.actions[]? | select(.type=="speech") | .text] | join("\n"))' \
      /tmp/course.json
 
    # stages match (whole document: stage + scenes + outline):
-   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/stages/<id>" > /tmp/course.json
+   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/stages/<id>" > /tmp/course.json &&
    jq -r '.scenes[]? | "## " + (.title // .name // ""),
           ([.actions[]? | select(.type=="speech") | .text] | join("\n"))' \
      /tmp/course.json
