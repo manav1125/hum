@@ -42,7 +42,7 @@ import { useConversationStore } from "@/stores/conversation-store";
 import { usePendingDeepLinkStore } from "@/stores/pending-deep-link-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { persistConsentForUser } from "@/utils/onboarding-cleanup";
-import { routes } from "@/utils/routes";
+import { legalUrl, routes } from "@/utils/routes";
 import { haptic } from "@/utils/haptics";
 
 import { getAutonomyPolicyState } from "@/lib/autonomy-policies-api";
@@ -126,6 +126,18 @@ export function SelfHostIntro() {
     void navigate(routes.assistant, { replace: true });
   };
 
+  /**
+   * The footer's destination. The arc is complete the moment the user chooses
+   * connectors over the question — consent is already persisted by this step,
+   * so the flag is marked here too or the landing-path gate would replay the
+   * whole intro the next time they touch `/assistant`.
+   */
+  const connectFirst = () => {
+    markSelfHostIntroComplete();
+    void haptic.light();
+    void navigate(routes.connectors, { replace: true });
+  };
+
   // Day one is a full-bleed screen with its own bottom-anchored composer — it
   // does not sit on the intro's glass card, which is sized for a form.
   if (step === "dayOne") {
@@ -145,6 +157,8 @@ export function SelfHostIntro() {
         <DayOneState
           name={displayNameOf(user) ?? facts.knownUserName}
           onAnswer={(answer) => finish(answer)}
+          onConnect={connectFirst}
+          onSkip={() => finish()}
         />
       </div>
     );
@@ -403,8 +417,26 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
           textAlign: "center",
         }}
       >
-        Continuing accepts Cue&apos;s terms and privacy policy, and that your
-        conversations are sent to third-party AI providers to generate replies.
+        Continuing accepts Cue&apos;s{" "}
+        <a
+          href={legalUrl(routes.docs.legal.termsOfUse)}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "inherit", textDecoration: "underline" }}
+        >
+          terms
+        </a>{" "}
+        and{" "}
+        <a
+          href={legalUrl(routes.docs.legal.privacyPolicy)}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "inherit", textDecoration: "underline" }}
+        >
+          privacy policy
+        </a>
+        , and that your conversations are sent to third-party AI providers to
+        generate replies.
       </p>
     </div>
   );
@@ -560,7 +592,14 @@ function NamesStep({
   };
 
   return (
-    <div>
+    // A form so the iOS keyboard's return key is a way through — two bare
+    // inputs get no implicit submission, which left "Go" doing nothing.
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        save();
+      }}
+    >
       <IntroTitle>Names</IntroTitle>
       <IntroBody>
         What should Cue call you, and what should you call it? Both are optional
@@ -584,9 +623,9 @@ function NamesStep({
       />
 
       <div style={{ marginTop: 20 }}>
-        <IntroPrimary onClick={save}>Continue</IntroPrimary>
+        <IntroPrimary submit>Continue</IntroPrimary>
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -629,14 +668,18 @@ function IntroPrimary({
   children,
   onClick,
   disabled,
+  submit,
 }: {
   children: React.ReactNode;
-  onClick: () => void;
+  /** Required unless `submit` — a submit button acts through its form. */
+  onClick?: () => void;
   disabled?: boolean;
+  /** Render as the enclosing form's submit, with no onClick of its own. */
+  submit?: boolean;
 }) {
   return (
     <button
-      type="button"
+      type={submit ? "submit" : "button"}
       onClick={onClick}
       disabled={disabled}
       style={{

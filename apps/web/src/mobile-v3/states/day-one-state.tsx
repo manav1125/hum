@@ -18,7 +18,16 @@
  *
  * 3. **Connectors come after.** The footer states the current truth — nothing
  *    is connected — and points forward. Asking for inbox access before Cue has
- *    done a single useful thing is the ask most alpha users decline.
+ *    done a single useful thing is the ask most alpha users decline. Pointing
+ *    forward is still a promise, so the footer is a real control: a user who
+ *    would rather connect than answer taps it and goes to connectors now.
+ *
+ * Every way off this screen is explicit. The question is the intended exit,
+ * but it is never the only one: `onSkip` (the quiet control top-right) and
+ * `onConnect` (the footer) are REQUIRED props precisely so no caller can
+ * render the accent-coloured footer as a dead link again — which is how this
+ * screen shipped, and on an iPhone the inert footer plus no skip meant the
+ * only way forward was producing an answer.
  *
  * The answer is handed to `onAnswer` verbatim. It is NEVER auto-sent from
  * inside this component: the caller seeds a fresh thread with it, the user
@@ -45,11 +54,17 @@ export const DAY_ONE_CHIPS: readonly DayOneChip[] = [
 export function DayOneState({
   name,
   onAnswer,
+  onConnect,
+  onSkip,
   chips = DAY_ONE_CHIPS,
 }: {
   /** Only a real given name. `null` greets without one rather than inventing. */
   name?: string | null;
   onAnswer: (answer: string) => void;
+  /** The footer's promise, kept: take the user to connectors now. */
+  onConnect: () => void;
+  /** Leave without answering. Skipping is allowed, so it must be visible. */
+  onSkip: () => void;
   chips?: readonly DayOneChip[];
 }) {
   const [typed, setTyped] = useState("");
@@ -69,6 +84,7 @@ export function DayOneState({
       data-mv3
       data-mv3-state="day-one"
       style={{
+        position: "relative",
         display: "flex",
         flexDirection: "column",
         height: "100%",
@@ -77,90 +93,126 @@ export function DayOneState({
         fontFamily: "var(--mv3-font)",
       }}
     >
+      {/* Quiet, but real: 44pt target, clear of the notch. A first screen the
+          user cannot decline to answer is a gate, not a question. */}
+      <button
+        type="button"
+        onClick={() => {
+          void haptic.light();
+          onSkip();
+        }}
+        style={{
+          position: "absolute",
+          top: "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 6px)",
+          right: 8,
+          zIndex: 1,
+          minHeight: 44,
+          minWidth: 44,
+          padding: "0 14px",
+          border: "none",
+          background: "transparent",
+          color: "var(--mv3-muted)",
+          fontSize: 13,
+          fontFamily: "inherit",
+          cursor: "pointer",
+        }}
+      >
+        Skip for now
+      </button>
       <div
         style={{
           flex: 1,
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          justifyContent: "center",
-          padding: "0 20px",
+          // Top padding clears the notch and the skip control once this
+          // scrolls; the inner auto margins do the centring. `justifyContent:
+          // "center"` on an overflow container clips the top of taller-than-
+          // viewport content UNREACHABLY (keyboard up, small phones).
+          padding:
+            "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 54px) 20px 16px",
           overflowY: "auto",
         }}
       >
-        {/* The mark, once. Decoration — the greeting below carries the meaning
+        <div style={{ margin: "auto 0" }}>
+          {/* The mark, once. Decoration — the greeting below carries the meaning
             — but it is the only thing on this screen that says whose app this
             is, and day one is the one moment that matters. */}
-        <div
-          aria-hidden
-          style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}
-        >
-          <CueRing size={36} stroke="var(--mv3-text)" />
-        </div>
+          <div
+            aria-hidden
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: 18,
+            }}
+          >
+            <CueRing size={36} stroke="var(--mv3-text)" />
+          </div>
 
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 27,
-            lineHeight: 1.18,
-            fontWeight: 600,
-            letterSpacing: "-.02em",
-            textAlign: "center",
-          }}
-        >
-          {name ? `Hello ${name}.` : "Hello."}
-          <br />
-          Let&apos;s start with one thing.
-        </h1>
-        <p
-          style={{
-            margin: "12px 0 0",
-            fontSize: 12.5,
-            lineHeight: 1.55,
-            color: "var(--mv3-muted)",
-            textAlign: "center",
-          }}
-        >
-          Tell me something you&apos;re trying to get done — I&apos;ll take it
-          from there.
-        </p>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 27,
+              lineHeight: 1.18,
+              fontWeight: 600,
+              letterSpacing: "-.02em",
+              textAlign: "center",
+            }}
+          >
+            {name ? `Hello ${name}.` : "Hello."}
+            <br />
+            Let&apos;s start with one thing.
+          </h1>
+          <p
+            style={{
+              margin: "12px 0 0",
+              fontSize: 12.5,
+              lineHeight: 1.55,
+              color: "var(--mv3-muted)",
+              textAlign: "center",
+            }}
+          >
+            Tell me something you&apos;re trying to get done — I&apos;ll take it
+            from there.
+          </p>
 
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 7,
-            marginTop: 22,
-          }}
-        >
-          {chips.map((chip) => (
-            <button
-              key={chip.label}
-              type="button"
-              onClick={() => answer(chip.label)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                width: "100%",
-                minHeight: 46,
-                fontSize: 12.5,
-                fontFamily: "inherit",
-                textAlign: "left",
-                color: "var(--mv3-text)",
-                background: "var(--mv3-card)",
-                border: "1px solid var(--mv3-card-border)",
-                borderRadius: 14,
-                padding: "12px 14px",
-                cursor: "pointer",
-              }}
-            >
-              <span aria-hidden style={{ fontSize: 13, flexShrink: 0 }}>
-                {chip.glyph}
-              </span>
-              <span style={{ flex: 1, minWidth: 0 }}>{chip.label}</span>
-            </button>
-          ))}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 7,
+              marginTop: 22,
+            }}
+          >
+            {chips.map((chip) => (
+              <button
+                key={chip.label}
+                type="button"
+                onClick={() => answer(chip.label)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  width: "100%",
+                  minHeight: 46,
+                  fontSize: 12.5,
+                  fontFamily: "inherit",
+                  textAlign: "left",
+                  color: "var(--mv3-text)",
+                  background: "var(--mv3-card)",
+                  border: "1px solid var(--mv3-card-border)",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                  cursor: "pointer",
+                }}
+              >
+                <span aria-hidden style={{ fontSize: 13, flexShrink: 0 }}>
+                  {chip.glyph}
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>{chip.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -168,7 +220,13 @@ export function DayOneState({
           third, per the reach rule, and it is the same shape the rest of the
           app's composer is so this screen teaches the real gesture. */}
       <form
-        style={{ flexShrink: 0, padding: "10px 18px 9px" }}
+        style={{
+          flexShrink: 0,
+          // Bottom inset matters twice here: without it the footer sits inside
+          // the home-indicator gesture zone, where iOS eats the tap.
+          padding:
+            "10px 18px calc(9px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
+        }}
         onSubmit={(e) => {
           e.preventDefault();
           answer(typed);
@@ -225,17 +283,41 @@ export function DayOneState({
             ↑
           </button>
         </div>
-        <p
+        {/* The whole line is the target — at 10.5px an inline link alone is
+            un-hittable. `type="button"`: it lives inside the composer's form
+            and must never submit it. */}
+        <button
+          type="button"
+          onClick={() => {
+            void haptic.light();
+            onConnect();
+          }}
           style={{
-            margin: "10px 0 0",
+            display: "block",
+            width: "100%",
+            minHeight: 44,
+            margin: "2px 0 0",
+            padding: 0,
+            border: "none",
+            background: "transparent",
             fontSize: 10.5,
+            fontFamily: "inherit",
             textAlign: "center",
             color: "var(--mv3-muted)",
+            cursor: "pointer",
           }}
         >
           Nothing&apos;s connected yet —{" "}
-          <span style={{ color: "var(--mv3-accent-text)" }}>that comes next</span>
-        </p>
+          <span
+            style={{
+              color: "var(--mv3-accent-text)",
+              textDecoration: "underline",
+              textUnderlineOffset: 2,
+            }}
+          >
+            connect something now
+          </span>
+        </button>
       </form>
     </div>
   );

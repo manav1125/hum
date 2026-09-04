@@ -632,6 +632,34 @@ describe("names, then day one", () => {
     expect(screen.getByText(/Nothing's connected yet/)).toBeTruthy();
   });
 
+  test("the connectors footer is a real control, not link-coloured text", () => {
+    // Shipped as an accent-coloured <span> with no handler: it invited the tap
+    // and ate it. Now it must complete the arc and land on connectors.
+    reachNames();
+    advance("Continue");
+    fireEvent.click(
+      screen.getByRole("button", { name: /Nothing's connected yet/ }),
+    );
+
+    const [to, opts] = navigateMock.mock.calls.at(-1) as [string, unknown];
+    expect(to).toBe("/assistant/connectors");
+    expect(opts).toEqual({ replace: true });
+    expect(isSelfHostIntroComplete()).toBe(true);
+  });
+
+  test("day one can be skipped, and skipping is not an answer", () => {
+    reachNames();
+    advance("Continue");
+    advance("Skip for now");
+
+    const [to, opts] = navigateMock.mock.calls.at(-1) as [string, unknown];
+    expect(to).toBe("/assistant");
+    expect(opts).toEqual({ replace: true });
+    expect(isSelfHostIntroComplete()).toBe(true);
+    // No thread is opened for a question the user declined to answer.
+    expect(to).not.toContain("/conversations/");
+  });
+
   test("answering it opens a thread carrying the answer, and the arc is done", () => {
     reachNames();
     advance("Continue");
