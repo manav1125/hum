@@ -108,6 +108,7 @@ import {
 } from "@/mobile-v3/chats/library-reference-sheet";
 import { GlassCard } from "@/mobile-v3/glass-card";
 import { microLabel } from "@/mobile-v3/mv3-kit";
+import { useThreadSheetExtras } from "@/mobile-v3/thread-sheet-extras";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { useConversationStore } from "@/stores/conversation-store";
@@ -422,8 +423,14 @@ export function MobileChatView({
 
   // ☰ — the thread switcher. Same control, same glyph and same sheet as the
   // corner chrome carries on HQ / Work / the chats index; here it is inline
-  // because on a conversation route that fixed chrome does not render.
+  // because on a conversation route that fixed chrome does not render. The
+  // rows below its hairline (Search · Add tasks · Learn) come from the same
+  // hook the corner uses — the sheet used to arrive here bare, which meant
+  // one glyph opened two different menus and Learn had no door at all while
+  // reading a thread.
   const [threadsOpen, setThreadsOpen] = useState(false);
+  const { extras: threadSheetExtras, sheets: threadSheetExtraSheets } =
+    useThreadSheetExtras(assistantId);
 
   // ▦ Library opens a sheet over this thread (G6). ✎ Create owns its own
   // open state inside ComposerCreateEntry — see that file for why the Create
@@ -1402,7 +1409,10 @@ export function MobileChatView({
         open={threadsOpen}
         onClose={() => setThreadsOpen(false)}
         assistantId={assistantId}
+        extras={threadSheetExtras}
       />
+      {/* …and the sheet the extras' "Add tasks" row opens. */}
+      {threadSheetExtraSheets}
 
       {/* ▦ LIBRARY — pick a file to reference in what you're saying. Leads
           with what this conversation itself made. */}

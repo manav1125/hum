@@ -86,6 +86,12 @@ mock.module("@/stores/resolved-assistants-store", () => ({
   },
 }));
 
+// The REAL flag store — Learn's gate is hydration-paired, and a mock that
+// hands the hook a boolean would test the mock's wiring, not the gate.
+const { useAssistantFeatureFlagStore } = await import(
+  "@/stores/assistant-feature-flag-store"
+);
+
 const { Mv3OverflowMenu, LIBRARY_FETCH_LIMIT } = await import("./overflow-menu");
 
 /** Renders the chrome plus a location probe, so navigation is observable. */
@@ -144,6 +150,7 @@ afterEach(() => {
   userName = "Manav";
   conversations = [];
   libraryOutputs = { entries: [], isLoading: false, isError: false };
+  useAssistantFeatureFlagStore.getState().resetForAssistantSwitch();
   cleanup();
 });
 
@@ -401,6 +408,56 @@ describe("the ☰ corner is where the chats are", () => {
     expect(
       screen.getByRole("button", { name: "Your chats, search and capture" }),
     ).toBeDefined();
+  });
+});
+
+describe("Learn's phone door rides below the hairline", () => {
+  // The ☰ sheet is the phone's only global drawer, so this row is the
+  // surface's ONLY mobile entrance — and it is flag-gated dark, like the
+  // desktop rail row it mirrors.
+
+  test("hydrated flag on → the row is there, after search and capture", () => {
+    useAssistantFeatureFlagStore.setState({ hasHydrated: true, learnApp: true });
+    renderMenu();
+    expect(openThreadSwitcher()).toEqual([
+      "all-conversations",
+      "new-chat",
+      "search",
+      "add-tasks",
+      "learn",
+    ]);
+  });
+
+  test("the row lands on the Learn surface", () => {
+    useAssistantFeatureFlagStore.setState({ hasHydrated: true, learnApp: true });
+    renderMenu();
+    openThreadSwitcher();
+    fireEvent.click(
+      screen
+        .getAllByRole("menuitem")
+        .find((el) => el.getAttribute("data-menu-key") === "learn")!,
+    );
+    expect(screen.getByTestId("path").textContent).toBe(routes.learn);
+  });
+
+  test("a `true` before hydration is a default, not a ruling — no row", () => {
+    // The store's own contract: flag values are registry defaults until the
+    // first real /feature-flags response lands.
+    useAssistantFeatureFlagStore.setState({
+      hasHydrated: false,
+      learnApp: true,
+    });
+    renderMenu();
+    expect(openThreadSwitcher()).not.toContain("learn");
+  });
+
+  test("flag off → dark, exactly what design signed off on", () => {
+    useAssistantFeatureFlagStore.setState({
+      hasHydrated: true,
+      learnApp: false,
+    });
+    renderMenu();
+    expect(openThreadSwitcher()).not.toContain("learn");
   });
 });
 

@@ -66,12 +66,10 @@ import {
 import { useConversationListQuery } from "@/hooks/conversation-queries";
 import { useLibraryOutputs } from "@/mobile-v3/library/use-library-outputs";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
-import { Mv3AddTasksSheet } from "@/pages/projects/mv3-add-tasks-sheet";
-import { useCommandPaletteStore } from "@/stores/command-palette-store";
+import { useThreadSheetExtras } from "@/mobile-v3/thread-sheet-extras";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
-import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 
 import { openMv3Create } from "@/mobile-v3/create";
 
@@ -304,17 +302,11 @@ function AccountSheet({
 }
 
 export function Mv3OverflowMenu() {
-  const navigate = useNavigate();
-  const toggleCommandPalette = useCommandPaletteStore.use.toggle();
-  const flagsHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
-  const learnAppOn = useAssistantFeatureFlagStore.use.learnApp();
-  const learnEnabled = flagsHydrated && learnAppOn;
   // These render outside the ActiveAssistantGate, so read the raw store and
   // only offer assistant-scoped rows once one is actually active.
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [addTasksOpen, setAddTasksOpen] = useState(false);
   // `createMounted` only controls the lazy import; the sheet's own store owns
   // whether it is showing.
   const [createMounted, setCreateMounted] = useState(false);
@@ -338,56 +330,10 @@ export function Mv3OverflowMenu() {
   // control IS the thread list in every product he was comparing against, and
   // it is now the thread list here — the ⓶ row survives as the ledger entry
   // beside People, while this one is the switcher that opens a thread in one
-  // tap. Search and capture ride below the hairline; they lost no reach, and
-  // they were never what the corner was for.
-  const historyItems: MenuEntry[] = [
-    {
-      key: "search",
-      label: "Search",
-      sub: "Anything Cue has read, made or said",
-      run: () => toggleCommandPalette(),
-    },
-    ...(assistantId
-      ? [
-          {
-            key: "add-tasks",
-            label: "Add tasks",
-            sub: "Paste a list; Cue files each one",
-            run: () => setAddTasksOpen(true),
-          },
-        ]
-      : []),
-    // Learn — this sheet is the phone's only global drawer, so without this
-    // row the surface simply has no door on mobile (the desktop rail row and
-    // mv3-chats-index card are both unreachable here). Same hydration-paired
-    // flag gate as everywhere else.
-    ...(learnEnabled
-      ? [
-          {
-            key: "learn",
-            label: "Learn",
-            sub: "Courses that teach you back",
-            // The eye-and-violet-period glyph from the design handoff (R2-1).
-            // currentColor ring follows the row's text color; the period stays
-            // the Learn violet in both themes.
-            icon: (
-              <svg viewBox="0 0 20 20" width="18" height="18">
-                <circle
-                  cx="9"
-                  cy="9"
-                  r="6.4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                />
-                <circle cx="17.5" cy="17.5" r="2.5" fill="#9A93E8" />
-              </svg>
-            ),
-            run: () => void navigate(routes.learn),
-          },
-        ]
-      : []),
-  ];
+  // tap. Search, capture and Learn ride below the hairline — built by the
+  // SHARED hook, so this corner and the conversation header's ☰ stay one menu.
+  const { extras: historyItems, sheets: extraSheets } =
+    useThreadSheetExtras(assistantId);
 
   return (
     <>
@@ -432,15 +378,9 @@ export function Mv3OverflowMenu() {
         />
       ) : null}
 
-      {/* Batch task capture — the SheetShell portals itself, so mounting it
-          here keeps the whole flow inside the global affordances. */}
-      {assistantId ? (
-        <Mv3AddTasksSheet
-          assistantId={assistantId}
-          open={addTasksOpen}
-          onClose={() => setAddTasksOpen(false)}
-        />
-      ) : null}
+      {/* Batch task capture — owned by the shared extras hook, so the row and
+          the sheet it opens travel together. SheetShell portals itself. */}
+      {extraSheets}
 
       {/* The v27 sheet reads its own store rather than taking `open` — the
           composer's ✎ and this row are two doors onto one flow, and a second

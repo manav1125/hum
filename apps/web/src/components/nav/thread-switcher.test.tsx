@@ -27,7 +27,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createElement } from "react";
+import { createElement, type ComponentProps } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 
 import { CONVERSATION_LIST_PAGE_SIZE } from "@/utils/conversation-list-fetchers";
@@ -80,7 +80,9 @@ function LocationProbe() {
   );
 }
 
-function renderSheet() {
+function renderSheet(
+  extras?: ComponentProps<typeof RecentThreadsSheet>["extras"],
+) {
   return render(
     createElement(
       QueryClientProvider,
@@ -96,6 +98,7 @@ function renderSheet() {
           open: true,
           onClose: () => {},
           assistantId: ASSISTANT_ID,
+          extras,
         }),
         createElement(LocationProbe),
       ),
@@ -309,6 +312,38 @@ describe("the conversation header's top-left", () => {
     // …and the back chevron is still there. The switcher was added BESIDE it,
     // not in place of it: they are different exits.
     expect(source).toContain('aria-label="Back"');
+  });
+
+  test("opens the SAME menu the corner ☰ opens — extras included", async () => {
+    // The sheet used to arrive here bare: one glyph, two different menus, and
+    // Learn/Search with no door on the surface people read the most. Both call
+    // sites must mount the shared builder — and the sheet its "Add tasks" row
+    // opens, because a row that renders is a row that works.
+    const chatView = await Bun.file(CHAT_VIEW).text();
+    expect(chatView).toContain("useThreadSheetExtras");
+    expect(chatView).toContain("extras={threadSheetExtras}");
+    expect(chatView).toContain("{threadSheetExtraSheets}");
+
+    const corner = await Bun.file(
+      new URL("../../mobile-v3/overflow-menu.tsx", import.meta.url).pathname,
+    ).text();
+    expect(corner).toContain("useThreadSheetExtras");
+    // The corner does not hand-roll a private copy of the rows beside the
+    // shared ones — the builder is the ONLY author of the tail.
+    for (const handRolled of ['key: "search"', 'key: "add-tasks"', 'key: "learn"']) {
+      expect(corner).not.toContain(handRolled);
+      expect(chatView).not.toContain(handRolled);
+    }
+  });
+
+  test("caller-passed extras render below the sheet's own actions", () => {
+    let ran = false;
+    renderSheet([
+      { key: "search", label: "Search", run: () => (ran = true) },
+    ]);
+    expect(keys()).toEqual(["all-conversations", "new-chat", "search"]);
+    fireEvent.click(rowFor("search")!);
+    expect(ran).toBe(true);
   });
 
   test("takes its geometry from the module this test measures", async () => {

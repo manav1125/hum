@@ -136,9 +136,12 @@ export interface RecentThreadsSheetProps {
   /** Null before an assistant resolves — the sheet still opens and says so. */
   assistantId: string | null;
   /**
-   * Rows appended below a hairline. The corner ☰ passes Search and Add tasks
-   * (it is the only door to those on a phone); inside a conversation there are
-   * none, because the thread's own composer already is that.
+   * Rows appended below a hairline. Both ☰ call sites — the corner chrome and
+   * the conversation header — pass the SAME list, built by
+   * `useThreadSheetExtras` (Search · Add tasks · Learn): one glyph, one menu.
+   * The conversation used to pass none on the theory that its composer was
+   * already capture, which quietly left Search and Learn with no door on the
+   * surface people read the most.
    */
   extras?: MenuEntry[];
 }
