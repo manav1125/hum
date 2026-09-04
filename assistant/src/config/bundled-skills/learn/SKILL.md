@@ -1,6 +1,6 @@
 ---
 name: learn
-description: "ALWAYS use when the user says 'teach me …', 'make me a course/lesson/class/tutorial', 'I want to learn …', asks to turn documents into a course, OR asks about a Cue Learn course they already have ('my course', 'quiz me on my course', 'help me go deeper on <course>'): generates or READS a Cue Learn interactive course — an AI-taught classroom with narrated slides, quizzes, and simulations. 'Teach me X' means BUILD THE COURSE (optionally with a short chat primer alongside), not a chat lecture; questions about an existing course mean FETCH ITS CONTENT and tutor from it. Skip only for quick factual questions where a course would be overkill."
+description: "ALWAYS use when the user says 'teach me …', 'make me a course/lesson/class/tutorial', 'I want to learn …', asks to turn documents into a course, OR asks about a Cue Learn course they already have ('my course', 'quiz me on my course', 'help me go deeper on <course>'): generates or READS a Cue Learn interactive course — an AI-taught classroom with narrated slides, quizzes, and simulations. 'Teach me X' means BUILD THE COURSE (optionally with a short chat primer alongside), not a chat lecture — and 'teach me X in N slides/minutes' is STILL this skill (the number is course length), never the app/deck builder: a deck cannot speak or take questions. Questions about an existing course mean FETCH ITS CONTENT and tutor from it. Skip only for quick factual questions where a course would be overkill."
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🎓"
@@ -10,6 +10,7 @@ metadata:
     feature-flag: "learn-app"
     activation-hints:
       - "User says 'teach me X' — this IS the course trigger; do not turn it into a chat lecture"
+      - "'Teach me X in N slides' or 'in N minutes' is a COURSE with that length — never the app/deck builder; decks don't teach aloud"
       - "User says 'I want to learn X', 'make me a course/lesson/class/tutorial on X', or asks to turn a document into a course"
       - "User asks to explain a big topic 'properly', 'step by step', or 'like a class' — offer a Learn course alongside your chat answer"
       - "User references an earlier Cue Learn course and wants another one"
@@ -81,23 +82,30 @@ directly; the sidecar rejects unauthenticated peers.
    still running after ~8 minutes, do NOT keep polling and do NOT end with a
    question**: the job keeps running server-side and the finished course
    appears under Learn's Recent list on its own. Give the user the Learn
-   link (step 5's `$BASE/assistant/learn`) with a note that the course is
+   link (relative: `/assistant/learn`) with a note that the course is
    still generating and will appear there in a few minutes. That is a
    COMPLETE answer.
 
 5. **Deliver the link.** On success the result carries the classroom URL —
-   take its **last path segment** as the classroom id. Build the user-facing
-   link from the instance's public origin:
+   take its **last path segment** as the classroom id. The user-facing link
+   is always the RELATIVE path:
 
-   ```bash
-   BASE=$(assistant config get ingress.publicBaseUrl | tr -d '"')
-   echo "$BASE/assistant/learn?p=/classroom/$CLASSROOM_ID"
+   ```
+   /assistant/learn?p=/classroom/$CLASSROOM_ID
    ```
 
-   Reply with one short line about what the course covers (scene count if you
-   have it) and that link as a markdown link titled with the course topic —
-   it opens the classroom inside Cue's Learn surface, voice and all. Do not
-   paste the internal (`.internal`) URL.
+   Chat renders in the app, so the relative link opens in place and renders
+   as a course card. NEVER prepend a host: do not paste the internal
+   (`.internal`) URL, and if you don't know the instance's public origin, do
+   not guess or "fall back" to any domain you remember — a wrong host sends
+   the user off-site. Only when the link must leave the app (an email, an
+   exported doc) prefix `$(assistant config get ingress.publicBaseUrl)`, and
+   if that is empty, say the course is under **Learn** in the sidebar
+   instead of linking.
+
+   Reply with one short line about what the course covers (scene count if
+   you have it) and that link as a markdown link titled with the course
+   topic — it opens the classroom inside Cue's Learn surface, voice and all.
 
 6. **On failure**, relay the job's `error` plainly and suggest retrying or
    narrowing the topic. Never leave the user with a spinner and no verdict.
@@ -141,9 +149,8 @@ wizard-made courses alike:
    action text either way.) Cap what you load into context (~60k chars), then
    tutor from it: answer questions grounded in what the course actually
    teaches, quiz scene by scene, or map what to explore next beyond its
-   outline. Both kinds open at the same place — link back with
-   `$BASE/assistant/learn?p=/classroom/<id>` when pointing at a specific
-   part.
+   outline. Both kinds open at the same place — link back with the relative
+   `/assistant/learn?p=/classroom/<id>` when pointing at a specific part.
 
 3. **If the title is in neither catalog**, it may predate server-side
    storage. Say that honestly, offer to regenerate it as a fresh course
