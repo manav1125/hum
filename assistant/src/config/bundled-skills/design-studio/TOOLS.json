@@ -37,8 +37,8 @@
           },
           "format": {
             "type": "string",
-            "enum": ["pdf", "html"],
-            "description": "Output format. \"pdf\" (default) is best for emailing/sharing a deck or page; \"html\" returns the interactive self-contained page."
+            "enum": ["pdf", "html", "inline"],
+            "description": "Output format. \"pdf\" (default) is best for emailing/sharing a deck or page; \"html\" returns the interactive self-contained page as an attachment; \"inline\" renders the page directly in the chat as a preview (and also saves it as an attachment). Use \"inline\" when the user wants to SEE the design here — \"show me the page\", \"preview it in chat\"."
           },
           "fileName": {
             "type": "string",

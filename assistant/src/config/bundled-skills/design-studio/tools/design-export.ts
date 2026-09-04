@@ -70,7 +70,7 @@ async function resolveProject(
 
 export async function run(
   input: Record<string, unknown>,
-  _ctx: ToolContext,
+  ctx: ToolContext,
 ): Promise<ToolExecutionResult> {
   const upstream = designUpstream();
   if (!upstream) {
@@ -102,7 +102,12 @@ export async function run(
     typeof input.title === "string" && input.title.trim()
       ? input.title.trim()
       : resolved.name;
-  const format = input.format === "html" ? "html" : "pdf"; // default pdf
+  const format =
+    input.format === "html"
+      ? "html"
+      : input.format === "inline"
+        ? "inline"
+        : "pdf"; // default pdf
 
   // Both formats start from the sidecar's self-contained HTML export.
   let htmlRes: Response;
@@ -135,6 +140,84 @@ export async function run(
   const html = await htmlRes.text();
   if (!html.trim()) {
     return { content: "The export produced an empty file.", isError: true };
+  }
+
+  // Inline preview: render the design page directly in the chat via a
+  // `dynamic_page` surface (a sandboxed srcdoc iframe — the same mechanism
+  // Cue uses for generated apps), and ALSO save it as an attachment so the
+  // artifact persists (the inline surface is ephemeral and isn't replayed on
+  // a history reload). Use this for "show me the page here / preview it in
+  // chat"; pdf/html remain for email/save/share.
+  if (format === "inline") {
+    // Keep the surface event (and the persisted history payload) bounded — a
+    // multi-MB srcDoc is a heavy DOM payload. Larger pages fall back to the
+    // attachment only.
+    const MAX_INLINE_BYTES = 6 * 1024 * 1024;
+    const htmlBytes = Buffer.byteLength(html, "utf8");
+
+    const dir = join(tmpdir(), `cue-design-export-${randomUUID()}`);
+    await mkdir(dir, { recursive: true });
+    const safeTitle =
+      title.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 60) || "design";
+    const outName = `${safeTitle}.html`;
+    const outPath = join(dir, outName);
+    await writeFile(outPath, Buffer.from(html, "utf8"));
+    const outStat = await stat(outPath);
+    const attachment = uploadFileBackedAttachment(
+      outName,
+      "text/html",
+      outPath,
+      outStat.size,
+    );
+
+    let shownInline = false;
+    if (
+      typeof ctx.sendToClient === "function" &&
+      htmlBytes <= MAX_INLINE_BYTES
+    ) {
+      ctx.sendToClient({
+        type: "ui_surface_show",
+        conversationId: ctx.conversationId,
+        surfaceId: randomUUID(),
+        surfaceType: "dynamic_page",
+        title,
+        display: "inline",
+        data: {
+          html,
+          preview: {
+            title,
+            subtitle: "Cue Design",
+            description: "Rendered design — tap to preview.",
+          },
+        },
+      });
+      shownInline = true;
+    }
+
+    const message = shownInline
+      ? "Rendered the Cue Design page inline in the chat, and saved it as an attachment too."
+      : htmlBytes > MAX_INLINE_BYTES
+        ? "The page is too large to preview inline, so it's saved as an attachment instead."
+        : "Saved the page as an attachment (inline preview isn't available in this client).";
+
+    return {
+      content: JSON.stringify(
+        {
+          message,
+          shownInline,
+          attachmentId: attachment.id,
+          projectId: resolved.id,
+          projectName: resolved.name,
+          filename: outName,
+          mimeType: "text/html",
+          sizeBytes: outStat.size,
+        },
+        null,
+        2,
+      ),
+      isError: false,
+      attachmentIds: [attachment.id],
+    };
   }
 
   let bytes: Buffer;

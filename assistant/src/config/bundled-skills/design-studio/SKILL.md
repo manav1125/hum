@@ -59,3 +59,9 @@ artifact back into Cue as an attachment. Pass the project id from the earlier
 project. Once it's a Cue attachment you can attach it to an email, and it shows
 in the reply for the user to download or share. Examples: "email me that landing
 page", "send the prototype to the team", "save the page I just designed".
+
+To SHOW the design in the chat rather than hand back a file — "show me the
+page", "preview it here", "let me see what it looks like" — call `design_export`
+with `format: "inline"`. It renders the page directly in the conversation as a
+live preview (and still saves it as an attachment). Use `format: "pdf"` (default)
+or `"html"` when the user wants a file to email, save, or share.
