@@ -1894,6 +1894,15 @@ export const useSettingsStore = create<SettingsState>()(
                   ttsProviderId: validTTSProvider as TTSProviderId,
                   ttsVoice: validTTSVoice,
                 }),
+                // One-time recast: sessions that still carry the OLD ElevenLabs
+                // default (Sarah) move to the owner-picked teacher voice
+                // (Alice). Only the exact old default is migrated, so any
+                // other explicit voice pick is left alone.
+                ...(validTTSProvider === state.ttsProviderId &&
+                  state.ttsProviderId === ('elevenlabs-tts' as TTSProviderId) &&
+                  state.ttsVoice === 'EXAVITQu4vr4xnSDxMaL' && {
+                    ttsVoice: 'Xb7hH8MSUJpSbSDYk0k2',
+                  }),
                 ...(validASRProvider !== state.asrProviderId && {
                   asrProviderId: validASRProvider as ASRProviderId,
                 }),

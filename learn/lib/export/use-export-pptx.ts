@@ -504,6 +504,13 @@ export async function buildPptxBlob(
   stageId?: string,
 ): Promise<Blob> {
   const pptx = new pptxgen();
+  // Deck identity: exports leave the product and carry the brand into other
+  // people's meetings. Paper ground + the mark are the travel dress; a slide
+  // that declares its own background still wins below.
+  pptx.author = 'Cue Learn';
+  pptx.company = 'Cue';
+  const cueLearnMark =
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTcuNSIgZmlsbD0iIzFBMjIzMCI+PC9yZWN0PjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjE1LjMiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0VFRjJGNyIgc3Ryb2tlLXdpZHRoPSI3LjMiPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjI0IiBjeT0iMjQiIHI9IjUuMSIgZmlsbD0iIzdGNzdERCI+PC9jaXJjbGU+PC9zdmc+';
   const documentElements = slides.flatMap((slide) => slide.elements);
   const manifestRefs = derivePptxMediaReferenceSet(slides);
   assertPptxMediaReferenceParity(slides, manifestRefs);
@@ -528,6 +535,21 @@ export async function buildPptxBlob(
   for (let slideIdx = 0; slideIdx < slides.length; slideIdx++) {
     const slide = slides[slideIdx];
     const pptxSlide = pptx.addSlide();
+    // Default ground is the brand paper; a slide-declared background (below)
+    // simply overwrites it.
+    pptxSlide.background = { color: 'F3EEE4' };
+
+    if (slideIdx === 0) {
+      const wIn = viewportSize / ratioPx2Inch;
+      const hIn = (viewportSize * viewportRatio) / ratioPx2Inch;
+      pptxSlide.addImage({
+        data: cueLearnMark,
+        x: wIn - 0.55,
+        y: hIn - 0.55,
+        w: 0.35,
+        h: 0.35,
+      });
+    }
 
     // ── Speaker Notes ──
     const scene = slideScenes[slideIdx];

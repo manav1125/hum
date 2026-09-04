@@ -1,5 +1,6 @@
 'use client';
 
+import { ElementErrorBoundary } from './ElementErrorBoundary';
 import { useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
 import { AnimatePresence } from 'motion/react';
 
@@ -214,9 +215,9 @@ export function SlideCanvas(props: SlideCanvasProps) {
           }}
         >
           {visibleElements.map((element) => (
-            <SlideElement
-              key={element.id}
-              elementInfo={element}
+            <ElementErrorBoundary key={element.id} elementId={element.id}>
+              <SlideElement
+                elementInfo={element}
               elementIndex={elementIndexById.get(element.id) ?? 1}
               theme={slide.theme}
               renderImage={renderImage}
@@ -226,9 +227,10 @@ export function SlideCanvas(props: SlideCanvasProps) {
               renderTable={renderTable}
               videoInteractive={videoInteractive}
               onElementClick={onElementClick}
-              idPrefix={elementIdPrefix}
-              dragOffset={dragOffsets?.get(element.id)}
-            />
+                idPrefix={elementIdPrefix}
+                dragOffset={dragOffsets?.get(element.id)}
+              />
+            </ElementErrorBoundary>
           ))}
 
           {highlights.map((highlight) => {
