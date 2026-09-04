@@ -43,6 +43,8 @@ import {
   createDesignProxyHandler,
   isDesignHostRequest,
 } from "./http/routes/design-proxy.js";
+import { injectDesignFrameSrc } from "./http/csp-frame-src.js";
+import { handleDesignTool } from "./http/routes/design-tools-proxy.js";
 import { createTwilioVoiceWebhookHandler } from "./http/routes/twilio-voice-webhook.js";
 import { createTwilioStatusWebhookHandler } from "./http/routes/twilio-status-webhook.js";
 import { createTwilioConnectActionWebhookHandler } from "./http/routes/twilio-connect-action-webhook.js";
@@ -1704,6 +1706,18 @@ async function main() {
       handler: (req) => designProxy.handleSkillsList(req),
     },
     {
+      // Cue Design → Cue tool bridge. The sidecar's studio agent (opencode)
+      // calls a curated, READ-ONLY allowlist (web_search / web_fetch) via the
+      // baked `cue-bridge` CLI, which POSTs here with Authorization: Bearer
+      // <DESIGN_BRIDGE_TOKEN>. auth:"custom" — the handler owns auth and returns
+      // 404 when the bridge is disabled (token unset). Forwards to the daemon
+      // over IPC.
+      path: /^\/design\/tools\/([^/]+)$/,
+      method: "POST",
+      auth: "custom",
+      handler: (req, params) => handleDesignTool(req, params[0] ?? ""),
+    },
+    {
       path: /^\/learn(\/.*)?$/,
       auth: "custom",
       handler: (req, params) =>
@@ -1871,7 +1885,15 @@ async function main() {
     if (!dir) return undefined;
     const index = Bun.file(`${dir}/index.html`);
     if (await index.exists()) {
-      return new Response(index, {
+      // The shell carries a static meta CSP whose `frame-src` hardcodes
+      // `https://*.justcue.app` for the Cue Design iframe. A self-host on a
+      // custom domain has its design host outside that wildcard, so inject the
+      // configured DESIGN_HOST origin at serve time. No-op when DESIGN_HOST is
+      // unset or already covered (only reads the text on the injection path).
+      const body = process.env.DESIGN_HOST
+        ? injectDesignFrameSrc(await index.text())
+        : index;
+      return new Response(body, {
         headers: {
           "content-type": "text/html; charset=utf-8",
           // The shell references the hashed bundle, so a stale shell pins an old

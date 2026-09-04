@@ -37,8 +37,11 @@
     sibling subdomain — same-site but cross-origin, so 'self' does not cover
     it). Every justcue.app subdomain is Cue-owned infrastructure, so the
     ATL-1197 egress property (no navigation to attacker-controlled origins)
-    is preserved. Self-host instances on custom domains need a serve-time
-    injected entry instead — a known Phase 1 gap for Design there.
+    is preserved. Self-host instances on custom domains fall outside that
+    wildcard, so the gateway injects the deployment's DESIGN_HOST origin into
+    this frame-src at serve time when it serves the shell (see
+    gateway/src/http/csp-frame-src.ts) — a no-op when DESIGN_HOST is unset or
+    already covered here.
 
     This is deliberately a single directive rather than a whole policy. A full
     CSP for the SPA is worth having, but it is a much larger change with real

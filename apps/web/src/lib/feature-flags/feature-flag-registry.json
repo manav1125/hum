@@ -331,6 +331,14 @@
       "defaultEnabled": false
     },
     {
+      "id": "design-expose-cue-skills",
+      "scope": "assistant",
+      "key": "design-expose-cue-skills",
+      "label": "Expose Cue skills to the design agent",
+      "description": "Surface that the Cue Design sidecar agent can call a curated, read-only allowlist of Cue tools (web_search, web_fetch) during a design build, via the design→Cue tool bridge. This flag is display/surfacing only; the bridge itself is gated in code by the DESIGN_BRIDGE_TOKEN secret (on both apps) and CUE_DESIGN_EXPOSE_SKILLS=1 on the sidecar. With neither set, the bridge is inert and no tools are exposed.",
+      "defaultEnabled": false
+    },
+    {
       "id": "external-plugins",
       "scope": "assistant",
       "key": "external-plugins",

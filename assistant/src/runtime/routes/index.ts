@@ -64,6 +64,7 @@ import { ROUTES as CUELIVE_ROUTES } from "./cuelive-routes.js";
 import { ROUTES as DEBUG_BASH_ROUTES } from "./debug-bash-routes.js";
 import { ROUTES as DEBUG_ROUTES } from "./debug-routes.js";
 import { ROUTES as DEFER_ROUTES } from "./defer-routes.js";
+import { ROUTES as DESIGN_BRIDGE_ROUTES } from "./design-bridge-routes.js";
 import { ROUTES as DIAGNOSTICS_ROUTES } from "./diagnostics-routes.js";
 import { ROUTES as DISK_PRESSURE_ROUTES } from "./disk-pressure-routes.js";
 import { ROUTES as DOCUMENT_COMMENT_ROUTES } from "./document-comments-routes.js";
@@ -241,6 +242,7 @@ export const ROUTES: RouteDefinition[] = [
   ...CONVERSATION_STARTER_ROUTES,
   ...DEBUG_BASH_ROUTES,
   ...DEBUG_ROUTES,
+  ...DESIGN_BRIDGE_ROUTES,
   ...DIAGNOSTICS_ROUTES,
   ...DISK_PRESSURE_ROUTES,
   ...DOMAIN_ROUTES,
