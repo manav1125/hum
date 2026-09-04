@@ -195,6 +195,23 @@ export function deriveStepLabelFromName(
       };
     }
 
+    case "app_create":
+    case "app_update":
+    case "app_refresh": {
+      // App build/refresh tools. Without these cases the default branch
+      // produced "Running App Refresh" — internal tool-name jargon that also
+      // stayed present-tense forever on terminal cards. The daemon doesn't
+      // guarantee an app-name field, so probe the common keys and fall back
+      // to an empty info slot (the activity sentence usually fills it).
+      const appName = readString(inputBag, "name", "title", "app_name", "appName");
+      return {
+        title: name === "app_create" ? "Building your app" : "Refreshing your app",
+        info: appName,
+        activity,
+        iconName: "sparkle",
+      };
+    }
+
     case "subagent_spawn": {
       const label = readString(inputBag, "label", "objective", "task");
       return {

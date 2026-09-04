@@ -362,3 +362,85 @@ export const Collapsed: Story = {
     );
   },
 };
+
+// ---------------------------------------------------------------------------
+// App build/refresh honesty states — the "Running App Refresh" banner fix.
+//
+// A terminal card must never keep reading as live progress: running shows the
+// three-dot indicator + present tense, a partial failure shows the amber
+// triangle + "App refresh failed", an all-failed run shows the red alert, and
+// a completed run shows the green check + past tense.
+// ---------------------------------------------------------------------------
+
+/** Running refresh: three-dot indicator + "Refreshing your app". */
+export const AppRefreshRunning: Story = {
+  args: baseProps({
+    autoExpand: false,
+    toolCalls: [
+      makeToolCall({ input: { command: "bun run lint" } }),
+      makeToolCall({
+        name: "app_refresh",
+        input: { activity: "Compiling the board" },
+        completedAt: undefined,
+        riskLevel: undefined,
+      }),
+    ],
+  }),
+};
+
+/** Partial failure: amber triangle + "App refresh failed", collapsed. */
+export const AppRefreshPartialFailure: Story = {
+  args: baseProps({
+    autoExpand: false,
+    toolCalls: [
+      makeToolCall({ input: { command: "bun run lint" } }),
+      makeToolCall({ input: { command: "bun run typecheck" } }),
+      makeToolCall({
+        name: "app_refresh",
+        input: { activity: "Compiling the board" },
+        isError: true,
+        result: "Refresh failed: compile error",
+        riskLevel: undefined,
+      }),
+    ],
+  }),
+};
+
+/** Every step failed: red alert + "App refresh failed". */
+export const AppRefreshAllFailed: Story = {
+  args: baseProps({
+    autoExpand: false,
+    toolCalls: [
+      makeToolCall({
+        name: "app_refresh",
+        input: { activity: "Compiling the board" },
+        isError: true,
+        result: "Refresh failed: compile error",
+        riskLevel: undefined,
+      }),
+      makeToolCall({
+        name: "app_refresh",
+        input: { activity: "Retrying the compile" },
+        isError: true,
+        result: "Refresh failed again",
+        riskLevel: undefined,
+      }),
+    ],
+  }),
+};
+
+/** Completed run: green check + past-tense "Refreshed your app". */
+export const AppRefreshCompleted: Story = {
+  args: baseProps({
+    autoExpand: false,
+    toolCalls: [
+      makeToolCall({ input: { command: "bun run lint" } }),
+      makeToolCall({
+        name: "app_refresh",
+        input: { activity: "Compiling the board" },
+        result: "ok",
+        riskLevel: undefined,
+      }),
+    ],
+  }),
+};

@@ -17,7 +17,6 @@
 
 import {
   AlertCircle,
-  AlertTriangle,
   Bolt,
   Brain,
   Check,
@@ -536,7 +535,10 @@ function PhaseHeaderRow({
             className="h-[14px] w-[14px] text-[var(--system-positive-strong)]"
           />
         ) : status === "failed" ? (
-          <AlertTriangle
+          // AlertCircle, not AlertTriangle: the triangle is reserved for the
+          // card-level `warning` (partial failure) state — a failed phase is
+          // an error and matches `TimelineNodeIcon` / the shell's error icon.
+          <AlertCircle
             aria-hidden="true"
             data-testid="phase-header-status-icon"
             data-status="failed"

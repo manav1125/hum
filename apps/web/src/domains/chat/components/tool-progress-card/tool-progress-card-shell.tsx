@@ -1,4 +1,11 @@
-import { AlertCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState, type ReactNode } from "react";
 
@@ -315,6 +322,26 @@ export function ToolProgressCardShell({
             </span>
           ) : null;
 
+        // Trailing tap affordance. The header row has always been tappable,
+        // but nothing signalled it — on mobile especially, a collapsed card
+        // read as an inert status line. Mirrors the inline `SingleActivity`
+        // link's chevron vocabulary: up/down for the expand toggle,
+        // right for an `onHeaderClick` override that opens a panel/drawer.
+        // Hidden when the header is genuinely non-interactive.
+        const canActivate = Boolean(onHeaderClick) || !disableExpand;
+        const ChevronGlyph = onHeaderClick
+          ? ChevronRight
+          : expanded
+            ? ChevronUp
+            : ChevronDown;
+        const expandChevron = canActivate ? (
+          <ChevronGlyph
+            data-testid="tool-progress-card-expand-chevron"
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-[var(--content-tertiary)]"
+          />
+        ) : null;
+
         // When `onHeaderClick` overrides the default toggle, the button is
         // always enabled — `disableExpand` only suppresses the expand path,
         // not external click handlers.
@@ -353,6 +380,7 @@ export function ToolProgressCardShell({
               >
                 {headerActionSlot}
                 {stepCountPill}
+                {expandChevron}
               </div>
             </div>
           );
@@ -393,7 +421,10 @@ export function ToolProgressCardShell({
             }
           >
             {titleCluster}
-            {stepCountPill}
+            <span className="flex shrink-0 items-center gap-2">
+              {stepCountPill}
+              {expandChevron}
+            </span>
           </Button>
         );
       })()}

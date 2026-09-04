@@ -200,6 +200,32 @@ describe("deriveStepLabel", () => {
     });
   });
 
+  test("app_create → Building your app with app name and sparkle icon", () => {
+    const result = deriveStepLabel(
+      buildToolCall({
+        name: "app_create",
+        input: { name: "Kanban Board", activity: "Choosing a visual direction" },
+      }),
+    );
+    expect(result).toEqual({
+      title: "Building your app",
+      info: "Kanban Board",
+      activity: "Choosing a visual direction",
+      iconName: "sparkle",
+    });
+  });
+
+  test("app_refresh / app_update → Refreshing your app (not the Running fallback)", () => {
+    for (const name of ["app_refresh", "app_update"]) {
+      const result = deriveStepLabel(
+        buildToolCall({ name, input: { activity: "Compiling the board" } }),
+      );
+      expect(result.title).toBe("Refreshing your app");
+      expect(result.activity).toBe("Compiling the board");
+      expect(result.iconName).toBe("sparkle");
+    }
+  });
+
   test("unknown tool name → Running <humanized> fallback with bolt icon", () => {
     const result = deriveStepLabel(
       buildToolCall({

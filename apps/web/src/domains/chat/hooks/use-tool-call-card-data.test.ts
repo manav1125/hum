@@ -925,3 +925,91 @@ describe("computeToolCallCardData — web_search backend-failure copy", () => {
     expect(data.steps[0]!.kind).toBe("web_search");
   });
 });
+
+describe("computeToolCallCardData — outcome-aware collapsed header (app tools)", () => {
+  test("running app_refresh → present-tense 'Refreshing your app'", () => {
+    const data = computeToolCallCardData(
+      [
+        makeToolCall({
+          id: "tc-app",
+          name: "app_refresh",
+          status: "running",
+          input: { activity: "Compiling the board" },
+        }),
+      ],
+      {},
+    );
+    expect(data.currentStepTitle).toBe("Refreshing your app");
+    expect(data.currentStepInfo).toBe("Compiling the board");
+    expect(data.state).toBe("loading");
+  });
+
+  test("completed app_refresh → 'Refreshed your app' (never a stale 'Running…')", () => {
+    const data = computeToolCallCardData(
+      [makeToolCall({ id: "tc-app", name: "app_refresh", status: "completed" })],
+      {},
+    );
+    expect(data.currentStepTitle).toBe("Refreshed your app");
+    expect(data.state).toBe("complete");
+  });
+
+  test("errored app_refresh → 'App refresh failed'", () => {
+    const data = computeToolCallCardData(
+      [
+        makeToolCall({
+          id: "tc-app",
+          name: "app_refresh",
+          status: "error",
+          input: { activity: "Compiling the board" },
+        }),
+      ],
+      {},
+    );
+    expect(data.currentStepTitle).toBe("App refresh failed");
+    expect(data.state).toBe("error");
+  });
+
+  test("errored app_create → 'App build failed'; completed → 'Built your app'", () => {
+    const errored = computeToolCallCardData(
+      [makeToolCall({ id: "tc-a", name: "app_create", status: "error" })],
+      {},
+    );
+    expect(errored.currentStepTitle).toBe("App build failed");
+    const done = computeToolCallCardData(
+      [makeToolCall({ id: "tc-b", name: "app_create", status: "completed" })],
+      {},
+    );
+    expect(done.currentStepTitle).toBe("Built your app");
+  });
+
+  test("unknown tool: 'Running X' flips to 'Ran X' / 'X failed' once terminal", () => {
+    const running = computeToolCallCardData(
+      [makeToolCall({ id: "tc-1", name: "mystery_tool", status: "running" })],
+      {},
+    );
+    expect(running.currentStepTitle).toBe("Running Mystery Tool");
+    const done = computeToolCallCardData(
+      [makeToolCall({ id: "tc-2", name: "mystery_tool", status: "completed" })],
+      {},
+    );
+    expect(done.currentStepTitle).toBe("Ran Mystery Tool");
+    const failed = computeToolCallCardData(
+      [makeToolCall({ id: "tc-3", name: "mystery_tool", status: "error" })],
+      {},
+    );
+    expect(failed.currentStepTitle).toBe("Mystery Tool failed");
+  });
+
+  test("expanded step titles stay present-tense phase keys for app tools", () => {
+    // The phase-grouping key must not flip tense with status — only the
+    // collapsed header does.
+    const data = computeToolCallCardData(
+      [makeToolCall({ id: "tc-app", name: "app_refresh", status: "error" })],
+      {},
+    );
+    expect(data.steps[0]!.kind).toBe("tool");
+    expect((data.steps[0] as { title: string }).title).toBe(
+      "Refreshing your app",
+    );
+  });
+});

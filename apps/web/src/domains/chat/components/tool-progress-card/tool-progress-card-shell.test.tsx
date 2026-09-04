@@ -45,9 +45,13 @@ describe("ToolProgressCardShell — collapsed render per state", () => {
     const { getByTestId, container } = renderShell({ state: "loading" });
     const indicator = getByTestId("tool-progress-card-status-indicator");
     expect(indicator.tagName).toBe("SPAN");
-    // No SVG icon present — the loading indicator is the dots, not a lucide
-    // svg.
-    expect(container.querySelector("svg")).toBeNull();
+    // No STATUS svg present — the loading indicator is the dots, not a lucide
+    // icon. The header's expand chevron is the only svg in the row.
+    expect(
+      container.querySelector(
+        'svg:not([data-testid="tool-progress-card-expand-chevron"])',
+      ),
+    ).toBeNull();
   });
 
   test("complete renders the CheckCircle2 icon", () => {
@@ -519,5 +523,30 @@ describe("ToolProgressCardShell — terminal-state header bypass", () => {
     advanceTime(400);
     expect(getByText("B")).toBeTruthy();
     expect(getByText("beta")).toBeTruthy();
+  });
+});
+
+describe("ToolProgressCardShell — expand affordance chevron", () => {
+  test("collapsed expandable header shows a down chevron", () => {
+    const { getByTestId } = renderShell({});
+    const chevron = getByTestId("tool-progress-card-expand-chevron");
+    expect(chevron.classList.contains("lucide-chevron-down")).toBe(true);
+  });
+
+  test("expanded header flips the chevron up", () => {
+    const { getByTestId } = renderShell({ expanded: true, onExpandChange: () => {} });
+    const chevron = getByTestId("tool-progress-card-expand-chevron");
+    expect(chevron.classList.contains("lucide-chevron-up")).toBe(true);
+  });
+
+  test("onHeaderClick override renders a right chevron (opens a panel)", () => {
+    const { getByTestId } = renderShell({ onHeaderClick: () => {} });
+    const chevron = getByTestId("tool-progress-card-expand-chevron");
+    expect(chevron.classList.contains("lucide-chevron-right")).toBe(true);
+  });
+
+  test("non-interactive header (disableExpand, no onHeaderClick) hides the chevron", () => {
+    const { queryByTestId } = renderShell({ disableExpand: true });
+    expect(queryByTestId("tool-progress-card-expand-chevron")).toBeNull();
   });
 });

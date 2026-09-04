@@ -522,6 +522,39 @@ function buildToolStep(tc: ChatMessageToolCall): ToolCallCardStep {
  * stay untouched, so the EXPANDED list still groups bash steps under a
  * distinct "Working" section.
  */
+/**
+ * Outcome-aware collapsed-header title for a non-web tool call. While the
+ * call is running this is just its `deriveStepLabel().title`; once terminal
+ * the tense flips so a finished card never keeps reading as live progress —
+ * the observed failure mode was a card stuck on "Running App Refresh" for
+ * minutes (and across reloads) after the run had already ended.
+ *
+ * Only header derivation changes tense: `deriveStepLabel` itself stays
+ * present-tense because its `title` is the stable phase-grouping key for the
+ * expanded timeline.
+ */
+function nonWebHeaderTitle(tc: ChatMessageToolCall): string {
+  const { title } = deriveStepLabel(tc);
+  if (!isTerminalStatus(tc)) return title;
+  const failed = deriveToolStepStatus(tc) !== "completed";
+  switch (tc.name.toLowerCase()) {
+    case "app_create":
+      return failed ? "App build failed" : "Built your app";
+    case "app_update":
+    case "app_refresh":
+      return failed ? "App refresh failed" : "Refreshed your app";
+    default:
+      // The generic fallback title ("Running <Tool Name>") is the only other
+      // present-progressive shape that reads as live activity; curated titles
+      // ("Working", "Editing") read acceptably as phase names once terminal.
+      if (title.startsWith("Running ")) {
+        const rest = title.slice("Running ".length);
+        return failed ? `${rest} failed` : `Ran ${rest}`;
+      }
+      return title;
+  }
+}
+
 function deriveCurrentStepTitle(
   toolCalls: ChatMessageToolCall[],
   liveWebActivity: Record<string, ToolActivityMetadata>,
@@ -544,7 +577,7 @@ function deriveCurrentStepTitle(
         return "Thinking";
       }
     } else {
-      return deriveStepLabel(tc).title;
+      return nonWebHeaderTitle(tc);
     }
   }
   return "";
