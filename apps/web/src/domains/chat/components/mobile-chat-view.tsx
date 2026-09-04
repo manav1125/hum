@@ -26,7 +26,14 @@
  *     needs-you treatment (frame 8/13b), Approve button included
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import {
@@ -210,6 +217,36 @@ const MCHAT_TRANSCRIPT_THEME = `
 const COMPOSER_FONT_SIZE_PX = 16;
 const COMPOSER_LINE_HEIGHT_PX = Math.round(COMPOSER_FONT_SIZE_PX * 1.4);
 const COMPOSER_FIELD_PADDING_PX = 20;
+
+/**
+ * Below this viewport width the composer's action row cannot hold all of its
+ * affordances at full size: ＋ · ✎ Create · ▦ · tune on the left plus the
+ * voice orb and dictation mic on the right add up to ~430px of unshrinkable
+ * buttons (every one is a 44px hit target, so none of them may flex). On a
+ * 402px iPhone the mic was pushed clean off the card's right edge. Compact
+ * mode drops the Create chip's word (its aria-label survives), tightens the
+ * row gap and the card's outer margin — the hit targets stay 44px. 440 rather
+ * than the exact overflow point because "Create" is set in the system font
+ * and its width is not ours to rely on.
+ */
+const COMPACT_ACTION_ROW_QUERY = "(max-width: 439px)";
+
+function subscribeCompactActionRow(onChange: () => void): () => void {
+  const mql = window.matchMedia(COMPACT_ACTION_ROW_QUERY);
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+}
+
+function getCompactActionRowSnapshot(): boolean {
+  return window.matchMedia(COMPACT_ACTION_ROW_QUERY).matches;
+}
+
+function useCompactActionRow(): boolean {
+  return useSyncExternalStore(
+    subscribeCompactActionRow,
+    getCompactActionRowSnapshot,
+  );
+}
 
 /** "11:42"-style time for the failure card's header. */
 function clockLabel(epochMs: number | undefined): string | undefined {
@@ -415,6 +452,7 @@ export function MobileChatView({
   const { frame, shellRef, headerRef, composerRef, dragHandlers } =
     usePhoneKeyboard({ onDismiss: handleKeyboardDismiss });
   const keyboardOpen = frame.keyboardOpen;
+  const compactActionRow = useCompactActionRow();
 
   // Power-feature sheets (composer settings ⋅ conversation actions) — the
   // v3-skinned mounts of the desktop menus (mobile-chat-menus.tsx).
@@ -1026,7 +1064,7 @@ export function MobileChatView({
         // present — so adding it a third time here paid for the home
         // indicator twice on a device and never showed up in a browser, where
         // the inset is 0.
-        padding: "10px 16px",
+        padding: compactActionRow ? "10px 12px" : "10px 16px",
       }}
     >
       {voiceInterim ? (
@@ -1173,7 +1211,7 @@ export function MobileChatView({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 7,
+            gap: compactActionRow ? 5 : 7,
             marginTop: 6,
             paddingTop: 6,
             borderTop: "1px solid var(--mv3-line)",
@@ -1197,7 +1235,7 @@ export function MobileChatView({
           </ComposerAffordance>
 
           {/* ✎ Create — a sheet over the composer, not a destination. */}
-          <ComposerCreateEntry />
+          <ComposerCreateEntry compact={compactActionRow} />
 
           {/* ▦ Library — pick a file to reference in what you're saying. */}
           {assistantId ? (

@@ -30,14 +30,27 @@ const CreateSheet = lazy(() =>
   })),
 );
 
-export function ComposerCreateEntry() {
+export interface ComposerCreateEntryProps {
+  /**
+   * Narrow-viewport mode: drop the visible "Create" word and render the
+   * pencil icon-only, like its row siblings. Below ~440px the action row's
+   * six fixed 44px affordances plus this label do not fit, and the row's
+   * right end (the dictation mic) was clipped off-screen. The accessible
+   * name is unaffected.
+   */
+  compact?: boolean;
+}
+
+export function ComposerCreateEntry({
+  compact = false,
+}: ComposerCreateEntryProps) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
       <ComposerAffordance
         label="Create something"
-        text="Create"
+        text={compact ? undefined : "Create"}
         expanded={open}
         onPress={() => setOpen(true)}
       >
