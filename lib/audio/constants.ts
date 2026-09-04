@@ -1366,7 +1366,8 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'qwen-tts': 'Cherry',
   'voxcpm-tts': VOXCPM_AUTO_VOICE_ID,
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
-  'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
+  // Alice — the teacher's (Mira's) voice, owner-picked from an audition.
+  'elevenlabs-tts': 'Xb7hH8MSUJpSbSDYk0k2',
   'minimax-tts': 'female-yujie',
   'lemonade-tts': 'af_heart',
   'browser-native-tts': 'default',
