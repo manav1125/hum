@@ -118,9 +118,19 @@ final class CueLiveController: @unchecked Sendable {
     }
 
     /// Trigger / read the Accessibility trust state for this helper process.
-    /// Passing the prompt option shows the system grant dialog only while
-    /// untrusted; returns the current trust state either way.
+    /// Prompts AT MOST ONCE per machine: `start()` runs on every app launch,
+    /// and when the recorded TCC grant is keyed to a stale code signature the
+    /// prompting check can never succeed — the Settings toggle shows ON while
+    /// validation fails — so an unconditional prompt becomes a modal on every
+    /// single launch. After the one prompt (which registers the helper's row
+    /// in System Settings), the renderer's permission banner and its Settings
+    /// deep-link are the recovery path.
     private func ensureAccessibilityTrust() -> Bool {
+        if AXIsProcessTrusted() { return true }
+        let promptShownKey = "axAccessibilityPromptShown"
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: promptShownKey) { return false }
+        defaults.set(true, forKey: promptShownKey)
         // Literal value of `kAXTrustedCheckOptionPrompt`; referencing the
         // imported global directly trips Swift 6 strict-concurrency (shared
         // mutable state), same dodge as the "AXSecureTextField" literal below.

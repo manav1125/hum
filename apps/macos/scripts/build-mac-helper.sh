@@ -19,26 +19,40 @@ if ! command -v xcrun >/dev/null 2>&1; then
   exit 1
 fi
 
-# The default local-signing identity. "Apple Development" runs on the signing
-# machine and yields a STABLE, team-based designated requirement, so the
-# helper's TCC Accessibility grant persists across launches (an ad-hoc DR is
-# the volatile cdhash → re-prompt every launch).
-DEFAULT_MAC_HELPER_SIGN_IDENTITY="Apple Development: Manav Gupta (9CL7ZPZ325)"
+# Signing identities, most preferred first. The packaged app's afterSign hook
+# signs the helper with "Developer ID Application", so dev builds MUST prefer
+# the same identity: TCC keys the Accessibility grant on (bundle id + code
+# requirement), and the requirement embeds the signing team. Signing dev
+# builds with a different team (the old "Apple Development" default, team
+# 9CL7ZPZ325 vs Developer ID's XU8BLQACGU) made every dev↔installed switch
+# invalidate the recorded grant — the Settings toggle stayed ON but validated
+# against a dead signature, so the helper re-prompted on every launch.
+# "Apple Development" remains as a fallback: still a stable, team-based DR,
+# just not the one shipped builds use. (An ad-hoc DR is the volatile cdhash →
+# re-prompt every launch.)
+PREFERRED_MAC_HELPER_SIGN_IDENTITIES=(
+  "Developer ID Application: Manav Gupta (XU8BLQACGU)"
+  "Apple Development: Manav Gupta (9CL7ZPZ325)"
+)
 
 # Resolve the code-signing identity for the helper:
 #   1. MAC_HELPER_SIGN_IDENTITY env override (honored verbatim, incl. "-").
-#   2. The default Apple Development identity, when present in the keychain.
+#   2. The first preferred identity present in the keychain.
 #   3. Ad-hoc ("-") on hosts with no usable signing identity (CI / non-signing).
 resolve_sign_identity() {
   if [ -n "${MAC_HELPER_SIGN_IDENTITY:-}" ]; then
     printf '%s' "$MAC_HELPER_SIGN_IDENTITY"
     return
   fi
-  if command -v security >/dev/null 2>&1 &&
-     security find-identity -v -p codesigning 2>/dev/null |
-       grep -qF "$DEFAULT_MAC_HELPER_SIGN_IDENTITY"; then
-    printf '%s' "$DEFAULT_MAC_HELPER_SIGN_IDENTITY"
-    return
+  if command -v security >/dev/null 2>&1; then
+    local available identity
+    available="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+    for identity in "${PREFERRED_MAC_HELPER_SIGN_IDENTITIES[@]}"; do
+      if printf '%s' "$available" | grep -qF "$identity"; then
+        printf '%s' "$identity"
+        return
+      fi
+    done
   fi
   printf '%s' "-"
 }

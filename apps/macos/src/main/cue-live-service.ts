@@ -1469,7 +1469,10 @@ export const start = async (): Promise<void> => {
         "[cue-live] helper is NOT trusted for Accessibility — the summon " +
           "hotkey and element reads will do nothing until the user enables " +
           "the Cue helper in System Settings → Privacy & Security → " +
-          "Accessibility. A system prompt was requested.",
+          "Accessibility. If a cue-mac-helper toggle is already ON there, " +
+          "the grant is keyed to a stale code signature; run " +
+          "`tccutil reset Accessibility ai.vellum.assistant.mac-helper`, " +
+          "relaunch Cue, and grant once.",
       );
     }
     if (
