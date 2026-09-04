@@ -87,6 +87,18 @@ header button. Everything else should track upstream clean.
    env already names a `http://<app>.internal:<port>` upstream is ADOPTED,
    never re-pointed. Ran clean across the fleet 2026-09-03.
 
+## Backups
+
+`cue-learn-db` (all course documents, yours + fleet) relies on Fly volume
+snapshots (5-day retention). Offsite baseline + refresh:
+
+```bash
+flyctl ssh console -a cue-learn-db -C "sh -c 'PGPASSWORD=$OPERATOR_PASSWORD pg_dumpall -h localhost -U postgres | gzip -c > /data/learn-backup.sql.gz'"
+flyctl ssh sftp get /data/learn-backup.sql.gz ~/.cue/backups/learn-backup-$(date +%Y%m%d).sql.gz -a cue-learn-db
+```
+
+Automating this on a schedule is still open.
+
 ## Known gaps
 
 - Every Learn sidecar now mounts a `learn_data` volume at `/app/data`

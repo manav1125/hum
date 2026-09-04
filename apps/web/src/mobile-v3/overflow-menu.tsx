@@ -367,6 +367,22 @@ export function Mv3OverflowMenu() {
             key: "learn",
             label: "Learn",
             sub: "Courses that teach you back",
+            // The eye-and-violet-period glyph from the design handoff (R2-1).
+            // currentColor ring follows the row's text color; the period stays
+            // the Learn violet in both themes.
+            icon: (
+              <svg viewBox="0 0 20 20" width="18" height="18">
+                <circle
+                  cx="9"
+                  cy="9"
+                  r="6.4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                />
+                <circle cx="17.5" cy="17.5" r="2.5" fill="#9A93E8" />
+              </svg>
+            ),
             run: () => void navigate(routes.learn),
           },
         ]

@@ -27,6 +27,8 @@ export interface MenuEntry {
   group?: string;
   /** Hairline above this row without an eyebrow (the quiet actions group). */
   rule?: boolean;
+  /** Optional leading glyph (≈18px), rendered before the label column. */
+  icon?: React.ReactNode;
   /**
    * A line printed between this row's eyebrow and the row itself — where an
    * empty or failed list says WHY it is short, immediately above the door that
@@ -112,6 +114,21 @@ export function MenuRow({
         color: "var(--mv3-text)",
       }}
     >
+      {item.icon ? (
+        <span
+          aria-hidden
+          style={{
+            display: "inline-flex",
+            width: 18,
+            height: 18,
+            flexShrink: 0,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {item.icon}
+        </span>
+      ) : null}
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ fontSize: 13.5, fontWeight: 600, display: "block" }}>
           {item.label}
