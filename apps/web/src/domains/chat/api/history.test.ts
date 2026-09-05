@@ -18,6 +18,8 @@ import {
 interface CapturedRequest {
   url: string;
   init: RequestInit | undefined;
+  /** Abort signal the client attached, whether via init or a Request object. */
+  signal: AbortSignal | undefined | null;
 }
 
 function makeJsonResponse(
@@ -46,7 +48,12 @@ beforeEach(() => {
         : input instanceof URL
           ? input.toString()
           : input.url;
-    captured.push({ url, init });
+    captured.push({
+      url,
+      init,
+      signal:
+        init?.signal ?? (input instanceof Request ? input.signal : undefined),
+    });
     if (!nextResponse) {
       throw new Error("test setup forgot to set nextResponse");
     }
@@ -130,6 +137,52 @@ describe("fetchOlderHistoryPage URL construction", () => {
 
     const url = new URL(captured[0]!.url, "http://localhost");
     expect(url.searchParams.get("limit")).toBe("10");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Abort signal pass-through
+// ---------------------------------------------------------------------------
+
+describe("abort signal pass-through", () => {
+  test.each([
+    [
+      "fetchLatestHistoryPage",
+      (signal: AbortSignal) =>
+        fetchLatestHistoryPage("asst-1", "K", undefined, signal),
+    ],
+    [
+      "fetchOlderHistoryPage",
+      (signal: AbortSignal) =>
+        fetchOlderHistoryPage("asst-1", "K", 1_700_000_000_000, undefined, signal),
+    ],
+  ] as const)("%s forwards the caller's signal to fetch", async (_name, run) => {
+    /**
+     * The transcript query hands each page fetch a combined
+     * cancel-or-deadline signal (see use-history-pagination). If the
+     * fetcher drops it, a socket-level hang can never settle — the query
+     * stays `fetching` forever and every later refetch dedupes into it.
+     */
+    nextResponse = makeJsonResponse({
+      messages: [],
+      hasMore: false,
+      oldestTimestamp: null,
+      oldestMessageId: null,
+    });
+    // GIVEN a caller-owned abort signal
+    const controller = new AbortController();
+
+    // WHEN the page is fetched with it
+    await run(controller.signal);
+
+    // THEN the underlying request carries an abort signal wired to the
+    // caller's controller (the client may wrap it, so assert behaviourally)
+    expect(captured).toHaveLength(1);
+    const requestSignal = captured[0]!.signal;
+    expect(requestSignal).toBeTruthy();
+    expect(requestSignal!.aborted).toBe(false);
+    controller.abort();
+    expect(requestSignal!.aborted).toBe(true);
   });
 });
 

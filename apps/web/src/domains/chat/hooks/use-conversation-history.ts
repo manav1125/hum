@@ -320,9 +320,10 @@ export function useConversationHistory({
   // no such event, so the persisted tail emitted before the disconnect
   // stays invisible until the query remounts on a manual refresh.
   //
-  // `refetchOnReconnect`/`refetchOnWindowFocus` are off (they key off the
-  // browser's network/focus state, not this app's SSE reconnect), so the
-  // reopen itself is the signal to refetch. Invalidating the query routes
+  // `refetchOnReconnect` is off (it keys off the browser's network state,
+  // not this app's SSE reconnect) and `refetchOnWindowFocus` only fires on
+  // app-lifecycle resume — an SSE reopen can happen with focus unchanged,
+  // so the reopen itself is also a signal to refetch. Invalidating routes
   // the catch-up through the same fetch-and-merge path as the initial
   // load, which the monotonic seq merge makes a no-op when nothing new
   // landed. `"fresh"`/`"anchor"` reopens are skipped: the first connect's

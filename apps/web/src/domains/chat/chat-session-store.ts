@@ -26,6 +26,7 @@ import { loadContextWindowUsageMap } from "@/domains/chat/utils/context-window-s
 import { shouldSuppressGenericChatErrorNotice } from "@/domains/chat/utils/error-classification";
 import { recordDiagnostic } from "@/lib/diagnostics";
 import { useTurnStore } from "@/domains/chat/turn-store";
+import { useLiveStatusStore } from "@/domains/chat/live-status-store";
 import { useInteractionStore } from "@/domains/chat/interaction-store";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useComposerStore } from "@/domains/chat/composer-store";
@@ -317,6 +318,15 @@ const useChatSessionStoreBase = create<ChatSessionStore>()((set, get) => ({
 
     // Reset all per-conversation state atomically.
     useTurnStore.getState().resetTurn();
+    // Drop any live-status slice left over from a PREVIOUS mount of this
+    // conversation (steps / thinking preview / step counter survive in the
+    // per-conversation map after the stream consumer unmounts). Re-entering
+    // must start from a clean slate: if a turn is genuinely still running,
+    // fresh SSE signal repopulates the slice (and the restored-turn path
+    // re-stamps `turnStartedAt` on first sight); if the turn finished while
+    // no consumer was mounted, the stale steps would otherwise dress up a
+    // dead spinner as live work.
+    useLiveStatusStore.getState().reset(activeConversationId);
     useInteractionStore.getState().resetAll();
     if (isAssistantSwitch) {
       // Assistant changed — old message bubbles leave the DOM, revoke blob URLs.

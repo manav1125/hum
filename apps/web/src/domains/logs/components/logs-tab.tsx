@@ -36,6 +36,7 @@ import {
   useScheduledConversationListQuery,
 } from "@/hooks/conversation-queries";
 import type { Conversation } from "@/types/conversation-types";
+import { withTimeout } from "@/utils/abort-signal";
 import { mergeConversationLists } from "@/utils/conversation-cache";
 import {
   loadLastViewedConversationId,
@@ -51,14 +52,6 @@ const TRACE_EVENT_LIMIT = 500;
 /** Hard client-side deadline: a hanging trace request must surface an error
  *  state with Retry, not an infinite spinner (mobile UAT P2). */
 const TRACE_REQUEST_TIMEOUT_MS = 15_000;
-
-/** React-Query cancel signal + a hard timeout, in one AbortSignal. */
-function withTimeout(signal: AbortSignal, timeoutMs: number): AbortSignal {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  return typeof AbortSignal.any === "function"
-    ? AbortSignal.any([signal, timeout])
-    : timeout;
-}
 
 export function LogsTab({ assistantId }: LogsTabProps) {
   const [selectedConversationId, setSelectedConversationId] = useState<

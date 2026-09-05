@@ -366,6 +366,19 @@ export function useSendMessage({
       // used downstream.
       const effectiveConversationId = postResult.conversationId;
 
+      // The daemon has acknowledged the message — make sure no draft copy of
+      // it survives anywhere. The composer path already cleared the draft
+      // optimistically at submit time, but under the request key; clearing
+      // both keys here guarantees the PERSISTED draft store can't re-offer
+      // the sent text on a later conversation switch (a restored stale draft
+      // of an already-sent message reads as an unsent message). Deliberately
+      // before the scope check: the ack clears the draft even if the user
+      // has navigated away mid-flight.
+      useComposerStore.getState().clearDraft(requestConversationId);
+      if (effectiveConversationId !== requestConversationId) {
+        useComposerStore.getState().clearDraft(effectiveConversationId);
+      }
+
       if (!isCurrentSendScope(effectiveConversationId)) {
         recordDiagnostic("send_result_ignored_inactive_conversation", {
           assistantId: postResult.assistantId,

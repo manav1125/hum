@@ -24,6 +24,7 @@ import {
   fetchLatestHistoryPage,
   fetchOlderHistoryPage,
 } from "@/domains/chat/api/history";
+import { withTimeout } from "@/utils/abort-signal";
 import { shouldRetryDaemonError } from "@/utils/daemon-errors";
 import type { PaginatedHistoryResult } from "@/domains/chat/transcript/types";
 import { mergeAdjacentAssistantMessages } from "@/domains/chat/utils/message-merge";
@@ -95,6 +96,19 @@ export interface HistoryPaginationResult {
 
 const EMPTY_MESSAGES: DisplayMessage[] = [];
 
+/**
+ * Hard client-side deadline per history page fetch. A request that hangs at
+ * the socket level (a WKWebView connection suspended while the app was
+ * backgrounded is the canonical case) must FAIL so the query settles: a
+ * `queryFn` that never resolves pins the query in `fetching` state forever,
+ * and every subsequent catch-up trigger — `refetchOnMount` on re-entry,
+ * the `sse.opened` invalidate, pull-to-refresh — dedupes into the hung
+ * fetch and silently does nothing. That left a re-opened conversation
+ * rendering a stale cached snapshot until the app was killed (Learn UAT,
+ * mobile). Generous enough for a slow cell link fetching one 50-row page.
+ */
+const HISTORY_REQUEST_TIMEOUT_MS = 20_000;
+
 export function useHistoryPagination({
   assistantId,
   conversationId,
@@ -113,11 +127,25 @@ export function useHistoryPagination({
       if (!assistantId || !conversationId) {
         throw new Error("Missing assistantId or conversationId");
       }
-      void signal; // AbortController signal available for future use
+      // TQ's cancel signal (key switch / unmount) + a hard deadline so a
+      // socket-level hang settles as an error instead of pinning the query
+      // in `fetching` forever — see HISTORY_REQUEST_TIMEOUT_MS.
+      const fetchSignal = withTimeout(signal, HISTORY_REQUEST_TIMEOUT_MS);
       if (pageParam != null) {
-        return fetchOlderHistoryPage(assistantId, conversationId, pageParam);
+        return fetchOlderHistoryPage(
+          assistantId,
+          conversationId,
+          pageParam,
+          undefined,
+          fetchSignal,
+        );
       }
-      return fetchLatestHistoryPage(assistantId, conversationId);
+      return fetchLatestHistoryPage(
+        assistantId,
+        conversationId,
+        undefined,
+        fetchSignal,
+      );
     },
     initialPageParam: null as number | null,
     getNextPageParam: (lastPage): number | undefined => {
@@ -135,7 +163,15 @@ export function useHistoryPagination({
     // old MAX_CACHED_CONVERSATIONS = 10 LRU map.
     gcTime: 5 * 60 * 1000,
     refetchOnMount: true,
-    refetchOnWindowFocus: false,
+    // Refetch when the app returns to the foreground. "Focus" here is the
+    // app's own lifecycle signal, not the raw DOM event: the global
+    // focusManager is rebound to the event bus's `app.resume` / `app.hidden`
+    // (see `lib/query-focus-manager.ts`), which covers Capacitor iOS where
+    // `visibilitychange` never fires. A backgrounded device drops the SSE
+    // stream silently, so the transcript on screen when the user comes back
+    // may be minutes stale — the resume refetch is the catch-up path that
+    // doesn't depend on the stream noticing it died.
+    refetchOnWindowFocus: true,
     refetchOnReconnect: false,
     retry: shouldRetryDaemonError,
   });
