@@ -1,0 +1,1 @@
+import{D as e}from"./local-mode-Cmx_lvm7.js";import{s as t}from"./auth-store-B-G-z0xZ.js";import{S as n}from"./native-biometric-VBC5QF_f.js";function r(r){let i={...r??{}},a=e();if(a)return i.Authorization=`Bearer ${a}`,i;let o=t();o&&(i[`Vellum-Organization-Id`]=o);let s=n();return s&&(i[`X-Session-Token`]=s),i}export{r as t};

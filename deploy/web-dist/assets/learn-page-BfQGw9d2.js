@@ -1,0 +1,15 @@
+import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{U as t,V as n}from"./design-library-PLdIta_8.js";import{_ as r,p as i,r as a}from"./react-vendor-BQGnTV4n.js";import{i as o}from"./routes-C63FrsKE.js";import{t as s}from"./assistant-feature-flag-store-CtaCW3Im.js";import{t as c}from"./page-shell-DrgtZU2_.js";import{t as l}from"./learn-session-B92ecn69.js";var u=e(t(),1),d=n();function f(e){return!e||!e.startsWith(`/`)||e.startsWith(`//`)||e.includes(`..`)?null:e}function p(){let e=s.use.hasHydrated(),t=s.use.learnApp(),n=i(),[p,m]=r(),[h,g]=(0,u.useState)(`minting`),_=(0,u.useRef)(null),[v]=(0,u.useState)(()=>f(p.get(`p`))),y=(0,u.useCallback)(async()=>{g(`minting`),g(await l())},[]);return(0,u.useEffect)(()=>{e&&t&&y()},[e,t,y]),(0,u.useEffect)(()=>{if(h!==`ready`)return;let e=setInterval(()=>{let e=_.current;if(e?.contentWindow)try{let{pathname:t,search:n}=e.contentWindow.location;if(!t.startsWith(`/learn`))return;let r=`${t.slice(6)||`/`}${n}`;r!==(f(p.get(`p`))??`/`)&&m(r===`/`?{}:{p:r},{replace:!0})}catch{}},1500);return()=>clearInterval(e)},[h,p,m]),(0,u.useEffect)(()=>{let e=e=>{if(e.origin!==window.location.origin)return;let t=e.data;if(t?.type!==`cue-learn:ask`)return;let r=typeof t.prompt==`string`?t.prompt.trim():``;!r||r.length>4e3||n(`${o.assistant}?prompt=${encodeURIComponent(r)}`)};return window.addEventListener(`message`,e),()=>window.removeEventListener(`message`,e)},[n]),e?t?(0,d.jsxs)(c,{className:`max-md:px-0 max-md:py-0 md:px-0 md:py-0`,children:[(0,d.jsx)(`style`,{children:`
+        @keyframes cueLearnDoorway {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .cue-learn-doorway {
+          animation: cueLearnDoorway 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .cue-learn-doorway {
+            animation: cueLearnDoorway 80ms linear;
+            transform: none;
+          }
+        }
+      `}),h===`ready`?(0,d.jsx)(`iframe`,{ref:_,src:v?`/learn${v}`:`/learn`,title:`Learn`,className:`cue-learn-doorway min-h-0 w-full flex-1 border-0`,allow:`microphone; autoplay; clipboard-write; fullscreen`}):h===`minting`?(0,d.jsx)(`div`,{className:`flex flex-1 items-center justify-center`,children:(0,d.jsx)(`div`,{className:`h-6 w-6 animate-spin rounded-full border-2 border-[var(--border-strong)] border-t-transparent`})}):(0,d.jsxs)(`div`,{className:`flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center`,children:[(0,d.jsx)(`p`,{className:`text-body-medium-lighter text-[var(--content-secondary)]`,children:h===`unconfigured`?`Learn isn’t set up on this Cue yet — the Cue Learn service isn’t configured.`:`Couldn’t open Learn.`}),h===`error`?(0,d.jsx)(`button`,{type:`button`,onClick:()=>void y(),className:`text-body-small-default text-[var(--content-primary)] underline underline-offset-2`,children:`Try again`}):null]})]}):(0,d.jsx)(a,{to:o.hq,replace:!0}):null}export{p as LearnPage};

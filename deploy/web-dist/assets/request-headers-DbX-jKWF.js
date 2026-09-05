@@ -1,1 +1,0 @@
-import{D as e}from"./local-mode-DTNKuiSa.js";import{s as t}from"./auth-store-BCCx5n_j.js";import{S as n}from"./native-biometric-Cxe7yZNY.js";function r(r){let i={...r??{}},a=e();if(a)return i.Authorization=`Bearer ${a}`,i;let o=t();o&&(i[`Vellum-Organization-Id`]=o);let s=n();return s&&(i[`X-Session-Token`]=s),i}export{r as t};

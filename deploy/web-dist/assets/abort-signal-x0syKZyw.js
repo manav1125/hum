@@ -1,0 +1,1 @@
+import{t as e}from"./typed-storage-BejOrI49.js";var t=e({keyFn:e=>`vellum:lastViewedConversation:${e}`,scope:`user`,parse:e=>e.length>0?e:null,serialize:e=>e??``,fallback:null});function n(e){return t.load(e)}function r(e,n){t.save(e,n)}function i(e,t){let n=AbortSignal.timeout(t);return typeof AbortSignal.any==`function`?AbortSignal.any([e,n]):n}export{n,r,i as t};
