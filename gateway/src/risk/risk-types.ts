@@ -160,6 +160,15 @@ export interface ArgRule {
   risk: RegistryRisk;
   /** Human-readable reason (shown in permission prompt). */
   reason: string;
+  /**
+   * When true, this rule only applies to invocations whose request
+   * destination(s) may be external. The classifier skips the rule when every
+   * destination arg is machine-internal (loopback, or anchored to the
+   * gateway-injected `$INTERNAL_GATEWAY_BASE_URL`) — e.g. curl's
+   * upload-detection rules, whose risk is exfiltration and therefore vacuous
+   * for requests that never leave the instance.
+   */
+  externalDestinationOnly?: boolean;
 }
 
 /**

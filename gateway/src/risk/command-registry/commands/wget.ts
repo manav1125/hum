@@ -21,6 +21,7 @@ const spec: CommandRiskSpec = {
       flags: ["--post-file"],
       risk: "high",
       reason: "Uploads file contents",
+      externalDestinationOnly: true,
     },
     {
       id: "wget:output-sensitive",
@@ -30,8 +31,10 @@ const spec: CommandRiskSpec = {
       reason: "Writes response to sensitive path",
     },
     {
+      // Same host-termination guard as curl:localhost (userinfo trick).
       id: "wget:localhost",
-      valuePattern: "^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])",
+      valuePattern:
+        "^[\"']?https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:\\d+)?([\"']?$|/)",
       risk: "low",
       reason: "Local request",
     },

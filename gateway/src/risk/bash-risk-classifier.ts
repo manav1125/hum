@@ -122,6 +122,82 @@ export function matchesArgRule(rule: ArgRule, arg: string): boolean {
   return true;
 }
 
+// ── Internal-destination carve-out ───────────────────────────────────────────
+// A request whose destination is machine-internal — loopback, or anchored to
+// the runtime-injected `$INTERNAL_GATEWAY_BASE_URL` — never leaves the
+// instance, so upload-shaped args (`curl -d @file`) are not exfiltration and
+// arg rules marked `externalDestinationOnly` are skipped. The anchor must be
+// terminated by a port, `/`, quote, or end-of-arg: `http://localhost@evil.com`
+// (userinfo) and `$INTERNAL_GATEWAY_BASE_URL@evil.com` re-target the real
+// host and must NOT count as internal. Variables after the anchor (path
+// segments like `$JOB_ID`) cannot change the destination host, so anchored
+// args are also exempt from the variable-expansion escalation.
+
+const INTERNAL_DESTINATION_PROGRAMS = new Set(["curl", "wget"]);
+
+const INTERNAL_DESTINATION_RE = new RegExp(
+  "^[\"']?(?:" +
+    "https?://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?" +
+    "|\\$(?:INTERNAL_GATEWAY_BASE_URL\\b|\\{INTERNAL_GATEWAY_BASE_URL\\})" +
+    ")([\"']?$|/)",
+);
+
+/**
+ * Flags that can re-route a request away from its positional URL (proxies,
+ * config files, URL-list inputs, alternate-destination flags). Any such flag
+ * disqualifies the internal-destination carve-out — we fall back to the
+ * normal (stricter) classification rather than reason about them.
+ */
+const CARVEOUT_UNSAFE_FLAGS: Record<string, RegExp> = {
+  curl: /^["']?(?:-[A-Za-z]*[xK]$|--(?:proxy|preproxy|config|url\b|url=|resolve|connect-to|doh-url|unix-socket|abstract-unix-socket|interface))/,
+  wget: /^["']?(?:-[A-Za-z]*[eiF]$|--(?:execute|input-file|config|use-proxy|proxy\b|proxy=|base))/,
+};
+
+/**
+ * Runtime-injected env vars whose values are constants set by the assistant
+ * itself (see terminal/safe-env.ts and shell.ts) — never attacker- or
+ * model-controlled. References to them don't make a command opaque, so they
+ * are stripped before the variable-expansion escalation check.
+ */
+const SAFE_INJECTED_VAR_RE =
+  /\$(?:\{(?:INTERNAL_GATEWAY_BASE_URL|__CONVERSATION_ID)\}|(?:INTERNAL_GATEWAY_BASE_URL|__CONVERSATION_ID)(?![A-Za-z0-9_]))/g;
+
+interface InternalDestinationInfo {
+  /** ≥1 destination arg, ALL destination args internal, no re-routing flags. */
+  allInternal: boolean;
+  /** Raw arg strings anchored to an internal destination. */
+  anchoredArgs: Set<string>;
+}
+
+const NO_INTERNAL_DESTINATIONS: InternalDestinationInfo = {
+  allInternal: false,
+  anchoredArgs: new Set(),
+};
+
+function computeInternalDestinations(
+  programName: string,
+  spec: CommandRiskSpec,
+  args: string[],
+): InternalDestinationInfo {
+  if (!INTERNAL_DESTINATION_PROGRAMS.has(programName) || !spec.argSchema) {
+    return NO_INTERNAL_DESTINATIONS;
+  }
+  const positionals = parseArgs(args, spec.argSchema).positionals;
+  const anchoredArgs = new Set(
+    positionals.filter((p) => INTERNAL_DESTINATION_RE.test(p)),
+  );
+  const unsafeFlag = CARVEOUT_UNSAFE_FLAGS[programName];
+  const hasUnsafeFlag =
+    unsafeFlag !== undefined && args.some((a) => unsafeFlag.test(a));
+  return {
+    allInternal:
+      positionals.length > 0 &&
+      positionals.every((p) => anchoredArgs.has(p)) &&
+      !hasUnsafeFlag,
+    anchoredArgs,
+  };
+}
+
 // ── Wrapper unwrapping ───────────────────────────────────────────────────────
 
 const WRAPPER_SKIP_FIRST_POSITIONAL = new Set(["timeout", "taskset"]);
@@ -473,6 +549,16 @@ export function classifySegment(
     // Cache not initialized (e.g., in tests) — use registry baseRisk
   }
 
+  // 4c. Internal-destination detection (curl/wget) — see the carve-out block
+  // near the top of this file. Drives externalDestinationOnly rule skipping
+  // (step 5), the internal-request downgrade (step 5c), and the anchored-arg
+  // exemption from variable-expansion escalation (step 6).
+  const internalDest = computeInternalDestinations(
+    programName,
+    resolvedSpec,
+    segment.args,
+  );
+
   // 5. Evaluate arg rules
   //
   // Arg rules can both escalate AND de-escalate from baseRisk.
@@ -505,6 +591,11 @@ export function classifySegment(
     const matchedPositionalIndices = new Set<number>();
 
     for (const rule of argRules) {
+      // Upload-shaped rules guard against exfiltration; when every request
+      // destination is machine-internal the data never leaves the instance,
+      // so those rules don't apply.
+      if (rule.externalDestinationOnly && internalDest.allInternal) continue;
+
       if (rule.flags && rule.flags.length > 0 && rule.valuePattern) {
         // ── Rules with flags + valuePattern ──────────────────────────────
         // Look up each rule flag in parsed.flags. If the flag has a string
@@ -694,12 +785,42 @@ export function classifySegment(
     }
   }
 
+  // 5c. Internal-destination downgrade (curl/wget).
+  // A request pinned to loopback or the internal gateway is a machine-local
+  // call, not network access — classify low, like the curl:localhost rule.
+  // The generic de-escalation above can't reach this on its own because
+  // payload args (`-d @file` values, header values) aren't covered by any
+  // low rule and block de-escalation. Only applies when nothing escalated
+  // ABOVE the base risk (a sensitive-path output rule keeps its high) and
+  // the base wasn't raised past medium by a user override.
+  if (
+    internalDest.allInternal &&
+    effectiveMatchType !== "user_rule" &&
+    riskOrd(risk) <= riskOrd(effectiveBaseRisk) &&
+    riskOrd(risk) <= riskOrd("medium") &&
+    riskOrd(risk) > riskOrd("low")
+  ) {
+    risk = "low";
+    reason = "Internal request (loopback/internal gateway)";
+    effectiveMatchType = "registry";
+  }
+
   // 6. Check for variable expansion in args (conservative escalation)
   // Use max(computedRisk, baseRisk) as the floor for escalation so that
   // de-escalated commands still escalate from at least baseRisk.
   // Example: `curl http://localhost:$PORT` — arg rule de-escalates to low,
   // but baseRisk=medium is the floor, so escalateOne(medium) → high.
-  if (segment.args.some((a) => a.includes("$"))) {
+  //
+  // Exemptions: args anchored to an internal destination (the var can only
+  // affect the path of a machine-local request, never the host), and
+  // references to runtime-injected constant vars (SAFE_INJECTED_VAR_RE).
+  if (
+    segment.args.some(
+      (a) =>
+        !internalDest.anchoredArgs.has(a) &&
+        a.replace(SAFE_INJECTED_VAR_RE, "").includes("$"),
+    )
+  ) {
     const escalationBase = maxRisk(risk, effectiveBaseRisk);
     const escalated = escalateOne(escalationBase);
     if (riskOrd(escalated) > riskOrd(risk)) {

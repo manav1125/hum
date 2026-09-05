@@ -43,12 +43,14 @@ const spec: CommandRiskSpec = {
       valuePattern: "^@",
       risk: "high",
       reason: "Uploads file contents",
+      externalDestinationOnly: true,
     },
     {
       id: "curl:upload-file",
       flags: ["-T", "--upload-file"],
       risk: "high",
       reason: "Uploads file",
+      externalDestinationOnly: true,
     },
     {
       id: "curl:output-sensitive",
@@ -58,8 +60,12 @@ const spec: CommandRiskSpec = {
       reason: "Writes to sensitive path",
     },
     {
+      // Host must be terminated by port, path, quote, or end-of-arg —
+      // otherwise `http://localhost@evil.com` (userinfo trick) and
+      // `http://localhost.evil.com` would match as local.
       id: "curl:localhost",
-      valuePattern: "^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])",
+      valuePattern:
+        "^[\"']?https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:\\d+)?([\"']?$|/)",
       risk: "low",
       reason: "Local request",
     },

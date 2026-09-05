@@ -26,6 +26,7 @@ import cmd_base64 from "./commands/base64.js";
 import cmd_basename from "./commands/basename.js";
 import cmd_bash from "./commands/bash.js";
 import cmd_bazel from "./commands/bazel.js";
+import cmd_break from "./commands/break.js";
 import cmd_brew from "./commands/brew.js";
 import cmd_bun from "./commands/bun.js";
 import cmd_bunx from "./commands/bunx.js";
@@ -46,6 +47,7 @@ import cmd_column from "./commands/column.js";
 import cmd_comm from "./commands/comm.js";
 import cmd_command from "./commands/command.js";
 import cmd_composer from "./commands/composer.js";
+import cmd_continue from "./commands/continue.js";
 import cmd_cp from "./commands/cp.js";
 import cmd_crontab from "./commands/crontab.js";
 import cmd_csplit from "./commands/csplit.js";
@@ -331,6 +333,7 @@ export const DEFAULT_COMMAND_REGISTRY = {
   basename: cmd_basename,
   bash: cmd_bash,
   bazel: cmd_bazel,
+  break: cmd_break,
   brew: cmd_brew,
   bun: cmd_bun,
   bunx: cmd_bunx,
@@ -351,6 +354,7 @@ export const DEFAULT_COMMAND_REGISTRY = {
   comm: cmd_comm,
   command: cmd_command,
   composer: cmd_composer,
+  continue: cmd_continue,
   cp: cmd_cp,
   crontab: cmd_crontab,
   csplit: cmd_csplit,
