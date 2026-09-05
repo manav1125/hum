@@ -88,12 +88,16 @@ directly; the sidecar rejects unauthenticated peers.
 
    ```bash
    for i in $(seq 1 8); do
-     R=$(curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom/<jobId>")
-     echo "$R" | grep -qE '"status":"(succeeded|failed)"' && break
+     curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom/<jobId>" |
+       grep -qE '"status":"(succeeded|failed)"' && break
      sleep 14
    done
-   echo "$R"
+   curl -s "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom/<jobId>"
    ```
+
+   Keep this exact shape (pipe the status check straight into `grep`, then
+   one final fetch) — capturing into a shell variable and `echo`-ing it
+   makes the command prompt for approval instead of auto-running.
 
    Between bursts, relay `progress`/`message` in one short line. **If it is
    still running after ~8 minutes, do NOT keep polling and do NOT end with a
