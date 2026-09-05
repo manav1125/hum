@@ -141,6 +141,14 @@ const INTERPRETER_VALUE_FLAGS: ReadonlyMap<
   ["perl", new Set(["-I"])],
 ]);
 const OPAQUE_PROGRAMS = new Set(["eval", "source", "alias"]);
+
+/**
+ * Programs whose stdin is consumed as pure data — a heredoc/herestring fed
+ * to one of these is written or transformed, never executed, so it does not
+ * make the command opaque. Interpreters and unknown programs are NOT listed:
+ * `bash <<EOF` executes its heredoc body and stays opaque.
+ */
+const HEREDOC_DATA_SINKS = new Set(["cat", "tee", "jq", "curl", "wget"]);
 const DANGEROUS_ENV_VARS = new Set([
   "LD_PRELOAD",
   "LD_LIBRARY_PATH",
@@ -664,12 +672,25 @@ function detectOpaqueConstructs(
   }
 
   function walkForOpacity(n: TSNode): boolean {
-    // Heredocs / herestrings
-    if (
-      n.type === "heredoc_redirect" ||
-      n.type === "heredoc_body" ||
-      n.type === "herestring_redirect"
-    ) {
+    // Heredocs / herestrings.
+    // A heredoc feeding a pure data sink (`cat > file <<EOF`, `jq ... <<EOF`)
+    // is data, not execution — the body is written or transformed, never
+    // run, and a sensitive redirect destination is already caught by
+    // detectDangerousPatterns. A heredoc feeding anything else (a shell,
+    // an interpreter, an unknown program) stays opaque.
+    if (n.type === "heredoc_redirect" || n.type === "herestring_redirect") {
+      const stmt = n.parent;
+      if (stmt?.type === "redirected_statement") {
+        const cmd = stmt.namedChildren.find((c) => c.type === "command");
+        const prog = cmd?.namedChild(0)?.text.split("/").pop();
+        if (prog && HEREDOC_DATA_SINKS.has(prog)) {
+          // Don't descend — heredoc_body under a data sink is plain data.
+          return false;
+        }
+      }
+      return true;
+    }
+    if (n.type === "heredoc_body") {
       return true;
     }
 

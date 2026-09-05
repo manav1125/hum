@@ -1057,6 +1057,49 @@ describe("internal-destination carve-out", () => {
       expect(result.riskLevel).toBe("low");
     }
   });
+
+  test("learn-skill submit pipeline (heredoc → jq → curl -d @-) → low", async () => {
+    // Exact shape from the bundled learn skill: jq stamps provenance from
+    // ${__CONVERSATION_ID:-} (safe injected var, default-value form) and its
+    // program is fully single-quoted ($cid is jq syntax, never
+    // shell-expanded); curl's destination is the internal gateway.
+    const command = [
+      "cat > /tmp/learn-payload.json <<'EOF'",
+      '{"requirement": "brief", "enableTTS": true, "enableImageGeneration": true}',
+      "EOF",
+      'jq --arg cid "${__CONVERSATION_ID:-}" \\',
+      '   \'if $cid == "" then . else . + {"source":{"kind":"cue-chat","conversationId":$cid}} end\' \\',
+      "   /tmp/learn-payload.json |",
+      'curl -s -X POST "$INTERNAL_GATEWAY_BASE_URL/learn/api/generate-classroom" \\',
+      "  -H 'content-type: application/json' -d @-",
+    ].join("\n");
+    const result = await classifier.classify({ command, toolName: "bash" });
+    expect(result.riskLevel).toBe("low");
+  });
+
+  test("default-value form with a NESTED var ${__CONVERSATION_ID:-$X} still escalates", async () => {
+    const result = await classifier.classify({
+      command: 'ls "${__CONVERSATION_ID:-$HOME}"',
+      toolName: "bash",
+    });
+    expect(result.riskLevel).toBe("medium");
+  });
+
+  test("fully single-quoted arg with $ is literal → no expansion escalation", async () => {
+    const result = await classifier.classify({
+      command: "grep '$HOME' file.txt",
+      toolName: "bash",
+    });
+    expect(result.riskLevel).toBe("low");
+  });
+
+  test("partially quoted arg with $ still escalates", async () => {
+    const result = await classifier.classify({
+      command: "ls '$a'\"$HOME\"'$b'",
+      toolName: "bash",
+    });
+    expect(result.riskLevel).toBe("medium");
+  });
 });
 
 // ── Assistant subcommand classification ──────────────────────────────────────

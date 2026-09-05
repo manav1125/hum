@@ -511,8 +511,23 @@ describe("Shell Parser", () => {
       expect(result.hasOpaqueConstructs).toBe(true);
     });
 
-    test("detects heredoc", async () => {
+    test("heredoc to a data sink (cat) is NOT opaque — body is data", async () => {
       const result = await parse("cat <<EOF\nhello\nEOF");
+      expect(result.hasOpaqueConstructs).toBe(false);
+    });
+
+    test("heredoc written to a file via cat is NOT opaque", async () => {
+      const result = await parse("cat > /tmp/payload.json <<'EOF'\n{}\nEOF");
+      expect(result.hasOpaqueConstructs).toBe(false);
+    });
+
+    test("heredoc fed to a shell IS opaque — body is executed", async () => {
+      const result = await parse("bash <<EOF\nrm -rf /\nEOF");
+      expect(result.hasOpaqueConstructs).toBe(true);
+    });
+
+    test("heredoc fed to an unknown program IS opaque", async () => {
+      const result = await parse("python3 <<EOF\nprint(1)\nEOF");
       expect(result.hasOpaqueConstructs).toBe(true);
     });
 

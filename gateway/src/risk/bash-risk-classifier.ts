@@ -160,7 +160,14 @@ const CARVEOUT_UNSAFE_FLAGS: Record<string, RegExp> = {
  * are stripped before the variable-expansion escalation check.
  */
 const SAFE_INJECTED_VAR_RE =
-  /\$(?:\{(?:INTERNAL_GATEWAY_BASE_URL|__CONVERSATION_ID)\}|(?:INTERNAL_GATEWAY_BASE_URL|__CONVERSATION_ID)(?![A-Za-z0-9_]))/g;
+  /\$(?:\{(?:INTERNAL_GATEWAY_BASE_URL|__CONVERSATION_ID)(?::[-=?+][^}$]*)?\}|(?:INTERNAL_GATEWAY_BASE_URL|__CONVERSATION_ID)(?![A-Za-z0-9_]))/g;
+
+/**
+ * An arg token that is entirely a single-quoted string. The shell performs
+ * NO expansion inside single quotes, so `$` characters in such args (e.g. a
+ * jq program's own `$var` syntax) are literal text, not variable expansion.
+ */
+const FULLY_SINGLE_QUOTED_RE = /^'[^']*'$/;
 
 interface InternalDestinationInfo {
   /** ≥1 destination arg, ALL destination args internal, no re-routing flags. */
@@ -812,12 +819,14 @@ export function classifySegment(
   // but baseRisk=medium is the floor, so escalateOne(medium) → high.
   //
   // Exemptions: args anchored to an internal destination (the var can only
-  // affect the path of a machine-local request, never the host), and
-  // references to runtime-injected constant vars (SAFE_INJECTED_VAR_RE).
+  // affect the path of a machine-local request, never the host), fully
+  // single-quoted args (the shell expands nothing inside single quotes),
+  // and references to runtime-injected constant vars (SAFE_INJECTED_VAR_RE).
   if (
     segment.args.some(
       (a) =>
         !internalDest.anchoredArgs.has(a) &&
+        !FULLY_SINGLE_QUOTED_RE.test(a) &&
         a.replace(SAFE_INJECTED_VAR_RE, "").includes("$"),
     )
   ) {
